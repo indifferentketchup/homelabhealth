@@ -1,0 +1,162 @@
+/**
+ * Mode palettes (UI_DESIGN.md) + shadcn token bridge.
+ * `data-mode` is set on <html> by src/mode.js before paint (import first in main.jsx).
+ */
+
+:root[data-mode='booops'] {
+  --accent: #ff2d78;
+  --accent-bright: #ff6eb0;
+  --accent-dim: #7c1a3d;
+  --accent-2: #00e5ff;
+  --accent-3: #a855f7;
+  --bg: #050505;
+  --bg-panel: #0d0d0d;
+  --bg-card: #111111;
+  --bg-hover: #1a1a1a;
+  --text: #f0f0f0;
+  --text-dim: #888888;
+  --text-muted: #444444;
+  --border: #222222;
+  --border-bright: #333333;
+  --glow: 0 0 20px rgba(255, 45, 120, 0.3);
+
+  --background: var(--bg);
+  --foreground: var(--text);
+  --card: var(--bg-card);
+  --card-foreground: var(--text);
+  --popover: var(--bg-panel);
+  --popover-foreground: var(--text);
+  --primary: var(--accent);
+  --primary-foreground: #050505;
+  --secondary: var(--bg-hover);
+  --secondary-foreground: var(--text);
+  --muted: var(--bg-panel);
+  --muted-foreground: var(--text-dim);
+  --accent-foreground: #050505;
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: #f0f0f0;
+  --input: var(--border-bright);
+  --ring: var(--accent);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: var(--bg-panel);
+  --sidebar-foreground: var(--text);
+  --sidebar-primary: var(--accent);
+  --sidebar-primary-foreground: #050505;
+  --sidebar-accent: var(--bg-hover);
+  --sidebar-accent-foreground: var(--text);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--accent);
+}
+
+:root[data-mode='808notes'] {
+  --accent: #7c3aed;
+  --accent-bright: #a855f7;
+  --accent-dim: #3d1a7c;
+  --accent-2: #c084fc;
+  --accent-3: #e879f9;
+  --bg: #080808;
+  --bg-panel: #0f0a1a;
+  --bg-card: #130d20;
+  --bg-hover: #1a1030;
+  --text: #f0f0f0;
+  --text-dim: #9d8fbb;
+  --text-muted: #4a3d6b;
+  --border: #1e1530;
+  --border-bright: #2d2050;
+  --glow: 0 0 20px rgba(124, 58, 237, 0.3);
+
+  --background: var(--bg);
+  --foreground: var(--text);
+  --card: var(--bg-card);
+  --card-foreground: var(--text);
+  --popover: var(--bg-panel);
+  --popover-foreground: var(--text);
+  --primary: var(--accent);
+  --primary-foreground: #f0f0f0;
+  --secondary: var(--bg-hover);
+  --secondary-foreground: var(--text);
+  --muted: var(--bg-panel);
+  --muted-foreground: var(--text-dim);
+  --accent-foreground: #f0f0f0;
+  --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: #f0f0f0;
+  --input: var(--border-bright);
+  --ring: var(--accent);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: var(--bg-panel);
+  --sidebar-foreground: var(--text);
+  --sidebar-primary: var(--accent);
+  --sidebar-primary-foreground: #f0f0f0;
+  --sidebar-accent: var(--bg-hover);
+  --sidebar-accent-foreground: var(--text);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--accent);
+}
+
+:root[data-mode='boolab'] {
+  --accent: #6366f1;
+  --accent-bright: #818cf8;
+  --accent-dim: #3730a3;
+  --accent-2: #a5b4fc;
+  --accent-3: #c7d2fe;
+  --bg: #030303;
+  --bg-panel: #0a0a0a;
+  --bg-card: #0d0d0d;
+  --bg-hover: #141414;
+  --text: #f0f0f0;
+  --text-dim: #a1a1aa;
+  --text-muted: #52525b;
+  --border: #1a1a1a;
+  --border-bright: #27272a;
+  --glow: 0 0 20px rgba(99, 102, 241, 0.25);
+
+  --background: var(--bg);
+  --foreground: var(--text);
+  --card: var(--bg-card);
+  --card-foreground: var(--text);
+  --popover: var(--bg-panel);
+  --popover-foreground: var(--text);
+  --primary: var(--accent);
+  --primary-foreground: #f0f0f0;
+  --secondary: var(--bg-hover);
+  --secondary-foreground: var(--text);
+  --muted: var(--bg-panel);
+  --muted-foreground: var(--text-dim);
+  --accent-foreground: #f0f0f0;
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: #f0f0f0;
+  --input: var(--border-bright);
+  --ring: var(--accent);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: var(--bg-panel);
+  --sidebar-foreground: var(--text);
+  --sidebar-primary: var(--accent);
+  --sidebar-primary-foreground: #f0f0f0;
+  --sidebar-accent: var(--bg-hover);
+  --sidebar-accent-foreground: var(--text);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--accent);
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+}
