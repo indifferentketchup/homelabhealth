@@ -184,12 +184,13 @@ def _message_row(r: asyncpg.Record) -> dict[str, Any]:
 async def create_chat(body: ChatCreate):
     pool = await get_pool()
     mode = body.mode if body.mode in ("booops", "808notes") else "booops"
+    default_model = os.environ.get("DEFAULT_MODEL", "qwen3.5:9b")
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
             INSERT INTO chats (title, daw_id, mode, model, web_search_enabled)
             VALUES ($1, $2, $3,
-                COALESCE($4, (SELECT value FROM global_settings WHERE key = 'default_model' LIMIT 1), 'qwen3.5:35b'),
+                COALESCE($4, (SELECT value FROM global_settings WHERE key = 'default_model' LIMIT 1), $6),
                 COALESCE($5, FALSE))
             RETURNING id, title, daw_id, mode, persona_id, model, web_search_enabled, rag_enabled,
                 pruning_summary, message_count, is_main_chat, created_at, updated_at
@@ -199,6 +200,7 @@ async def create_chat(body: ChatCreate):
             mode,
             body.model,
             body.web_search_enabled,
+            default_model,
         )
     return _chat_row(row)
 

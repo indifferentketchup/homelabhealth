@@ -19,7 +19,7 @@ export function MessageList({ messages, streamingAssistant }) {
   const all = [...messages, ...tail]
 
   return (
-    <ScrollArea className="h-full min-h-0 flex-1">
+    <ScrollArea className="h-full min-h-0 w-full flex-1">
       <div className="flex flex-col gap-4 p-4 pb-28">
         {all.map((m) => (
           <MessageBubble key={m.id} message={m} streaming={m.id === '__stream__'} />

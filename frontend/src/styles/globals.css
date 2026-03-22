@@ -50,6 +50,8 @@
   --sidebar-accent-foreground: var(--text);
   --sidebar-border: var(--border);
   --sidebar-ring: var(--accent);
+  /* Active / “running” model indicator in model picker */
+  --success: #34d399;
 }
 
 :root[data-mode='808notes'] {

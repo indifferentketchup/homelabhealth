@@ -58,7 +58,7 @@ export function MessageBubble({ message, streaming = false }) {
 
   return (
     <div
-      className={cn('group flex w-full gap-2', isUser ? 'flex-row-reverse' : 'flex-row')}
+      className={cn('flex w-full gap-2', isUser ? 'flex-row-reverse' : 'flex-row')}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
@@ -70,17 +70,22 @@ export function MessageBubble({ message, streaming = false }) {
       >
         {isUser ? 'U' : 'W'}
       </div>
-      <div className={cn('flex min-w-0 max-w-[min(100%,48rem)] flex-1 flex-col', isUser ? 'items-end' : 'items-start')}>
+      <div
+        className={cn(
+          'flex min-w-0 max-w-[80%] flex-col',
+          isUser ? 'items-end' : 'items-start',
+        )}
+      >
         <div
           className={cn(
-            'rounded-xl border border-border px-3 py-2',
+            'w-fit max-w-full rounded-xl border border-border px-3 py-2',
             isUser ? 'bg-card text-foreground' : 'bg-secondary text-secondary-foreground',
           )}
         >
           {isUser ? (
-            <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{message.content}</p>
+            <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">{message.content}</p>
           ) : (
-            <div className="prose-chat text-sm leading-relaxed">
+            <div className="prose-chat break-words text-sm leading-relaxed">
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
                 {message.content || (streaming ? '…' : '')}
               </ReactMarkdown>

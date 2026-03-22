@@ -3,6 +3,7 @@ import { Route, Routes } from 'react-router-dom'
 import { Menu } from 'lucide-react'
 
 import { ChatView } from '@/components/chat/ChatView.jsx'
+import { ModelSelectorBar } from '@/components/chat/ModelSelectorBar.jsx'
 import { Sidebar } from '@/components/layout/Sidebar.jsx'
 import { Button } from '@/components/ui/button'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -14,10 +15,10 @@ export default function BooOpsApp() {
 
   return (
     <TooltipProvider>
-      <div className="flex h-[100dvh] w-full overflow-hidden bg-background text-foreground md:flex-row">
+      <div className="flex h-[100dvh] w-full overflow-clip bg-background text-foreground md:flex-row">
         <Sidebar mobileOpen={mobileSidebar} onMobileOpenChange={setMobileSidebar} />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <header className="flex items-center gap-2 border-b border-border bg-background px-2 py-2 md:hidden">
+          <header className="flex min-w-0 items-center gap-2 border-b border-border bg-background px-2 py-2 md:hidden">
             <Button
               type="button"
               variant="ghost"
@@ -27,7 +28,7 @@ export default function BooOpsApp() {
             >
               <Menu className="size-5" />
             </Button>
-            <span className="text-sm font-semibold tracking-wide">BooOps</span>
+            <ModelSelectorBar className="min-w-0 flex-1" />
           </header>
           <div className="flex min-h-0 flex-1 flex-col">
             <Routes>

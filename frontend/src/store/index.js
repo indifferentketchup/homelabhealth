@@ -16,6 +16,9 @@ export const useAppStore = create((set, get) => ({
   webSearchEnabled: false,
   setWebSearchEnabled: (enabled) => set({ webSearchEnabled: Boolean(enabled) }),
 
+  /** Shown on landing / persona stubs until personas API is wired */
+  personaDisplayName: 'BooOps',
+
   sidebarOpen: true,
   setSidebarOpen: (open) => set({ sidebarOpen: Boolean(open) }),
 

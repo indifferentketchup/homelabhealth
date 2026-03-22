@@ -2,11 +2,38 @@
  * Subdomain → mode. Sets `data-mode` on <html> for CSS variables.
  * Exported `APP_MODE`: `booops` | `808notes` | `boolab`
  */
+const IPV4_RE = /^\d+\.\d+\.\d+\.\d+$/
+
+function isLocalDevHost(hostname) {
+  if (!hostname) return true
+  const h = String(hostname).toLowerCase()
+  if (h === 'localhost') return true
+  return IPV4_RE.test(String(hostname))
+}
+
+function coerceAppMode(raw) {
+  const v =
+    raw == null || String(raw).trim() === ''
+      ? 'booops'
+      : String(raw).trim().toLowerCase()
+  if (v === 'booops' || v === '808notes' || v === 'boolab') return v
+  return 'booops'
+}
+
+function parseOptionalForcedMode() {
+  const raw = import.meta.env.VITE_APP_MODE
+  if (raw == null || String(raw).trim() === '') return null
+  const v = String(raw).trim().toLowerCase()
+  if (v === 'booops' || v === '808notes' || v === 'boolab') return v
+  return null
+}
+
 export function detectMode(hostname = window.location.hostname) {
-  const forced = import.meta.env?.VITE_APP_MODE?.toLowerCase()
-  if (forced === 'booops' || forced === '808notes' || forced === 'boolab') {
-    return forced
+  if (isLocalDevHost(hostname)) {
+    return coerceAppMode(import.meta.env.VITE_APP_MODE || 'booops')
   }
+  const forced = parseOptionalForcedMode()
+  if (forced) return forced
   const head = hostname.split('.')[0]?.toLowerCase() ?? ''
   if (head === '808notes') return '808notes'
   if (head === 'booops') return 'booops'

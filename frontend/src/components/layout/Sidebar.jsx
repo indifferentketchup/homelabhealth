@@ -1,17 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
-import {
-  ChevronLeft,
-  ChevronRight,
-  List,
-  MessageSquarePlus,
-  MessagesSquare,
-  PanelLeft,
-  Search,
-} from 'lucide-react'
+import { ChevronLeft, ChevronRight, List, MessageSquarePlus, MessagesSquare, PanelLeft, Search } from 'lucide-react'
 
-import { createChat, listChats } from '@/api/chats.js'
+import { deleteChat, listChats, patchChat } from '@/api/chats.js'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useAppStore } from '@/store/index.js'
@@ -22,6 +14,11 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
   const queryClient = useQueryClient()
   const [isMobile, setIsMobile] = useState(false)
 
+  const [ctx, setCtx] = useState(null)
+  const [editingId, setEditingId] = useState(null)
+  const [editTitle, setEditTitle] = useState('')
+  const editInputRef = useRef(null)
+
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 767px)')
     const apply = () => setIsMobile(mq.matches)
@@ -29,6 +26,39 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
     mq.addEventListener('change', apply)
     return () => mq.removeEventListener('change', apply)
   }, [])
+
+  useEffect(() => {
+    if (!editingId) return
+    editInputRef.current?.focus()
+    editInputRef.current?.select()
+  }, [editingId])
+
+  const closeCtx = useCallback(() => setCtx(null), [])
+
+  const ctxMenuRef = useRef(null)
+
+  useEffect(() => {
+    if (!ctx) return
+    const onKey = (e) => {
+      if (e.key === 'Escape') closeCtx()
+    }
+    const onMouseDown = (e) => {
+      if (
+        e.target.closest('[data-radix-popper-content-wrapper]') ||
+        e.target.closest('[data-radix-portal]')
+      )
+        return
+      if (ctxMenuRef.current && !ctxMenuRef.current.contains(e.target)) {
+        closeCtx()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('mousedown', onMouseDown)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('mousedown', onMouseDown)
+    }
+  }, [ctx, closeCtx])
 
   const sidebarOpen = useAppStore((s) => s.sidebarOpen)
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen)
@@ -50,11 +80,14 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
 
   const desktopCollapsed = !isMobile && !sidebarOpen
 
-  async function onNewChat() {
-    const chat = await createChat({ mode: 'booops' })
-    await queryClient.invalidateQueries({ queryKey: ['chats'] })
-    setActiveChatId(chat.id)
-    hydrateFromChat(chat)
+  function goHome() {
+    setActiveChatId(null)
+    navigate('/')
+    if (isMobile) onMobileOpenChange(false)
+  }
+
+  function onNewChat() {
+    setActiveChatId(null)
     navigate('/')
     if (isMobile) onMobileOpenChange(false)
   }
@@ -65,6 +98,62 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
     if (row) hydrateFromChat(row)
     navigate('/')
     if (isMobile) onMobileOpenChange(false)
+  }
+
+  function onChatContextMenu(e, chat) {
+    e.preventDefault()
+    e.stopPropagation()
+    setCtx({ x: e.clientX, y: e.clientY, chat })
+  }
+
+  async function commitRename(chatId) {
+    const title = editTitle.trim() || 'Untitled chat'
+    setEditingId(null)
+    try {
+      await patchChat(chatId, { title })
+      setChats(chats.map((c) => (c.id === chatId ? { ...c, title } : c)))
+      await queryClient.invalidateQueries({ queryKey: ['chats'] })
+    } catch {
+      await queryClient.invalidateQueries({ queryKey: ['chats'] })
+    }
+  }
+
+  async function commitRenameFromPrompt(chatId, title) {
+    const t = title.trim() || 'Untitled chat'
+    try {
+      await patchChat(chatId, { title: t })
+      setChats(chats.map((c) => (c.id === chatId ? { ...c, title: t } : c)))
+      await queryClient.invalidateQueries({ queryKey: ['chats'] })
+    } catch {
+      await queryClient.invalidateQueries({ queryKey: ['chats'] })
+    }
+  }
+
+  async function onDeleteChat(chatId) {
+    closeCtx()
+    try {
+      await deleteChat(chatId)
+      setChats(chats.filter((c) => c.id !== chatId))
+      await queryClient.invalidateQueries({ queryKey: ['chats'] })
+      if (activeChatId === chatId) {
+        setActiveChatId(null)
+        navigate('/')
+      }
+    } catch {
+      await queryClient.invalidateQueries({ queryKey: ['chats'] })
+    }
+  }
+
+  function startRename(chat) {
+    closeCtx()
+    if (desktopCollapsed) {
+      const next = window.prompt('Chat title', chat.title || '')
+      if (next === null) return
+      void commitRenameFromPrompt(chat.id, next)
+      return
+    }
+    setEditingId(chat.id)
+    setEditTitle(chat.title || '')
   }
 
   return (
@@ -78,36 +167,49 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
           !isMobile && (desktopCollapsed ? 'w-14' : 'w-72'),
         )}
       >
-        <div className="flex items-center gap-2 border-b border-sidebar-border p-2">
-          {!desktopCollapsed && (
-            <div className="flex h-16 flex-1 items-center justify-center overflow-hidden rounded-md border border-sidebar-border bg-card px-2">
+        <div className="border-b border-sidebar-border p-2">
+          {!desktopCollapsed ? (
+            <Link
+              to="/"
+              onClick={(e) => {
+                e.preventDefault()
+                goHome()
+              }}
+              className="flex h-16 w-full shrink-0 items-center justify-center overflow-hidden rounded-md border border-sidebar-border bg-card px-2 outline-none ring-sidebar-ring focus-visible:ring-2"
+            >
               <span className="truncate text-center text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 BooOps
               </span>
-            </div>
+            </Link>
+          ) : (
+            <div className="h-2 shrink-0" aria-hidden />
           )}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="shrink-0 text-sidebar-foreground"
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            aria-label={desktopCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            {desktopCollapsed ? <PanelLeft className="size-4" /> : <ChevronLeft className="size-4" />}
-          </Button>
         </div>
 
         <div className="flex flex-col gap-2 p-2">
-          <Button
-            type="button"
-            className={cn('w-full justify-start gap-2', desktopCollapsed && 'px-0')}
-            onClick={onNewChat}
-            aria-label="New chat"
-          >
-            <MessageSquarePlus className="size-4 shrink-0" />
-            {!desktopCollapsed && <span>New chat</span>}
-          </Button>
+          <div className="flex gap-1">
+            <Button
+              type="button"
+              className={cn('min-w-0 flex-1 justify-start gap-2', desktopCollapsed && 'px-0')}
+              onClick={onNewChat}
+              aria-label="New chat"
+            >
+              <MessageSquarePlus className="size-4 shrink-0" />
+              {!desktopCollapsed && <span>New chat</span>}
+            </Button>
+            {!isMobile && (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-9 w-9 shrink-0 border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent"
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                aria-label={desktopCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              >
+                {desktopCollapsed ? <PanelLeft className="size-4" /> : <ChevronLeft className="size-4" />}
+              </Button>
+            )}
+          </div>
           <div
             className={cn(
               'flex items-center gap-2 rounded-md border border-sidebar-border bg-card px-2 py-1.5 text-sm text-muted-foreground',
@@ -126,7 +228,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
           <Button
             type="button"
             variant="ghost"
-            className={cn('h-9 w-full justify-start font-normal', desktopCollapsed && 'px-0 justify-center')}
+            className={cn('h-9 w-full justify-start font-normal', desktopCollapsed && 'justify-center px-0')}
             asChild
           >
             <Link to="/chats" onClick={() => isMobile && onMobileOpenChange(false)}>
@@ -138,27 +240,49 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
         <ScrollArea className="min-h-0 flex-1 px-2">
           <div className="flex flex-col gap-1 pb-2">
             {chats.map((c) => (
-              <Button
-                key={c.id}
-                type="button"
-                variant={c.id === activeChatId ? 'secondary' : 'ghost'}
-                className={cn(
-                  'h-auto min-h-9 w-full justify-start gap-2 py-2 text-left font-normal',
-                  desktopCollapsed && 'px-0 justify-center',
+              <div key={c.id} className="w-full">
+                {editingId === c.id && !desktopCollapsed ? (
+                  <input
+                    ref={editInputRef}
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    className="h-9 w-full rounded-md border border-sidebar-border bg-card px-2 text-sm text-foreground outline-none ring-ring focus-visible:ring-2"
+                    onBlur={() => commitRename(c.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        commitRename(c.id)
+                      }
+                      if (e.key === 'Escape') {
+                        setEditingId(null)
+                      }
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                ) : (
+                  <Button
+                    type="button"
+                    variant={c.id === activeChatId ? 'secondary' : 'ghost'}
+                    className={cn(
+                      'h-auto min-h-9 w-full justify-start gap-2 py-2 text-left font-normal',
+                      desktopCollapsed && 'px-0 justify-center',
+                    )}
+                    onClick={() => selectChat(c.id)}
+                    onContextMenu={(e) => onChatContextMenu(e, c)}
+                    aria-current={c.id === activeChatId ? 'page' : undefined}
+                  >
+                    <MessagesSquare className="size-4 shrink-0 opacity-70" />
+                    {!desktopCollapsed && (
+                      <span className="line-clamp-2 text-sm">{c.title || 'Untitled chat'}</span>
+                    )}
+                  </Button>
                 )}
-                onClick={() => selectChat(c.id)}
-                aria-current={c.id === activeChatId ? 'page' : undefined}
-              >
-                <MessagesSquare className="size-4 shrink-0 opacity-70" />
-                {!desktopCollapsed && (
-                  <span className="line-clamp-2 text-sm">{c.title || 'Untitled chat'}</span>
-                )}
-              </Button>
+              </div>
             ))}
           </div>
         </ScrollArea>
 
-        <div className="mt-auto border-t border-sidebar-border p-2">
+        <div className="mt-auto flex flex-col gap-1 border-t border-sidebar-border p-2">
           <Button
             type="button"
             variant="outline"
@@ -178,6 +302,34 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
           </Button>
         </div>
       </aside>
+
+      {ctx && (
+        <div
+          ref={ctxMenuRef}
+          role="menu"
+          className="fixed z-50 min-w-[10rem] rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
+          style={{ left: ctx.x, top: ctx.y }}
+          onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            className="flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-left text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+            onClick={() => startRename(ctx.chat)}
+          >
+            Rename
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-left text-sm text-destructive outline-none hover:bg-destructive/10"
+            onClick={() => onDeleteChat(ctx.chat.id)}
+          >
+            Delete
+          </button>
+        </div>
+      )}
 
       {isMobile && mobileOpen && (
         <button
