@@ -166,7 +166,7 @@ CREATE TABLE IF NOT EXISTS custom_instructions (
     UNIQUE (scope)
 );
 
-CREATE TABLE branding_config (
+CREATE TABLE IF NOT EXISTS branding_config (
     mode TEXT PRIMARY KEY CHECK (mode IN ('booops', '808notes', 'boolab')),
     config JSONB NOT NULL DEFAULT '{}'
 );
@@ -184,3 +184,6 @@ CREATE INDEX IF NOT EXISTS messages_created_at_idx ON messages(created_at);
 CREATE INDEX IF NOT EXISTS sources_daw_id_idx ON sources(daw_id);
 CREATE INDEX IF NOT EXISTS sources_embedding_status_idx ON sources(embedding_status);
 CREATE INDEX IF NOT EXISTS notes_daw_id_idx ON notes(daw_id);
+
+INSERT INTO global_settings (key, value) VALUES ('pruning_threshold', '40')
+ON CONFLICT (key) DO NOTHING;

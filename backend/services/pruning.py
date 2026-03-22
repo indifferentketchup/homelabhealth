@@ -1,0 +1,141 @@
+"""Summarize-and-compress chat history when message count exceeds threshold."""
+
+from __future__ import annotations
+
+import json
+import os
+from typing import Any
+
+import asyncpg
+import httpx
+
+from db import get_pool
+
+
+async def _get_setting(conn: asyncpg.Connection, key: str, default: str) -> str:
+    row = await conn.fetchrow(
+        "SELECT value FROM global_settings WHERE key = $1",
+        key,
+    )
+    return row["value"] if row else default
+
+
+def _ollama_base() -> str:
+    return os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+
+
+async def _ollama_summarize(
+    model: str,
+    text: str,
+) -> str:
+    base = _ollama_base()
+    payload = {
+        "model": model,
+        "stream": False,
+        "messages": [
+            {
+                "role": "user",
+                "content": (
+                    "Summarize the following conversation turns into a concise bullet summary "
+                    "that preserves facts, decisions, and open questions. "
+                    "Do not address the user; output summary only.\n\n"
+                    f"{text}"
+                ),
+            }
+        ],
+    }
+    async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
+        r = await client.post(f"{base}/api/chat", json=payload)
+        r.raise_for_status()
+        data: dict[str, Any] = r.json()
+    msg = data.get("message") or {}
+    return (msg.get("content") or "").strip()
+
+
+async def summarize_and_compress(chat_id: str, pool: asyncpg.Pool | None = None) -> None:
+    """If message_count >= threshold, summarize all but the last 10 messages, then delete them."""
+    own_pool = pool is None
+    if own_pool:
+        pool = await get_pool()
+
+    async with pool.acquire() as conn:
+        threshold_s = await _get_setting(conn, "pruning_threshold", "40")
+        try:
+            threshold = int(threshold_s)
+        except ValueError:
+            threshold = 40
+
+        chat = await conn.fetchrow(
+            """
+            SELECT id, pruning_summary, message_count
+            FROM chats
+            WHERE id = $1::uuid
+            """,
+            chat_id,
+        )
+        if chat is None:
+            return
+
+        count_row = await conn.fetchrow(
+            "SELECT COUNT(*)::int AS c FROM messages WHERE chat_id = $1::uuid",
+            chat_id,
+        )
+        actual = count_row["c"] if count_row else 0
+        if actual < threshold:
+            if chat["message_count"] != actual:
+                await conn.execute(
+                    "UPDATE chats SET message_count = $2, updated_at = NOW() WHERE id = $1::uuid",
+                    chat_id,
+                    actual,
+                )
+            return
+
+        rows = await conn.fetch(
+            """
+            SELECT id, role, content, created_at
+            FROM messages
+            WHERE chat_id = $1::uuid
+            ORDER BY created_at ASC, id ASC
+            """,
+            chat_id,
+        )
+        if len(rows) <= 10:
+            return
+
+        to_prune = rows[:-10]
+        keep_ids = [r["id"] for r in rows[-10:]]
+
+        transcript = "\n\n".join(
+            f"{r['role'].upper()}: {r['content']}" for r in to_prune
+        )
+        prev = chat["pruning_summary"] or ""
+        bundle = f"Previous summary:\n{prev}\n\nMessages to compress:\n{transcript}" if prev else transcript
+
+        default_model = await _get_setting(conn, "default_model", "qwen3.5:35b")
+        try:
+            summary = await _ollama_summarize(default_model, bundle)
+        except Exception:
+            return
+
+        if not summary:
+            return
+
+        prune_ids = [r["id"] for r in to_prune]
+        await conn.execute(
+            "DELETE FROM messages WHERE chat_id = $1::uuid AND id = ANY($2::uuid[])",
+            chat_id,
+            prune_ids,
+        )
+        new_count = len(keep_ids)
+        await conn.execute(
+            """
+            UPDATE chats
+            SET pruning_summary = $2,
+                message_count = $3,
+                updated_at = NOW()
+            WHERE id = $1::uuid
+            """,
+            chat_id,
+            summary,
+            new_count,
+        )

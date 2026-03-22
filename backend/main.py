@@ -10,6 +10,7 @@ from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from db import apply_schema, close_pool, get_pool, init_pool
+from routers import chats, claude, ollama
 
 load_dotenv()
 
@@ -52,5 +53,9 @@ async def api_health():
         await conn.fetchval("SELECT 1")
     return {"status": "ok"}
 
+
+api.include_router(ollama.router, prefix="/ollama", tags=["ollama"])
+api.include_router(claude.router, prefix="/claude", tags=["claude"])
+api.include_router(chats.router, prefix="/chats", tags=["chats"])
 
 app.include_router(api)

@@ -3,6 +3,10 @@
  * Exported `APP_MODE`: `booops` | `808notes` | `boolab`
  */
 export function detectMode(hostname = window.location.hostname) {
+  const forced = import.meta.env?.VITE_APP_MODE?.toLowerCase()
+  if (forced === 'booops' || forced === '808notes' || forced === 'boolab') {
+    return forced
+  }
   const head = hostname.split('.')[0]?.toLowerCase() ?? ''
   if (head === '808notes') return '808notes'
   if (head === 'booops') return 'booops'
