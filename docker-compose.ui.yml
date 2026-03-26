@@ -1,0 +1,55 @@
+# Frontend only — all traffic to one boolab API (Postgres + Chroma stay with that API).
+# Prerequisite: API reachable at BOOLAB_API_UPSTREAM (host:port, no http:// prefix).
+#
+# Examples:
+#   API on same machine, published 9300: BOOLAB_API_UPSTREAM=host.docker.internal:9300  (default below)
+#   API on Tailscale: BOOLAB_API_UPSTREAM=100.72.117.26:9300
+#   UI joined to boolab_net with core stack: BOOLAB_API_UPSTREAM=boolab_api:8000  (see docker-compose override in comments)
+#
+# Start one app:  docker compose -f docker-compose.ui.yml up -d boolab_ui
+services:
+  boolab_ui:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_APP_MODE: boolab
+        VITE_PUBLIC_BOOOPS_URL: ${VITE_PUBLIC_BOOOPS_URL:-http://100.72.117.26:9303}
+        VITE_PUBLIC_808NOTES_URL: ${VITE_PUBLIC_808NOTES_URL:-http://100.72.117.26:9304}
+    container_name: boolab_ui
+    environment:
+      BOOLAB_API_UPSTREAM: ${BOOLAB_API_UPSTREAM:-host.docker.internal:9300}
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    ports:
+      - '9302:80'
+
+  booops_ui:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_APP_MODE: booops
+        VITE_PUBLIC_BOOLAB_URL: ${VITE_PUBLIC_BOOLAB_URL:-http://100.72.117.26:9302}
+    container_name: booops_ui
+    environment:
+      BOOLAB_API_UPSTREAM: ${BOOLAB_API_UPSTREAM:-host.docker.internal:9300}
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    ports:
+      - '9303:80'
+
+  notes808_ui:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_APP_MODE: 808notes
+        VITE_PUBLIC_BOOLAB_URL: ${VITE_PUBLIC_BOOLAB_URL:-http://100.72.117.26:9302}
+    container_name: notes808_ui
+    environment:
+      BOOLAB_API_UPSTREAM: ${BOOLAB_API_UPSTREAM:-host.docker.internal:9300}
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    ports:
+      - '9304:80'

@@ -52,8 +52,20 @@ async def _ollama_summarize(
     return (msg.get("content") or "").strip()
 
 
-async def summarize_and_compress(chat_id: str, pool: asyncpg.Pool | None = None) -> None:
-    """If message_count >= threshold, summarize all but the last 10 messages, then delete them."""
+def _estimate_tokens_from_messages(rows: list[Any]) -> int:
+    total_chars = 0
+    for r in rows:
+        total_chars += len(r["content"] or "")
+    return max(total_chars // 4, 0)
+
+
+async def summarize_and_compress(
+    chat_id: str,
+    pool: asyncpg.Pool | None = None,
+    *,
+    max_context_tokens: int | None = None,
+) -> None:
+    """If message_count >= threshold or estimated tokens exceed context, summarize and delete old turns."""
     own_pool = pool is None
     if own_pool:
         pool = await get_pool()
@@ -81,14 +93,6 @@ async def summarize_and_compress(chat_id: str, pool: asyncpg.Pool | None = None)
             chat_id,
         )
         actual = count_row["c"] if count_row else 0
-        if actual < threshold:
-            if chat["message_count"] != actual:
-                await conn.execute(
-                    "UPDATE chats SET message_count = $2, updated_at = NOW() WHERE id = $1::uuid",
-                    chat_id,
-                    actual,
-                )
-            return
 
         rows = await conn.fetch(
             """
@@ -99,6 +103,21 @@ async def summarize_and_compress(chat_id: str, pool: asyncpg.Pool | None = None)
             """,
             chat_id,
         )
+
+        est_tokens = _estimate_tokens_from_messages(rows)
+        token_budget = int(max_context_tokens) if max_context_tokens and max_context_tokens > 0 else 0
+        over_tokens = bool(token_budget and est_tokens > int(token_budget * 0.72))
+        over_msgs = actual >= threshold
+
+        if actual < threshold and not over_tokens:
+            if chat["message_count"] != actual:
+                await conn.execute(
+                    "UPDATE chats SET message_count = $2, updated_at = NOW() WHERE id = $1::uuid",
+                    chat_id,
+                    actual,
+                )
+            return
+
         if len(rows) <= 10:
             return
 
@@ -111,7 +130,7 @@ async def summarize_and_compress(chat_id: str, pool: asyncpg.Pool | None = None)
         prev = chat["pruning_summary"] or ""
         bundle = f"Previous summary:\n{prev}\n\nMessages to compress:\n{transcript}" if prev else transcript
 
-        default_model = await _get_setting(conn, "default_model", "qwen3.5:35b")
+        default_model = await _get_setting(conn, "default_model", "qwen3.5:9b")
         try:
             summary = await _ollama_summarize(default_model, bundle)
         except Exception:

@@ -1,17 +1,40 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, List, MessageSquarePlus, MessagesSquare, PanelLeft, Search } from 'lucide-react'
+import {
+  Brain,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  LayoutGrid,
+  List,
+  MessageSquarePlus,
+  MessagesSquare,
+  PanelLeft,
+  Search,
+  Settings,
+} from 'lucide-react'
 
-import { deleteChat, listChats, patchChat } from '@/api/chats.js'
+import { apiFetch } from '@/api/index.js'
+import { applyBrandingCss, fetchBranding } from '@/api/branding.js'
+import { deleteChat, listChats, patchChat, patchRecentChatsListCache } from '@/api/chats.js'
+import { listDaws } from '@/api/daws.js'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { PATH_808NOTES_HOME, PATH_BOOOPS, getBoolabHubHref, isHttpUrl } from '@/routes/paths.js'
 import { useAppStore } from '@/store/index.js'
 import { cn } from '@/lib/utils'
 
-export function Sidebar({ mobileOpen, onMobileOpenChange }) {
+export function Sidebar({
+  mobileOpen,
+  onMobileOpenChange,
+  appMode = 'booops',
+  routeBase = PATH_BOOOPS,
+}) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const boolabHubHref = getBoolabHubHref()
+  const boolabHubExternal = isHttpUrl(boolabHubHref)
   const [isMobile, setIsMobile] = useState(false)
 
   const [ctx, setCtx] = useState(null)
@@ -67,12 +90,86 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
   const activeChatId = useAppStore((s) => s.activeChatId)
   const setActiveChatId = useAppStore((s) => s.setActiveChatId)
   const hydrateFromChat = useAppStore((s) => s.hydrateFromChat)
+  const activeDawId = useAppStore((s) => s.activeDawId)
+  const setActiveDawId = useAppStore((s) => s.setActiveDawId)
+  const branding = useAppStore((s) => s.branding)
+  const sidebarW = branding?.sidebarWidth ?? 260
 
+  const recentChatMode = appMode === '808notes' ? '808notes' : 'booops'
   const { data } = useQuery({
-    queryKey: ['chats', 'recent'],
-    queryFn: () => listChats({ limit: 40, mode: 'booops' }),
+    queryKey: ['chats', 'recent', recentChatMode, activeDawId ?? 'all'],
+    queryFn: () =>
+      listChats({
+        limit: 40,
+        mode: recentChatMode,
+        ...(activeDawId ? { dawId: activeDawId } : {}),
+      }),
     staleTime: 15_000,
+    enabled: appMode === 'booops' || appMode === '808notes',
   })
+
+  const { data: brandingRow } = useQuery({
+    queryKey: ['branding', appMode],
+    queryFn: () => fetchBranding(appMode),
+    staleTime: 60_000,
+    enabled: appMode === 'booops' || appMode === '808notes',
+  })
+
+  const pinnedDawMode = appMode === '808notes' ? '808notes' : 'booops'
+  const { data: dawsListPack, isError: dawsListError } = useQuery({
+    queryKey: ['daws', `pinned-sidebar-${pinnedDawMode}`],
+    queryFn: () => listDaws(pinnedDawMode),
+    staleTime: 30_000,
+    enabled: appMode === 'booops' || appMode === '808notes',
+  })
+
+  const pinnedDaws = useMemo(() => {
+    const list = Array.isArray(dawsListPack?.items) ? dawsListPack.items : []
+    if (appMode === '808notes') return list.filter((d) => d.pinned_808notes === true)
+    return list.filter((d) => d.pinned_booops === true)
+  }, [dawsListPack, appMode])
+
+  const readSectionOpen = (key, defaultOpen) => {
+    try {
+      const v = localStorage.getItem(key)
+      if (v === null) return defaultOpen
+      return v === 'true'
+    } catch {
+      return defaultOpen
+    }
+  }
+
+  const [pinnedOpen, setPinnedOpen] = useState(() => readSectionOpen('bb-sidebar-pinned-open', true))
+  const [recentOpen, setRecentOpen] = useState(() => readSectionOpen('bb-sidebar-recent-open', true))
+
+  function togglePinnedOpen() {
+    setPinnedOpen((o) => {
+      const n = !o
+      try {
+        localStorage.setItem('bb-sidebar-pinned-open', String(n))
+      } catch {
+        /* ignore */
+      }
+      return n
+    })
+  }
+
+  function toggleRecentOpen() {
+    setRecentOpen((o) => {
+      const n = !o
+      try {
+        localStorage.setItem('bb-sidebar-recent-open', String(n))
+      } catch {
+        /* ignore */
+      }
+      return n
+    })
+  }
+
+  useEffect(() => {
+    if (!brandingRow || (appMode !== 'booops' && appMode !== '808notes')) return
+    applyBrandingCss(brandingRow, appMode)
+  }, [brandingRow, appMode])
 
   useEffect(() => {
     if (data?.items) setChats(data.items)
@@ -81,22 +178,28 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
   const desktopCollapsed = !isMobile && !sidebarOpen
 
   function goHome() {
-    setActiveChatId(null)
-    navigate('/')
+    if (appMode === 'booops' || appMode === '808notes') {
+      setActiveChatId(null)
+      setActiveDawId(null)
+    }
+    navigate(routeBase)
     if (isMobile) onMobileOpenChange(false)
   }
 
   function onNewChat() {
     setActiveChatId(null)
-    navigate('/')
+    navigate(routeBase)
     if (isMobile) onMobileOpenChange(false)
   }
+
+  const brandTitle =
+    branding?.title || (appMode === '808notes' ? '808notes' : 'BooOps')
 
   function selectChat(id) {
     setActiveChatId(id)
     const row = chats.find((c) => c.id === id)
     if (row) hydrateFromChat(row)
-    navigate('/')
+    navigate(routeBase)
     if (isMobile) onMobileOpenChange(false)
   }
 
@@ -111,7 +214,10 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
     setEditingId(null)
     try {
       await patchChat(chatId, { title })
-      setChats(chats.map((c) => (c.id === chatId ? { ...c, title } : c)))
+      const prev = useAppStore.getState().chats
+      const sid = String(chatId)
+      setChats(prev.map((c) => (String(c.id) === sid ? { ...c, title } : c)))
+      patchRecentChatsListCache(queryClient, chatId, title)
       await queryClient.invalidateQueries({ queryKey: ['chats'] })
     } catch {
       await queryClient.invalidateQueries({ queryKey: ['chats'] })
@@ -122,7 +228,10 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
     const t = title.trim() || 'Untitled chat'
     try {
       await patchChat(chatId, { title: t })
-      setChats(chats.map((c) => (c.id === chatId ? { ...c, title: t } : c)))
+      const prev = useAppStore.getState().chats
+      const sid = String(chatId)
+      setChats(prev.map((c) => (String(c.id) === sid ? { ...c, title: t } : c)))
+      patchRecentChatsListCache(queryClient, chatId, t)
       await queryClient.invalidateQueries({ queryKey: ['chats'] })
     } catch {
       await queryClient.invalidateQueries({ queryKey: ['chats'] })
@@ -137,7 +246,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
       await queryClient.invalidateQueries({ queryKey: ['chats'] })
       if (activeChatId === chatId) {
         setActiveChatId(null)
-        navigate('/')
+        navigate(routeBase)
       }
     } catch {
       await queryClient.invalidateQueries({ queryKey: ['chats'] })
@@ -164,22 +273,40 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
           isMobile ? 'fixed inset-y-0 left-0 z-40 w-72 max-w-[85vw]' : 'relative z-0',
           isMobile && !mobileOpen && '-translate-x-full',
           isMobile && mobileOpen && 'translate-x-0 shadow-[var(--glow)]',
-          !isMobile && (desktopCollapsed ? 'w-14' : 'w-72'),
+          !isMobile && desktopCollapsed && 'w-14',
         )}
+        style={!isMobile ? { width: desktopCollapsed ? undefined : sidebarW } : undefined}
       >
-        <div className="border-b border-sidebar-border p-2">
+        <div className="border-b border-sidebar-border">
           {!desktopCollapsed ? (
             <Link
-              to="/"
+              to={routeBase}
               onClick={(e) => {
                 e.preventDefault()
                 goHome()
               }}
-              className="flex h-16 w-full shrink-0 items-center justify-center overflow-hidden rounded-md border border-sidebar-border bg-card px-2 outline-none ring-sidebar-ring focus-visible:ring-2"
+              className={cn(
+                'block w-full shrink-0 outline-none ring-sidebar-ring focus-visible:ring-2',
+                !branding?.bannerUrl && 'p-2',
+              )}
             >
-              <span className="truncate text-center text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                BooOps
-              </span>
+              {branding?.bannerUrl ? (
+                <div
+                  className={cn('relative w-full overflow-hidden aspect-[3/1]')}
+                >
+                  <img
+                    src={branding.bannerUrl}
+                    alt=""
+                    className="h-full w-full object-fill"
+                  />
+                </div>
+              ) : (
+                <div className="flex min-h-16 w-full items-center justify-center overflow-hidden rounded-md border border-sidebar-border bg-card px-2">
+                  <span className="fs-nav truncate text-center font-semibold uppercase tracking-wide text-muted-foreground">
+                    {brandTitle}
+                  </span>
+                </div>
+              )}
             </Link>
           ) : (
             <div className="h-2 shrink-0" aria-hidden />
@@ -187,102 +314,306 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
         </div>
 
         <div className="flex flex-col gap-2 p-2">
-          <div className="flex gap-1">
-            <Button
-              type="button"
-              className={cn('min-w-0 flex-1 justify-start gap-2', desktopCollapsed && 'px-0')}
-              onClick={onNewChat}
-              aria-label="New chat"
-            >
-              <MessageSquarePlus className="size-4 shrink-0" />
-              {!desktopCollapsed && <span>New chat</span>}
-            </Button>
-            {!isMobile && (
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className="h-9 w-9 shrink-0 border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent"
-                onClick={() => setSidebarOpen(!sidebarOpen)}
-                aria-label={desktopCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-              >
-                {desktopCollapsed ? <PanelLeft className="size-4" /> : <ChevronLeft className="size-4" />}
-              </Button>
-            )}
-          </div>
-          <div
-            className={cn(
-              'flex items-center gap-2 rounded-md border border-sidebar-border bg-card px-2 py-1.5 text-sm text-muted-foreground',
-              desktopCollapsed && 'justify-center px-0',
-            )}
-          >
-            <Search className="size-4 shrink-0" />
-            {!desktopCollapsed && <span className="truncate">Search (soon)</span>}
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-1 px-2 pb-1">
-          {!desktopCollapsed && (
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Recent chats</p>
-          )}
-          <Button
-            type="button"
-            variant="ghost"
-            className={cn('h-9 w-full justify-start font-normal', desktopCollapsed && 'justify-center px-0')}
-            asChild
-          >
-            <Link to="/chats" onClick={() => isMobile && onMobileOpenChange(false)}>
-              {!desktopCollapsed ? <span className="text-sm">All chats</span> : <List className="size-4" />}
-            </Link>
-          </Button>
-        </div>
-
-        <ScrollArea className="min-h-0 flex-1 px-2">
-          <div className="flex flex-col gap-1 pb-2">
-            {chats.map((c) => (
-              <div key={c.id} className="w-full">
-                {editingId === c.id && !desktopCollapsed ? (
-                  <input
-                    ref={editInputRef}
-                    value={editTitle}
-                    onChange={(e) => setEditTitle(e.target.value)}
-                    className="h-9 w-full rounded-md border border-sidebar-border bg-card px-2 text-sm text-foreground outline-none ring-ring focus-visible:ring-2"
-                    onBlur={() => commitRename(c.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        commitRename(c.id)
-                      }
-                      if (e.key === 'Escape') {
-                        setEditingId(null)
-                      }
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                ) : (
+          {(appMode === 'booops' || appMode === '808notes') && (
+            <>
+              <div className="flex gap-1">
+                <Button
+                  type="button"
+                  className={cn('fs-nav min-w-0 flex-1 justify-start gap-2', desktopCollapsed && 'px-0')}
+                  onClick={onNewChat}
+                  aria-label="New chat"
+                >
+                  <MessageSquarePlus className="size-4 shrink-0" />
+                  {!desktopCollapsed && <span>New chat</span>}
+                </Button>
+                {!isMobile && (
                   <Button
                     type="button"
-                    variant={c.id === activeChatId ? 'secondary' : 'ghost'}
-                    className={cn(
-                      'h-auto min-h-9 w-full justify-start gap-2 py-2 text-left font-normal',
-                      desktopCollapsed && 'px-0 justify-center',
-                    )}
-                    onClick={() => selectChat(c.id)}
-                    onContextMenu={(e) => onChatContextMenu(e, c)}
-                    aria-current={c.id === activeChatId ? 'page' : undefined}
+                    variant="outline"
+                    size="icon"
+                    className="h-9 w-9 shrink-0 border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent"
+                    onClick={() => setSidebarOpen(!sidebarOpen)}
+                    aria-label={desktopCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                   >
-                    <MessagesSquare className="size-4 shrink-0 opacity-70" />
-                    {!desktopCollapsed && (
-                      <span className="line-clamp-2 text-sm">{c.title || 'Untitled chat'}</span>
-                    )}
+                    {desktopCollapsed ? <PanelLeft className="size-4" /> : <ChevronLeft className="size-4" />}
                   </Button>
                 )}
               </div>
-            ))}
+              {appMode === 'booops' && (
+                <div
+                  className={cn(
+                    'fs-nav flex items-center gap-2 rounded-md border border-sidebar-border bg-card px-2 py-1.5 text-muted-foreground',
+                    desktopCollapsed && 'justify-center px-0',
+                  )}
+                >
+                  <Search className="size-4 shrink-0" />
+                  {!desktopCollapsed && <span className="truncate">Search (soon)</span>}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="mx-2 border-t border-sidebar-border" />
+
+        {appMode === 'booops' ? (
+          <>
+            <div className="flex flex-col gap-1 px-2 py-2">
+              <Button
+                type="button"
+                variant="ghost"
+                className={cn(
+                  'fs-nav h-9 w-full justify-start font-normal',
+                  desktopCollapsed && 'justify-center px-0',
+                )}
+                asChild
+              >
+                <Link to={`${routeBase}/chats`} onClick={() => isMobile && onMobileOpenChange(false)}>
+                  {!desktopCollapsed ? (
+                    <span className="fs-nav flex items-center gap-2">
+                      <List className="size-4 shrink-0 opacity-70" />
+                      All chats
+                    </span>
+                  ) : (
+                    <List className="size-4" aria-hidden />
+                  )}
+                </Link>
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className={cn(
+                  'fs-nav h-9 w-full justify-start font-normal',
+                  desktopCollapsed && 'justify-center px-0',
+                )}
+                asChild
+              >
+                <Link to={`${routeBase}/daws`} onClick={() => isMobile && onMobileOpenChange(false)}>
+                  {!desktopCollapsed ? (
+                    <span className="fs-nav flex items-center gap-2">
+                      <LayoutGrid className="size-4 shrink-0 opacity-70" />
+                      DAWs
+                    </span>
+                  ) : (
+                    <LayoutGrid className="size-4" aria-hidden />
+                  )}
+                </Link>
+              </Button>
+            </div>
+
+            <div className="mx-2 border-t border-sidebar-border" />
+          </>
+        ) : (
+          <>
+            <div className="flex flex-col gap-1 px-2 py-2">
+              <Button
+                type="button"
+                variant="ghost"
+                className={cn(
+                  'fs-nav h-9 w-full justify-start font-normal',
+                  desktopCollapsed && 'justify-center px-0',
+                )}
+                asChild
+              >
+                <Link
+                  to={PATH_808NOTES_HOME}
+                  onClick={() => isMobile && onMobileOpenChange(false)}
+                  aria-label="All DAWs"
+                >
+                  {!desktopCollapsed ? (
+                    <span className="fs-nav flex items-center gap-2">
+                      <LayoutGrid className="size-4 shrink-0 opacity-70" />
+                      All DAWs
+                    </span>
+                  ) : (
+                    <LayoutGrid className="size-4" aria-hidden />
+                  )}
+                </Link>
+              </Button>
+            </div>
+
+            <div className="mx-2 border-t border-sidebar-border" />
+          </>
+        )}
+
+        <ScrollArea className="min-h-0 flex-1 px-2">
+          <div className="flex flex-col gap-1 pb-2">
+            {appMode === 'booops' && !desktopCollapsed && (
+              <>
+                <button
+                  type="button"
+                  onClick={togglePinnedOpen}
+                  className="fs-nav flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left font-medium uppercase tracking-wide text-muted-foreground outline-none ring-sidebar-ring hover:bg-sidebar-accent/50 focus-visible:ring-2"
+                >
+                  <span>Pinned DAWs</span>
+                  <ChevronDown
+                    className={cn(
+                      'size-4 shrink-0 transition-transform duration-150',
+                      !pinnedOpen && 'rotate-180',
+                    )}
+                    aria-hidden
+                  />
+                </button>
+                <div className={cn(!pinnedOpen && 'h-0 overflow-hidden')}>
+                  {dawsListError || pinnedDaws.length === 0 ? (
+                    <span className="fs-nav block px-2 text-muted-foreground">No pinned DAWs</span>
+                  ) : (
+                    pinnedDaws.map((d) => (
+                      <Button
+                        key={d.id}
+                        type="button"
+                        variant="ghost"
+                        className="h-auto min-h-9 w-full justify-start gap-2 py-2 text-left font-normal"
+                        asChild
+                      >
+                        <Link
+                          to={`${routeBase}?daw=${encodeURIComponent(d.id)}`}
+                          onClick={() => {
+                            setActiveDawId(d.id)
+                            setActiveChatId(null)
+                            if (isMobile) onMobileOpenChange(false)
+                          }}
+                        >
+                          <span
+                            className="size-2.5 shrink-0 rounded-full"
+                            style={{ background: d.color || '#7c3aed' }}
+                            aria-hidden
+                          />
+                          <span className="fs-nav line-clamp-2">{d.name}</span>
+                        </Link>
+                      </Button>
+                    ))
+                  )}
+                </div>
+
+                <div className="mx-0 my-1 border-t border-sidebar-border" />
+              </>
+            )}
+
+            {(appMode === 'booops' || appMode === '808notes') && !desktopCollapsed && (
+              <>
+                <button
+                  type="button"
+                  onClick={toggleRecentOpen}
+                  className="fs-nav flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left font-medium uppercase tracking-wide text-muted-foreground outline-none ring-sidebar-ring hover:bg-sidebar-accent/50 focus-visible:ring-2"
+                >
+                  <span>Recent chats</span>
+                  <ChevronDown
+                    className={cn(
+                      'size-4 shrink-0 transition-transform duration-150',
+                      !recentOpen && 'rotate-180',
+                    )}
+                    aria-hidden
+                  />
+                </button>
+                <div className={cn(!recentOpen && 'h-0 overflow-hidden')}>
+                  {chats.map((c) => (
+                    <div key={c.id} className="w-full">
+                      {editingId === c.id ? (
+                        <input
+                          ref={editInputRef}
+                          value={editTitle}
+                          onChange={(e) => setEditTitle(e.target.value)}
+                          className="fs-nav h-9 w-full rounded-md border border-sidebar-border bg-card px-2 text-foreground outline-none ring-ring focus-visible:ring-2"
+                          onBlur={() => commitRename(c.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              commitRename(c.id)
+                            }
+                            if (e.key === 'Escape') {
+                              setEditingId(null)
+                            }
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      ) : (
+                        <Button
+                          type="button"
+                          variant={c.id === activeChatId ? 'secondary' : 'ghost'}
+                          className="h-auto min-h-9 w-full justify-start gap-2 py-2 text-left font-normal"
+                          onClick={() => selectChat(c.id)}
+                          onContextMenu={(e) => onChatContextMenu(e, c)}
+                          aria-current={c.id === activeChatId ? 'page' : undefined}
+                        >
+                          <MessagesSquare className="size-4 shrink-0 opacity-70" />
+                          <span className="fs-nav line-clamp-2">{c.title || 'Untitled chat'}</span>
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {appMode === 'booops' && desktopCollapsed && (
+              <div className="flex flex-col items-center gap-1 pt-1">
+                {pinnedDaws.map((d) => (
+                  <Link
+                    key={d.id}
+                    to={`${routeBase}?daw=${encodeURIComponent(d.id)}`}
+                    title={d.name}
+                    onClick={() => {
+                      setActiveDawId(d.id)
+                      setActiveChatId(null)
+                      if (isMobile) onMobileOpenChange(false)
+                    }}
+                    className="flex h-9 w-full items-center justify-center rounded-md hover:bg-sidebar-accent/50"
+                  >
+                    <span
+                      className="size-2.5 shrink-0 rounded-full"
+                      style={{ background: d.color || '#7c3aed' }}
+                      aria-hidden
+                    />
+                  </Link>
+                ))}
+              </div>
+            )}
+
+            {(appMode === 'booops' || appMode === '808notes') && desktopCollapsed && (
+              <div className="flex flex-col gap-1">
+                {chats.map((c) => (
+                  <Button
+                    key={c.id}
+                    type="button"
+                    variant={c.id === activeChatId ? 'secondary' : 'ghost'}
+                    className="h-auto min-h-9 w-full justify-center px-0 py-2 font-normal"
+                    onClick={() => selectChat(c.id)}
+                    onContextMenu={(e) => onChatContextMenu(e, c)}
+                    aria-current={c.id === activeChatId ? 'page' : undefined}
+                    title={c.title || 'Untitled chat'}
+                  >
+                    <MessagesSquare className="size-4 shrink-0 opacity-70" />
+                  </Button>
+                ))}
+              </div>
+            )}
           </div>
         </ScrollArea>
 
         <div className="mt-auto flex flex-col gap-1 border-t border-sidebar-border p-2">
+          {(appMode === 'booops' || appMode === '808notes') && (
+            <Button
+              type="button"
+              variant="outline"
+              className={cn(
+                'w-full border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent',
+                desktopCollapsed && 'px-0',
+              )}
+              asChild
+            >
+              <Link to={`${routeBase}/ai`} onClick={() => isMobile && onMobileOpenChange(false)} title="AI settings">
+                {!desktopCollapsed ? (
+                  <span className="fs-nav flex items-center justify-center gap-2">
+                    <Brain className="size-4 shrink-0" />
+                    AI
+                  </span>
+                ) : (
+                  <Brain className="size-4" />
+                )}
+              </Link>
+            </Button>
+          )}
           <Button
             type="button"
             variant="outline"
@@ -292,13 +623,48 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
             )}
             asChild
           >
-            <a href="https://boolab.boogaardmusic.com" target="_blank" rel="noreferrer" title="boolab">
+            <Link
+              to={`${routeBase}/settings`}
+              onClick={() => isMobile && onMobileOpenChange(false)}
+              title="Settings"
+              aria-label="Settings"
+            >
               {!desktopCollapsed ? (
-                <span className="text-sm">boolab</span>
+                <span className="fs-nav flex items-center justify-center gap-2">
+                  <Settings className="size-4 shrink-0" />
+                  Settings
+                </span>
               ) : (
-                <ChevronRight className="size-4" />
+                <Settings className="size-4" />
               )}
-            </a>
+            </Link>
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className={cn(
+              'w-full border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent',
+              desktopCollapsed && 'px-0',
+            )}
+            asChild
+          >
+            {boolabHubExternal ? (
+              <a href={boolabHubHref} title="boolab">
+                {!desktopCollapsed ? (
+                  <span className="fs-nav">boolab</span>
+                ) : (
+                  <ChevronRight className="size-4" />
+                )}
+              </a>
+            ) : (
+              <Link to={boolabHubHref} title="boolab">
+                {!desktopCollapsed ? (
+                  <span className="fs-nav">boolab</span>
+                ) : (
+                  <ChevronRight className="size-4" />
+                )}
+              </Link>
+            )}
           </Button>
         </div>
       </aside>
@@ -315,7 +681,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
           <button
             type="button"
             role="menuitem"
-            className="flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-left text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+            className="fs-nav flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-left outline-none hover:bg-accent hover:text-accent-foreground"
             onClick={() => startRename(ctx.chat)}
           >
             Rename
@@ -323,7 +689,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
           <button
             type="button"
             role="menuitem"
-            className="flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-left text-sm text-destructive outline-none hover:bg-destructive/10"
+            className="fs-nav flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-left text-destructive outline-none hover:bg-destructive/10"
             onClick={() => onDeleteChat(ctx.chat.id)}
           >
             Delete

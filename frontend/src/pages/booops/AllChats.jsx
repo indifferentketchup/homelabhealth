@@ -6,6 +6,7 @@ import { ArrowLeft, Trash2 } from 'lucide-react'
 import { deleteChat, listChats } from '@/api/chats.js'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { PATH_BOOOPS_HOME } from '@/routes/paths.js'
 import { useAppStore } from '@/store/index.js'
 import { cn } from '@/lib/utils'
 
@@ -38,7 +39,7 @@ export default function AllChats() {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
         <Button type="button" variant="ghost" size="icon" asChild aria-label="Back">
-          <Link to="/">
+          <Link to={PATH_BOOOPS_HOME}>
             <ArrowLeft className="size-4" />
           </Link>
         </Button>
@@ -58,7 +59,7 @@ export default function AllChats() {
               )}
             >
               <Link
-                to="/"
+                to={PATH_BOOOPS_HOME}
                 className="min-w-0 flex-1"
                 onClick={() => {
                   setActiveChatId(c.id)

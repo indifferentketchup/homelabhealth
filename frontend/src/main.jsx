@@ -1,3 +1,4 @@
+import './cryptoPolyfill.js'
 import './mode.js'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'

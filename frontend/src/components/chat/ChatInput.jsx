@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { FileUp, Plus, Search, SendHorizontal, Square, UserCircle } from 'lucide-react'
+import { FileUp, Plus, Search, SendHorizontal, Square } from 'lucide-react'
 
-import { patchChat } from '@/api/chats.js'
+import { toggleWebSearch } from '@/api/chats.js'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/store/index.js'
 import { cn } from '@/lib/utils'
+
+import { PersonaGlyph } from './PersonaGlyph.jsx'
 
 const PLUS_MENU_PANEL_STYLE = {
   position: 'absolute',
@@ -27,6 +29,8 @@ export function ChatInput({
   streaming,
   onStop,
   activeChatId,
+  chatMaxW,
+  hidePersonaInMenu = false,
 }) {
   const taRef = useRef(null)
   const plusWrapRef = useRef(null)
@@ -36,6 +40,8 @@ export function ChatInput({
   const webSearchEnabled = useAppStore((s) => s.webSearchEnabled)
   const setWebSearchEnabled = useAppStore((s) => s.setWebSearchEnabled)
   const personaDisplayName = useAppStore((s) => s.personaDisplayName)
+  const personaIconUrl = useAppStore((s) => s.personaIconUrl)
+  const personaEmoji = useAppStore((s) => s.personaEmoji)
 
   useEffect(() => {
     if (!toastMsg) return
@@ -47,7 +53,7 @@ export function ChatInput({
     const el = taRef.current
     if (!el) return
     el.style.height = 'auto'
-    const maxPx = window.innerHeight * 0.33
+    const maxPx = window.innerHeight * 0.4
     el.style.height = `${Math.min(el.scrollHeight, maxPx)}px`
   }, [value])
 
@@ -72,12 +78,14 @@ export function ChatInput({
   }, [plusOpen])
 
   async function applyWebSearch(next) {
+    const prev = webSearchEnabled
     setWebSearchEnabled(next)
     if (activeChatId) {
       try {
-        await patchChat(activeChatId, { web_search_enabled: next })
+        const res = await toggleWebSearch(activeChatId, next)
+        if (res?.web_search_enabled != null) setWebSearchEnabled(Boolean(res.web_search_enabled))
       } catch {
-        /* ignore */
+        setWebSearchEnabled(prev)
       }
     }
   }
@@ -90,7 +98,7 @@ export function ChatInput({
   }
 
   return (
-    <div className="bg-background p-3">
+    <>
       {toastMsg && (
         <div
           role="status"
@@ -99,78 +107,10 @@ export function ChatInput({
           {toastMsg}
         </div>
       )}
-      <div className="mx-auto flex w-full items-end gap-2">
-        <div ref={plusWrapRef} className="relative shrink-0">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="shrink-0 border-border"
-            aria-label="More actions"
-            aria-expanded={plusOpen}
-            aria-haspopup="menu"
-            onClick={() => setPlusOpen((o) => !o)}
-          >
-            <Plus className="size-4" />
-          </Button>
-          {plusOpen && (
-            <div
-              className="w-64 p-2 text-popover-foreground outline-none"
-              style={PLUS_MENU_PANEL_STYLE}
-              role="menu"
-              aria-label="More actions"
-            >
-              <div className="flex flex-col gap-1">
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-foreground outline-none hover:bg-accent hover:text-accent-foreground"
-                  onClick={() => {
-                    setToastMsg('Coming soon')
-                    setPlusOpen(false)
-                  }}
-                >
-                  <FileUp className="size-4 text-muted-foreground" />
-                  Upload files
-                </button>
-                <div className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5">
-                  <span className="flex items-center gap-2 text-sm text-foreground">
-                    <Search className="size-4 text-muted-foreground" />
-                    Web search
-                  </span>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={webSearchEnabled}
-                    onClick={() => applyWebSearch(!webSearchEnabled)}
-                    className="relative inline-flex h-6 w-10 shrink-0 rounded-full border border-border transition-colors"
-                    style={{
-                      backgroundColor: webSearchEnabled ? 'var(--primary)' : 'var(--muted)',
-                    }}
-                  >
-                    <span
-                      className={cn(
-                        'pointer-events-none block size-5 translate-x-0.5 rounded-full shadow transition-transform',
-                        webSearchEnabled && 'translate-x-[1.15rem]',
-                      )}
-                      style={{ backgroundColor: 'var(--background)' }}
-                    />
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="flex h-9 w-full cursor-default items-center gap-2 rounded-md px-2 text-left text-sm text-foreground outline-none hover:bg-accent hover:text-accent-foreground"
-                  disabled
-                >
-                  <UserCircle className="size-4 text-muted-foreground" />
-                  <span className="truncate">Persona: {personaDisplayName}</span>
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
+      <div
+        className="mx-auto w-full max-h-[40vh] min-h-0 flex-shrink-0 flex flex-col overflow-hidden rounded-2xl border border-border bg-card px-4 pb-1.5 pt-3"
+        style={{ maxWidth: chatMaxW ?? '100%' }}
+      >
         <textarea
           ref={taRef}
           value={value}
@@ -178,27 +118,112 @@ export function ChatInput({
           onKeyDown={onKeyDown}
           placeholder="Message…"
           disabled={disabled || streaming}
-          rows={1}
-          className="min-h-[2.75rem] flex-1 resize-none rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none ring-ring placeholder:text-muted-foreground focus-visible:ring-2"
+          rows={3}
+          className="fs-input max-h-[calc(40vh-2.75rem)] min-h-12 w-full resize-none overflow-y-auto border-0 bg-transparent text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
         />
+        <div className="flex shrink-0 items-center justify-between">
+          <div ref={plusWrapRef} className="relative shrink-0">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="shrink-0"
+              aria-label="More actions"
+              aria-expanded={plusOpen}
+              aria-haspopup="menu"
+              onClick={() => setPlusOpen((o) => !o)}
+            >
+              <Plus className="size-4" />
+            </Button>
+            {plusOpen && (
+              <div
+                className="w-64 p-2 text-popover-foreground outline-none"
+                style={PLUS_MENU_PANEL_STYLE}
+                role="menu"
+                aria-label="More actions"
+              >
+                <div className="flex flex-col gap-1">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-foreground outline-none hover:bg-accent hover:text-accent-foreground"
+                    onClick={() => {
+                      setToastMsg('Coming soon')
+                      setPlusOpen(false)
+                    }}
+                  >
+                    <FileUp className="size-4 text-muted-foreground" />
+                    Upload files
+                  </button>
+                  <div
+                    className={cn(
+                      'flex items-center justify-between gap-2 rounded-md px-2 py-1.5',
+                      webSearchEnabled && 'bg-accent text-accent-foreground',
+                    )}
+                  >
+                    <span className="flex items-center gap-2 text-sm">
+                      <Search className={cn('size-4', webSearchEnabled ? 'text-accent-foreground' : 'text-muted-foreground')} />
+                      Web search
+                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={webSearchEnabled}
+                      onClick={() => applyWebSearch(!webSearchEnabled)}
+                      className="relative inline-flex h-6 w-10 shrink-0 rounded-full border border-border transition-colors"
+                      style={{
+                        backgroundColor: webSearchEnabled ? 'var(--primary)' : 'var(--muted)',
+                      }}
+                    >
+                      <span
+                        className={cn(
+                          'pointer-events-none block size-5 translate-x-0.5 rounded-full shadow transition-transform',
+                          webSearchEnabled && 'translate-x-[1.15rem]',
+                        )}
+                        style={{ backgroundColor: 'var(--background)' }}
+                      />
+                    </button>
+                  </div>
+                  {!hidePersonaInMenu && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="flex h-9 w-full cursor-default items-center gap-2 rounded-md px-2 text-left text-sm text-foreground outline-none hover:bg-accent hover:text-accent-foreground"
+                      disabled
+                    >
+                      <PersonaGlyph
+                        kind="menu"
+                        iconUrl={personaIconUrl}
+                        emoji={personaEmoji}
+                        className="text-muted-foreground"
+                      />
+                      <span className="truncate">Persona: {personaDisplayName}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
 
-        {streaming ? (
-          <Button type="button" variant="secondary" size="icon" className="shrink-0" onClick={onStop} aria-label="Stop">
-            <Square className="size-4" />
-          </Button>
-        ) : (
-          <Button
-            type="button"
-            size="icon"
-            className="shrink-0"
-            onClick={onSend}
-            disabled={disabled || !value.trim()}
-            aria-label="Send"
-          >
-            <SendHorizontal className="size-4" />
-          </Button>
-        )}
+          {streaming ? (
+            <Button type="button" variant="ghost" size="icon" className="shrink-0" onClick={onStop} aria-label="Stop">
+              <Square className="size-4" />
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="shrink-0"
+              onClick={onSend}
+              disabled={disabled || !value.trim()}
+              aria-label="Send"
+            >
+              <SendHorizontal className="size-4" />
+            </Button>
+          )}
+        </div>
       </div>
-    </div>
+    </>
   )
 }

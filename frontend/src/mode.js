@@ -1,7 +1,10 @@
 /**
- * Subdomain → mode. Sets `data-mode` on <html> for CSS variables.
+ * Mode from URL path (legacy single-host only), query, host, or baked `VITE_APP_MODE`.
+ * Sets `data-mode` on `<html>`.
  * Exported `APP_MODE`: `booops` | `808notes` | `boolab`
  */
+import { modeFromAppPath } from './routes/paths.js'
+
 const IPV4_RE = /^\d+\.\d+\.\d+\.\d+$/
 
 function isLocalDevHost(hostname) {
@@ -28,12 +31,47 @@ function parseOptionalForcedMode() {
   return null
 }
 
-export function detectMode(hostname = window.location.hostname) {
+/** e.g. `?mode=808notes` */
+function parseModeQuery(search) {
+  if (typeof search !== 'string' || !search) return null
+  try {
+    const q = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search).get('mode')
+    if (q == null || String(q).trim() === '') return null
+    const v = String(q).trim().toLowerCase()
+    if (v === 'booops' || v === '808notes' || v === 'boolab') return v
+  } catch {
+    /* ignore */
+  }
+  return null
+}
+
+export function detectMode(
+  hostname = window.location.hostname,
+  search = window.location.search,
+  pathname = window.location.pathname,
+) {
+  const pathMode = modeFromAppPath(pathname)
+  if (pathMode != null) return pathMode
+
+  const fromQuery = parseModeQuery(search)
+  if (fromQuery) return fromQuery
+
+  const baked = parseOptionalForcedMode()
+  if (baked != null) return baked
+
+  if (pathname === '/' || pathname === '') {
+    if (!isLocalDevHost(hostname)) {
+      const head = hostname.split('.')[0]?.toLowerCase() ?? ''
+      if (head === '808notes') return '808notes'
+      if (head === 'booops') return 'booops'
+      if (head === 'boolab') return 'boolab'
+    }
+    return 'boolab'
+  }
+
   if (isLocalDevHost(hostname)) {
     return coerceAppMode(import.meta.env.VITE_APP_MODE || 'booops')
   }
-  const forced = parseOptionalForcedMode()
-  if (forced) return forced
   const head = hostname.split('.')[0]?.toLowerCase() ?? ''
   if (head === '808notes') return '808notes'
   if (head === 'booops') return 'booops'

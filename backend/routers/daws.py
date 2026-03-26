@@ -1,0 +1,497 @@
+"""DAWs (`daws` table): project cards, prompt context, icons, instructions, pins."""
+
+from __future__ import annotations
+
+import mimetypes
+import uuid
+from pathlib import Path
+from typing import Any, Literal
+
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, ConfigDict, Field
+
+from db import get_pool
+
+router = APIRouter()
+
+BRANDING_DAW_ICONS = Path("/data/branding/daw_icons")
+ALLOWED_ICON_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+
+
+def _norm_mode(m: str | None) -> str:
+    if m is None:
+        return "booops"
+    return m if m in ("booops", "808notes") else "booops"
+
+
+class DawCreate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str = Field(..., min_length=1)
+    description: str | None = None
+    system_prompt: str = ""
+    persona_id: uuid.UUID | None = None
+    mode: str = "booops"
+    color: str = "#7c3aed"
+    shared: bool = False
+    sort_order: int = 0
+    temperature: float = Field(0.7, ge=0.0, le=2.0)
+    daw_model: str | None = Field(default=None, alias="model")
+    max_tokens: int = Field(2048, ge=512, le=4096)
+    top_p: float = Field(1.0, ge=0.0, le=1.0)
+    context_window: int = Field(8192, ge=1024, le=32768)
+
+
+class DawUpdate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str | None = None
+    description: str | None = None
+    system_prompt: str | None = None
+    persona_id: uuid.UUID | None = None
+    mode: str | None = None
+    color: str | None = None
+    shared: bool | None = None
+    sort_order: int | None = None
+    icon_url: str | None = None
+    temperature: float | None = Field(None, ge=0.0, le=2.0)
+    daw_model: str | None = Field(default=None, alias="model")
+    max_tokens: int | None = Field(None, ge=512, le=4096)
+    top_p: float | None = Field(None, ge=0.0, le=1.0)
+    context_window: int | None = Field(None, ge=1024, le=32768)
+
+
+class DawPinBody(BaseModel):
+    slot: Literal["booops", "808notes"]
+    pinned: bool
+
+
+class DawInstructionsBody(BaseModel):
+    content: str = ""
+
+
+def _row(r: Any) -> dict[str, Any]:
+    pn = r.get("persona_name")
+    t = r.get("temperature")
+    m = r.get("model")
+    mt = r.get("max_tokens")
+    tp = r.get("top_p")
+    cw = r.get("context_window")
+    return {
+        "id": str(r["id"]),
+        "name": r["name"],
+        "description": r["description"] or "",
+        "system_prompt": r["system_prompt"] or "",
+        "persona_id": str(r["persona_id"]) if r["persona_id"] else None,
+        "persona_name": pn,
+        "mode": r["mode"],
+        "color": r["color"] or "#7c3aed",
+        "shared": bool(r["shared"]),
+        "sort_order": int(r["sort_order"] or 0),
+        "pinned_booops": bool(r["pinned_booops"]),
+        "pinned_808notes": bool(r["pinned_808notes"]),
+        "icon_url": r["icon_url"],
+        "temperature": float(t) if t is not None else 0.7,
+        "model": (str(m).strip() if m else None) or None,
+        "max_tokens": int(mt) if mt is not None else 2048,
+        "top_p": float(tp) if tp is not None else 1.0,
+        "context_window": int(cw) if cw is not None else 8192,
+        "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
+        "updated_at": r["updated_at"].isoformat() if r.get("updated_at") else None,
+    }
+
+
+def _delete_stored_icon(daw_id: uuid.UUID) -> None:
+    BRANDING_DAW_ICONS.mkdir(parents=True, exist_ok=True)
+    sid = str(daw_id)
+    for p in BRANDING_DAW_ICONS.glob(f"{sid}.*"):
+        try:
+            p.unlink()
+        except OSError:
+            pass
+
+
+def _icon_path_for_daw(daw_id: uuid.UUID, ext: str) -> Path:
+    return BRANDING_DAW_ICONS / f"{daw_id}{ext}"
+
+
+async def _ensure_persona(conn: Any, persona_id: uuid.UUID | None) -> None:
+    if persona_id is None:
+        return
+    ok = await conn.fetchval("SELECT 1 FROM personas WHERE id = $1::uuid", persona_id)
+    if ok is None:
+        raise HTTPException(status_code=400, detail="persona_id not found")
+
+
+@router.get("/")
+async def list_daws(mode: str | None = Query(None)):
+    pool = await get_pool()
+    m = _norm_mode(mode) if mode is not None else None
+    async with pool.acquire() as conn:
+        if m is None:
+            rows = await conn.fetch(
+                """
+                SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
+                    d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
+                    d.temperature, d.model, d.max_tokens, d.top_p, d.context_window, d.created_at, d.updated_at, p.name AS persona_name
+                FROM daws d
+                LEFT JOIN personas p ON p.id = d.persona_id
+                ORDER BY d.sort_order ASC NULLS LAST, d.name ASC
+                """,
+            )
+        else:
+            rows = await conn.fetch(
+                """
+                SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
+                    d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
+                    d.temperature, d.model, d.max_tokens, d.top_p, d.context_window, d.created_at, d.updated_at, p.name AS persona_name
+                FROM daws d
+                LEFT JOIN personas p ON p.id = d.persona_id
+                WHERE d.mode = $1
+                ORDER BY d.sort_order ASC NULLS LAST, d.name ASC
+                """,
+                m,
+            )
+    return {"items": [_row(r) for r in rows]}
+
+
+@router.post("/")
+async def create_daw(body: DawCreate):
+    mo = _norm_mode(body.mode)
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await _ensure_persona(conn, body.persona_id)
+        ins_model = (body.daw_model or "").strip() or None
+        row = await conn.fetchrow(
+            """
+            INSERT INTO daws (
+                name, description, system_prompt, persona_id, mode, color, shared, sort_order, temperature,
+                model, max_tokens, top_p, context_window
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            RETURNING id, name, description, icon_url, color, shared, sort_order,
+                pinned_booops, pinned_808notes, system_prompt, persona_id, mode, temperature,
+                model, max_tokens, top_p, context_window, created_at, updated_at
+            """,
+            body.name.strip(),
+            body.description,
+            body.system_prompt or "",
+            body.persona_id,
+            mo,
+            body.color or "#7c3aed",
+            body.shared,
+            body.sort_order,
+            body.temperature,
+            ins_model,
+            body.max_tokens,
+            body.top_p,
+            body.context_window,
+        )
+        prow = await conn.fetchrow(
+            """
+            SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
+                d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
+                d.temperature, d.model, d.max_tokens, d.top_p, d.context_window, d.created_at, d.updated_at, p.name AS persona_name
+            FROM daws d
+            LEFT JOIN personas p ON p.id = d.persona_id
+            WHERE d.id = $1::uuid
+            """,
+            row["id"],
+        )
+    return _row(prow)
+
+
+@router.get("/{daw_id}/instructions")
+async def get_daw_instructions(daw_id: uuid.UUID):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        ok = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", daw_id)
+        if ok is None:
+            raise HTTPException(status_code=404, detail="DAW not found")
+        row = await conn.fetchrow(
+            """
+            SELECT content FROM daw_instructions
+            WHERE daw_id = $1::uuid
+            ORDER BY updated_at DESC NULLS LAST, id DESC
+            LIMIT 1
+            """,
+            daw_id,
+        )
+    return {"content": (row["content"] or "") if row else ""}
+
+
+@router.put("/{daw_id}/instructions")
+async def put_daw_instructions(daw_id: uuid.UUID, body: DawInstructionsBody):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        ok = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", daw_id)
+        if ok is None:
+            raise HTTPException(status_code=404, detail="DAW not found")
+        existing = await conn.fetchrow(
+            "SELECT id FROM daw_instructions WHERE daw_id = $1::uuid LIMIT 1",
+            daw_id,
+        )
+        if existing:
+            await conn.execute(
+                """
+                UPDATE daw_instructions
+                SET content = $2, updated_at = NOW()
+                WHERE id = $1::uuid
+                """,
+                existing["id"],
+                body.content or "",
+            )
+        else:
+            await conn.execute(
+                """
+                INSERT INTO daw_instructions (daw_id, content)
+                VALUES ($1::uuid, $2)
+                """,
+                daw_id,
+                body.content or "",
+            )
+    return {"content": body.content or ""}
+
+
+@router.post("/{daw_id}/icon")
+async def upload_daw_icon(daw_id: uuid.UUID, file: UploadFile = File(...)):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        exists = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", daw_id)
+        if exists is None:
+            raise HTTPException(status_code=404, detail="DAW not found")
+
+    orig = (file.filename or "").strip()
+    ext = Path(orig).suffix.lower()
+    if ext not in ALLOWED_ICON_EXT:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Allowed icon extensions: {', '.join(sorted(ALLOWED_ICON_EXT))}",
+        )
+
+    _delete_stored_icon(daw_id)
+    BRANDING_DAW_ICONS.mkdir(parents=True, exist_ok=True)
+    dest = _icon_path_for_daw(daw_id, ext)
+    content = await file.read()
+    dest.write_bytes(content)
+
+    icon_url = f"/api/daws/{daw_id}/icon-asset"
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE daws SET icon_url = $2, updated_at = NOW()
+            WHERE id = $1::uuid
+            """,
+            daw_id,
+            icon_url,
+        )
+        prow = await conn.fetchrow(
+            """
+            SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
+                d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
+                d.temperature, d.model, d.max_tokens, d.top_p, d.context_window, d.created_at, d.updated_at, p.name AS persona_name
+            FROM daws d
+            LEFT JOIN personas p ON p.id = d.persona_id
+            WHERE d.id = $1::uuid
+            """,
+            daw_id,
+        )
+    return _row(prow)
+
+
+@router.get("/{daw_id}/icon-asset")
+async def serve_daw_icon(daw_id: uuid.UUID):
+    BRANDING_DAW_ICONS.mkdir(parents=True, exist_ok=True)
+    matches = list(BRANDING_DAW_ICONS.glob(f"{daw_id}.*"))
+    if not matches:
+        raise HTTPException(status_code=404, detail="Icon not found")
+    path = matches[0]
+    media_type, _ = mimetypes.guess_type(str(path))
+    return FileResponse(str(path), media_type=media_type or "application/octet-stream")
+
+
+@router.patch("/{daw_id}/pin")
+async def patch_daw_pin(daw_id: uuid.UUID, body: DawPinBody):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        if body.slot == "booops":
+            await conn.execute(
+                """
+                UPDATE daws SET pinned_booops = $2, updated_at = NOW()
+                WHERE id = $1::uuid
+                """,
+                daw_id,
+                body.pinned,
+            )
+        else:
+            await conn.execute(
+                """
+                UPDATE daws SET pinned_808notes = $2, updated_at = NOW()
+                WHERE id = $1::uuid
+                """,
+                daw_id,
+                body.pinned,
+            )
+        prow = await conn.fetchrow(
+            """
+            SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
+                d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
+                d.temperature, d.model, d.max_tokens, d.top_p, d.context_window, d.created_at, d.updated_at, p.name AS persona_name
+            FROM daws d
+            LEFT JOIN personas p ON p.id = d.persona_id
+            WHERE d.id = $1::uuid
+            """,
+            daw_id,
+        )
+        if prow is None:
+            raise HTTPException(status_code=404, detail="DAW not found")
+    return _row(prow)
+
+
+@router.get("/{daw_id}")
+async def get_daw(daw_id: uuid.UUID):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
+                d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
+                d.temperature, d.model, d.max_tokens, d.top_p, d.context_window, d.created_at, d.updated_at, p.name AS persona_name
+            FROM daws d
+            LEFT JOIN personas p ON p.id = d.persona_id
+            WHERE d.id = $1::uuid
+            """,
+            daw_id,
+        )
+    if row is None:
+        raise HTTPException(status_code=404, detail="DAW not found")
+    return _row(row)
+
+
+@router.patch("/{daw_id}")
+async def patch_daw(daw_id: uuid.UUID, body: DawUpdate):
+    pool = await get_pool()
+    data = body.model_dump(exclude_unset=True)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT id, name, description, icon_url, color, shared, sort_order,
+                pinned_booops, pinned_808notes, system_prompt, persona_id, mode,
+                temperature, model, max_tokens, top_p, context_window, created_at, updated_at
+            FROM daws WHERE id = $1::uuid
+            """,
+            daw_id,
+        )
+        if row is None:
+            raise HTTPException(status_code=404, detail="DAW not found")
+        if not data:
+            prow = await conn.fetchrow(
+                """
+                SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
+                    d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
+                    d.temperature, d.model, d.max_tokens, d.top_p, d.context_window, d.created_at, d.updated_at, p.name AS persona_name
+                FROM daws d
+                LEFT JOIN personas p ON p.id = d.persona_id
+                WHERE d.id = $1::uuid
+                """,
+                daw_id,
+            )
+            return _row(prow)
+
+        new_name = data.get("name", row["name"])
+        new_desc = data.get("description", row["description"])
+        new_sp = data.get("system_prompt", row["system_prompt"])
+        new_pid = row["persona_id"] if "persona_id" not in data else data["persona_id"]
+        new_mode = _norm_mode(data["mode"]) if "mode" in data else row["mode"]
+        new_color = data.get("color", row["color"])
+        new_shared = data.get("shared", row["shared"])
+        new_sort = data.get("sort_order", row["sort_order"])
+        new_temp = (
+            float(data["temperature"])
+            if "temperature" in data and data["temperature"] is not None
+            else float(row["temperature"] if row["temperature"] is not None else 0.7)
+        )
+        if "daw_model" in data:
+            raw_m = data["daw_model"]
+            new_model = None if raw_m is None or str(raw_m).strip() == "" else str(raw_m).strip()
+        else:
+            raw_rm = row["model"]
+            new_model = None if raw_rm is None or str(raw_rm).strip() == "" else str(raw_rm).strip()
+        new_max_tokens = (
+            int(data["max_tokens"])
+            if "max_tokens" in data and data["max_tokens"] is not None
+            else int(row["max_tokens"] if row["max_tokens"] is not None else 2048)
+        )
+        new_top_p = (
+            float(data["top_p"])
+            if "top_p" in data and data["top_p"] is not None
+            else float(row["top_p"] if row["top_p"] is not None else 1.0)
+        )
+        new_ctx = (
+            int(data["context_window"])
+            if "context_window" in data and data["context_window"] is not None
+            else int(row["context_window"] if row["context_window"] is not None else 8192)
+        )
+        new_icon = row["icon_url"]
+        if "icon_url" in data:
+            if data["icon_url"] is None:
+                _delete_stored_icon(daw_id)
+                new_icon = None
+            else:
+                new_icon = data["icon_url"]
+        if isinstance(new_name, str):
+            new_name = new_name.strip() or row["name"]
+        if isinstance(new_sp, str):
+            new_sp = new_sp or ""
+
+        await _ensure_persona(conn, new_pid)
+
+        await conn.execute(
+            """
+            UPDATE daws
+            SET name = $2, description = $3, system_prompt = $4, persona_id = $5, mode = $6,
+                color = $7, shared = $8, sort_order = $9, icon_url = $10, temperature = $11,
+                model = $12, max_tokens = $13, top_p = $14, context_window = $15, updated_at = NOW()
+            WHERE id = $1::uuid
+            """,
+            daw_id,
+            new_name,
+            new_desc,
+            new_sp,
+            new_pid,
+            new_mode,
+            new_color,
+            new_shared,
+            new_sort,
+            new_icon,
+            new_temp,
+            new_model,
+            new_max_tokens,
+            new_top_p,
+            new_ctx,
+        )
+        prow = await conn.fetchrow(
+            """
+            SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
+                d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
+                d.temperature, d.model, d.max_tokens, d.top_p, d.context_window, d.created_at, d.updated_at, p.name AS persona_name
+            FROM daws d
+            LEFT JOIN personas p ON p.id = d.persona_id
+            WHERE d.id = $1::uuid
+            """,
+            daw_id,
+        )
+    return _row(prow)
+
+
+@router.delete("/{daw_id}")
+async def delete_daw(daw_id: uuid.UUID):
+    _delete_stored_icon(daw_id)
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        result = await conn.execute("DELETE FROM daws WHERE id = $1::uuid", daw_id)
+    if result == "DELETE 0":
+        raise HTTPException(status_code=404, detail="DAW not found")
+    return {"ok": True}

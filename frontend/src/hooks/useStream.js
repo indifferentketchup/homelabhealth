@@ -37,12 +37,23 @@ export function useStream() {
      *   init?: RequestInit
      *   body?: unknown
      *   onToken?: (chunk: string) => void
+     *   onSearchSources?: (sources: Array<{ title: string; url: string }>) => void
+     *   onTitleUpdate?: (title: string) => void
      *   onDone?: () => void
      *   onError?: (err: Error) => void
      * }} opts
      */
     async (opts) => {
-      const { url, init = {}, body, onToken, onDone, onError } = opts
+      const {
+        url,
+        init = {},
+        body,
+        onToken,
+        onSearchSources,
+        onTitleUpdate,
+        onDone,
+        onError,
+      } = opts
       abort()
       const ac = new AbortController()
       abortRef.current = ac
@@ -52,6 +63,32 @@ export function useStream() {
         headers.set('Content-Type', 'application/json')
         reqBody = JSON.stringify(body)
       }
+
+      function processDataLine(data) {
+        if (data === '[DONE]') {
+          return { kind: 'done' }
+        }
+        try {
+          const obj = JSON.parse(data)
+          if (obj.error) {
+            return { kind: 'error', err: new Error(String(obj.error)) }
+          }
+          if (obj.type === 'search_sources' && Array.isArray(obj.sources)) {
+            onSearchSources?.(obj.sources)
+            return { kind: 'ok' }
+          }
+          if (obj.type === 'title_update' && typeof obj.title === 'string') {
+            onTitleUpdate?.(obj.title)
+            return { kind: 'ok' }
+          }
+          if (obj.content) onToken?.(String(obj.content))
+          return { kind: 'ok' }
+        } catch (e) {
+          if (e instanceof SyntaxError) return { kind: 'ok' }
+          return { kind: 'error', err: e instanceof Error ? e : new Error(String(e)) }
+        }
+      }
+
       try {
         const res = await fetch(url, {
           ...init,
@@ -72,6 +109,7 @@ export function useStream() {
         }
         const decoder = new TextDecoder()
         let buf = ''
+        let doneCalled = false
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
@@ -79,50 +117,33 @@ export function useStream() {
           const { events, rest } = parseSseBlocks(buf)
           buf = rest
           for (const data of events) {
-            if (data === '[DONE]') {
-              onDone?.()
+            const r = processDataLine(data)
+            if (r.kind === 'error') {
+              onError?.(r.err)
               abortRef.current = null
               return
             }
-            try {
-              const obj = JSON.parse(data)
-              if (obj.error) {
-                onError?.(new Error(String(obj.error)))
-                abortRef.current = null
-                return
-              }
-              if (obj.content) onToken?.(String(obj.content))
-            } catch (e) {
-              if (e instanceof SyntaxError) continue
-              onError?.(e instanceof Error ? e : new Error(String(e)))
-              abortRef.current = null
-              return
+            if (r.kind === 'done' && !doneCalled) {
+              doneCalled = true
+              onDone?.()
             }
           }
         }
         if (buf.trim()) {
           const { events } = parseSseBlocks(`${buf}\n\n`)
           for (const data of events) {
-            if (data === '[DONE]') {
-              onDone?.()
+            const r = processDataLine(data)
+            if (r.kind === 'error') {
+              onError?.(r.err)
               return
             }
-            try {
-              const obj = JSON.parse(data)
-              if (obj.error) {
-                onError?.(new Error(String(obj.error)))
-                return
-              }
-              if (obj.content) onToken?.(String(obj.content))
-            } catch (e) {
-              if (!(e instanceof SyntaxError)) {
-                onError?.(e instanceof Error ? e : new Error(String(e)))
-                return
-              }
+            if (r.kind === 'done' && !doneCalled) {
+              doneCalled = true
+              onDone?.()
             }
           }
         }
-        onDone?.()
+        if (!doneCalled) onDone?.()
       } catch (e) {
         if (e?.name === 'AbortError') return
         onError?.(e instanceof Error ? e : new Error(String(e)))

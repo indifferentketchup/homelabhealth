@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS chats (
     daw_id UUID REFERENCES daws(id) ON DELETE SET NULL,
     mode TEXT NOT NULL CHECK (mode IN ('booops', '808notes')),
     persona_id UUID REFERENCES personas(id) ON DELETE SET NULL,
-    model TEXT NOT NULL DEFAULT 'qwen3.5:35b',
+    model TEXT NOT NULL DEFAULT 'qwen3.5:9b',
     web_search_enabled BOOLEAN DEFAULT FALSE,
     rag_enabled BOOLEAN DEFAULT TRUE,
     pruning_summary TEXT,
@@ -187,3 +187,218 @@ CREATE INDEX IF NOT EXISTS notes_daw_id_idx ON notes(daw_id);
 
 INSERT INTO global_settings (key, value) VALUES ('pruning_threshold', '40')
 ON CONFLICT (key) DO NOTHING;
+
+INSERT INTO global_settings (key, value) VALUES ('ollama_hidden_models', '[]') ON CONFLICT (key) DO NOTHING;
+INSERT INTO global_settings (key, value) VALUES ('default_model', 'qwen3.5:9b') ON CONFLICT (key) DO NOTHING;
+INSERT INTO global_settings (key, value) VALUES ('ollama_hidden_models_808notes', '[]') ON CONFLICT (key) DO NOTHING;
+INSERT INTO global_settings (key, value) VALUES ('default_model_808notes', 'qwen3.5:9b') ON CONFLICT (key) DO NOTHING;
+
+UPDATE global_settings SET value = 'qwen3.5:9b' WHERE key = 'default_model' AND value = 'qwen3.5:35b';
+
+-- Phase 3: personas — per-mode (legacy cols) OR global list (no mode column), see routers/personas.py
+DO $personas_phase3$
+DECLARE
+  has_legacy BOOLEAN;
+  has_mode BOOLEAN;
+BEGIN
+  -- Statement-by-statement apply_schema can commit ADD mode before legacy UPDATE fails; strip orphan mode.
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'personas' AND column_name = 'mode'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'personas' AND column_name = 'is_default_booops'
+  ) THEN
+    DROP INDEX IF EXISTS personas_one_default_per_mode;
+    ALTER TABLE personas DROP CONSTRAINT IF EXISTS personas_mode_check;
+    ALTER TABLE personas DROP COLUMN mode;
+  END IF;
+
+  SELECT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'personas' AND column_name = 'is_default_booops'
+  ) INTO has_legacy;
+  SELECT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'personas' AND column_name = 'mode'
+  ) INTO has_mode;
+
+  IF has_legacy OR has_mode THEN
+    DROP INDEX IF EXISTS personas_one_default_global;
+    ALTER TABLE personas ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT 'booops';
+    ALTER TABLE personas ADD COLUMN IF NOT EXISTS avatar_emoji TEXT NOT NULL DEFAULT '🤖';
+    ALTER TABLE personas ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE personas DROP CONSTRAINT IF EXISTS personas_mode_check;
+    BEGIN
+      ALTER TABLE personas ADD CONSTRAINT personas_mode_check CHECK (mode IN ('booops', '808notes'));
+    EXCEPTION
+      WHEN duplicate_object THEN NULL;
+    END;
+    CREATE UNIQUE INDEX IF NOT EXISTS personas_one_default_per_mode ON personas (mode) WHERE (is_default = TRUE);
+    IF has_legacy THEN
+      UPDATE personas SET is_default = TRUE, mode = 'booops' WHERE is_default_booops = TRUE AND is_default = FALSE;
+      UPDATE personas SET is_default = TRUE, mode = '808notes' WHERE is_default_808notes = TRUE AND is_default = FALSE;
+    END IF;
+    INSERT INTO personas (name, system_prompt, mode, is_default, avatar_emoji)
+    VALUES ('BooOps', 'You are BooOps, a helpful AI assistant.', 'booops', TRUE, '🤖')
+    ON CONFLICT (mode) WHERE (is_default = TRUE) DO NOTHING;
+    INSERT INTO personas (name, system_prompt, mode, is_default, avatar_emoji)
+    VALUES ('808notes', 'You are a helpful notebook assistant.', '808notes', TRUE, '📓')
+    ON CONFLICT (mode) WHERE (is_default = TRUE) DO NOTHING;
+  ELSE
+    ALTER TABLE personas ADD COLUMN IF NOT EXISTS avatar_emoji TEXT DEFAULT '🤖';
+    UPDATE personas SET avatar_emoji = COALESCE(NULLIF(trim(avatar_emoji), ''), '🤖') WHERE avatar_emoji IS NULL;
+    ALTER TABLE personas ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE personas ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+    DROP INDEX IF EXISTS personas_one_default_per_mode;
+    CREATE UNIQUE INDEX IF NOT EXISTS personas_one_default_global ON personas (is_default) WHERE (is_default = TRUE);
+    UPDATE personas SET is_default = TRUE WHERE id = (
+      SELECT id FROM personas p ORDER BY p.created_at ASC NULLS LAST LIMIT 1
+    ) AND NOT EXISTS (SELECT 1 FROM personas WHERE is_default = TRUE);
+  END IF;
+END
+$personas_phase3$;
+
+-- Phase 3: one markdown blob per mode (separate from memory_entries)
+CREATE TABLE IF NOT EXISTS mode_memory (
+    id SERIAL PRIMARY KEY,
+    mode TEXT UNIQUE NOT NULL,
+    content TEXT NOT NULL DEFAULT '',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO mode_memory (mode, content) VALUES ('booops', '') ON CONFLICT (mode) DO NOTHING;
+INSERT INTO mode_memory (mode, content) VALUES ('808notes', '') ON CONFLICT (mode) DO NOTHING;
+
+-- Live DBs that already have mode_memory with mode as PK: add id only; keep PRIMARY KEY on mode.
+ALTER TABLE mode_memory ADD COLUMN IF NOT EXISTS id SERIAL;
+
+-- custom_instructions: track updates for API
+ALTER TABLE custom_instructions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+UPDATE custom_instructions SET updated_at = COALESCE(updated_at, created_at, NOW()) WHERE updated_at IS NULL;
+
+-- Merge ai_workspaces into daws (columns + check; safe on repeated apply_schema)
+ALTER TABLE daws ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT 'booops';
+ALTER TABLE daws ADD COLUMN IF NOT EXISTS system_prompt TEXT NOT NULL DEFAULT '';
+ALTER TABLE daws ADD COLUMN IF NOT EXISTS persona_id UUID REFERENCES personas(id) ON DELETE SET NULL;
+
+DO $daw_mode_chk$
+BEGIN
+    ALTER TABLE daws ADD CONSTRAINT daws_mode_check CHECK (mode IN ('booops', '808notes'));
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END
+$daw_mode_chk$;
+
+-- One-time migration when legacy ai_workspaces still exists (skipped after table is dropped)
+DO $merge_ai_ws$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'ai_workspaces'
+    ) THEN
+        INSERT INTO daws (id, name, description, system_prompt, persona_id, mode, created_at, updated_at)
+        SELECT id, name, '', system_prompt, persona_id, mode, created_at, NOW()
+        FROM ai_workspaces
+        ON CONFLICT (id) DO NOTHING;
+        UPDATE chats
+        SET daw_id = ai_workspace_id
+        WHERE ai_workspace_id IS NOT NULL AND daw_id IS NULL;
+        ALTER TABLE chats DROP COLUMN IF EXISTS ai_workspace_id;
+        DROP TABLE IF EXISTS ai_workspaces CASCADE;
+    END IF;
+END
+$merge_ai_ws$;
+
+DROP INDEX IF EXISTS ai_workspaces_mode_idx;
+DROP INDEX IF EXISTS chats_ai_workspace_id_idx;
+
+CREATE INDEX IF NOT EXISTS daws_mode_idx ON daws(mode);
+
+-- Default 808notes notebook so SourcesPanel can attach uploads without an empty DAW list
+INSERT INTO daws (name, description, system_prompt, mode, pinned_808notes, sort_order)
+SELECT 'Main notebook', 'Default notebook for 808notes uploads and RAG.', '', '808notes', TRUE, 0
+WHERE NOT EXISTS (SELECT 1 FROM daws WHERE mode = '808notes' LIMIT 1);
+
+UPDATE daws
+SET icon_url = REPLACE(icon_url, '/api/project-daws/', '/api/daws/')
+WHERE icon_url IS NOT NULL AND icon_url LIKE '%/api/project-daws/%';
+
+-- Strip legacy base64 data URLs from booops branding (assets now live on disk + URL)
+UPDATE branding_config
+SET config = config - 'bannerUrl' - 'logoUrl' - 'faviconUrl'
+WHERE mode = 'booops'
+  AND (
+    config->>'bannerUrl' LIKE 'data:%'
+    OR config->>'logoUrl' LIKE 'data:%'
+    OR config->>'faviconUrl' LIKE 'data:%'
+  );
+
+-- memory_entries: scope by app mode + soft delete (prompt assembly filters is_deleted)
+ALTER TABLE memory_entries ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT 'booops';
+ALTER TABLE memory_entries ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+
+DO $mem_mode_chk$
+BEGIN
+    ALTER TABLE memory_entries ADD CONSTRAINT memory_entries_mode_check CHECK (mode IN ('booops', '808notes'));
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END
+$mem_mode_chk$;
+
+-- Phase 5: RAG chunk storage + upload metadata
+CREATE TABLE IF NOT EXISTS source_chunks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    source_id UUID NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+    chunk_index INT NOT NULL,
+    text TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (source_id, chunk_index)
+);
+
+CREATE INDEX IF NOT EXISTS source_chunks_source_id_idx ON source_chunks(source_id);
+
+ALTER TABLE sources ADD COLUMN IF NOT EXISTS mime_type TEXT;
+ALTER TABLE sources ADD COLUMN IF NOT EXISTS file_size_bytes INTEGER;
+
+-- DAW inference: sampling temperature (Ollama 0–2; Claude uses clamped 0–1 at call site)
+ALTER TABLE daws ADD COLUMN IF NOT EXISTS temperature REAL DEFAULT 0.7;
+
+-- DAW inference: model pin + generation / context (model NULL = use global chat model)
+ALTER TABLE daws ADD COLUMN IF NOT EXISTS model TEXT;
+ALTER TABLE daws ADD COLUMN IF NOT EXISTS max_tokens INTEGER DEFAULT 2048;
+ALTER TABLE daws ADD COLUMN IF NOT EXISTS top_p REAL DEFAULT 1.0;
+ALTER TABLE daws ADD COLUMN IF NOT EXISTS context_window INTEGER DEFAULT 8192;
+
+INSERT INTO global_settings (key, value) VALUES ('context_window_global', '16384')
+ON CONFLICT (key) DO NOTHING;
+
+-- Ollama host hints (applied when syncing env / restarting Ollama on sam-desktop)
+CREATE TABLE IF NOT EXISTS ollama_config (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+INSERT INTO ollama_config (key, value) VALUES
+    ('flash_attention', '1'),
+    ('max_loaded_models', '1'),
+    ('keep_alive', '30m')
+ON CONFLICT (key) DO NOTHING;
+
+-- SearXNG settings per app mode (API applies on each search; optional YAML sync via SEARXNG_SETTINGS_YML)
+CREATE TABLE IF NOT EXISTS searxng_config (
+    id SERIAL PRIMARY KEY,
+    mode TEXT NOT NULL UNIQUE CHECK (mode IN ('booops', '808notes')),
+    safe_search INTEGER NOT NULL DEFAULT 0 CHECK (safe_search IN (0, 1, 2)),
+    image_proxy BOOLEAN NOT NULL DEFAULT FALSE,
+    enabled_engines TEXT NOT NULL DEFAULT 'google,duckduckgo,bing,wikipedia',
+    autocomplete TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+INSERT INTO searxng_config (mode, safe_search, image_proxy, enabled_engines, autocomplete)
+VALUES
+    ('booops', 0, FALSE, 'google,duckduckgo,bing,wikipedia,github', ''),
+    ('808notes', 0, FALSE, 'google,duckduckgo,bing,wikipedia', '')
+ON CONFLICT (mode) DO NOTHING;

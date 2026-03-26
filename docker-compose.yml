@@ -1,3 +1,4 @@
+# All-in-one convenience (same Docker network). For split deploy: docker-compose.core.yml + docker-compose.ui.yml
 services:
   boolab_db:
     image: postgres:16-alpine
@@ -36,9 +37,13 @@ services:
       - .env
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql://boolab:boolab@boolab_db:5432/boolab}
+      CHROMA_HOST: boolab_chroma
+      CHROMA_PORT: '8000'
     depends_on:
       boolab_db:
         condition: service_healthy
+      boolab_chroma:
+        condition: service_started
     ports:
       - '9300:8000'
     volumes:
@@ -51,16 +56,51 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        VITE_APP_MODE: boolab
+        VITE_PUBLIC_BOOOPS_URL: ${VITE_PUBLIC_BOOOPS_URL:-http://100.72.117.26:9303}
+        VITE_PUBLIC_808NOTES_URL: ${VITE_PUBLIC_808NOTES_URL:-http://100.72.117.26:9304}
     container_name: boolab_ui
-    depends_on:
-      - boolab_api
+    environment:
+      BOOLAB_API_UPSTREAM: ${BOOLAB_API_UPSTREAM:-boolab_api:8000}
     ports:
-      - '9301:80'
+      - '9302:80'
+    networks:
+      - boolab_net
+
+  booops_ui:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_APP_MODE: booops
+        VITE_PUBLIC_BOOLAB_URL: ${VITE_PUBLIC_BOOLAB_URL:-http://100.72.117.26:9302}
+    container_name: booops_ui
+    environment:
+      BOOLAB_API_UPSTREAM: ${BOOLAB_API_UPSTREAM:-boolab_api:8000}
+    ports:
+      - '9303:80'
+    networks:
+      - boolab_net
+
+  notes808_ui:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_APP_MODE: 808notes
+        VITE_PUBLIC_BOOLAB_URL: ${VITE_PUBLIC_BOOLAB_URL:-http://100.72.117.26:9302}
+    container_name: notes808_ui
+    environment:
+      BOOLAB_API_UPSTREAM: ${BOOLAB_API_UPSTREAM:-boolab_api:8000}
+    ports:
+      - '9304:80'
     networks:
       - boolab_net
 
 networks:
   boolab_net:
+    name: boolab_net
     driver: bridge
 
 volumes:

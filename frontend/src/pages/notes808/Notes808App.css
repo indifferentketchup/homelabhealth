@@ -1,0 +1,412 @@
+.layout[data-mode='808notes'] {
+  --accent: var(--accent-808notes, var(--primary));
+}
+
+/* —— 808notes landing (hub + cards); colors via theme vars / color-mix only —— */
+
+.notes808-landing__shell {
+  width: 100%;
+  max-width: 56.25rem;
+  margin-inline: auto;
+  padding-inline: 1rem;
+  padding-bottom: 2rem;
+}
+
+@media (min-width: 768px) {
+  .notes808-landing__shell {
+    padding-inline: 1.5rem;
+  }
+}
+
+.notes808-landing__banner {
+  position: relative;
+  aspect-ratio: 3 / 1;
+  width: 100%;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+}
+
+.notes808-landing__banner-img {
+  height: 100%;
+  width: 100%;
+  object-fit: cover;
+  filter: saturate(1.05) brightness(0.55);
+}
+
+.notes808-landing__banner-fallback {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(
+      ellipse at 28% 50%,
+      color-mix(in srgb, var(--accent) 28%, transparent),
+      transparent 58%
+    ),
+    radial-gradient(
+      ellipse at 72% 45%,
+      color-mix(in srgb, var(--accent) 14%, transparent),
+      transparent 55%
+    ),
+    var(--card);
+}
+
+.notes808-landing-banner-grid {
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(
+      color-mix(in srgb, var(--accent) 8%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--accent) 8%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 44px 44px;
+}
+
+.notes808-landing__banner-fade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, transparent 30%, var(--background) 100%);
+}
+
+.notes808-landing__banner-fallback-badge {
+  border: 1px solid var(--border);
+  padding: 0.5rem 1.125rem;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.625rem;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--muted-foreground) 85%, transparent);
+}
+
+.notes808-landing__hero {
+  position: relative;
+  z-index: 10;
+  margin-top: -3rem;
+  padding-top: 0.5rem;
+  padding-bottom: 1.5rem;
+}
+
+@media (min-width: 640px) {
+  .notes808-landing__hero {
+    margin-top: -4rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .notes808-landing__hero {
+    margin-top: -5rem;
+    padding-bottom: 2rem;
+  }
+}
+
+.notes808-landing__hero-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+}
+
+@media (min-width: 768px) {
+  .notes808-landing__hero-row {
+    gap: 1.5rem;
+  }
+}
+
+.notes808-landing__logo-box {
+  display: flex;
+  height: 4rem;
+  width: 4rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--card);
+  box-shadow: 0 0 40px color-mix(in srgb, var(--accent) 35%, transparent),
+    0 0 100px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+@media (min-width: 640px) {
+  .notes808-landing__logo-box {
+    height: 5.5rem;
+    width: 5.5rem;
+    border-radius: 1rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .notes808-landing__logo-box {
+    height: 6.875rem;
+    width: 6.875rem;
+    border-radius: 1.375rem;
+  }
+}
+
+.notes808-landing__logo-img {
+  height: 100%;
+  width: 100%;
+  object-fit: cover;
+}
+
+.notes808-landing__logo-glyph {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem;
+}
+
+.notes808-landing__logo-icon {
+  height: 55%;
+  width: 55%;
+  max-height: 4rem;
+  max-width: 4rem;
+}
+
+.notes808-landing__hero-text {
+  padding-bottom: 0.25rem;
+}
+
+.notes808-landing__hub-title {
+  margin: 0 0 0.5rem;
+  font-family: var(--font-display, var(--font-body, ui-sans-serif, system-ui, sans-serif));
+  font-size: clamp(1.5rem, 4vw, 2.75rem);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+  text-shadow: 0 0 12px color-mix(in srgb, var(--accent) 40%, transparent),
+    0 0 40px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.notes808-landing__hub-tagline {
+  margin: 0;
+  min-height: 1.125rem;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: clamp(0.625rem, 1.5vw, 0.6875rem);
+  letter-spacing: 0.16em;
+  color: var(--muted-foreground);
+}
+
+.notes808-landing__intro {
+  margin: 1rem 0 0;
+  max-width: 36rem;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+.notes808-landing__section {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding-top: 0.5rem;
+}
+
+.notes808-landing__section-rule {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  margin-bottom: 0.25rem;
+}
+
+.notes808-landing__section-rule-accent {
+  height: 1px;
+  width: 1.25rem;
+  flex-shrink: 0;
+  background: var(--accent);
+  box-shadow: 0 0 4px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.notes808-landing__section-rule-label {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.5625rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--muted-foreground) 75%, transparent);
+}
+
+.notes808-landing__section-rule-line {
+  height: 1px;
+  flex: 1;
+  background: var(--border);
+}
+
+.notes808-landing__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16.25rem), 1fr));
+  gap: 1.5rem;
+  justify-content: center;
+}
+
+.notes808-landing-card {
+  display: flex;
+  width: 100%;
+  min-height: 11.25rem;
+  aspect-ratio: 4 / 3;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 0.625rem;
+  border: 1px solid var(--border);
+  background: var(--card);
+  text-decoration: none;
+  box-shadow: 0 4px 24px color-mix(in srgb, var(--background) 65%, transparent);
+}
+
+.notes808-landing-card:hover {
+  box-shadow: var(--glow, 0 8px 32px color-mix(in srgb, var(--accent) 18%, transparent));
+}
+
+.notes808-landing-card__ribbon {
+  height: 3px;
+  flex-shrink: 0;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--notes808-card-tint, var(--accent)) 75%, transparent),
+    color-mix(in srgb, var(--notes808-card-tint, var(--accent)) 15%, transparent)
+  );
+}
+
+.notes808-landing-card__body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 2rem;
+  text-align: center;
+}
+
+.notes808-landing-card__icon-img {
+  width: 3.5rem;
+  height: 3.5rem;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  object-fit: cover;
+}
+
+.notes808-landing-card__icon-fallback {
+  display: flex;
+  width: 3.5rem;
+  height: 3.5rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--primary-foreground, var(--background));
+  background: var(--notes808-daw-tint, var(--accent));
+}
+
+.notes808-landing-card__name {
+  margin: 0;
+  max-width: 100%;
+  font-size: 1.4rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  color: var(--foreground);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.notes808-landing-card__desc {
+  margin: 0;
+  max-width: 100%;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--muted-foreground);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.notes808-landing-card__desc--placeholder {
+  color: color-mix(in srgb, var(--muted-foreground) 75%, transparent);
+}
+
+.notes808-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.notes808-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--background) 65%, transparent);
+}
+
+.notes808-modal {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 28rem;
+  border-radius: 0.75rem;
+}
+
+.home-view {
+  padding: 2rem;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.home-view h1 {
+  color: var(--accent);
+  font-family: var(--font-display, var(--font-body, 'Rajdhani', sans-serif));
+}
+
+.home-view nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.home-view a {
+  padding: 0.5rem 1rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  text-decoration: none;
+  color: var(--foreground);
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.home-view a:hover {
+  background: var(--accent);
+  color: var(--background);
+  border-color: var(--accent);
+}
+
+.page {
+  padding: 1.5rem 2rem;
+  max-width: 720px;
+}
+
+.page h2 {
+  color: var(--accent);
+  font-family: var(--font-display, var(--font-body, 'Rajdhani', sans-serif));
+}

@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
+from typing import Any
 
 import asyncpg
+import chromadb
 import sqlparse
 
 _pool: asyncpg.Pool | None = None
+_chroma_client: Any = None
+
+_COLLECTION_RE = re.compile(r"[^a-zA-Z0-9_]+")
 
 
 def normalize_database_url(url: str) -> str:
@@ -46,6 +52,33 @@ def _split_sql(script: str) -> list[str]:
         if s:
             parts.append(s)
     return parts
+
+
+def init_chroma() -> None:
+    """HTTP client to boolab_chroma (or CHROMA_HOST/CHROMA_PORT). Call after env is loaded."""
+    global _chroma_client
+    host = (os.environ.get("CHROMA_HOST") or "127.0.0.1").strip()
+    port = int((os.environ.get("CHROMA_PORT") or "8000").strip())
+    _chroma_client = chromadb.HttpClient(host=host, port=port)
+
+
+def get_chroma() -> Any:
+    if _chroma_client is None:
+        raise RuntimeError("Chroma client not initialized (call init_chroma in lifespan)")
+    return _chroma_client
+
+
+def chroma_collection_name_for_daw(daw_id: str) -> str:
+    """Chroma collection ids: alphanumeric + underscores only."""
+    raw = str(daw_id).replace("-", "_")
+    safe = _COLLECTION_RE.sub("_", raw).strip("_") or "unknown"
+    return f"daw_{safe}_sources"
+
+
+def get_chroma_collection(daw_id: str):
+    client = get_chroma()
+    name = chroma_collection_name_for_daw(daw_id)
+    return client.get_or_create_collection(name=name, metadata={"hnsw:space": "cosine"})
 
 
 async def apply_schema() -> None:

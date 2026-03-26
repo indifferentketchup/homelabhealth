@@ -1,0 +1,24 @@
+# Attach UIs to boolab_net and proxy /api to boolab_api:8000 (after docker-compose.core.yml is up).
+# docker compose -f docker-compose.ui.yml -f docker-compose.ui.join.yml up -d
+services:
+  boolab_ui:
+    networks:
+      - boolab_net
+    environment:
+      BOOLAB_API_UPSTREAM: boolab_api:8000
+
+  booops_ui:
+    networks:
+      - boolab_net
+    environment:
+      BOOLAB_API_UPSTREAM: boolab_api:8000
+
+  notes808_ui:
+    networks:
+      - boolab_net
+    environment:
+      BOOLAB_API_UPSTREAM: boolab_api:8000
+
+networks:
+  boolab_net:
+    external: true

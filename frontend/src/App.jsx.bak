@@ -1,0 +1,89 @@
+/**
+ * Path routing: `/` → `/boolab`, apps under `/booops/*`, `/808notes/*`.
+ */
+import { useEffect } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+
+import { ChatView } from '@/components/chat/ChatView.jsx'
+import { ModeSync } from '@/components/ModeSync.jsx'
+import BoolabBranding from '@/pages/BoolabBranding.jsx'
+import { RootRedirect } from' @/components/RootRedirect.jsx'
+import BoolabLanding from '@/pages/BoolabLanding.jsx'
+import AISettings from '@/pages/booops/AISettings.jsx'
+import AllChats from '@/pages/booops/AllChats.jsx'
+import BooOpsApp from '@/pages/booops/BooOpsApp.jsx'
+import DawDetailPage from '@/pages/booops/DawDetailPage.jsx'
+import DawsPage from '@/pages/booops/DawsPage.jsx'
+import ProfilePage from '@/pages/booops/ProfilePage.jsx'
+import SettingsPage from '@/pages/booops/SettingsPage.jsx'
+import Notes808App, {
+  Notes808OutletShell,
+  Notes808SettingsRoute,
+  Notes808Workbench,
+  SourcesPage,
+} from '@/pages/notes808/Notes808App.jsx'
+import { PATH_808NOTES, PATH_BOOLAB, PATH_BOOOPS } from '@/routes/paths.js'
+import { useLayoutStore } from '@/store/layoutStore.js'
+
+function LayoutBootstrap() {
+  useEffect(() => {
+    void useLayoutStore.getState().loadLayout()
+  }, [])
+  return null
+}
+
+function BooOpsSettingsRoute() {
+  const navigate = useNavigate()
+  return <SettingsPage mode="booops" onClose={() => navigate(PATH_BOOOPS)} />
+}
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+})
+
+export default function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <ModeSync>
+          <LayoutBootstrap />
+          <Routes>
+            <Route path="/" element={<RootRedirect />} />
+            <Route path={PATH_BOOLAB} element={<BoolabLanding />} />
+            <Route path={`${PATH_BOOLAB}/branding`} element={<BoolabBranding />} />
+            <Route path={`${PATH_BOOLAB}/ai`} element={<AISettings />} />
+
+            <Route path={PATH_BOOOPS} element={<BooOpsApp />}>
+              <Route index element={<ChatView />} />
+              <Route path="chats" element={<AllChats />} />
+              <Route path="daws" element={<DawsPage />} />
+              <Route path="daws/:id" element={<DawDetailPage />} />
+              <Route path="ai" element={<AISettings />} />
+              <Route path="settings" element={<BooOpsSettingsRoute />} />
+              <Route path="profile" element={<ProfilePage />} />
+            </Route>
+
+            <Route path={PATH_808NOTES} element={<Notes808App />}>
+              <Route element={<Notes808OutletShell />}>
+                <Route index element={<Notes808Workbench />} />
+                <Route path="ai" element={<AISettings />} />
+                <Route path="sources" element={<SourcesPage />} />
+                <Route path="daws" element={<DawsPage />} />
+                <Route path="daws/:id" element={<DawDetailPage />} />
+                <Route path="settings" element={<Notes808SettingsRoute />} />
+              </Route>
+            </Route>
+
+            <Route path="*" element={<Navigate to={PATH_BOOLAB} replace />} />
+          </Routes>
+        </ModeSync>
+      </BrowserRouter>
+    </QueryClientProvider>
+  )
+}
