@@ -1,14 +1,19 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Outlet, useNavigate } from 'react-router-dom'
+import { Link, Outlet, matchPath, useLocation, useNavigate } from 'react-router-dom'
+import { FileStack, Menu } from 'lucide-react'
 
 import { fetchBranding } from '@/api/branding.js'
 import { getOllamaSettings } from '@/api/ollama.js'
 import { listPersonas } from '@/api/personas.js'
+import { ModelSelectorBar } from '@/components/chat/ModelSelectorBar.jsx'
 import { DawQuerySync } from '@/components/DawQuerySync.jsx'
+import { Sidebar } from '@/components/layout/Sidebar.jsx'
+import { UserProfileAvatar } from '@/components/layout/UserProfileAvatar.jsx'
+import { Button } from '@/components/ui/button'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { apply808notesLayoutToDom, clear808notesLayoutLiveDraft } from '@/lib/notes808Layout.js'
-import { PATH_808NOTES_HOME } from '@/routes/paths.js'
+import { PATH_808NOTES, PATH_808NOTES_HOME, notes808DawPath } from '@/routes/paths.js'
 import SettingsPage from '@/pages/booops/SettingsPage.jsx'
 import { useAppStore } from '@/store/index.js'
 
@@ -16,27 +21,11 @@ import { SourcesPanel } from './SourcesPanel.jsx'
 
 import './Notes808App.css'
 
-/** Matches Tailwind `md` (Sidebar mobile breakpoint). */
-function useBelowMd() {
-  const [v, setV] = useState(false)
-  useEffect(() => {
-    const mq = window.matchMedia('(max-width: 767px)')
-    const apply = () => setV(mq.matches)
-    apply()
-    mq.addEventListener('change', apply)
-    return () => mq.removeEventListener('change', apply)
-  }, [])
-  return v
-}
-
 /** @deprecated Routed DAW listing lives on the landing page; kept for deep links. */
 export { default as DawsPage } from '@/pages/booops/DawsPage.jsx'
 
 export function Notes808SettingsRoute() {
   const navigate = useNavigate()
-  const activeChatId = useAppStore((s) => s.activeChatId)
-  const activeDawId = useAppStore((s) => s.activeDawId)
-  const isNarrow = useBelowMd()
   const closeSettings = useCallback(() => {
     clear808notesLayoutLiveDraft()
     navigate(PATH_808NOTES_HOME, { replace: true })
@@ -44,25 +33,54 @@ export function Notes808SettingsRoute() {
 
   return (
     <div
-      className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background md:flex-row md:items-stretch"
+      className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background md:min-h-0"
       role="region"
       aria-labelledby="settings-title"
     >
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col md:min-h-0">
-        <SettingsPage mode="808notes" onClose={closeSettings} />
-      </div>
-      {!isNarrow && (
-        <div className="hidden h-full min-h-0 shrink-0 md:flex">
-          <SourcesPanel chatId={activeChatId} dawId={activeDawId} />
-        </div>
-      )}
+      <SettingsPage mode="808notes" onClose={closeSettings} />
     </div>
   )
 }
 
 export default function Notes808App() {
+  const location = useLocation()
+  const [mobileSidebar, setMobileSidebar] = useState(false)
+  const [mobileSourcesOpen, setMobileSourcesOpen] = useState(false)
+  const activeChatId = useAppStore((s) => s.activeChatId)
+  const activeDawId = useAppStore((s) => s.activeDawId)
+  const setActiveDawId = useAppStore((s) => s.setActiveDawId)
+  const setActiveChatId = useAppStore((s) => s.setActiveChatId)
   const setPersonas = useAppStore((s) => s.setPersonas)
   const setDefaultModel = useAppStore((s) => s.setDefaultModel)
+  const hydrateUserProfile = useAppStore((s) => s.hydrateUserProfile)
+
+  const { aiPath, settingsPath, profilePath } = useMemo(() => {
+    const b = PATH_808NOTES.replace(/\/$/, '')
+    return {
+      aiPath: b ? `${b}/ai` : '/ai',
+      settingsPath: b ? `${b}/settings` : '/settings',
+      profilePath: b ? `${b}/profile` : '/profile',
+    }
+  }, [])
+
+  const isLanding = Boolean(
+    matchPath({ path: PATH_808NOTES_HOME, end: true }, location.pathname),
+  )
+
+  useEffect(() => {
+    if (!isLanding) return
+    setActiveDawId(null)
+    setActiveChatId(null)
+  }, [isLanding, setActiveDawId, setActiveChatId])
+
+  const isAuxRoute = Boolean(
+    matchPath({ path: aiPath, end: true }, location.pathname) ||
+      matchPath({ path: settingsPath, end: true }, location.pathname) ||
+      matchPath({ path: profilePath, end: true }, location.pathname),
+  )
+  const onDawSourcesPage = /\/sources\/?$/.test(location.pathname)
+  const showDawSourcesShortcut =
+    !isLanding && !isAuxRoute && Boolean(activeDawId) && !onDawSourcesPage
 
   const { data: ollamaSettingsBoot } = useQuery({
     queryKey: ['ollama', 'settings', '808notes'],
@@ -86,10 +104,33 @@ export default function Notes808App() {
   }, [personaPack, setPersonas])
 
   useEffect(() => {
+    hydrateUserProfile()
+  }, [hydrateUserProfile])
+
+  useEffect(() => {
     const fn = () => apply808notesLayoutToDom()
     window.addEventListener('808notes-layout', fn)
     return () => window.removeEventListener('808notes-layout', fn)
   }, [])
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)')
+    const apply = () => {
+      if (mq.matches) setMobileSourcesOpen(false)
+    }
+    apply()
+    mq.addEventListener('change', apply)
+    return () => mq.removeEventListener('change', apply)
+  }, [])
+
+  useEffect(() => {
+    if (!mobileSourcesOpen) return
+    const onKey = (e) => {
+      if (e.key === 'Escape') setMobileSourcesOpen(false)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [mobileSourcesOpen])
 
   const { isPending: brandingPending } = useQuery({
     queryKey: ['branding', '808notes'],
@@ -113,9 +154,95 @@ export default function Notes808App() {
         className="layout flex h-[100dvh] w-full overflow-clip bg-background text-foreground md:flex-row"
         data-mode="808notes"
       >
-        <main className="main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <Outlet />
-        </main>
+        <Sidebar
+          appMode="808notes"
+          routeBase={PATH_808NOTES}
+          mobileOpen={mobileSidebar}
+          onMobileOpenChange={(open) => {
+            setMobileSidebar(open)
+            if (open) setMobileSourcesOpen(false)
+          }}
+        />
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <header className="flex min-w-0 items-center gap-2 border-b border-border bg-background px-2 py-2 md:hidden">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label="Open sidebar"
+              onClick={() => setMobileSidebar(true)}
+            >
+              <Menu className="size-5" />
+            </Button>
+            {!isLanding ? <ModelSelectorBar className="min-w-0 flex-1" /> : <div className="min-w-0 flex-1" />}
+            <Button type="button" variant="ghost" size="icon" className="shrink-0" asChild aria-label="Your profile">
+              <Link to={profilePath} onClick={() => setMobileSidebar(false)}>
+                <UserProfileAvatar size="button" className="size-7 text-sm" />
+              </Link>
+            </Button>
+            {isAuxRoute ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="shrink-0"
+                aria-label="Open sources panel"
+                onClick={() => {
+                  setMobileSidebar(false)
+                  setMobileSourcesOpen(true)
+                }}
+              >
+                <FileStack className="size-5" />
+              </Button>
+            ) : showDawSourcesShortcut ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="shrink-0"
+                asChild
+                aria-label="Sources"
+              >
+                <Link
+                  to={notes808DawPath(activeDawId, 'sources')}
+                  onClick={() => setMobileSourcesOpen(false)}
+                >
+                  <FileStack className="size-5" />
+                </Link>
+              </Button>
+            ) : null}
+          </header>
+          <Link
+            to={profilePath}
+            className="pointer-events-auto fixed right-3 top-3 z-40 hidden rounded-full border border-border bg-card shadow-sm md:inline-flex"
+            aria-label="Your profile"
+          >
+            <span className="p-0.5">
+              <UserProfileAvatar size="button" />
+            </span>
+          </Link>
+          <main className="main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            <Outlet />
+          </main>
+        </div>
+
+        {mobileSourcesOpen && (
+          <>
+            <button
+              type="button"
+              className="fixed inset-0 z-30 bg-background/70 md:hidden"
+              aria-label="Close sources panel"
+              onClick={() => setMobileSourcesOpen(false)}
+            />
+            <div
+              className="fixed inset-y-0 right-0 z-40 h-full max-w-[85vw] shadow-[var(--glow)] md:hidden"
+              role="dialog"
+              aria-label="Sources"
+            >
+              <SourcesPanel chatId={activeChatId} dawId={activeDawId} />
+            </div>
+          </>
+        )}
       </div>
     </TooltipProvider>
   )

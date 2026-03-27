@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 
 import { fetchBranding } from '@/api/branding.js'
 import { createChat, getChat, listMessages, patchChat, patchRecentChatsListCache } from '@/api/chats.js'
@@ -16,13 +17,26 @@ function sameUserBubbleContent(serverText, optimisticText) {
   return String(serverText ?? '').trim() === String(optimisticText ?? '').trim()
 }
 
+const DAW_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+function normalizeDawUuid(raw) {
+  if (raw == null || raw === '') return null
+  const s = String(raw).trim()
+  return DAW_UUID_RE.test(s) ? s : null
+}
+
 export function ChatView({
   chatMode = 'booops',
   compactEmptyState = false,
   modelBarProps = {},
   hidePersonaInChatInput = false,
+  /** When set (e.g. 808notes `/daw/:id`), used if Zustand `activeDawId` is stale so new chats still attach to the workspace. */
+  workspaceDawId = null,
 }) {
   const queryClient = useQueryClient()
+  const [searchParams] = useSearchParams()
+  const dawFromQuery = normalizeDawUuid(searchParams.get('daw'))
+  const resolvedWorkspaceDaw = normalizeDawUuid(workspaceDawId) || dawFromQuery
   const storeBranding = useAppStore((s) => s.branding)
   const { data: branding } = useQuery({
     queryKey: ['branding', chatMode],
@@ -59,6 +73,7 @@ export function ChatView({
   const messages = msgPack?.items ?? []
   const [draft, setDraft] = useState('')
   const [streamText, setStreamText] = useState('')
+  const [sendError, setSendError] = useState(null)
   const { consumeStream, abort } = useStream()
   const [pendingSend, setPendingSend] = useState(false)
   const [optimisticUser, setOptimisticUser] = useState(null)
@@ -139,13 +154,17 @@ export function ChatView({
         setOptimisticUser(null)
         setPendingSend(false)
         setStreamText('')
+        setSendError(null)
       },
-      onError: async () => {
+      onError: async (err) => {
         streamingChatRef.current = null
         await queryClient.invalidateQueries({ queryKey: ['messages', chatId] })
         setOptimisticUser(null)
         setPendingSend(false)
         setStreamText('')
+        if (err?.name !== 'AbortError') {
+          setSendError(err instanceof Error ? err.message : String(err))
+        }
       },
     })
   }
@@ -153,6 +172,7 @@ export function ChatView({
   async function send() {
     const content = draft.trim()
     if (!content || busy) return
+    setSendError(null)
 
     if (!activeChatId) {
       setDraft('')
@@ -161,25 +181,33 @@ export function ChatView({
       setOptimisticUser({ id: '__optimistic_user__', role: 'user', content })
       try {
         const { activePersonaId, activeDawId } = useAppStore.getState()
+        const dawForCreate = normalizeDawUuid(activeDawId) || resolvedWorkspaceDaw || undefined
         const modelForCreate = selectedModel || undefined
         const newChat = await createChat({
           mode: chatMode,
           ...(modelForCreate ? { model: modelForCreate } : {}),
           ...(activePersonaId ? { persona_id: activePersonaId } : {}),
-          ...(activeDawId ? { daw_id: activeDawId } : {}),
+          ...(dawForCreate ? { daw_id: dawForCreate } : {}),
         })
+        if (newChat?.id == null) {
+          throw new Error('Create chat returned no id')
+        }
         await queryClient.invalidateQueries({ queryKey: ['chats'] })
         queryClient.setQueryData(['messages', newChat.id], { items: [] })
         setActiveChatId(newChat.id)
+        streamingChatRef.current = newChat.id
         hydrateFromChat(newChat)
         if (webSearchEnabled) await patchChat(newChat.id, { web_search_enabled: true })
         await runStream(newChat.id, content, messages.length + 1)
-      } catch {
+      } catch (e) {
+        console.error(e)
+        setSendError(e instanceof Error ? e.message : String(e))
         setOptimisticUser(null)
         setPendingSend(false)
         setStreamText('')
         setDraft(content)
         setActiveChatId(null)
+        streamingChatRef.current = null
         await queryClient.invalidateQueries({ queryKey: ['chats'] })
       }
       return
@@ -215,6 +243,11 @@ export function ChatView({
             </div>
           )}
           <div className={cn('w-full', compactEmptyState && 'mt-auto')}>
+            {sendError ? (
+              <p className="mb-2 text-center text-sm text-destructive" role="alert">
+                {sendError}
+              </p>
+            ) : null}
             <ChatInput
               value={draft}
               onChange={setDraft}
@@ -251,6 +284,11 @@ export function ChatView({
           )}
         </div>
         <div className="shrink-0 px-4 pb-4">
+          {sendError ? (
+            <p className="mb-2 text-sm text-destructive" role="alert">
+              {sendError}
+            </p>
+          ) : null}
           <ChatInput
             value={draft}
             onChange={setDraft}

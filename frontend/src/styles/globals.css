@@ -1,3 +1,13 @@
+/* Disable all zoom behavior */
+html, body {
+  -webkit-text-size-adjust: 100% !important;
+  -ms-text-size-adjust: 100% !important;
+  touch-action: manipulation;
+}
+input, textarea, select {
+  font-size: 16px !important;
+}
+
 /**
  * Mode palettes (UI_DESIGN.md) + shadcn token bridge.
  * `data-mode` is set on <html> by src/mode.js before paint (import first in main.jsx).

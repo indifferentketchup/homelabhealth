@@ -45,7 +45,7 @@ services:
       boolab_chroma:
         condition: service_started
     ports:
-      - '9300:8000'
+      - "${BOOLAB_PORT_API:-9300}:8000"
     volumes:
       - boolab_uploads:/data/uploads
       - boolab_branding:/data/branding

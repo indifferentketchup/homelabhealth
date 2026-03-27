@@ -29,6 +29,17 @@ from routers.sources import router as sources_router
 load_dotenv()
 
 
+def _cors_origins() -> list[str]:
+    raw = [o.strip() for o in os.environ.get("FRONTEND_ORIGIN", "").split(",") if o.strip()]
+    host = (os.environ.get("BOOLAB_PUBLIC_HOST") or "").strip()
+    if host:
+        for port in ("9302", "9303", "9304"):
+            u = f"http://{host}:{port}"
+            if u not in raw:
+                raw.append(u)
+    return raw
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     await init_pool()
@@ -52,7 +63,7 @@ class _SizeLimit(BaseHTTPMiddleware):
 
 app.add_middleware(_SizeLimit)
 
-_origins = [o.strip() for o in os.environ.get("FRONTEND_ORIGIN", "").split(",") if o.strip()]
+_origins = _cors_origins()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins if _origins else ["*"],

@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useRef } from 'react'
+
+/** Incremented on each `consumeStream` call so AbortError can tell "replaced by newer stream" from Stop / guard abort. */
+let consumeStreamGeneration = 0
 
 function parseSseBlocks(buffer) {
   const events = []
@@ -28,7 +31,9 @@ export function useStream() {
     abortRef.current = null
   }, [])
 
-  useEffect(() => () => abort(), [abort])
+  // Do not abort on hook unmount: React Strict Mode (dev) remounts components and would cancel
+  // every in-flight chat stream. ChatView still aborts when switching threads; Stop calls abort();
+  // starting a new stream aborts the previous via consumeStream().
 
   const consumeStream = useCallback(
     /**
@@ -44,6 +49,7 @@ export function useStream() {
      * }} opts
      */
     async (opts) => {
+      const myGen = ++consumeStreamGeneration
       const {
         url,
         init = {},
@@ -145,7 +151,13 @@ export function useStream() {
         }
         if (!doneCalled) onDone?.()
       } catch (e) {
-        if (e?.name === 'AbortError') return
+        if (e?.name === 'AbortError') {
+          // Starting a newer stream calls `abort()` first; that AbortError must not clear UI state.
+          if (myGen === consumeStreamGeneration) {
+            onError?.(e instanceof Error ? e : new Error(String(e)))
+          }
+          return
+        }
         onError?.(e instanceof Error ? e : new Error(String(e)))
       } finally {
         abortRef.current = null

@@ -65,6 +65,7 @@ export function ModeRouter() {
           <Route element={<Notes808AuxShell />}>
             <Route path="ai" element={<AISettings />} />
             <Route path="settings" element={<Notes808SettingsRoute />} />
+            <Route path="profile" element={<ProfilePage />} />
           </Route>
           <Route path="*" element={<Navigate to={PATH_808NOTES_HOME} replace />} />
         </Route>

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { PATH_BOOOPS_HOME } from '@/routes/paths.js'
+import { PATH_808NOTES_HOME, PATH_BOOOPS_HOME } from '@/routes/paths.js'
 import { useAppStore } from '@/store/index.js'
 import { cn } from '@/lib/utils'
 import { fileToProfileAvatarDataUrl } from '@/lib/profileAvatarImage.js'
@@ -25,6 +25,8 @@ function ProfilePreviewGlyph({ displayName, emoji }) {
 }
 
 export default function ProfilePage() {
+  const mode = useAppStore((s) => s.mode)
+  const homePath = mode === '808notes' ? PATH_808NOTES_HOME : PATH_BOOOPS_HOME
   const userProfile = useAppStore((s) => s.userProfile)
   const avatarDataUrl = useAppStore((s) => s.userProfile.avatarDataUrl)
   const setUserProfile = useAppStore((s) => s.setUserProfile)
@@ -83,7 +85,7 @@ export default function ProfilePage() {
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-background">
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
         <Button type="button" variant="ghost" size="icon" asChild aria-label="Back">
-          <Link to={PATH_BOOOPS_HOME}>
+          <Link to={homePath}>
             <ArrowLeft className="size-4" />
           </Link>
         </Button>
@@ -91,7 +93,7 @@ export default function ProfilePage() {
       </div>
       <div className="mx-auto w-full max-w-lg p-4 md:p-8">
         <p className="mb-6 text-sm text-muted-foreground">
-          This is how you show up in BooOps. It is stored only in this browser.
+          This is how you show up in BooOps and 808notes. It is stored only in this browser (shared between both).
         </p>
         <form onSubmit={onSubmit} className="flex flex-col gap-6">
           <div className="flex flex-col items-center gap-3">

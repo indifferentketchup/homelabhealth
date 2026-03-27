@@ -4,21 +4,17 @@ import { Link, Outlet, useNavigate, useParams } from 'react-router-dom'
 import * as LucideIcons from 'lucide-react'
 
 import { fetchBranding } from '@/api/branding.js'
-import { createDaw, getDaw, listDaws } from '@/api/daws.js'
-import { listChats, patchChat, patchRecentChatsListCache } from '@/api/chats.js'
+import { createDaw, listDaws } from '@/api/daws.js'
 import { deleteSource, listSources, uploadSource } from '@/api/sources.js'
 import { ChatView } from '@/components/chat/ChatView.jsx'
-import { ModelSelectorBar } from '@/components/chat/ModelSelectorBar.jsx'
-import { Sidebar } from '@/components/layout/Sidebar.jsx'
 import { Button } from '@/components/ui/button'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { PATH_808NOTES, PATH_808NOTES_HOME, notes808DawPath } from '@/routes/paths.js'
+import { PATH_808NOTES_HOME, notes808DawPath } from '@/routes/paths.js'
 import { cn } from '@/lib/utils.js'
 import { useAppStore } from '@/store/index.js'
 
 import { SourcesPanel } from './SourcesPanel.jsx'
 
-const { ChevronLeft, FileStack, Menu, MessageSquarePlus, MessagesSquare } = LucideIcons
+const { ChevronLeft } = LucideIcons
 
 function LandingLucide({ name, className, style }) {
   const C =
@@ -256,256 +252,36 @@ export function Notes808Landing() {
   )
 }
 
-/** Matches Tailwind `md` (Sidebar mobile breakpoint). */
-function useBelowMd() {
-  const [v, setV] = useState(false)
-  useEffect(() => {
-    const mq = window.matchMedia('(max-width: 767px)')
-    const apply = () => setV(mq.matches)
-    apply()
-    mq.addEventListener('change', apply)
-    return () => mq.removeEventListener('change', apply)
-  }, [])
-  return v
-}
-
-function Notes808DawSidebar({ dawId, daw, onMobileNav }) {
-  const navigate = useNavigate()
-  const queryClient = useQueryClient()
-  const isNarrow = useBelowMd()
-  const chats = useAppStore((s) => s.chats)
-  const setChats = useAppStore((s) => s.setChats)
-  const activeChatId = useAppStore((s) => s.activeChatId)
-  const setActiveChatId = useAppStore((s) => s.setActiveChatId)
-  const hydrateFromChat = useAppStore((s) => s.hydrateFromChat)
-  const branding = useAppStore((s) => s.branding)
-  const sidebarW = branding?.sidebarWidth ?? 260
-
-  const [editingId, setEditingId] = useState(null)
-  const [editTitle, setEditTitle] = useState('')
-  const editInputRef = useRef(null)
-
-  const { data } = useQuery({
-    queryKey: ['chats', 'recent', '808notes', dawId],
-    queryFn: () => listChats({ limit: 40, mode: '808notes', dawId }),
-    enabled: Boolean(dawId),
-    staleTime: 15_000,
-  })
-
-  useEffect(() => {
-    if (data?.items) setChats(data.items)
-  }, [data, setChats])
-
-  useEffect(() => {
-    if (!editingId) return
-    editInputRef.current?.focus()
-    editInputRef.current?.select()
-  }, [editingId])
-
-  const dawBase = notes808DawPath(dawId)
-  const sourcesPath = notes808DawPath(dawId, 'sources')
-
-  function onNewChat() {
-    setActiveChatId(null)
-    navigate(dawBase)
-    onMobileNav?.()
-  }
-
-  function selectChat(id) {
-    setActiveChatId(id)
-    const row = chats.find((c) => c.id === id)
-    if (row) hydrateFromChat(row)
-    navigate(dawBase)
-    onMobileNav?.()
-  }
-
-  async function commitRename(chatId) {
-    const title = editTitle.trim() || 'Untitled chat'
-    setEditingId(null)
-    try {
-      await patchChat(chatId, { title })
-      const prev = useAppStore.getState().chats
-      const sid = String(chatId)
-      setChats(prev.map((c) => (String(c.id) === sid ? { ...c, title } : c)))
-      patchRecentChatsListCache(queryClient, chatId, title)
-      await queryClient.invalidateQueries({ queryKey: ['chats'] })
-    } catch {
-      await queryClient.invalidateQueries({ queryKey: ['chats'] })
-    }
-  }
-
-  return (
-    <aside
-      className="flex h-full shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground"
-      style={{ width: isNarrow ? undefined : sidebarW }}
-    >
-      <div className="border-b border-sidebar-border p-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="mb-2 w-full justify-start gap-2 px-2 font-normal text-muted-foreground hover:text-foreground"
-          asChild
-        >
-          <Link to={PATH_808NOTES_HOME} onClick={() => onMobileNav?.()}>
-            <ChevronLeft className="size-4 shrink-0" />
-            All DAWs
-          </Link>
-        </Button>
-        <div className="flex min-h-14 items-center gap-2 rounded-md border border-sidebar-border bg-card px-2 py-2">
-          {daw?.icon_url ? (
-            <img src={daw.icon_url} alt="" className="size-10 shrink-0 rounded-full object-cover" />
-          ) : (
-            <div
-              className="flex size-10 shrink-0 items-center justify-center rounded-full text-lg font-semibold text-white"
-              style={{ background: daw?.color ? daw.color : 'var(--accent)' }}
-              aria-hidden
-            >
-              {firstDisplayChar(daw?.name)}
-            </div>
-          )}
-          <span className="fs-nav line-clamp-2 min-w-0 flex-1 font-medium text-foreground">
-            {daw?.name || '…'}
-          </span>
-        </div>
-      </div>
-
-      <div className="p-2">
-        <Button type="button" className="fs-nav w-full justify-start gap-2" onClick={onNewChat}>
-          <MessageSquarePlus className="size-4 shrink-0" />
-          New Chat
-        </Button>
-      </div>
-
-      <div className="mx-2 border-t border-sidebar-border" />
-
-      <ScrollArea className="min-h-0 flex-1 px-2">
-        <div className="flex flex-col gap-1 py-2 pb-8">
-          {chats.map((c) => (
-            <div key={c.id} className="w-full">
-              {editingId === c.id ? (
-                <input
-                  ref={editInputRef}
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                  className="fs-nav h-9 w-full rounded-md border border-sidebar-border bg-card px-2 text-foreground outline-none ring-ring focus-visible:ring-2"
-                  onBlur={() => commitRename(c.id)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault()
-                      commitRename(c.id)
-                    }
-                    if (e.key === 'Escape') setEditingId(null)
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-                />
-              ) : (
-                <Button
-                  type="button"
-                  variant={c.id === activeChatId ? 'secondary' : 'ghost'}
-                  className="h-auto min-h-9 w-full justify-start gap-2 py-2 text-left font-normal"
-                  onClick={() => selectChat(c.id)}
-                  onDoubleClick={() => {
-                    setEditingId(c.id)
-                    setEditTitle(c.title || '')
-                  }}
-                  aria-current={c.id === activeChatId ? 'page' : undefined}
-                >
-                  <MessagesSquare className="size-4 shrink-0 opacity-70" />
-                  <span className="fs-nav line-clamp-2">{c.title || 'Untitled chat'}</span>
-                </Button>
-              )}
-            </div>
-          ))}
-        </div>
-      </ScrollArea>
-
-      <div className="mt-auto border-t border-sidebar-border p-2">
-        <Button type="button" variant="outline" className="fs-nav w-full justify-start gap-2 border-sidebar-border" asChild>
-          <Link to={sourcesPath} onClick={() => onMobileNav?.()}>
-            <FileStack className="size-4 shrink-0 opacity-70" />
-            Sources
-          </Link>
-        </Button>
-      </div>
-    </aside>
-  )
-}
-
 export function Notes808DawLayout() {
   const { dawId } = useParams()
   const setActiveDawId = useAppStore((s) => s.setActiveDawId)
   const setActiveChatId = useAppStore((s) => s.setActiveChatId)
-  const [mobileSidebar, setMobileSidebar] = useState(false)
-  const isNarrow = useBelowMd()
-
-  const { data: daw } = useQuery({
-    queryKey: ['daw', dawId],
-    queryFn: () => getDaw(dawId),
-    enabled: Boolean(dawId),
-    staleTime: 60_000,
-  })
+  const prevDawIdRef = useRef(null)
 
   useEffect(() => {
-    if (dawId) setActiveDawId(dawId)
-    return () => {
-      setActiveDawId(null)
+    if (!dawId) return
+    setActiveDawId(dawId)
+    if (prevDawIdRef.current !== dawId) {
       setActiveChatId(null)
+      prevDawIdRef.current = dawId
     }
   }, [dawId, setActiveDawId, setActiveChatId])
 
-  const modelBarProps = useMemo(() => ({ hidePersona: true, hideDaw: true }), [])
-  const sourcesHref = dawId ? notes808DawPath(dawId, 'sources') : '#'
-
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:flex-row">
-      {!isNarrow && <Notes808DawSidebar dawId={dawId} daw={daw} />}
-      {isNarrow && mobileSidebar && (
-        <>
-          <button
-            type="button"
-            className="fixed inset-0 z-30 bg-background/70"
-            aria-label="Close sidebar"
-            onClick={() => setMobileSidebar(false)}
-          />
-          <div className="fixed inset-y-0 left-0 z-40 w-72 max-w-[85vw] shadow-[var(--glow)]">
-            <Notes808DawSidebar dawId={dawId} daw={daw} onMobileNav={() => setMobileSidebar(false)} />
-          </div>
-        </>
-      )}
-
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex min-w-0 items-center gap-2 border-b border-border bg-background px-2 py-2 md:hidden">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label="Open sidebar"
-            onClick={() => setMobileSidebar(true)}
-          >
-            <Menu className="size-5" />
-          </Button>
-          <ModelSelectorBar className="min-w-0 flex-1" {...modelBarProps} />
-          <Button type="button" variant="ghost" size="icon" className="shrink-0" asChild aria-label="Sources">
-            <Link to={sourcesHref}>
-              <FileStack className="size-5" />
-            </Link>
-          </Button>
-        </header>
-        <main className="main flex min-h-0 flex-1 flex-col overflow-hidden">
-          <Outlet />
-        </main>
-      </div>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <Outlet />
     </div>
   )
 }
 
 export function Notes808DawChat() {
+  const { dawId } = useParams()
   const modelBarProps = useMemo(() => ({ hidePersona: true, hideDaw: true }), [])
   return (
     <div className="flex min-h-0 min-w-0 flex-1">
       <ChatView
         chatMode="808notes"
+        workspaceDawId={dawId}
         compactEmptyState
         modelBarProps={modelBarProps}
         hidePersonaInChatInput
@@ -629,91 +405,17 @@ export function Notes808DawSourcesPage() {
 }
 
 export function Notes808AuxShell() {
-  const [mobileSidebar, setMobileSidebar] = useState(false)
-  const [mobileSourcesOpen, setMobileSourcesOpen] = useState(false)
   const activeChatId = useAppStore((s) => s.activeChatId)
   const activeDawId = useAppStore((s) => s.activeDawId)
 
-  useEffect(() => {
-    const mq = window.matchMedia('(min-width: 768px)')
-    const apply = () => {
-      if (mq.matches) setMobileSourcesOpen(false)
-    }
-    mq.addEventListener('change', apply)
-    return () => mq.removeEventListener('change', apply)
-  }, [])
-
-  useEffect(() => {
-    if (!mobileSourcesOpen) return
-    const onKey = (e) => {
-      if (e.key === 'Escape') setMobileSourcesOpen(false)
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [mobileSourcesOpen])
-
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background md:flex-row">
-      <Sidebar
-        appMode="808notes"
-        routeBase={PATH_808NOTES}
-        mobileOpen={mobileSidebar}
-        onMobileOpenChange={(open) => {
-          setMobileSidebar(open)
-          if (open) setMobileSourcesOpen(false)
-        }}
-      />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex min-w-0 items-center gap-2 border-b border-border bg-background px-2 py-2 md:hidden">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label="Open sidebar"
-            onClick={() => {
-              setMobileSourcesOpen(false)
-              setMobileSidebar(true)
-            }}
-          >
-            <Menu className="size-5" />
-          </Button>
-          <ModelSelectorBar className="min-w-0 flex-1" />
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="shrink-0"
-            aria-label="Open sources panel"
-            onClick={() => {
-              setMobileSidebar(false)
-              setMobileSourcesOpen(true)
-            }}
-          >
-            <FileStack className="size-5" />
-          </Button>
-        </header>
-        <main className="main flex min-h-0 flex-1 flex-col overflow-hidden">
-          <Outlet />
-        </main>
+        <Outlet />
       </div>
-
-      {mobileSourcesOpen && (
-        <>
-          <button
-            type="button"
-            className="fixed inset-0 z-30 bg-background/70 md:hidden"
-            aria-label="Close sources panel"
-            onClick={() => setMobileSourcesOpen(false)}
-          />
-          <div
-            className="fixed inset-y-0 right-0 z-40 h-full max-w-[85vw] shadow-[var(--glow)] md:hidden"
-            role="dialog"
-            aria-label="Sources"
-          >
-            <SourcesPanel chatId={activeChatId} dawId={activeDawId} />
-          </div>
-        </>
-      )}
+      <div className="hidden h-full min-h-0 shrink-0 md:flex">
+        <SourcesPanel chatId={activeChatId} dawId={activeDawId} />
+      </div>
     </div>
   )
 }

@@ -2,7 +2,8 @@ import { create } from 'zustand'
 
 import { APP_MODE } from '../mode.js'
 
-const USER_PROFILE_STORAGE_KEY = 'booops-user-profile-v1'
+const USER_PROFILE_STORAGE_KEY = 'boolab-user-profile-v1'
+const USER_PROFILE_LEGACY_STORAGE_KEY = 'booops-user-profile-v1'
 
 function normalizeUserProfile(raw) {
   if (!raw || typeof raw !== 'object') {
@@ -22,7 +23,8 @@ function normalizeUserProfile(raw) {
 
 function loadUserProfileFromStorage() {
   try {
-    const json = localStorage.getItem(USER_PROFILE_STORAGE_KEY)
+    let json = localStorage.getItem(USER_PROFILE_STORAGE_KEY)
+    if (!json) json = localStorage.getItem(USER_PROFILE_LEGACY_STORAGE_KEY)
     if (!json) return normalizeUserProfile(null)
     return normalizeUserProfile(JSON.parse(json))
   } catch {
@@ -148,6 +150,11 @@ export const useAppStore = create((set, get) => ({
       const next = normalizeUserProfile({ ...s.userProfile, ...patch })
       try {
         localStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(next))
+        try {
+          localStorage.removeItem(USER_PROFILE_LEGACY_STORAGE_KEY)
+        } catch {
+          /* ignore */
+        }
       } catch {
         /* ignore quota / private mode */
       }
@@ -174,3 +181,14 @@ export const useAppStore = create((set, get) => ({
     if (p) set(personaToUi(p))
   },
 }))
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (
+      e.key === USER_PROFILE_STORAGE_KEY ||
+      e.key === USER_PROFILE_LEGACY_STORAGE_KEY
+    ) {
+      useAppStore.getState().hydrateUserProfile()
+    }
+  })
+}

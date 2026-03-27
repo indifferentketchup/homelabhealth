@@ -2,8 +2,8 @@
 # Prerequisite: API reachable at BOOLAB_API_UPSTREAM (host:port, no http:// prefix).
 #
 # Examples:
-#   API on same machine, published 9300: BOOLAB_API_UPSTREAM=host.docker.internal:9300  (default below)
-#   API on Tailscale: BOOLAB_API_UPSTREAM=100.72.117.26:9300
+#   Set BOOLAB_PUBLIC_HOST in `.env` (Tailscale/LAN IP) — Vite build URLs and default API upstream use it.
+#   API elsewhere: BOOLAB_API_UPSTREAM=100.101.41.16:9300  (overrides default host:9300)
 #   UI joined to boolab_net with core stack: BOOLAB_API_UPSTREAM=boolab_api:8000  (see docker-compose override in comments)
 #
 # Start one app:  docker compose -f docker-compose.ui.yml up -d boolab_ui
@@ -14,15 +14,15 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_APP_MODE: boolab
-        VITE_PUBLIC_BOOOPS_URL: ${VITE_PUBLIC_BOOOPS_URL:-http://100.72.117.26:9303}
-        VITE_PUBLIC_808NOTES_URL: ${VITE_PUBLIC_808NOTES_URL:-http://100.72.117.26:9304}
+        VITE_PUBLIC_BOOOPS_URL: ${VITE_PUBLIC_BOOOPS_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9303}
+        VITE_PUBLIC_808NOTES_URL: ${VITE_PUBLIC_808NOTES_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9304}
     container_name: boolab_ui
     environment:
-      BOOLAB_API_UPSTREAM: ${BOOLAB_API_UPSTREAM:-host.docker.internal:9300}
+      BOOLAB_API_UPSTREAM: ${BOOLAB_API_UPSTREAM:-${BOOLAB_PUBLIC_HOST:-host.docker.internal}:9300}
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     ports:
-      - '9302:80'
+      - "${BOOLAB_PORT_BOOLAB_UI:-9302}:80"
 
   booops_ui:
     build:
@@ -30,14 +30,14 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_APP_MODE: booops
-        VITE_PUBLIC_BOOLAB_URL: ${VITE_PUBLIC_BOOLAB_URL:-http://100.72.117.26:9302}
+        VITE_PUBLIC_BOOLAB_URL: ${VITE_PUBLIC_BOOLAB_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9302}
     container_name: booops_ui
     environment:
-      BOOLAB_API_UPSTREAM: ${BOOLAB_API_UPSTREAM:-host.docker.internal:9300}
+      BOOLAB_API_UPSTREAM: ${BOOLAB_API_UPSTREAM:-${BOOLAB_PUBLIC_HOST:-host.docker.internal}:9300}
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     ports:
-      - '9303:80'
+      - "${BOOLAB_PORT_BOOOPS:-9303}:80"
 
   notes808_ui:
     build:
@@ -45,11 +45,11 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_APP_MODE: 808notes
-        VITE_PUBLIC_BOOLAB_URL: ${VITE_PUBLIC_BOOLAB_URL:-http://100.72.117.26:9302}
+        VITE_PUBLIC_BOOLAB_URL: ${VITE_PUBLIC_BOOLAB_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9302}
     container_name: notes808_ui
     environment:
-      BOOLAB_API_UPSTREAM: ${BOOLAB_API_UPSTREAM:-host.docker.internal:9300}
+      BOOLAB_API_UPSTREAM: ${BOOLAB_API_UPSTREAM:-${BOOLAB_PUBLIC_HOST:-host.docker.internal}:9300}
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     ports:
-      - '9304:80'
+      - "${BOOLAB_PORT_808NOTES:-9304}:80"

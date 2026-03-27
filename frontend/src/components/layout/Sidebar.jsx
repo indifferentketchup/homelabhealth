@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  FileStack,
   LayoutGrid,
   List,
   MessageSquarePlus,
@@ -21,7 +22,14 @@ import { deleteChat, listChats, patchChat, patchRecentChatsListCache } from '@/a
 import { listDaws } from '@/api/daws.js'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { PATH_808NOTES_HOME, PATH_BOOOPS, getBoolabHubHref, isHttpUrl } from '@/routes/paths.js'
+import {
+  PATH_808NOTES_HOME,
+  PATH_BOOOPS,
+  PATH_BOOOPS_HOME,
+  getBoolabHubHref,
+  isHttpUrl,
+  notes808DawPath,
+} from '@/routes/paths.js'
 import { useAppStore } from '@/store/index.js'
 import { cn } from '@/lib/utils'
 
@@ -177,18 +185,24 @@ export function Sidebar({
 
   const desktopCollapsed = !isMobile && !sidebarOpen
 
+  function notes808WorkspaceChatPath() {
+    if (appMode !== '808notes') return PATH_BOOOPS_HOME
+    if (activeDawId) return notes808DawPath(activeDawId)
+    return PATH_808NOTES_HOME
+  }
+
   function goHome() {
     if (appMode === 'booops' || appMode === '808notes') {
       setActiveChatId(null)
       setActiveDawId(null)
     }
-    navigate(routeBase)
+    navigate(appMode === '808notes' ? PATH_808NOTES_HOME : PATH_BOOOPS_HOME)
     if (isMobile) onMobileOpenChange(false)
   }
 
   function onNewChat() {
     setActiveChatId(null)
-    navigate(routeBase)
+    navigate(notes808WorkspaceChatPath())
     if (isMobile) onMobileOpenChange(false)
   }
 
@@ -199,7 +213,7 @@ export function Sidebar({
     setActiveChatId(id)
     const row = chats.find((c) => c.id === id)
     if (row) hydrateFromChat(row)
-    navigate(routeBase)
+    navigate(notes808WorkspaceChatPath())
     if (isMobile) onMobileOpenChange(false)
   }
 
@@ -246,7 +260,7 @@ export function Sidebar({
       await queryClient.invalidateQueries({ queryKey: ['chats'] })
       if (activeChatId === chatId) {
         setActiveChatId(null)
-        navigate(routeBase)
+        navigate(notes808WorkspaceChatPath())
       }
     } catch {
       await queryClient.invalidateQueries({ queryKey: ['chats'] })
@@ -280,7 +294,7 @@ export function Sidebar({
         <div className="border-b border-sidebar-border">
           {!desktopCollapsed ? (
             <Link
-              to={routeBase}
+              to={appMode === '808notes' ? PATH_808NOTES_HOME : PATH_BOOOPS_HOME}
               onClick={(e) => {
                 e.preventDefault()
                 goHome()
@@ -430,6 +444,32 @@ export function Sidebar({
                   )}
                 </Link>
               </Button>
+              {activeDawId ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className={cn(
+                    'fs-nav h-9 w-full justify-start font-normal',
+                    desktopCollapsed && 'justify-center px-0',
+                  )}
+                  asChild
+                >
+                  <Link
+                    to={notes808DawPath(activeDawId, 'sources')}
+                    onClick={() => isMobile && onMobileOpenChange(false)}
+                    aria-label="Sources"
+                  >
+                    {!desktopCollapsed ? (
+                      <span className="fs-nav flex items-center gap-2">
+                        <FileStack className="size-4 shrink-0 opacity-70" />
+                        Sources
+                      </span>
+                    ) : (
+                      <FileStack className="size-4" aria-hidden />
+                    )}
+                  </Link>
+                </Button>
+              ) : null}
             </div>
 
             <div className="mx-2 border-t border-sidebar-border" />
@@ -467,7 +507,7 @@ export function Sidebar({
                         asChild
                       >
                         <Link
-                          to={`${routeBase}?daw=${encodeURIComponent(d.id)}`}
+                          to={`${PATH_BOOOPS_HOME}?daw=${encodeURIComponent(d.id)}`}
                           onClick={() => {
                             setActiveDawId(d.id)
                             setActiveChatId(null)
@@ -551,7 +591,7 @@ export function Sidebar({
                 {pinnedDaws.map((d) => (
                   <Link
                     key={d.id}
-                    to={`${routeBase}?daw=${encodeURIComponent(d.id)}`}
+                    to={`${PATH_BOOOPS_HOME}?daw=${encodeURIComponent(d.id)}`}
                     title={d.name}
                     onClick={() => {
                       setActiveDawId(d.id)
