@@ -9,6 +9,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from auth_deps import get_principal
+from routers.daws import fetch_daw_if_visible, assert_daw_mutable
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
