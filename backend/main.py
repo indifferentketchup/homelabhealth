@@ -10,6 +10,7 @@ from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from db import apply_schema, close_pool, get_pool, init_chroma, init_pool
+from seed_assets import seed_default_assets
 from routers import (
     branding,
     chats,
@@ -44,6 +45,7 @@ def _cors_origins() -> list[str]:
 async def lifespan(_app: FastAPI):
     await init_pool()
     await apply_schema()
+    await seed_default_assets()
     init_chroma()
     yield
     await close_pool()

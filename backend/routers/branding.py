@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import re
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +18,9 @@ router = APIRouter()
 BRANDING_ASSETS_DIR = Path("/data/branding/assets")
 ALLOWED_IMG_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg"}
 CARD_ICON_SLOTS = frozenset({"cardBooops", "card808notes"})
-ASSET_SLOTS = frozenset({"banner", "logo", "favicon"}) | CARD_ICON_SLOTS
+ASSET_SLOTS = frozenset({"banner", "logo", "favicon", "icon", "og-banner"}) | CARD_ICON_SLOTS
+
+_LIBRARY_STEM_SAFE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
 
 DEFAULT_BOOOPS_BRANDING: dict[str, Any] = {
     "accentColor": "#ff2d78",
@@ -40,6 +43,10 @@ DEFAULT_BOOOPS_BRANDING: dict[str, Any] = {
     "chatMaxWidth": 1200,
     "sidebarWidth": 260,
     "appGlyphIcon": "Bot",
+    "bannerUrl": "",
+    "logoUrl": "",
+    "faviconUrl": "",
+    "ogBannerUrl": "",
 }
 
 DEFAULT_808NOTES_BRANDING: dict[str, Any] = {
@@ -67,6 +74,7 @@ DEFAULT_808NOTES_BRANDING: dict[str, Any] = {
     "bannerUrl": "",
     "logoUrl": "",
     "faviconUrl": "",
+    "ogBannerUrl": "",
     "appGlyphIcon": "Music2",
 }
 
@@ -85,6 +93,7 @@ DEFAULT_BOOLAB_BRANDING: dict[str, Any] = {
     "bannerUrl": "",
     "logoUrl": "",
     "faviconUrl": "",
+    "ogBannerUrl": "",
     "appGlyphIcon": "FlaskConical",
     "booopsCard": {
         "icon": "Bot",
@@ -125,8 +134,17 @@ def _config_as_dict(raw: Any) -> dict[str, Any]:
     return {}
 
 
-def _slot_url_key(slot: str) -> str:
-    return f"{slot}Url"
+def _main_branding_flat_key_for_slot(slot: str) -> str:
+    """Map asset slot to top-level branding JSON key (`icon` and `favicon` both → `faviconUrl`)."""
+    if slot == "banner":
+        return "bannerUrl"
+    if slot == "logo":
+        return "logoUrl"
+    if slot in ("favicon", "icon"):
+        return "faviconUrl"
+    if slot == "og-banner":
+        return "ogBannerUrl"
+    raise HTTPException(status_code=400, detail="invalid slot")
 
 
 _PREFIX_BOOOPS = "booops"
@@ -141,7 +159,15 @@ def _asset_path_pattern(prefix: str, slot: str) -> str:
 def _find_asset_file(prefix: str, slot: str) -> Path | None:
     _ensure_assets_dir()
     matches = sorted(BRANDING_ASSETS_DIR.glob(_asset_path_pattern(prefix, slot)))
-    return matches[0] if matches else None
+    if matches:
+        return matches[0]
+    if slot == "favicon":
+        alt = sorted(BRANDING_ASSETS_DIR.glob(_asset_path_pattern(prefix, "icon")))
+        return alt[0] if alt else None
+    if slot == "icon":
+        alt = sorted(BRANDING_ASSETS_DIR.glob(_asset_path_pattern(prefix, "favicon")))
+        return alt[0] if alt else None
+    return None
 
 
 def _delete_existing_asset_files(prefix: str, slot: str) -> None:
@@ -295,7 +321,7 @@ async def upload_branding_asset(slot: str, file: UploadFile = File(...)):
     dest.write_bytes(content)
 
     public_url = f"/api/branding/booops/asset/{slot}"
-    key = _slot_url_key(slot)
+    key = _main_branding_flat_key_for_slot(slot)
     await _persist_booops_patch({key: public_url})
     return {key: public_url}
 
@@ -316,7 +342,7 @@ async def upload_branding_asset_808notes(slot: str, file: UploadFile = File(...)
     dest.write_bytes(content)
 
     public_url = f"/api/branding/808notes/asset/{slot}"
-    key = _slot_url_key(slot)
+    key = _main_branding_flat_key_for_slot(slot)
     await _persist_808notes_patch({key: public_url})
     return {key: public_url}
 
@@ -356,7 +382,7 @@ async def upload_branding_asset_boolab(slot: str, file: UploadFile = File(...)):
         await _persist_boolab_patch({card_key: merged_card})
         return {card_key: merged_card}
 
-    key = _slot_url_key(slot)
+    key = _main_branding_flat_key_for_slot(slot)
     await _persist_boolab_patch({key: public_url})
     return {key: public_url}
 
@@ -406,7 +432,7 @@ async def delete_branding_asset(slot: str):
         raise HTTPException(status_code=400, detail="invalid slot")
     _ensure_assets_dir()
     _delete_existing_asset_files(_PREFIX_BOOOPS, slot)
-    key = _slot_url_key(slot)
+    key = _main_branding_flat_key_for_slot(slot)
     await _persist_booops_patch({key: ""})
     return {"ok": True}
 
@@ -417,7 +443,7 @@ async def delete_branding_asset_808notes(slot: str):
         raise HTTPException(status_code=400, detail="invalid slot")
     _ensure_assets_dir()
     _delete_existing_asset_files(_PREFIX_808NOTES, slot)
-    key = _slot_url_key(slot)
+    key = _main_branding_flat_key_for_slot(slot)
     await _persist_808notes_patch({key: ""})
     return {"ok": True}
 
@@ -443,6 +469,53 @@ async def delete_branding_asset_boolab(slot: str):
         await _persist_boolab_patch({card_key: merged_card})
         return {"ok": True}
 
-    key = _slot_url_key(slot)
+    key = _main_branding_flat_key_for_slot(slot)
     await _persist_boolab_patch({key: ""})
     return {"ok": True}
+
+
+@router.get("/persona/asset/{stem}")
+async def get_persona_asset(stem: str):
+    if not _LIBRARY_STEM_SAFE.match(stem):
+        raise HTTPException(status_code=400, detail="invalid stem")
+    path = BRANDING_ASSETS_DIR / f"persona_{stem}.png"
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="not found")
+    return FileResponse(path, media_type="image/png")
+
+
+@router.get("/assets/library")
+async def list_asset_library():
+    """All committed default assets under `backend/assets/` (for pickers)."""
+    _ensure_assets_dir()
+    src = Path(__file__).resolve().parent.parent / "assets"
+    library: dict[str, list[str]] = {}
+    if not src.is_dir():
+        return library
+    for mode_dir in sorted(src.iterdir()):
+        if not mode_dir.is_dir():
+            continue
+        library[mode_dir.name] = [
+            f"/api/branding/assets/library/{mode_dir.name}/{f.name}"
+            for f in sorted(mode_dir.iterdir())
+            if f.is_file() and f.suffix.lower() in ALLOWED_IMG_EXT
+        ]
+    return library
+
+
+@router.get("/assets/library/{mode}/{filename}")
+async def serve_library_asset(mode: str, filename: str):
+    if "/" in mode or "\\" in mode or ".." in mode:
+        raise HTTPException(status_code=400, detail="invalid mode")
+    if not _LIBRARY_STEM_SAFE.match(filename):
+        raise HTTPException(status_code=400, detail="invalid filename")
+    base = (Path(__file__).resolve().parent.parent / "assets" / mode).resolve()
+    src = (base / filename).resolve()
+    try:
+        src.relative_to(base)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="not found")
+    if not src.is_file() or src.suffix.lower() not in ALLOWED_IMG_EXT:
+        raise HTTPException(status_code=404, detail="not found")
+    media_type, _ = mimetypes.guess_type(str(src))
+    return FileResponse(src, media_type=media_type or "application/octet-stream")
