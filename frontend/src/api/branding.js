@@ -68,8 +68,8 @@ export const DEFAULT_BOOOPS_BRANDING = {
   fsInput: 14,
   fsHeading: 18,
   fsCode: 13,
-  chatMaxWidth: 1200,
-  sidebarWidth: 260,
+  chatMaxWidth: 850,
+  sidebarWidth: 280,
   /** Lucide icon name for settings / branding UI (optional URL asset later). */
   appGlyphIcon: 'Bot',
 }
@@ -222,8 +222,8 @@ export const DEFAULT_808NOTES_BRANDING = {
   fsInput: 14,
   fsHeading: 18,
   fsCode: 13,
-  chatMaxWidth: 1200,
-  sidebarWidth: 260,
+  chatMaxWidth: 850,
+  sidebarWidth: 280,
   title: '808notes',
   /** Landing hero line under the title (editable in Settings → Branding). */
   subtitle: '// pick your desk. open a daw workspace.',
