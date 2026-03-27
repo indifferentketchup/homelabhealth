@@ -409,7 +409,7 @@ async def upload_branding_asset_boolab(
     return {key: public_url}
 
 
-@router.get("/booops/asset/{slot}")
+@router.api_route("/booops/asset/{slot}", methods=["GET", "HEAD"])
 async def get_branding_asset(slot: str):
     if slot not in ASSET_SLOTS:
         raise HTTPException(status_code=400, detail="invalid slot")
@@ -419,10 +419,10 @@ async def get_branding_asset(slot: str):
     media_type, _ = mimetypes.guess_type(str(path))
     if not media_type:
         media_type = "application/octet-stream"
-    return FileResponse(path, media_type=media_type)
+    return FileResponse(path, media_type=media_type, headers={"Accept-Ranges": "none"})
 
 
-@router.get("/808notes/asset/{slot}")
+@router.api_route("/808notes/asset/{slot}", methods=["GET", "HEAD"])
 async def get_branding_asset_808notes(slot: str):
     if slot not in ASSET_SLOTS:
         raise HTTPException(status_code=400, detail="invalid slot")
@@ -432,10 +432,10 @@ async def get_branding_asset_808notes(slot: str):
     media_type, _ = mimetypes.guess_type(str(path))
     if not media_type:
         media_type = "application/octet-stream"
-    return FileResponse(path, media_type=media_type)
+    return FileResponse(path, media_type=media_type, headers={"Accept-Ranges": "none"})
 
 
-@router.get("/boolab/asset/{slot}")
+@router.api_route("/boolab/asset/{slot}", methods=["GET", "HEAD"])
 async def get_branding_asset_boolab(slot: str):
     if slot not in ASSET_SLOTS:
         raise HTTPException(status_code=400, detail="invalid slot")
@@ -445,7 +445,7 @@ async def get_branding_asset_boolab(slot: str):
     media_type, _ = mimetypes.guess_type(str(path))
     if not media_type:
         media_type = "application/octet-stream"
-    return FileResponse(path, media_type=media_type)
+    return FileResponse(path, media_type=media_type, headers={"Accept-Ranges": "none"})
 
 
 @router.delete("/booops/asset/{slot}")
@@ -496,14 +496,14 @@ async def delete_branding_asset_boolab(slot: str, _owner: dict = Depends(require
     return {"ok": True}
 
 
-@router.get("/persona/asset/{stem}")
+@router.api_route("/persona/asset/{stem}", methods=["GET", "HEAD"])
 async def get_persona_asset(stem: str):
     if not _LIBRARY_STEM_SAFE.match(stem):
         raise HTTPException(status_code=400, detail="invalid stem")
     path = BRANDING_ASSETS_DIR / f"persona_{stem}.png"
     if not path.is_file():
         raise HTTPException(status_code=404, detail="not found")
-    return FileResponse(path, media_type="image/png")
+    return FileResponse(path, media_type="image/png", headers={"Accept-Ranges": "none"})
 
 
 @router.get("/assets/library")
