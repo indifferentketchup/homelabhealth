@@ -63,6 +63,10 @@ DEFAULT_808NOTES_BRANDING: dict[str, Any] = {
     "chatMaxWidth": 1200,
     "sidebarWidth": 260,
     "title": "808notes",
+    "subtitle": "// pick your desk. open a daw workspace.",
+    "bannerUrl": "",
+    "logoUrl": "",
+    "faviconUrl": "",
     "appGlyphIcon": "Music2",
 }
 
@@ -100,6 +104,10 @@ DEFAULT_BOOLAB_BRANDING: dict[str, Any] = {
     },
     "hubCardsTextAlign": "center",
     "hubCardsFontScale": 1.0,
+    # Hero title, tagline, section labels, footer (~0.75–1.5).
+    "hubLandingFontScale": 1.0,
+    # Hero logo tile + glyph, hub card icons (~0.75–1.35).
+    "hubLandingIconScale": 1.0,
 }
 
 

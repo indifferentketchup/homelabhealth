@@ -111,6 +111,10 @@ export const DEFAULT_BOOLAB_BRANDING = {
   hubCardsTextAlign: 'center',
   /** Multiplier for card title, body, and icon (~0.75–1.5). */
   hubCardsFontScale: 1,
+  /** Hero title, tagline, “core”, footer, banner badge (~0.75–1.5). */
+  hubLandingFontScale: 1,
+  /** Hero logo tile + glyph, hub card icons (~0.75–1.35). */
+  hubLandingIconScale: 1,
 }
 
 export const FONT_HUB_DISPLAY_OPTIONS = [
@@ -221,6 +225,11 @@ export const DEFAULT_808NOTES_BRANDING = {
   chatMaxWidth: 1200,
   sidebarWidth: 260,
   title: '808notes',
+  /** Landing hero line under the title (editable in Settings → Branding). */
+  subtitle: '// pick your desk. open a daw workspace.',
+  bannerUrl: '',
+  logoUrl: '',
+  faviconUrl: '',
   appGlyphIcon: 'Music2',
 }
 
@@ -259,6 +268,9 @@ export function patch808notesBranding(base, partial) {
     ...(base && typeof base === 'object' ? base : {}),
     ...(partial && typeof partial === 'object' ? partial : {}),
   }
+  // DB/API may store null; spread would otherwise wipe defaults and empty the landing tagline.
+  if (merged.title == null) merged.title = DEFAULT_808NOTES_BRANDING.title
+  if (merged.subtitle == null) merged.subtitle = DEFAULT_808NOTES_BRANDING.subtitle
   return finalizeBranding(merged, DEFAULT_808NOTES_BRANDING)
 }
 
@@ -424,7 +436,8 @@ const UI_LAYOUT_THEME_KEYS = new Set([
   'borderColor',
 ])
 
-function layoutApiToBrandingPatchSansTheme(layoutApi) {
+/** Strip palette fields from layout payload before merging into 808notes branding (global layout defaults are BooOps). */
+export function layoutApiToBrandingPatchSansTheme(layoutApi) {
   const p = layoutApiToBrandingPatch(layoutApi)
   const out = { ...p }
   for (const k of UI_LAYOUT_THEME_KEYS) delete out[k]

@@ -391,7 +391,7 @@ CREATE TABLE IF NOT EXISTS searxng_config (
     mode TEXT NOT NULL UNIQUE CHECK (mode IN ('booops', '808notes')),
     safe_search INTEGER NOT NULL DEFAULT 0 CHECK (safe_search IN (0, 1, 2)),
     image_proxy BOOLEAN NOT NULL DEFAULT FALSE,
-    enabled_engines TEXT NOT NULL DEFAULT 'google,duckduckgo,bing,wikipedia',
+    enabled_engines TEXT NOT NULL DEFAULT '',
     autocomplete TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -399,6 +399,6 @@ CREATE TABLE IF NOT EXISTS searxng_config (
 
 INSERT INTO searxng_config (mode, safe_search, image_proxy, enabled_engines, autocomplete)
 VALUES
-    ('booops', 0, FALSE, 'google,duckduckgo,bing,wikipedia,github', ''),
-    ('808notes', 0, FALSE, 'google,duckduckgo,bing,wikipedia', '')
+    ('booops', 0, FALSE, '', ''),
+    ('808notes', 0, FALSE, '', '')
 ON CONFLICT (mode) DO NOTHING;

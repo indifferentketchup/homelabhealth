@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Outlet, useNavigate, useParams } from 'react-router-dom'
 import * as LucideIcons from 'lucide-react'
 
-import { fetchBranding } from '@/api/branding.js'
+import { fetchBranding, patch808notesBranding } from '@/api/branding.js'
 import { createDaw, listDaws } from '@/api/daws.js'
 import { deleteSource, listSources, uploadSource } from '@/api/sources.js'
 import { ChatView } from '@/components/chat/ChatView.jsx'
@@ -56,6 +56,10 @@ function read808AccentCss() {
   }
 }
 
+function strTrim(v) {
+  return typeof v === 'string' ? v.trim() : ''
+}
+
 export function Notes808Landing() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -65,11 +69,24 @@ export function Notes808Landing() {
   const [newDesc, setNewDesc] = useState('')
   const [newEmoji, setNewEmoji] = useState('🎛️')
 
-  const { data: branding } = useQuery({
+  /**
+   * Hero copy: `fetchBranding` snapshot (q) then Zustand (s). Store wins for live edits; if
+   * subtitle/title are empty in the store (e.g. stale merge), keep API values so Settings saves win.
+   */
+  const storeBranding = useAppStore((s) => s.branding)
+  const { data: brandingFromQuery } = useQuery({
     queryKey: ['branding', '808notes'],
     queryFn: () => fetchBranding('808notes'),
     staleTime: 60_000,
   })
+  const branding = useMemo(() => {
+    const q = brandingFromQuery && typeof brandingFromQuery === 'object' ? brandingFromQuery : {}
+    const s = storeBranding && typeof storeBranding === 'object' ? storeBranding : {}
+    const merged = { ...q, ...s }
+    if (!strTrim(merged.subtitle) && strTrim(q.subtitle)) merged.subtitle = q.subtitle
+    if (!strTrim(merged.title) && strTrim(q.title)) merged.title = q.title
+    return patch808notesBranding(null, merged)
+  }, [brandingFromQuery, storeBranding])
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['daws', '808notes', 'landing'],
@@ -105,9 +122,11 @@ export function Notes808Landing() {
   })
 
   const hubTitle = (typeof branding?.title === 'string' && branding.title.trim()) || '808notes'
+  /** From Settings → Branding → Subtitle / slogan (`subtitle` in API; `tagline` kept for older rows). */
   const hubTagline =
+    (typeof branding?.subtitle === 'string' && branding.subtitle.trim()) ||
     (typeof branding?.tagline === 'string' && branding.tagline.trim()) ||
-    '// pick your desk. open a daw workspace.'
+    ''
   const glyphName = branding?.appGlyphIcon || 'Music2'
   const bannerUrl = typeof branding?.bannerUrl === 'string' ? branding.bannerUrl.trim() : ''
   const logoUrl = typeof branding?.logoUrl === 'string' ? branding.logoUrl.trim() : ''
@@ -147,7 +166,7 @@ export function Notes808Landing() {
             </div>
             <div className="notes808-landing__hero-text min-w-0 flex-1">
               <h1 className="notes808-landing__hub-title">{hubTitle}</h1>
-              <p className="notes808-landing__hub-tagline">{hubTagline}</p>
+              {hubTagline ? <p className="notes808-landing__hub-tagline">{hubTagline}</p> : null}
             </div>
           </div>
           <p className="notes808-landing__intro text-muted-foreground">
@@ -276,16 +295,9 @@ export function Notes808DawLayout() {
 
 export function Notes808DawChat() {
   const { dawId } = useParams()
-  const modelBarProps = useMemo(() => ({ hidePersona: true, hideDaw: true }), [])
   return (
     <div className="flex min-h-0 min-w-0 flex-1">
-      <ChatView
-        chatMode="808notes"
-        workspaceDawId={dawId}
-        compactEmptyState
-        modelBarProps={modelBarProps}
-        hidePersonaInChatInput
-      />
+      <ChatView chatMode="808notes" workspaceDawId={dawId} />
     </div>
   )
 }

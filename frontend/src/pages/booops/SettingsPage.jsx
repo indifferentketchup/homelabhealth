@@ -18,6 +18,7 @@ import {
   deleteBrandingAsset808notes,
   fetchBranding,
   layoutApiToBrandingPatch,
+  layoutApiToBrandingPatchSansTheme,
   mergeBrandingWithGlobalLayout,
   patch808notesBranding,
   patchBranding,
@@ -146,6 +147,7 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
   /** Host shell for this settings surface (Notes808 passes `808notes`); avoids live layout preview using a stale Zustand `mode`. */
   const appBrandingMode = initialMode === '808notes' ? '808notes' : storeBrandingMode
   const [selectedMode, setSelectedMode] = useState(initialMode === '808notes' ? '808notes' : 'booops')
+  const [brandingSaveError, setBrandingSaveError] = useState(null)
   const [glyphMenu, setGlyphMenu] = useState(null)
   const glyphMenuRef = useRef(null)
   const [tab, setTabState] = useState(() => {
@@ -173,6 +175,10 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
   }, [onClose, navigate])
 
   useEffect(() => {
+    if (initialMode === '808notes') setSelectedMode('808notes')
+  }, [initialMode])
+
+  useEffect(() => {
     if (!onClose) return
     const onKey = (e) => {
       if (e.key === 'Escape') handleClose()
@@ -197,7 +203,10 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
       const row =
         useAppStore.getState().branding ?? queryClient.getQueryData(['branding', appBrandingMode])
       if (!row || typeof row !== 'object') return
-      const patch = layoutApiToBrandingPatch(draft)
+      const patch =
+        appBrandingMode === '808notes'
+          ? layoutApiToBrandingPatchSansTheme(draft)
+          : layoutApiToBrandingPatch(draft)
       const merged = appBrandingMode === '808notes' ? patch808notesBranding(row, patch) : patchBranding(row, patch)
       applyBrandingCss(merged, appBrandingMode === '808notes' ? '808notes' : 'booops')
       if (appBrandingMode === '808notes') {
@@ -282,7 +291,8 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
         selectedMode === '808notes' ? patch808notesBranding(null, next) : patchBranding(null, next)
       let appliedToCache = merged
       if (appBrandingMode === selectedMode) {
-        const withLayout = mergeBrandingWithGlobalLayout(merged, globalDraft, {
+        const layoutPayload = layoutDraftToApiPayload({ ...useLayoutStore.getState() })
+        const withLayout = mergeBrandingWithGlobalLayout(merged, layoutPayload, {
           stripTheme: selectedMode === '808notes',
         })
         const finalized =
@@ -297,7 +307,7 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
       }
       queryClient.setQueryData(['branding', selectedMode], appliedToCache)
     },
-    [appBrandingMode, globalDraft, queryClient, selectedMode],
+    [appBrandingMode, queryClient, selectedMode],
   )
 
   const updateBrandingField = useCallback(
@@ -327,7 +337,8 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
 
         let appliedToCache = merged
         if (appBrandingMode === targetMode) {
-          const withLayout = mergeBrandingWithGlobalLayout(merged, globalDraft, {
+          const layoutPayload = layoutDraftToApiPayload({ ...useLayoutStore.getState() })
+          const withLayout = mergeBrandingWithGlobalLayout(merged, layoutPayload, {
             stripTheme: targetMode === '808notes',
           })
           const finalized =
@@ -347,7 +358,7 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
         /* silent */
       }
     },
-    [appBrandingMode, globalDraft, queryClient, selectedMode],
+    [appBrandingMode, queryClient, selectedMode],
   )
 
   useEffect(() => {
@@ -368,23 +379,42 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
   }, [glyphMenu])
 
   async function saveBrandingMeta() {
+    setBrandingSaveError(null)
     const body = {
       title: localBranding.title ?? '',
       subtitle: localBranding.subtitle ?? '',
     }
-    let out
-    if (selectedMode === '808notes') {
-      out = await patchBranding808notes(body)
-    } else {
-      out = await updateBranding(body)
+    try {
+      let out
+      if (selectedMode === '808notes') {
+        out = await patchBranding808notes(body)
+      } else {
+        out = await updateBranding(body)
+      }
+      const merged =
+        selectedMode === '808notes' ? patch808notesBranding(null, out) : patchBranding(null, out)
+      setLocalBranding(merged)
+      pushBrandingPreview(merged)
+      await queryClient.invalidateQueries({ queryKey: ['branding', 'config', selectedMode] })
+      await queryClient.invalidateQueries({ queryKey: ['branding', selectedMode] })
+
+      try {
+        await fetchBranding(appBrandingMode)
+      } catch {
+        /* Store already updated by pushBrandingPreview if host mode matched selectedMode */
+      }
+      setGlobalDraft(layoutDraftToApiPayload({ ...useLayoutStore.getState() }))
+
+      if (selectedMode === '808notes') {
+        const snap = useAppStore.getState().branding
+        if (snap && typeof snap === 'object') {
+          queryClient.setQueryData(['branding', '808notes'], snap)
+        }
+      }
+    } catch (e) {
+      const msg = e && typeof e === 'object' && 'message' in e ? String(e.message) : String(e)
+      setBrandingSaveError(msg || 'Could not save branding.')
     }
-    const merged =
-      selectedMode === '808notes' ? patch808notesBranding(null, out) : patchBranding(null, out)
-    setLocalBranding(merged)
-    pushBrandingPreview(merged)
-    await queryClient.invalidateQueries({ queryKey: ['branding', 'config', selectedMode] })
-    await queryClient.invalidateQueries({ queryKey: ['branding', selectedMode] })
-    await fetchBranding(appBrandingMode)
   }
 
   async function onAssetPick(slot, e) {
@@ -535,14 +565,22 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
         <div className="flex flex-wrap gap-3">
           <button
             type="button"
+            disabled={initialMode === '808notes'}
             onClick={() => setSelectedMode('booops')}
             onContextMenu={(e) => {
+              if (initialMode === '808notes') return
               e.preventDefault()
               setGlyphMenu({ mode: 'booops', x: e.clientX, y: e.clientY })
             }}
+            title={
+              initialMode === '808notes'
+                ? 'Open Settings from BooOps to edit BooOps title and slogan.'
+                : undefined
+            }
             className={cn(
               'flex min-w-[12rem] flex-row items-center gap-3 rounded-lg border px-4 py-2.5 text-left transition-colors',
               selectedMode === 'booops' ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted/40',
+              initialMode === '808notes' && 'cursor-not-allowed opacity-50 hover:bg-transparent',
             )}
             aria-label="BooOps branding — right-click to change icon"
           >
@@ -639,11 +677,19 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
                 />
               </label>
               <label className="flex flex-col gap-1 text-sm">
-                <span className="text-muted-foreground">Subtitle</span>
+                <span className="text-muted-foreground">
+                  {selectedMode === '808notes' ? 'Slogan (landing)' : 'Subtitle'}
+                </span>
+                {selectedMode === '808notes' ? (
+                  <span className="text-xs text-muted-foreground">
+                    Shown under the title on the 808notes home page. Save branding to apply.
+                  </span>
+                ) : null}
                 <input
                   value={localBranding.subtitle ?? ''}
                   onChange={(e) => updateBrandingField({ subtitle: e.target.value })}
                   className="h-9 rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2"
+                  placeholder={selectedMode === '808notes' ? '// your line here' : ''}
                 />
               </label>
               <div className="flex flex-col gap-2 text-sm">
@@ -685,6 +731,11 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
               <Button type="button" size="sm" onClick={() => void saveBrandingMeta()}>
                 Save branding
               </Button>
+              {brandingSaveError ? (
+                <p className="text-sm text-destructive" role="alert">
+                  {brandingSaveError}
+                </p>
+              ) : null}
             </section>
           )}
 

@@ -105,7 +105,8 @@ def _write_searxng_settings_yaml(
     server_block["image_proxy"] = bool(image_proxy)
 
     engines_block = settings.get("engines")
-    if isinstance(engines_block, list):
+    # When no engines selected, do not rewrite YAML `disabled` flags (would disable everything).
+    if isinstance(engines_block, list) and enabled_names:
         for item in engines_block:
             if not isinstance(item, dict):
                 continue
@@ -176,9 +177,8 @@ async def update_searxng_config(mode: str, body: SearxngConfigUpdate):
 
         if body.enabled_engines is not None:
             engines_list = [e.strip().lower() for e in body.enabled_engines if e and str(e).strip()]
-            if not engines_list:
-                raise HTTPException(status_code=400, detail="enabled_engines must contain at least one engine")
-            engines_csv = ",".join(engines_list)
+            # Empty list = omit `engines` on search requests / use SearXNG instance defaults.
+            engines_csv = ",".join(engines_list) if engines_list else ""
         else:
             engines_csv = row["enabled_engines"] or ""
             engines_list = _split_engines(engines_csv)

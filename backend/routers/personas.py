@@ -1,4 +1,7 @@
-"""Personas CRUD: separate lists per app mode (booops / 808notes), each with its own default."""
+"""Personas CRUD: separate lists per app mode (booops / 808notes), each with its own default.
+
+Schema phase 3 may use a global personas table without a `mode` column (one shared list). This router
+detects that shape and omits mode filters / inserts so list/get/update still work."""
 
 from __future__ import annotations
 
@@ -7,11 +10,12 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+import asyncpg
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from db import get_pool
+from db import get_pool, personas_has_mode_column, personas_table_columns, reset_personas_mode_column_cache
 
 router = APIRouter()
 
@@ -53,6 +57,61 @@ def _row(r: Any) -> dict[str, Any]:
     return out
 
 
+def _sel_col(cols: frozenset[str], name: str, fallback_sql: str) -> str:
+    """Use a real column when present, else a typed literal (for partial / old schemas)."""
+    return name if name in cols else f"{fallback_sql} AS {name}"
+
+
+def _list_personas_select_parts(cols: frozenset[str], m: str) -> tuple[str, str, list[Any]]:
+    """Build SELECT list, WHERE clause, and bind params for list_personas."""
+    pieces: list[str] = [
+        "id",
+        "name",
+        _sel_col(cols, "icon_url", "NULL::text"),
+        _sel_col(cols, "system_prompt", "''::text"),
+    ]
+
+    if "is_default" in cols:
+        pieces.append("is_default")
+    elif "is_default_booops" in cols and "is_default_808notes" in cols:
+        if "mode" in cols:
+            pieces.append(
+                f"(CASE WHEN '{m}' = '808notes' THEN is_default_808notes::bool "
+                f"ELSE is_default_booops::bool END) AS is_default"
+            )
+        else:
+            pieces.append("(is_default_booops OR is_default_808notes) AS is_default")
+    elif "is_default_booops" in cols:
+        pieces.append("is_default_booops AS is_default")
+    elif "is_default_808notes" in cols:
+        pieces.append("is_default_808notes AS is_default")
+    else:
+        pieces.append("FALSE AS is_default")
+
+    if "avatar_emoji" in cols:
+        pieces.append("avatar_emoji")
+    else:
+        pieces.append("'🤖'::text AS avatar_emoji")
+
+    if "mode" in cols:
+        pieces.append("mode")
+
+    pieces.append(_sel_col(cols, "created_at", "NOW()"))
+
+    select_clause = ", ".join(pieces)
+    if "mode" in cols:
+        return select_clause, " WHERE mode = $1::text", [m]
+    return select_clause, "", []
+
+
+async def _list_personas_rows(conn: Any, cols: frozenset[str], m: str) -> list[Any]:
+    sel, where, params = _list_personas_select_parts(cols, m)
+    sql = f"SELECT {sel} FROM personas{where} ORDER BY is_default DESC, created_at ASC NULLS LAST"
+    if params:
+        return await conn.fetch(sql, *params)
+    return await conn.fetch(sql)
+
+
 def _delete_stored_persona_icon(persona_id: uuid.UUID) -> None:
     BRANDING_PERSONA_ICONS.mkdir(parents=True, exist_ok=True)
     sid = str(persona_id)
@@ -68,15 +127,14 @@ async def list_personas(mode: str = Query("booops")):
     m = _norm_mode(mode)
     pool = await get_pool()
     async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            """
-            SELECT id, name, icon_url, system_prompt, is_default, avatar_emoji, mode, created_at
-            FROM personas
-            WHERE mode = $1::text
-            ORDER BY is_default DESC, created_at ASC
-            """,
-            m,
-        )
+        try:
+            cols = await personas_table_columns(conn)
+            rows = await _list_personas_rows(conn, cols, m)
+        except asyncpg.exceptions.PostgresError:
+            # Stale column cache, transient DDL, or wrong-shaped introspection — refresh once.
+            reset_personas_mode_column_cache()
+            cols = await personas_table_columns(conn)
+            rows = await _list_personas_rows(conn, cols, m)
     return {"items": [_row(r) for r in rows]}
 
 
@@ -85,17 +143,30 @@ async def create_persona(body: PersonaCreate):
     m = _norm_mode(body.mode)
     pool = await get_pool()
     async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            """
-            INSERT INTO personas (name, system_prompt, avatar_emoji, is_default, mode)
-            VALUES ($1, $2, $3, FALSE, $4::text)
-            RETURNING id, name, icon_url, system_prompt, is_default, avatar_emoji, mode, created_at
-            """,
-            body.name.strip(),
-            body.system_prompt or "",
-            (body.avatar_emoji or "🤖").strip() or "🤖",
-            m,
-        )
+        has_mode = await personas_has_mode_column(conn)
+        if has_mode:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO personas (name, system_prompt, avatar_emoji, is_default, mode)
+                VALUES ($1, $2, $3, FALSE, $4::text)
+                RETURNING id, name, icon_url, system_prompt, is_default, avatar_emoji, mode, created_at
+                """,
+                body.name.strip(),
+                body.system_prompt or "",
+                (body.avatar_emoji or "🤖").strip() or "🤖",
+                m,
+            )
+        else:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO personas (name, system_prompt, avatar_emoji, is_default)
+                VALUES ($1, $2, $3, FALSE)
+                RETURNING id, name, icon_url, system_prompt, is_default, avatar_emoji, created_at
+                """,
+                body.name.strip(),
+                body.system_prompt or "",
+                (body.avatar_emoji or "🤖").strip() or "🤖",
+            )
     return _row(row)
 
 
@@ -103,14 +174,25 @@ async def create_persona(body: PersonaCreate):
 async def get_persona(persona_id: uuid.UUID):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            """
-            SELECT id, name, icon_url, system_prompt, is_default, avatar_emoji, mode, created_at
-            FROM personas
-            WHERE id = $1::uuid
-            """,
-            persona_id,
-        )
+        has_mode = await personas_has_mode_column(conn)
+        if has_mode:
+            row = await conn.fetchrow(
+                """
+                SELECT id, name, icon_url, system_prompt, is_default, avatar_emoji, mode, created_at
+                FROM personas
+                WHERE id = $1::uuid
+                """,
+                persona_id,
+            )
+        else:
+            row = await conn.fetchrow(
+                """
+                SELECT id, name, icon_url, system_prompt, is_default, avatar_emoji, created_at
+                FROM personas
+                WHERE id = $1::uuid
+                """,
+                persona_id,
+            )
     if row is None:
         raise HTTPException(status_code=404, detail="Persona not found")
     return _row(row)
@@ -139,15 +221,27 @@ async def upload_persona_icon(persona_id: uuid.UUID, file: UploadFile = File(...
 
     icon_url = f"/api/personas/{persona_id}/icon-asset"
     async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            """
-            UPDATE personas SET icon_url = $2, updated_at = NOW()
-            WHERE id = $1::uuid
-            RETURNING id, name, icon_url, system_prompt, is_default, avatar_emoji, mode, created_at
-            """,
-            persona_id,
-            icon_url,
-        )
+        has_mode = await personas_has_mode_column(conn)
+        if has_mode:
+            row = await conn.fetchrow(
+                """
+                UPDATE personas SET icon_url = $2, updated_at = NOW()
+                WHERE id = $1::uuid
+                RETURNING id, name, icon_url, system_prompt, is_default, avatar_emoji, mode, created_at
+                """,
+                persona_id,
+                icon_url,
+            )
+        else:
+            row = await conn.fetchrow(
+                """
+                UPDATE personas SET icon_url = $2, updated_at = NOW()
+                WHERE id = $1::uuid
+                RETURNING id, name, icon_url, system_prompt, is_default, avatar_emoji, created_at
+                """,
+                persona_id,
+                icon_url,
+            )
     return _row(row)
 
 
@@ -167,14 +261,25 @@ async def update_persona(persona_id: uuid.UUID, body: PersonaUpdate):
     pool = await get_pool()
     data = body.model_dump(exclude_unset=True)
     async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            """
-            SELECT id, name, icon_url, system_prompt, is_default, avatar_emoji, mode, created_at
-            FROM personas
-            WHERE id = $1::uuid
-            """,
-            persona_id,
-        )
+        has_mode = await personas_has_mode_column(conn)
+        if has_mode:
+            row = await conn.fetchrow(
+                """
+                SELECT id, name, icon_url, system_prompt, is_default, avatar_emoji, mode, created_at
+                FROM personas
+                WHERE id = $1::uuid
+                """,
+                persona_id,
+            )
+        else:
+            row = await conn.fetchrow(
+                """
+                SELECT id, name, icon_url, system_prompt, is_default, avatar_emoji, created_at
+                FROM personas
+                WHERE id = $1::uuid
+                """,
+                persona_id,
+            )
         if row is None:
             raise HTTPException(status_code=404, detail="Persona not found")
         if not data:
@@ -198,29 +303,55 @@ async def update_persona(persona_id: uuid.UUID, body: PersonaUpdate):
 
         async with conn.transaction():
             if new_default is True:
-                await conn.execute(
+                if has_mode:
+                    await conn.execute(
+                        """
+                        UPDATE personas SET is_default = FALSE
+                        WHERE mode = $2::text AND id <> $1::uuid
+                        """,
+                        persona_id,
+                        row["mode"],
+                    )
+                else:
+                    await conn.execute(
+                        """
+                        UPDATE personas SET is_default = FALSE
+                        WHERE id <> $1::uuid
+                        """,
+                        persona_id,
+                    )
+            if has_mode:
+                updated = await conn.fetchrow(
                     """
-                    UPDATE personas SET is_default = FALSE
-                    WHERE mode = $2::text AND id <> $1::uuid
+                    UPDATE personas
+                    SET name = $2, system_prompt = $3, avatar_emoji = $4,
+                        is_default = $5, icon_url = $6, updated_at = NOW()
+                    WHERE id = $1::uuid
+                    RETURNING id, name, icon_url, system_prompt, is_default, avatar_emoji, mode, created_at
                     """,
                     persona_id,
-                    row["mode"],
+                    new_name,
+                    new_prompt,
+                    new_emoji,
+                    bool(new_default),
+                    new_icon,
                 )
-            updated = await conn.fetchrow(
-                """
-                UPDATE personas
-                SET name = $2, system_prompt = $3, avatar_emoji = $4,
-                    is_default = $5, icon_url = $6, updated_at = NOW()
-                WHERE id = $1::uuid
-                RETURNING id, name, icon_url, system_prompt, is_default, avatar_emoji, mode, created_at
-                """,
-                persona_id,
-                new_name,
-                new_prompt,
-                new_emoji,
-                bool(new_default),
-                new_icon,
-            )
+            else:
+                updated = await conn.fetchrow(
+                    """
+                    UPDATE personas
+                    SET name = $2, system_prompt = $3, avatar_emoji = $4,
+                        is_default = $5, icon_url = $6, updated_at = NOW()
+                    WHERE id = $1::uuid
+                    RETURNING id, name, icon_url, system_prompt, is_default, avatar_emoji, created_at
+                    """,
+                    persona_id,
+                    new_name,
+                    new_prompt,
+                    new_emoji,
+                    bool(new_default),
+                    new_icon,
+                )
     return _row(updated)
 
 

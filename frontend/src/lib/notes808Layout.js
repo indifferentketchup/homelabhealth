@@ -38,7 +38,10 @@ export function write808notesLayout(partial) {
   return next
 }
 
-/** Reapply local layout prefs (widths) on top of current store + CSS variables. */
+/**
+ * Reapply local layout prefs (widths) on top of current store + CSS variables.
+ * Does not inject default title/subtitle — saved 808 branding must override the built-in line.
+ */
 export function apply808notesLayoutToDom() {
   const root = document.documentElement
   if (root.dataset.mode !== '808notes') return
@@ -47,23 +50,33 @@ export function apply808notesLayoutToDom() {
     ? { ...(persisted && typeof persisted === 'object' ? persisted : {}), ..._liveLayoutDraft }
     : persisted
   if (!layout || !Object.keys(layout).length) return
-  const cur = useAppStore.getState().branding || {}
-  const b = { ...cur }
+
   if (typeof layout.chatMaxWidth === 'number' && Number.isFinite(layout.chatMaxWidth)) {
     const v = Math.round(layout.chatMaxWidth)
-    b.chatMaxWidth = v
     root.style.setProperty('--chat-max-w', `${v}px`)
     root.style.setProperty('--chat-max-width', `${v}px`)
   }
   if (typeof layout.sidebarWidth === 'number' && Number.isFinite(layout.sidebarWidth)) {
     const v = Math.round(layout.sidebarWidth)
-    b.sidebarWidth = v
     root.style.setProperty('--sidebar-width', `${v}px`)
   }
   if (typeof layout.sourcesPanelWidth === 'number' && Number.isFinite(layout.sourcesPanelWidth)) {
     const v = Math.round(layout.sourcesPanelWidth)
-    b.sourcesPanelWidth = v
     root.style.setProperty('--sources-panel-width', `${v}px`)
+  }
+
+  const cur = useAppStore.getState().branding
+  if (!cur || typeof cur !== 'object') return
+
+  const b = { ...cur }
+  if (typeof layout.chatMaxWidth === 'number' && Number.isFinite(layout.chatMaxWidth)) {
+    b.chatMaxWidth = Math.round(layout.chatMaxWidth)
+  }
+  if (typeof layout.sidebarWidth === 'number' && Number.isFinite(layout.sidebarWidth)) {
+    b.sidebarWidth = Math.round(layout.sidebarWidth)
+  }
+  if (typeof layout.sourcesPanelWidth === 'number' && Number.isFinite(layout.sourcesPanelWidth)) {
+    b.sourcesPanelWidth = Math.round(layout.sourcesPanelWidth)
   }
   useAppStore.getState().setBranding(b)
 }

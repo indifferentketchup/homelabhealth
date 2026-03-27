@@ -4,14 +4,18 @@ import { fetchSearxngConfig, patchSearxngConfig } from '@/api/searxngConfig.js'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
+/** [searx engine id, label] — ids must match SearXNG engine `name` (lowercase). */
 const AVAILABLE_ENGINES = [
-  'google',
-  'duckduckgo',
-  'bing',
-  'wikipedia',
-  'github',
-  'arxiv',
-  'pubmed',
+  ['brave', 'Brave'],
+  ['mojeek', 'Mojeek'],
+  ['startpage', 'Startpage'],
+  ['qwant', 'Qwant'],
+  ['presearch', 'Presearch'],
+  ['marginalia', 'Marginalia'],
+  ['wikipedia', 'Wikipedia'],
+  ['github', 'GitHub'],
+  ['arxiv', 'arXiv'],
+  ['pubmed', 'PubMed'],
 ]
 
 /** Values accepted by SearXNG search.autocomplete (subset; empty = instance default) */
@@ -157,7 +161,7 @@ export default function SearchSettingsTab({ mode }) {
       <div className="space-y-2 text-sm">
         <span className="text-muted-foreground">Enabled engines</span>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {AVAILABLE_ENGINES.map((engine) => (
+          {AVAILABLE_ENGINES.map(([engine, label]) => (
             <label
               key={engine}
               className="flex cursor-pointer items-center gap-2 rounded-md border border-border bg-card/30 px-3 py-2 text-foreground"
@@ -168,7 +172,7 @@ export default function SearchSettingsTab({ mode }) {
                 checked={config.enabled_engines.includes(engine)}
                 onChange={() => handleEngineToggle(engine)}
               />
-              <span className="capitalize">{engine}</span>
+              <span>{label}</span>
             </label>
           ))}
         </div>

@@ -13,6 +13,7 @@ import sqlparse
 
 _pool: asyncpg.Pool | None = None
 _chroma_client: Any = None
+_personas_table_columns_cache: frozenset[str] | None = None
 
 _COLLECTION_RE = re.compile(r"[^a-zA-Z0-9_]+")
 
@@ -36,6 +37,32 @@ async def get_pool() -> asyncpg.Pool:
     if _pool is None:
         raise RuntimeError("Database pool not initialized")
     return _pool
+
+
+def reset_personas_mode_column_cache() -> None:
+    """Invalidate cached `public.personas` column set (e.g. after apply_schema)."""
+    global _personas_table_columns_cache
+    _personas_table_columns_cache = None
+
+
+async def personas_table_columns(conn: asyncpg.Connection) -> frozenset[str]:
+    """Live column names on `public.personas` (lowercase)."""
+    global _personas_table_columns_cache
+    if _personas_table_columns_cache is None:
+        rows = await conn.fetch(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'personas'
+            """
+        )
+        _personas_table_columns_cache = frozenset(str(r["column_name"]) for r in rows)
+    return _personas_table_columns_cache
+
+
+async def personas_has_mode_column(conn: asyncpg.Connection) -> bool:
+    """True if `public.personas` has a `mode` column (per-app lists); False for global persona list."""
+    return "mode" in await personas_table_columns(conn)
 
 
 async def close_pool() -> None:
@@ -88,3 +115,4 @@ async def apply_schema() -> None:
     async with pool.acquire() as conn:
         for stmt in _split_sql(sql):
             await conn.execute(stmt)
+    reset_personas_mode_column_cache()

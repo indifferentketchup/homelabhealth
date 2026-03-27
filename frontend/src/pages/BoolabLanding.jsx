@@ -78,6 +78,8 @@ export default function BoolabLanding() {
   const notes = merged.notes808Card || DEFAULT_BOOLAB_BRANDING.notes808Card
   const displayStack = merged.hubDisplayFont ? `'${merged.hubDisplayFont}', monospace` : undefined
   const monoStack = merged.hubMonoFont ? `'${merged.hubMonoFont}', monospace` : undefined
+  const landingFontScale = clampHubLandingFontScale(merged.hubLandingFontScale)
+  const landingIconScale = clampHubLandingIconScale(merged.hubLandingIconScale)
 
   const hubStyle = {
     '--hub-accent': merged.accentColor,
@@ -90,6 +92,11 @@ export default function BoolabLanding() {
     '--hub-border': merged.borderColor,
     '--hub-border2': `color-mix(in srgb, ${merged.accentColor || '#5dcf8f'} 28%, transparent)`,
     '--hub-page-max': '960px',
+    '--hub-landing-fs': String(landingFontScale),
+    '--hub-landing-is': String(landingIconScale),
+    '--hub-logo-w': `${Math.round(72 * landingIconScale)}px`,
+    '--hub-logo-w-sm': `${Math.round(96 * landingIconScale)}px`,
+    '--hub-logo-w-lg': `${Math.round(120 * landingIconScale)}px`,
   }
 
   return (
@@ -138,7 +145,7 @@ export default function BoolabLanding() {
               }}
             >
               <span
-                className="border px-[18px] py-2 text-[10px] uppercase tracking-[0.25em]"
+                className="boolab-hub-landing-mono-sm border px-[18px] py-2 uppercase tracking-[0.25em]"
                 style={{
                   borderColor: 'var(--hub-border)',
                   color: 'var(--hub-text3)',
@@ -165,7 +172,7 @@ export default function BoolabLanding() {
         >
           <div className="flex flex-wrap items-end gap-4 md:gap-6">
             <div
-              className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border shadow-lg sm:h-[88px] sm:w-[88px] md:h-[110px] md:w-[110px] md:rounded-[22px]"
+              className="boolab-hub-logo-tile flex shrink-0 items-center justify-center overflow-hidden rounded-xl border shadow-lg md:rounded-[22px]"
               style={{
                 borderColor: 'color-mix(in srgb, var(--hub-accent) 45%, transparent)',
                 boxShadow: `0 0 40px ${'color-mix(in srgb, var(--hub-accent) 35%, transparent)'}, 0 0 100px color-mix(in srgb, var(--hub-accent) 12%, transparent)`,
@@ -178,7 +185,7 @@ export default function BoolabLanding() {
                 <div className="flex h-full w-full items-center justify-center p-2">
                   <HubLucide
                     name={merged.appGlyphIcon || 'FlaskConical'}
-                    className="h-[55%] w-[55%] max-h-[4rem] max-w-[4rem]"
+                    className="boolab-hub-hero-glyph"
                     style={{
                       color: 'var(--hub-accent)',
                       filter:
@@ -191,7 +198,7 @@ export default function BoolabLanding() {
             <div className="min-w-0 flex-1 pb-1">
               <h1
                 className={cn(
-                  'mb-2 text-2xl font-extrabold leading-none tracking-wide sm:text-3xl md:text-4xl lg:text-5xl',
+                  'boolab-hub-hero-title mb-2 font-extrabold leading-none tracking-wide',
                   fontReady ? 'opacity-100' : 'opacity-0',
                 )}
                 style={{
@@ -205,7 +212,7 @@ export default function BoolabLanding() {
                 {merged.title || 'BooLab'}
               </h1>
               <p
-                className="min-h-[18px] text-[10px] tracking-[0.16em] sm:text-[11px]"
+                className="boolab-hub-hero-tagline tracking-[0.16em]"
                 style={{ fontFamily: monoStack || 'var(--font-mono)', color: 'var(--hub-text2)' }}
               >
                 {merged.tagline || ''}
@@ -224,7 +231,7 @@ export default function BoolabLanding() {
               }}
             />
             <span
-              className="text-[9px] uppercase tracking-[0.22em]"
+              className="boolab-hub-landing-label uppercase tracking-[0.22em]"
               style={{ fontFamily: monoStack || 'var(--font-mono)', color: 'var(--hub-text3)' }}
             >
               core
@@ -237,6 +244,7 @@ export default function BoolabLanding() {
               publicHref={getBooopsPublicHref()}
               fallbackTo={PATH_BOOOPS_HOME}
               card={boo}
+              landingIconScale={landingIconScale}
               monoStack={monoStack}
               displayStack={displayStack}
               textAlign={merged.hubCardsTextAlign}
@@ -246,6 +254,7 @@ export default function BoolabLanding() {
               publicHref={get808notesPublicHref()}
               fallbackTo={PATH_808NOTES_HOME}
               card={notes}
+              landingIconScale={landingIconScale}
               monoStack={monoStack}
               displayStack={displayStack}
               textAlign={merged.hubCardsTextAlign}
@@ -266,7 +275,7 @@ export default function BoolabLanding() {
       >
         <Link
           to={`${PATH_BOOLAB}/ai`.replace(/\/{2,}/g, '/')}
-          className="rounded-md border px-4 py-2 text-[10px] uppercase tracking-[0.12em] transition-colors hover:border-[var(--hub-accent)] hover:text-[var(--hub-accent)]"
+          className="boolab-hub-landing-mono-sm rounded-md border px-4 py-2 uppercase tracking-[0.12em] transition-colors hover:border-[var(--hub-accent)] hover:text-[var(--hub-accent)]"
           style={{
             fontFamily: monoStack || 'var(--font-mono)',
             borderColor: 'var(--hub-border2, var(--hub-border))',
@@ -278,7 +287,7 @@ export default function BoolabLanding() {
         </Link>
         <Link
           to={`${PATH_BOOLAB}/branding`.replace(/\/{2,}/g, '/')}
-          className="rounded-md border px-4 py-2 text-[10px] uppercase tracking-[0.12em] transition-colors hover:border-[var(--hub-accent)] hover:text-[var(--hub-accent)]"
+          className="boolab-hub-landing-mono-sm rounded-md border px-4 py-2 uppercase tracking-[0.12em] transition-colors hover:border-[var(--hub-accent)] hover:text-[var(--hub-accent)]"
           style={{
             fontFamily: monoStack || 'var(--font-mono)',
             borderColor: 'var(--hub-border2, var(--hub-border))',
@@ -295,6 +304,18 @@ export default function BoolabLanding() {
 
 const HUB_CARD_ALIGN = new Set(['center', 'start', 'end'])
 
+function clampHubLandingFontScale(n) {
+  const x = typeof n === 'number' ? n : Number(n)
+  if (!Number.isFinite(x)) return 1
+  return Math.min(1.5, Math.max(0.75, x))
+}
+
+function clampHubLandingIconScale(n) {
+  const x = typeof n === 'number' ? n : Number(n)
+  if (!Number.isFinite(x)) return 1
+  return Math.min(1.35, Math.max(0.75, x))
+}
+
 function clampHubCardScale(n) {
   const x = typeof n === 'number' ? n : Number(n)
   if (!Number.isFinite(x)) return 1
@@ -303,18 +324,19 @@ function clampHubCardScale(n) {
 
 function clampHubCardIconBasePx(n) {
   const x = typeof n === 'number' ? n : Number(n)
-  if (!Number.isFinite(x)) return 44
+  if (!Number.isFinite(x)) return 48
   return Math.min(120, Math.max(24, Math.round(x)))
 }
 
-function HubAppCard({ publicHref, fallbackTo, card, monoStack, displayStack, textAlign, fontScale }) {
+function HubAppCard({ publicHref, fallbackTo, card, monoStack, displayStack, textAlign, fontScale, landingIconScale }) {
   const accent = card?.accent || 'var(--hub-accent)'
   const align = HUB_CARD_ALIGN.has(textAlign) ? textAlign : 'center'
   const scale = clampHubCardScale(fontScale)
-  const titlePx = Math.round(15 * scale)
-  const descPx = Math.round(13 * scale)
+  const li = clampHubLandingIconScale(landingIconScale)
+  const titlePx = Math.round(18 * scale)
+  const descPx = Math.round(15 * scale)
   const iconBase = clampHubCardIconBasePx(card?.iconSize)
-  const iconPx = Math.round(iconBase * scale)
+  const iconPx = Math.round(iconBase * scale * li)
   const iconSrc = typeof card?.iconUrl === 'string' ? card.iconUrl.trim() : ''
 
   const className = cn(
@@ -454,8 +476,8 @@ function HubAppCardInner({
             color: 'var(--hub-accent)',
             borderColor: 'color-mix(in srgb, var(--hub-accent) 25%, transparent)',
             textShadow: '0 0 6px color-mix(in srgb, var(--hub-accent) 40%, transparent)',
-            fontSize: `${Math.max(8, Math.round(8 * scale))}px`,
-            paddingInline: `${Math.round(8 * scale)}px`,
+            fontSize: `${Math.max(9, Math.round(9 * scale))}px`,
+            paddingInline: `${Math.round(9 * scale)}px`,
             paddingBlock: `${Math.max(2, Math.round(2 * scale))}px`,
           }}
         >

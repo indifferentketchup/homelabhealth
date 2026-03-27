@@ -188,11 +188,11 @@
 
 .notes808-landing__hub-tagline {
   margin: 0;
-  min-height: 1.125rem;
+  min-height: 1.25rem;
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: clamp(0.625rem, 1.5vw, 0.6875rem);
-  letter-spacing: 0.16em;
-  color: var(--muted-foreground);
+  font-size: clamp(0.8125rem, 2vw, 0.9375rem);
+  letter-spacing: 0.12em;
+  color: color-mix(in srgb, var(--foreground) 78%, var(--muted-foreground));
 }
 
 .notes808-landing__intro {

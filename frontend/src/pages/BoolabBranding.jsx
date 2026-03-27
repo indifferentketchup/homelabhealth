@@ -134,6 +134,8 @@ export default function BoolabBranding() {
       notes808Card: draft.notes808Card,
       hubCardsTextAlign: draft.hubCardsTextAlign,
       hubCardsFontScale: draft.hubCardsFontScale,
+      hubLandingFontScale: draft.hubLandingFontScale,
+      hubLandingIconScale: draft.hubLandingIconScale,
     })
   }
 
@@ -400,7 +402,7 @@ export default function BoolabBranding() {
             </div>
             <label className="block space-y-1">
               <span className="text-xs" style={{ color: draft.textDim }}>
-                Icon size ({Math.round(Number(draft[which].iconSize) || 44)}px base; scales with hub card font slider)
+                Icon size ({Math.round(Number(draft[which].iconSize) || 44)}px base; scales with card font slider and landing icon %)
               </span>
               <input
                 type="range"
@@ -438,6 +440,47 @@ export default function BoolabBranding() {
           </label>
           </section>
         ))}
+
+        <section className="space-y-3 rounded-lg border p-4" style={{ borderColor: 'var(--hub-border)', background: draft.bgPanel }}>
+          <h2 className="text-[10px] uppercase tracking-[0.18em]" style={{ fontFamily: monoStack || 'var(--font-mono)', color: draft.textDim }}>
+            Hub landing (hero)
+          </h2>
+          <p className="text-xs leading-snug" style={{ color: draft.textDim }}>
+            Tweaks the main hub page only (title, tagline, section labels, footer, banner badge, logo tile, and card icons). Card title and body sizes still use the slider below.
+          </p>
+          <label className="block space-y-1">
+            <span className="text-xs" style={{ color: draft.textDim }}>
+              Text and labels ({Math.round((Number(draft.hubLandingFontScale) || 1) * 100)}%)
+            </span>
+            <input
+              type="range"
+              min={75}
+              max={150}
+              step={5}
+              value={Math.round(
+                (Number.isFinite(Number(draft.hubLandingFontScale)) ? Number(draft.hubLandingFontScale) : 1) * 100,
+              )}
+              onChange={(e) => setField('hubLandingFontScale', Number(e.target.value) / 100)}
+              className="w-full accent-[var(--hub-accent)]"
+            />
+          </label>
+          <label className="block space-y-1">
+            <span className="text-xs" style={{ color: draft.textDim }}>
+              Icons ({Math.round((Number(draft.hubLandingIconScale) || 1) * 100)}%)
+            </span>
+            <input
+              type="range"
+              min={75}
+              max={135}
+              step={5}
+              value={Math.round(
+                (Number.isFinite(Number(draft.hubLandingIconScale)) ? Number(draft.hubLandingIconScale) : 1) * 100,
+              )}
+              onChange={(e) => setField('hubLandingIconScale', Number(e.target.value) / 100)}
+              className="w-full accent-[var(--hub-accent)]"
+            />
+          </label>
+        </section>
 
         <section className="space-y-3 rounded-lg border p-4" style={{ borderColor: 'var(--hub-border)', background: draft.bgPanel }}>
           <h2 className="text-[10px] uppercase tracking-[0.18em]" style={{ fontFamily: monoStack || 'var(--font-mono)', color: draft.textDim }}>

@@ -15,12 +15,68 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from db import get_pool
+from db import get_pool, personas_table_columns
 from services.pruning import summarize_and_compress
 from services.searx import searx_search_sources
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+async def _default_persona_id_for_mode(conn: asyncpg.Connection, mode: str) -> uuid.UUID | None:
+    """Resolve default persona for chat insert; matches legacy and phase-3 persona schemas."""
+    cols = await personas_table_columns(conn)
+    m = mode if mode in ("booops", "808notes") else "booops"
+
+    if "mode" in cols:
+        if "is_default" in cols:
+            return await conn.fetchval(
+                "SELECT id FROM personas WHERE mode = $1::text AND is_default IS TRUE LIMIT 1",
+                m,
+            )
+        if "is_default_booops" in cols and "is_default_808notes" in cols:
+            flag = "is_default_808notes" if m == "808notes" else "is_default_booops"
+            return await conn.fetchval(
+                f"SELECT id FROM personas WHERE mode = $1::text AND {flag} IS TRUE LIMIT 1",
+                m,
+            )
+        if "is_default_booops" in cols:
+            return await conn.fetchval(
+                "SELECT id FROM personas WHERE mode = $1::text AND is_default_booops IS TRUE LIMIT 1",
+                m,
+            )
+        if "is_default_808notes" in cols:
+            return await conn.fetchval(
+                "SELECT id FROM personas WHERE mode = $1::text AND is_default_808notes IS TRUE LIMIT 1",
+                m,
+            )
+        return await conn.fetchval(
+            """
+            SELECT id FROM personas
+            WHERE mode = $1::text
+            ORDER BY created_at ASC NULLS LAST
+            LIMIT 1
+            """,
+            m,
+        )
+
+    if "is_default" in cols:
+        return await conn.fetchval("SELECT id FROM personas WHERE is_default IS TRUE LIMIT 1")
+    if "is_default_booops" in cols and "is_default_808notes" in cols:
+        flag = "is_default_808notes" if m == "808notes" else "is_default_booops"
+        return await conn.fetchval(f"SELECT id FROM personas WHERE {flag} IS TRUE LIMIT 1")
+    if "is_default_booops" in cols:
+        return await conn.fetchval("SELECT id FROM personas WHERE is_default_booops IS TRUE LIMIT 1")
+    if "is_default_808notes" in cols:
+        return await conn.fetchval("SELECT id FROM personas WHERE is_default_808notes IS TRUE LIMIT 1")
+    return await conn.fetchval(
+        """
+        SELECT id FROM personas
+        ORDER BY created_at ASC NULLS LAST
+        LIMIT 1
+        """
+    )
+
 
 async def _global_context_window(conn: asyncpg.Connection) -> int:
     row = await conn.fetchrow(
@@ -520,6 +576,9 @@ async def create_chat(body: ChatCreate):
             ok = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", body.daw_id)
             if ok is None:
                 raise HTTPException(status_code=400, detail="daw_id not found")
+        persona_id_for_insert = body.persona_id
+        if persona_id_for_insert is None:
+            persona_id_for_insert = await _default_persona_id_for_mode(conn, mode)
         row = await conn.fetchrow(
             """
             INSERT INTO chats (title, daw_id, mode, model, web_search_enabled, persona_id)
@@ -530,10 +589,7 @@ async def create_chat(body: ChatCreate):
                     ) LIMIT 1
                 ), $6),
                 COALESCE($5, FALSE),
-                COALESCE(
-                    $7,
-                    (SELECT id FROM personas WHERE mode = $3::text AND is_default = TRUE LIMIT 1)
-                ))
+                $7)
             RETURNING id, title, daw_id, mode, persona_id, model, web_search_enabled, rag_enabled,
                 pruning_summary, message_count, is_main_chat, created_at, updated_at
             """,
@@ -543,7 +599,7 @@ async def create_chat(body: ChatCreate):
             body.model,
             body.web_search_enabled,
             default_model,
-            body.persona_id,
+            persona_id_for_insert,
         )
     return _chat_row(row)
 
