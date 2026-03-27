@@ -19,7 +19,7 @@ router = APIRouter()
 BRANDING_ASSETS_DIR = Path("/data/branding/assets")
 ALLOWED_IMG_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg"}
 CARD_ICON_SLOTS = frozenset({"cardBooops", "card808notes"})
-ASSET_SLOTS = frozenset({"banner", "logo", "favicon", "icon", "og-banner"}) | CARD_ICON_SLOTS
+ASSET_SLOTS = frozenset({"banner", "logo", "favicon", "icon", "og_banner"}) | CARD_ICON_SLOTS
 
 _LIBRARY_STEM_SAFE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
 
@@ -143,7 +143,7 @@ def _main_branding_flat_key_for_slot(slot: str) -> str:
         return "logoUrl"
     if slot in ("favicon", "icon"):
         return "faviconUrl"
-    if slot == "og-banner":
+    if slot == "og_banner":
         return "ogBannerUrl"
     raise HTTPException(status_code=400, detail="invalid slot")
 

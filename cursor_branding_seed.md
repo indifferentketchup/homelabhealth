@@ -14,17 +14,17 @@ backend/
       banner.png
       icon.png
       logo.png
-      og-banner.png
+      og_banner.png
     808notes/
       banner.png
       icon.png
       logo.png
-      og-banner.png
+      og_banner.png
     boolab/
       banner.png
       icon.png
       logo.png
-      og-banner.png
+      og_banner.png
     personas/
       booops-logo.png
       808notes-logo.png
@@ -76,7 +76,7 @@ Create a new file `backend/seed_assets.py` with a single async function `seed_de
 
 ### Branding Seed
 
-For each mode (`booops`, `808notes`, `boolab`) and each slot (`banner`, `logo`, `icon`, `og-banner`):
+For each mode (`booops`, `808notes`, `boolab`) and each slot (`banner`, `logo`, `icon`, `og_banner`):
 
 - Check DB: `SELECT config FROM branding_config WHERE mode = $1`
 - For each slot, if `{slot}Url` is empty or missing in stored config:
@@ -89,7 +89,7 @@ For each mode (`booops`, `808notes`, `boolab`) and each slot (`banner`, `logo`, 
   - `banner` → `bannerUrl`
   - `logo` → `logoUrl`
   - `icon` → `faviconUrl`
-  - `og-banner` → `ogBannerUrl`
+  - `og_banner` → `ogBannerUrl`
 
 ### Persona Seed
 
@@ -166,7 +166,7 @@ await seed_default_assets()
 - If an asset file is missing from the repo, skip silently (log a warning, don't crash)
 - Never hardcode `/data/branding/assets` — always use `BRANDING_ASSETS_DIR` from `routers/branding.py`
 - Check `schema.sql` for exact personas column names before writing any insert
-- `og-banner` → `ogBannerUrl` mapping must be explicit, not derived from the slot name
+- `og_banner` → `ogBannerUrl` mapping must be explicit, not derived from the slot name
 
 ---
 

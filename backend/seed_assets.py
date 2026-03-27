@@ -25,14 +25,14 @@ _BACKEND_ROOT = Path(__file__).resolve().parent
 _ASSETS_ROOT = _BACKEND_ROOT / "assets"
 
 _BRANDING_MODES = ("booops", "808notes", "boolab")
-_FILE_SLOTS = ("banner", "logo", "icon", "og-banner")
+_FILE_SLOTS = ("banner", "logo", "icon", "og_banner")
 
 # Explicit slot → branding config keys (not derived from slot names).
 _SLOT_TO_CONFIG_KEY: dict[str, str] = {
     "banner": "bannerUrl",
     "logo": "logoUrl",
     "icon": "faviconUrl",
-    "og-banner": "ogBannerUrl",
+    "og_banner": "ogBannerUrl",
 }
 
 _PERSIST_BY_MODE: dict[str, Any] = {
