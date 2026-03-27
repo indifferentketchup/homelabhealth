@@ -18,6 +18,7 @@ import {
   isHttpUrl,
 } from '@/routes/paths.js'
 import { cn } from '@/lib/utils'
+import { useAppStore } from '@/store/index.js'
 
 function HubLucide({ name, className, style }) {
   const C =
@@ -28,6 +29,7 @@ function HubLucide({ name, className, style }) {
 }
 
 export default function BoolabLanding() {
+  const currentUser = useAppStore((s) => s.currentUser)
   const [fontReady, setFontReady] = useState(false)
   const { data, isError } = useQuery({
     queryKey: ['branding', 'boolab'],
@@ -273,30 +275,34 @@ export default function BoolabLanding() {
           width: '100%',
         }}
       >
-        <Link
-          to={`${PATH_BOOLAB}/ai`.replace(/\/{2,}/g, '/')}
-          className="boolab-hub-landing-mono-sm rounded-md border px-4 py-2 uppercase tracking-[0.12em] transition-colors hover:border-[var(--hub-accent)] hover:text-[var(--hub-accent)]"
-          style={{
-            fontFamily: monoStack || 'var(--font-mono)',
-            borderColor: 'var(--hub-border2, var(--hub-border))',
-            background: 'var(--hub-bg2)',
-            color: 'var(--hub-text2)',
-          }}
-        >
-          AI settings
-        </Link>
-        <Link
-          to={`${PATH_BOOLAB}/branding`.replace(/\/{2,}/g, '/')}
-          className="boolab-hub-landing-mono-sm rounded-md border px-4 py-2 uppercase tracking-[0.12em] transition-colors hover:border-[var(--hub-accent)] hover:text-[var(--hub-accent)]"
-          style={{
-            fontFamily: monoStack || 'var(--font-mono)',
-            borderColor: 'var(--hub-border2, var(--hub-border))',
-            background: 'var(--hub-bg2)',
-            color: 'var(--hub-text2)',
-          }}
-        >
-          Branding settings
-        </Link>
+        {currentUser?.role === 'owner' ? (
+          <>
+            <Link
+              to={`${PATH_BOOLAB}/ai`.replace(/\/{2,}/g, '/')}
+              className="boolab-hub-landing-mono-sm rounded-md border px-4 py-2 uppercase tracking-[0.12em] transition-colors hover:border-[var(--hub-accent)] hover:text-[var(--hub-accent)]"
+              style={{
+                fontFamily: monoStack || 'var(--font-mono)',
+                borderColor: 'var(--hub-border2, var(--hub-border))',
+                background: 'var(--hub-bg2)',
+                color: 'var(--hub-text2)',
+              }}
+            >
+              AI settings
+            </Link>
+            <Link
+              to={`${PATH_BOOLAB}/branding`.replace(/\/{2,}/g, '/')}
+              className="boolab-hub-landing-mono-sm rounded-md border px-4 py-2 uppercase tracking-[0.12em] transition-colors hover:border-[var(--hub-accent)] hover:text-[var(--hub-accent)]"
+              style={{
+                fontFamily: monoStack || 'var(--font-mono)',
+                borderColor: 'var(--hub-border2, var(--hub-border))',
+                background: 'var(--hub-bg2)',
+                color: 'var(--hub-text2)',
+              }}
+            >
+              Branding settings
+            </Link>
+          </>
+        ) : null}
       </footer>
     </div>
   )

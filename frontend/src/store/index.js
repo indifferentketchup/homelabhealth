@@ -1,7 +1,11 @@
 import { create } from 'zustand'
 
 import { fetchMe } from '@/api/auth.js'
-import { BOOLAB_TOKEN_KEY, getStoredBoolabToken } from '@/api/index.js'
+import {
+  clearBoolabTokenCookie,
+  getStoredBoolabToken,
+  setBoolabTokenCookie,
+} from '@/api/index.js'
 import { APP_MODE } from '../mode.js'
 
 const USER_PROFILE_STORAGE_KEY = 'boolab-user-profile-v1'
@@ -61,15 +65,6 @@ function personaToUi(p) {
   return personaFieldsFromRecord(p)
 }
 
-function readBoolabToken() {
-  if (typeof localStorage === 'undefined') return null
-  try {
-    return localStorage.getItem(BOOLAB_TOKEN_KEY)
-  } catch {
-    return null
-  }
-}
-
 function revokeProfileIconObjectUrl(url) {
   if (url && String(url).startsWith('blob:')) {
     try {
@@ -84,14 +79,14 @@ export const useAppStore = create((set, get) => ({
   /** Resolved from URL path / query / host (see `mode.js`, `ModeSync`). */
   mode: APP_MODE,
 
-  token: readBoolabToken(),
+  token: typeof window !== 'undefined' ? getStoredBoolabToken() : null,
   currentUser: null,
   /** Authenticated fetch of `/api/auth/profile/icon-asset` as blob URL (DB accounts only). */
   profileIconObjectUrl: null,
   setToken: (token) => {
     try {
-      if (token) localStorage.setItem(BOOLAB_TOKEN_KEY, token)
-      else localStorage.removeItem(BOOLAB_TOKEN_KEY)
+      if (token) setBoolabTokenCookie(token)
+      else clearBoolabTokenCookie()
     } catch {
       /* ignore */
     }
@@ -99,7 +94,7 @@ export const useAppStore = create((set, get) => ({
   },
   clearToken: () => {
     try {
-      localStorage.removeItem(BOOLAB_TOKEN_KEY)
+      clearBoolabTokenCookie()
     } catch {
       /* ignore */
     }

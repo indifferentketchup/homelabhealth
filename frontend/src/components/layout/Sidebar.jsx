@@ -10,7 +10,6 @@ import {
   LayoutGrid,
   List,
   Lock,
-  LogOut,
   MessageSquarePlus,
   MessagesSquare,
   PanelLeft,
@@ -96,7 +95,6 @@ export function Sidebar({
 
   const currentUser = useAppStore((s) => s.currentUser)
   const setToken = useAppStore((s) => s.setToken)
-  const clearToken = useAppStore((s) => s.clearToken)
   const bootstrapAuth = useAppStore((s) => s.bootstrapAuth)
   const adminUi =
     currentUser?.role === 'owner' || currentUser?.role === 'super_admin'
@@ -717,34 +715,6 @@ export function Sidebar({
                 </span>
               ) : (
                 <Lock className="size-4" />
-              )}
-            </Button>
-          )}
-          {currentUser && (
-            <Button
-              type="button"
-              variant="outline"
-              className={cn(
-                'w-full border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent',
-                desktopCollapsed && 'px-0',
-              )}
-              title="Sign out"
-              onClick={() => {
-                clearToken()
-                void queryClient.invalidateQueries()
-              }}
-            >
-              {!desktopCollapsed ? (
-                <span className="fs-nav flex items-center justify-center gap-2">
-                  <LogOut className="size-4 shrink-0" />
-                  {currentUser.role === 'owner'
-                    ? 'Owner'
-                    : currentUser.role === 'super_admin'
-                      ? 'Super admin'
-                      : currentUser.username || 'Member'}
-                </span>
-              ) : (
-                <LogOut className="size-4" />
               )}
             </Button>
           )}

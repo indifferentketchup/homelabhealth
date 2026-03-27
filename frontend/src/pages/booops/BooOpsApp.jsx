@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link, Outlet } from 'react-router-dom'
+import { Outlet } from 'react-router-dom'
 import { Menu } from 'lucide-react'
 
 import { getOllamaSettings } from '@/api/ollama.js'
@@ -8,10 +8,10 @@ import { listPersonas } from '@/api/personas.js'
 import { ModelSelectorBar } from '@/components/chat/ModelSelectorBar.jsx'
 import { Sidebar } from '@/components/layout/Sidebar.jsx'
 import { DawQuerySync } from '@/components/DawQuerySync.jsx'
-import { UserProfileAvatar } from '@/components/layout/UserProfileAvatar.jsx'
+import { UserProfileMenu } from '@/components/layout/UserProfileMenu.jsx'
 import { Button } from '@/components/ui/button'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { PATH_BOOOPS } from '@/routes/paths.js'
+import { PATH_BOOOPS, PATH_BOOOPS_HOME } from '@/routes/paths.js'
 import { useAppStore } from '@/store/index.js'
 
 import BooOpsSettings from './Settings.jsx'
@@ -69,21 +69,17 @@ export default function BooOpsApp() {
               <Menu className="size-5" />
             </Button>
             <ModelSelectorBar className="min-w-0 flex-1" />
-            <Button type="button" variant="ghost" size="icon" className="shrink-0" asChild aria-label="Your profile">
-              <Link to={`${PATH_BOOOPS}/profile`}>
-                <UserProfileAvatar size="button" className="size-7 text-sm" />
-              </Link>
-            </Button>
+            <UserProfileMenu
+              profilePath={`${PATH_BOOOPS}/profile`}
+              homePath={PATH_BOOOPS_HOME}
+              placement="header"
+            />
           </header>
-          <Link
-            to={`${PATH_BOOOPS}/profile`}
-            className="pointer-events-auto fixed right-3 top-3 z-40 hidden rounded-full border border-border bg-card shadow-sm md:inline-flex"
-            aria-label="Your profile"
-          >
-            <span className="p-0.5">
-              <UserProfileAvatar size="button" />
-            </span>
-          </Link>
+          <UserProfileMenu
+            profilePath={`${PATH_BOOOPS}/profile`}
+            homePath={PATH_BOOOPS_HOME}
+            placement="fixed"
+          />
           <div className="flex min-h-0 flex-1 flex-col">
             <Outlet />
           </div>
