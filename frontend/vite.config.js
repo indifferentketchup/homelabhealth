@@ -43,7 +43,7 @@ function htmlDisplayNameFromAppModePlugin(env) {
   }
 }
 
-/** HTML `%VITE_*%` uses `loadEnv` only; Docker `ARG`/`ENV` needs `process.env` bridged for OG image URLs. */
+/** Docker `ARG`/`ENV` must be bridged via `process.env` (same as OG image). */
 function htmlOgImageFromShellPlugin() {
   return {
     name: 'html-og-image-from-shell',
@@ -54,6 +54,25 @@ function htmlOgImageFromShellPlugin() {
         return html.replaceAll('%VITE_HTML_OG_IMAGE%', v)
       }
       return html
+    },
+  }
+}
+
+function htmlOgTitleDescriptionFromShellPlugin() {
+  return {
+    name: 'html-og-title-description-from-shell',
+    enforce: 'pre',
+    transformIndexHtml(html) {
+      let out = html
+      const title = process.env.VITE_OG_TITLE
+      if (title != null && String(title).trim() !== '') {
+        out = out.replaceAll('%VITE_OG_TITLE%', title)
+      }
+      const desc = process.env.VITE_OG_DESCRIPTION
+      if (desc != null && String(desc).trim() !== '') {
+        out = out.replaceAll('%VITE_OG_DESCRIPTION%', desc)
+      }
+      return out
     },
   }
 }
@@ -77,6 +96,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       htmlDisplayNameFromAppModePlugin(env),
       htmlOgImageFromShellPlugin(),
+      htmlOgTitleDescriptionFromShellPlugin(),
       react(),
     ],
     server: {

@@ -58,6 +58,8 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_APP_MODE: boolab
+        VITE_OG_TITLE: "BooLab"
+        VITE_OG_DESCRIPTION: "Pick your lab bench. BooOps + 808notes."
         VITE_HTML_OG_IMAGE: https://boolab.boogaardmusic.com/api/branding/boolab/asset/og_banner
         VITE_PUBLIC_BOOLAB_URL: ${VITE_PUBLIC_BOOLAB_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9302}
         VITE_PUBLIC_BOOOPS_URL: ${VITE_PUBLIC_BOOOPS_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9303}
@@ -76,6 +78,8 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_APP_MODE: booops
+        VITE_OG_TITLE: "BooOps"
+        VITE_OG_DESCRIPTION: "Fuck corporate AI. This is my DAW: Digital AI Workspace."
         VITE_HTML_OG_IMAGE: https://booops.boogaardmusic.com/api/branding/booops/asset/og_banner
         VITE_PUBLIC_BOOLAB_URL: ${VITE_PUBLIC_BOOLAB_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9302}
         VITE_PUBLIC_BOOOPS_URL: ${VITE_PUBLIC_BOOOPS_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9303}
@@ -94,6 +98,8 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_APP_MODE: 808notes
+        VITE_OG_TITLE: "808notes"
+        VITE_OG_DESCRIPTION: "Open up your DAW: Digital AI Workspace."
         VITE_HTML_OG_IMAGE: https://808notes.boogaardmusic.com/api/branding/808notes/asset/og_banner
         VITE_PUBLIC_BOOLAB_URL: ${VITE_PUBLIC_BOOLAB_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9302}
         VITE_PUBLIC_BOOOPS_URL: ${VITE_PUBLIC_BOOOPS_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9303}
