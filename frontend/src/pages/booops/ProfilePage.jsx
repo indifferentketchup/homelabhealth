@@ -41,9 +41,8 @@ export default function ProfilePage() {
   const setCurrentUser = useAppStore((s) => s.setCurrentUser)
   const syncUserProfileFromServer = useAppStore((s) => s.syncUserProfileFromServer)
 
-  const isDbAccount =
-    currentUser?.role === 'member' || currentUser?.role === 'super_admin'
-  const isOwner = currentUser?.role === 'owner'
+  const isDbAccount = Boolean(currentUser?.user_id)
+  const isEnvOwner = currentUser?.role === 'owner' && !currentUser?.user_id
 
   const [displayName, setDisplayName] = useState(userProfile.displayName)
   const [emoji, setEmoji] = useState(userProfile.emoji)
@@ -347,7 +346,7 @@ export default function ProfilePage() {
           </form>
         ) : null}
 
-        {isOwner ? (
+        {isEnvOwner ? (
           <p className="mt-8 text-xs text-muted-foreground">
             To change the owner password, update the server configuration (for example the password value used for the &quot;owner&quot; account), not this page.
           </p>

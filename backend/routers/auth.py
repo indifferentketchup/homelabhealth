@@ -54,9 +54,9 @@ def _delete_stored_user_icon(user_id: uuid.UUID) -> None:
 
 
 def _me_payload(user: dict[str, Any]) -> dict[str, Any]:
-    if user.get("role") == "owner":
+    if user.get("role") == "owner" and not user.get("user_id"):
         return {"role": "owner"}
-    if user.get("role") in ("member", "super_admin"):
+    if user.get("role") in ("member", "super_admin", "owner") and user.get("user_id"):
         icon = user.get("icon_url")
         return {
             "role": user["role"],
@@ -88,7 +88,7 @@ async def login(body: LoginBody):
     if row is None or not pwd_context.verify(body.password, row["password_hash"]):
         raise HTTPException(status_code=401, detail="invalid_credentials")
     db_role = row["role"]
-    if db_role not in ("member", "super_admin"):
+    if db_role not in ("member", "super_admin", "owner"):
         raise HTTPException(status_code=401, detail="invalid_credentials")
     token = create_access_token(sub=str(row["id"]), role=db_role)
     return {"access_token": token, "token_type": "bearer"}
@@ -213,7 +213,7 @@ async def upload_profile_icon(
 
 @router.get("/profile/icon-asset")
 async def serve_profile_icon(user: dict[str, Any] | None = Depends(get_current_user)):
-    if not user or user.get("role") not in ("member", "super_admin"):
+    if not user or user.get("role") not in ("member", "super_admin", "owner") or not user.get("user_id"):
         raise HTTPException(status_code=401, detail="not_authenticated")
     uid = user["user_id"]
     USER_PROFILE_ICONS.mkdir(parents=True, exist_ok=True)

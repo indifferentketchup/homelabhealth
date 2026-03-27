@@ -1,4 +1,4 @@
-"""Ensure built-in super-admin account exists (persistent DB user)."""
+"""Ensure built-in site owner DB account (samkintop) exists."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ SUPER_ADMIN_DEFAULT_PASSWORD = "Ketchup"
 
 
 async def ensure_super_admin() -> None:
-    """Insert samkintop if missing; does not overwrite password if user already exists."""
+    """Insert samkintop as role owner if missing; migrate legacy super_admin row; never overwrites password."""
     h = pwd_context.hash(SUPER_ADMIN_DEFAULT_PASSWORD)
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -23,13 +23,17 @@ async def ensure_super_admin() -> None:
             SUPER_ADMIN_USERNAME,
         )
         if row is not None:
+            await conn.execute(
+                "UPDATE users SET role = 'owner' WHERE lower(username) = lower($1)",
+                SUPER_ADMIN_USERNAME,
+            )
             return
         await conn.execute(
             """
             INSERT INTO users (username, password_hash, role, display_name, avatar_emoji, bio)
-            VALUES ($1, $2, 'super_admin', $1, '👤', '')
+            VALUES ($1, $2, 'owner', $1, '👤', '')
             """,
             SUPER_ADMIN_USERNAME,
             h,
         )
-        logger.info("Created super-admin user %s (default password — change after first login)", SUPER_ADMIN_USERNAME)
+        logger.info("Created owner user %s (default password — change after first login)", SUPER_ADMIN_USERNAME)

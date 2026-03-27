@@ -103,9 +103,11 @@ export const useAppStore = create((set, get) => ({
   },
   setCurrentUser: (user) => set({ currentUser: user }),
   syncUserProfileFromServer: async (me) => {
-    if (!me || me.role === 'owner') {
+    if (!me) return
+    const isEnvOwner = me.role === 'owner' && !me.user_id
+    if (isEnvOwner) {
       revokeProfileIconObjectUrl(get().profileIconObjectUrl)
-      if (me?.role === 'owner') set({ profileIconObjectUrl: null })
+      set({ profileIconObjectUrl: null })
       return
     }
     revokeProfileIconObjectUrl(get().profileIconObjectUrl)
@@ -147,7 +149,7 @@ export const useAppStore = create((set, get) => ({
     try {
       const me = await fetchMe()
       set({ currentUser: me })
-      if (me.role === 'owner') {
+      if (me.role === 'owner' && !me.user_id) {
         revokeProfileIconObjectUrl(get().profileIconObjectUrl)
         set({ profileIconObjectUrl: null })
       } else {

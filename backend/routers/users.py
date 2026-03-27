@@ -1,4 +1,4 @@
-"""User accounts (site owner or super-admin)."""
+"""User accounts (owner / members / super_admin)."""
 
 from __future__ import annotations
 
@@ -105,7 +105,7 @@ async def delete_member(user_id: uuid.UUID, _: dict[str, Any] = Depends(require_
         if row is None:
             raise HTTPException(status_code=404, detail="user not found")
         if (row["username"] or "").lower() == SUPER_ADMIN_USERNAME.lower():
-            raise HTTPException(status_code=403, detail="cannot_delete_super_admin")
+            raise HTTPException(status_code=403, detail="cannot_delete_protected_owner_user")
         result = await conn.execute("DELETE FROM users WHERE id = $1::uuid", user_id)
     if result == "DELETE 0":
         raise HTTPException(status_code=404, detail="user not found")

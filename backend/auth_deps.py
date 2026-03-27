@@ -76,6 +76,31 @@ async def get_current_user(
     sub = payload.get("sub")
     if role == "owner" and sub == "owner":
         return {"role": "owner"}
+    if role == "owner" and sub:
+        try:
+            uid = uuid.UUID(str(sub))
+        except ValueError:
+            return None
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT id, username, role, display_name, bio, icon_url, avatar_emoji
+                FROM users WHERE id = $1::uuid
+                """,
+                uid,
+            )
+        if row is None or row["role"] != "owner":
+            return None
+        return {
+            "role": "owner",
+            "user_id": row["id"],
+            "username": row["username"],
+            "display_name": (row["display_name"] or row["username"] or "").strip() or row["username"],
+            "bio": row["bio"] or "",
+            "icon_url": row["icon_url"],
+            "avatar_emoji": (row["avatar_emoji"] or "").strip(),
+        }
     if role in ("member", "super_admin") and sub:
         try:
             uid = uuid.UUID(str(sub))
@@ -126,7 +151,9 @@ async def require_admin(user: dict[str, Any] | None = Depends(get_current_user))
 
 
 async def require_db_account(user: dict[str, Any] | None = Depends(get_current_user)) -> dict[str, Any]:
-    if not user or user.get("role") not in ("member", "super_admin"):
+    if not user or not user.get("user_id"):
+        raise HTTPException(status_code=403, detail="account_required")
+    if user.get("role") not in ("member", "super_admin", "owner"):
         raise HTTPException(status_code=403, detail="account_required")
     return user
 

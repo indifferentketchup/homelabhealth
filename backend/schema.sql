@@ -415,7 +415,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS icon_url TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_emoji TEXT DEFAULT '👤';
 
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
-ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('member', 'super_admin'));
+ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('member', 'super_admin', 'owner'));
 
 UPDATE users SET display_name = username WHERE display_name IS NULL OR btrim(display_name) = '';
 UPDATE users SET bio = COALESCE(bio, '') WHERE bio IS NULL;
