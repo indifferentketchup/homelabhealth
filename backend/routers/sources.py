@@ -36,6 +36,48 @@ def _mime_to_source_type(mime: str | None) -> str:
     return "txt"
 
 
+def _normalize_declared_mime(declared: str | None) -> str:
+    return (declared or "application/octet-stream").lower().split(";")[0].strip()
+
+
+def _octet_stream_utf8_text_body(raw: bytes) -> bool:
+    """Best-effort: extensionless uploads as octet-stream that are plain UTF-8 text."""
+    if len(raw) > 10 * 1024 * 1024:
+        return False
+    preview = raw[:65536]
+    if b"\x00" in preview:
+        return False
+    try:
+        raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    return True
+
+
+def _resolve_upload_parse_mime(raw: bytes, declared: str | None, filename: str | None) -> str:
+    """
+    MIME used for parse_source_bytes + ingest. Handles application/octet-stream and bad
+    Content-Type when the body is text (by extension or UTF-8 without NUL).
+    """
+    m = _normalize_declared_mime(declared)
+    try:
+        parse_source_bytes(raw, m)
+        return m
+    except ValueError:
+        pass
+    fn = (filename or "").lower()
+    if fn.endswith((".md", ".markdown")):
+        parse_source_bytes(raw, "text/markdown")
+        return "text/markdown"
+    if fn.endswith((".txt", ".text")):
+        parse_source_bytes(raw, "text/plain")
+        return "text/plain"
+    if m == "application/octet-stream" and _octet_stream_utf8_text_body(raw):
+        parse_source_bytes(raw, "text/plain")
+        return "text/plain"
+    raise ValueError(f"Unsupported MIME type: {m}")
+
+
 async def _ingest_source(source_id: uuid.UUID, daw_id: uuid.UUID, raw: bytes, mime: str, name: str) -> None:
     pool = await get_pool()
     try:
@@ -136,13 +178,12 @@ async def upload_source(
     if len(raw) > max_b:
         raise HTTPException(413, "File too large")
 
-    mime = file.content_type or "application/octet-stream"
-    stype = _mime_to_source_type(mime)
     try:
-        parse_source_bytes(raw, mime)
+        mime = _resolve_upload_parse_mime(raw, file.content_type, file.filename)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
 
+    stype = _mime_to_source_type(mime)
     h = _sha256(raw)
     pool = await get_pool()
     async with pool.acquire() as conn:

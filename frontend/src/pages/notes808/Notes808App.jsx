@@ -48,6 +48,8 @@ export default function Notes808App() {
   const [mobileSourcesOpen, setMobileSourcesOpen] = useState(false)
   const activeChatId = useAppStore((s) => s.activeChatId)
   const activeDawId = useAppStore((s) => s.activeDawId)
+  const branding = useAppStore((s) => s.branding)
+  const sourcesRailW = branding?.sidebarWidth ?? 260
   const setActiveDawId = useAppStore((s) => s.setActiveDawId)
   const setActiveChatId = useAppStore((s) => s.setActiveChatId)
   const setPersonas = useAppStore((s) => s.setPersonas)
@@ -229,8 +231,9 @@ export default function Notes808App() {
             />
             <div
               className="fixed inset-y-0 right-0 z-40 h-full max-w-[85vw] shadow-[var(--glow)] md:hidden"
+              style={{ width: `min(85vw, ${sourcesRailW}px)` }}
               role="dialog"
-              aria-label="Sources"
+              aria-label="Sources mobile"
             >
               <SourcesPanel chatId={activeChatId} dawId={activeDawId} />
             </div>

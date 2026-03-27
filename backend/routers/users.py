@@ -9,7 +9,7 @@ import asyncpg
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from auth_deps import pwd_context, require_admin
+from auth_deps import get_principal, pwd_context, require_admin
 from db import get_pool
 from seed_users import SUPER_ADMIN_USERNAME
 
@@ -23,6 +23,11 @@ class MemberCreate(BaseModel):
 
 class AdminPasswordPatch(BaseModel):
     password: str = Field(..., min_length=8)
+
+
+class SelfPasswordPatch(BaseModel):
+    current_password: str
+    new_password: str = Field(..., min_length=8)
 
 
 def _user_out(r: Any) -> dict[str, Any]:
@@ -47,6 +52,36 @@ async def list_members(_: dict[str, Any] = Depends(require_admin)):
             """,
         )
     return {"items": [_user_out(r) for r in rows]}
+
+
+@router.patch("/me/password")
+async def change_own_password(
+    body: SelfPasswordPatch,
+    principal: dict[str, Any] = Depends(get_principal),
+):
+    """Members (and super_admin) can change their own password by verifying the current one."""
+    if principal["kind"] == "guest":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if principal["kind"] == "owner":
+        raise HTTPException(
+            status_code=400,
+            detail="Owner password is set via environment variable.",
+        )
+    uid = principal["user_id"]
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT password_hash FROM users WHERE id = $1::uuid", uid
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="User not found")
+        if not pwd_context.verify(body.current_password, row["password_hash"]):
+            raise HTTPException(status_code=400, detail="Current password is incorrect")
+        new_hash = pwd_context.hash(body.new_password)
+        await conn.execute(
+            "UPDATE users SET password_hash = $2 WHERE id = $1::uuid", uid, new_hash
+        )
+    return {"ok": True}
 
 
 @router.post("/")

@@ -6,7 +6,7 @@ import { X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import { apiFetch } from '@/api/index.js'
-import { deleteNonDawChats, getChat } from '@/api/chats.js'
+import { deleteNonDawChats } from '@/api/chats.js'
 import {
   DEFAULT_808NOTES_BRANDING,
   DEFAULT_BOOOPS_BRANDING,
@@ -538,15 +538,8 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
       const n = typeof res?.deleted === 'number' ? res.deleted : 0
       setPurgeMsg(`Deleted ${n} chat${n === 1 ? '' : 's'} without a DAW.`)
       setPurgeConfirm(false)
+      setActiveChatId(null)
       await queryClient.invalidateQueries({ queryKey: ['chats'] })
-      const id = activeChatId
-      if (id) {
-        try {
-          await getChat(id)
-        } catch {
-          setActiveChatId(null)
-        }
-      }
     } catch (e) {
       setPurgeMsg(e instanceof Error ? e.message : 'Delete failed')
     } finally {

@@ -14,8 +14,6 @@ export function SourcesPanel({ chatId, dawId }) {
   const queryClient = useQueryClient()
   const fileRef = useRef(null)
   const setActiveDawId = useAppStore((s) => s.setActiveDawId)
-  const branding = useAppStore((s) => s.branding)
-  const sidebarW = branding?.sidebarWidth ?? 260
 
   const [uploading, setUploading] = useState(false)
   const [selectedIds, setSelectedIds] = useState(() => new Set())
@@ -123,10 +121,7 @@ export function SourcesPanel({ chatId, dawId }) {
   }
 
   return (
-    <aside
-      className="flex h-full min-h-0 shrink-0 flex-col border-l border-sidebar-border bg-sidebar text-sidebar-foreground"
-      style={{ width: sidebarW }}
-    >
+    <aside className="flex h-full min-h-0 w-full min-w-0 shrink-0 flex-col border-l border-sidebar-border bg-sidebar text-sidebar-foreground">
       <div className="border-b border-sidebar-border">
         <div className="flex min-h-16 w-full items-center justify-center overflow-hidden px-2 py-2">
           <span className="fs-nav truncate text-center font-semibold uppercase tracking-wide text-muted-foreground">

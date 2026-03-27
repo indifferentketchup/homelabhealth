@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from db import get_chroma_collection
 from services.embeddings import embed_text
@@ -11,6 +12,22 @@ logger = logging.getLogger(__name__)
 
 TOP_K_RETRIEVE = 20
 TOP_AFTER_RERANK = 6
+
+_RANKER: Any = None
+
+
+def _ranker():
+    global _RANKER
+    if _RANKER is None:
+        from flashrank import Ranker
+
+        _RANKER = Ranker(model_name="ms-marco-MiniLM-L-12-v2", max_length=256)
+    return _RANKER
+
+
+def _reranked_passage_text(p: dict[str, Any]) -> str:
+    t = p.get("text")
+    return str(t) if t is not None else ""
 
 
 async def retrieve_context(query: str, daw_id: str, source_ids: list[str]) -> str:
@@ -39,23 +56,23 @@ async def retrieve_context(query: str, daw_id: str, source_ids: list[str]) -> st
     if not docs:
         return ""
 
-    passages: list[dict] = []
+    passages: list[dict[str, Any]] = []
     for i, doc in enumerate(docs):
         meta = metas[i] if i < len(metas) else {}
         name = (meta or {}).get("source_name") or "source"
         label = f"[SOURCE: {name}]\n{doc}"
-        passages.append({"id": i, "text": label})
+        passages.append({"id": str(i), "text": label})
 
     try:
-        from flashrank import Ranker, RerankRequest
+        from flashrank import RerankRequest
 
-        ranker = Ranker(max_length=256)
-        reranked = ranker.rerank(RerankRequest(query=query, passages=passages))
-        top = [p["text"] for p in reranked[:TOP_AFTER_RERANK]]
+        reranked = _ranker().rerank(RerankRequest(query=query, passages=passages))
+        top = [_reranked_passage_text(p) for p in reranked[:TOP_AFTER_RERANK]]
     except Exception as e:
         logger.debug("RAG rerank skipped: %s", e)
-        top = [p["text"] for p in passages[:TOP_AFTER_RERANK]]
+        top = [_reranked_passage_text(p) for p in passages[:TOP_AFTER_RERANK]]
 
+    top = [t for t in top if t and str(t).strip()]
     if not top:
         return ""
 

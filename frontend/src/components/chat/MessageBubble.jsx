@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Copy, GitFork, Loader2 } from 'lucide-react'
+import { BookmarkPlus, Copy, GitFork, Loader2 } from 'lucide-react'
 
 import { forkChat } from '@/api/chats.js'
 import { Button } from '@/components/ui/button'
@@ -57,7 +57,7 @@ const mdComponents = {
   ),
 }
 
-export function MessageBubble({ chatId, message, streaming = false }) {
+export function MessageBubble({ chatId, message, streaming = false, onSaveMessageAsNote }) {
   const [hover, setHover] = useState(false)
   const [forkError, setForkError] = useState(null)
   const queryClient = useQueryClient()
@@ -112,6 +112,8 @@ export function MessageBubble({ chatId, message, streaming = false }) {
     message.id &&
     message.id !== '__stream__' &&
     message.id !== '__optimistic_user__'
+
+  const canSaveAsNote = Boolean(onSaveMessageAsNote && canFork && !streaming)
 
   return (
     <div
@@ -199,6 +201,22 @@ export function MessageBubble({ chatId, message, streaming = false }) {
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>Fork here</TooltipContent>
+                  </Tooltip>
+                ) : null}
+                {canSaveAsNote ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => onSaveMessageAsNote?.(message.content)}
+                        aria-label="Save as note"
+                      >
+                        <BookmarkPlus className="size-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Save as note</TooltipContent>
                   </Tooltip>
                 ) : null}
               </TooltipProvider>

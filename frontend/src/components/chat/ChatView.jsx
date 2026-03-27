@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 
 import { fetchBranding } from '@/api/branding.js'
 import { createChat, getChat, listMessages, patchChat, patchRecentChatsListCache } from '@/api/chats.js'
+import { createNote } from '@/api/notes.js'
 import { useStream } from '@/hooks/useStream.js'
 import { cn } from '@/lib/utils.js'
 import { useAppStore } from '@/store/index.js'
@@ -18,6 +19,21 @@ function sameUserBubbleContent(serverText, optimisticText) {
 }
 
 const DAW_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+function friendlyStreamError(msg) {
+  if (!msg) return 'Something went wrong.'
+  const s = String(msg)
+  if (s.includes('guest_limit_reached')) {
+    return "You've used your 20 free messages. Create an account to keep chatting."
+  }
+  if (s.includes('member_daily_limit_reached')) {
+    return "You've hit the 200 message daily limit. Resets at midnight."
+  }
+  if (s.includes('upload_limit_reached')) {
+    return 'Upload limit reached (10 files max).'
+  }
+  return s
+}
 
 function normalizeDawUuid(raw) {
   if (raw == null || raw === '') return null
@@ -63,6 +79,21 @@ export function ChatView({
   useEffect(() => {
     if (chat) hydrateFromChat(chat)
   }, [chat, hydrateFromChat])
+
+  const notesDawIdForSave =
+    chatMode === '808notes' && resolvedWorkspaceDaw ? resolvedWorkspaceDaw : null
+
+  const saveMessageAsNote = useCallback(
+    async (text) => {
+      const did = notesDawIdForSave
+      if (!did) return
+      const body = String(text ?? '').trim()
+      if (!body) return
+      await createNote(did, { content: body, source_type: 'ai_response' })
+      await queryClient.invalidateQueries({ queryKey: ['notes', did] })
+    },
+    [notesDawIdForSave, queryClient],
+  )
 
   const { data: msgPack, isLoading } = useQuery({
     queryKey: ['messages', activeChatId],
@@ -163,7 +194,9 @@ export function ChatView({
         setPendingSend(false)
         setStreamText('')
         if (err?.name !== 'AbortError') {
-          setSendError(err instanceof Error ? err.message : String(err))
+          setSendError(
+            friendlyStreamError(err instanceof Error ? err.message : String(err)),
+          )
         }
       },
     })
@@ -201,7 +234,7 @@ export function ChatView({
         await runStream(newChat.id, content, messages.length + 1)
       } catch (e) {
         console.error(e)
-        setSendError(e instanceof Error ? e.message : String(e))
+        setSendError(friendlyStreamError(e instanceof Error ? e.message : String(e)))
         setOptimisticUser(null)
         setPendingSend(false)
         setStreamText('')
@@ -280,6 +313,7 @@ export function ChatView({
               messages={displayMessages}
               streamingAssistant={busy ? streamText : null}
               sourcesByMessageIndex={sourcesByMessageIndex}
+              onSaveMessageAsNote={notesDawIdForSave ? saveMessageAsNote : undefined}
             />
           )}
         </div>

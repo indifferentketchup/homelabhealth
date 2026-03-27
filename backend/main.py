@@ -28,6 +28,7 @@ from routers import (
     settings,
     users,
 )
+from routers.notes import router as notes_router
 from routers.sources import router as sources_router
 
 import logging
@@ -115,6 +116,7 @@ api.include_router(custom_instructions.router, prefix="/custom-instructions", ta
 api.include_router(settings.router, prefix="/settings", tags=["settings"])
 api.include_router(search.router, prefix="/search", tags=["search"])
 api.include_router(searxng.router, prefix="/searxng", tags=["searxng"])
+api.include_router(notes_router, tags=["notes"])
 api.include_router(sources_router, tags=["sources"])
 
 app.include_router(api)

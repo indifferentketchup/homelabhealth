@@ -44,7 +44,13 @@ function WebSourcesRow({ sources }) {
   )
 }
 
-export function MessageList({ chatId, messages, streamingAssistant, sourcesByMessageIndex = {} }) {
+export function MessageList({
+  chatId,
+  messages,
+  streamingAssistant,
+  sourcesByMessageIndex = {},
+  onSaveMessageAsNote,
+}) {
   const bottomRef = useRef(null)
 
   useEffect(() => {
@@ -77,6 +83,7 @@ export function MessageList({ chatId, messages, streamingAssistant, sourcesByMes
                 chatId={chatId}
                 message={m}
                 streaming={m.id === '__stream__'}
+                onSaveMessageAsNote={onSaveMessageAsNote}
               />
             </div>
           )

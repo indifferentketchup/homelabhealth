@@ -12,6 +12,7 @@ import { PATH_808NOTES_HOME, notes808DawPath } from '@/routes/paths.js'
 import { cn } from '@/lib/utils.js'
 import { useAppStore } from '@/store/index.js'
 
+import { NotesPanel } from './NotesPanel.jsx'
 import { SourcesPanel } from './SourcesPanel.jsx'
 
 const { ChevronLeft } = LucideIcons
@@ -295,9 +296,26 @@ export function Notes808DawLayout() {
 
 export function Notes808DawChat() {
   const { dawId } = useParams()
+  const activeChatId = useAppStore((s) => s.activeChatId)
+  const branding = useAppStore((s) => s.branding)
+  const sidebarW = branding?.sidebarWidth ?? 260
+
   return (
-    <div className="flex min-h-0 min-w-0 flex-1">
-      <ChatView chatMode="808notes" workspaceDawId={dawId} />
+    <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+      <div className="flex min-h-0 min-w-0 flex-1">
+        <ChatView chatMode="808notes" workspaceDawId={dawId} />
+      </div>
+      <div
+        className="hidden h-full min-h-0 shrink-0 flex-col md:flex"
+        style={{ width: sidebarW }}
+      >
+        <div className="flex min-h-0 flex-[3] flex-col overflow-hidden">
+          <SourcesPanel chatId={activeChatId} dawId={dawId} />
+        </div>
+        <div className="flex min-h-0 flex-[2] flex-col overflow-hidden border-t border-sidebar-border">
+          <NotesPanel dawId={dawId} />
+        </div>
+      </div>
     </div>
   )
 }
@@ -419,13 +437,18 @@ export function Notes808DawSourcesPage() {
 export function Notes808AuxShell() {
   const activeChatId = useAppStore((s) => s.activeChatId)
   const activeDawId = useAppStore((s) => s.activeDawId)
+  const branding = useAppStore((s) => s.branding)
+  const sidebarW = branding?.sidebarWidth ?? 260
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background md:flex-row">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <Outlet />
       </div>
-      <div className="hidden h-full min-h-0 shrink-0 md:flex">
+      <div
+        className="hidden h-full min-h-0 shrink-0 md:flex"
+        style={{ width: sidebarW }}
+      >
         <SourcesPanel chatId={activeChatId} dawId={activeDawId} />
       </div>
     </div>

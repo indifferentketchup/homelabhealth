@@ -2,12 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 
-import {
-  changePassword,
-  fetchMe,
-  patchProfile,
-  uploadProfileIcon,
-} from '@/api/auth.js'
+import { fetchMe, patchProfile, uploadProfileIcon } from '@/api/auth.js'
+import { changeMyPassword } from '@/api/users.js'
 import { Button } from '@/components/ui/button'
 import { PATH_808NOTES_HOME, PATH_BOOOPS_HOME } from '@/routes/paths.js'
 import { useAppStore } from '@/store/index.js'
@@ -43,6 +39,10 @@ export default function ProfilePage() {
 
   const isDbAccount = Boolean(currentUser?.user_id)
   const isEnvOwner = currentUser?.role === 'owner' && !currentUser?.user_id
+  const canChangePassword =
+    isDbAccount &&
+    currentUser?.role !== 'owner' &&
+    (currentUser?.role === 'member' || currentUser?.role === 'super_admin')
 
   const [displayName, setDisplayName] = useState(userProfile.displayName)
   const [emoji, setEmoji] = useState(userProfile.emoji)
@@ -171,7 +171,7 @@ export default function ProfilePage() {
     }
     setPwBusy(true)
     try {
-      await changePassword(curPassword, newPassword)
+      await changeMyPassword(curPassword, newPassword)
       setPwMsg('Password updated.')
       setCurPassword('')
       setNewPassword('')
@@ -194,6 +194,12 @@ export default function ProfilePage() {
         <h1 className="text-sm font-semibold text-foreground">Your profile</h1>
       </div>
       <div className="mx-auto w-full max-w-lg p-4 md:p-8">
+        {isDbAccount ? (
+          <div className="mb-6 border-b border-border pb-4">
+            <p className="text-base font-semibold text-foreground">{currentUser.display_name}</p>
+            <p className="text-sm text-muted-foreground">@{currentUser.username}</p>
+          </div>
+        ) : null}
         <p className="mb-6 text-sm text-muted-foreground">
           {isDbAccount
             ? 'Name, bio, photo, and password are saved to your account (shared between BooOps and 808notes when you use the same login).'
@@ -290,7 +296,7 @@ export default function ProfilePage() {
           </div>
         </form>
 
-        {isDbAccount ? (
+        {canChangePassword ? (
           <form onSubmit={(e) => void onPasswordSubmit(e)} className="mt-10 flex flex-col gap-4 border-t border-border pt-8">
             <h2 className="text-sm font-semibold text-foreground">Change password</h2>
             <div className="space-y-2">

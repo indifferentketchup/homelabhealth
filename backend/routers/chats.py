@@ -194,6 +194,7 @@ async def _assembled_system_prompt(
     parts: list[str] = []
     daw_instr_count = 0
     mem_entries_count = 0
+    rag_context_chars = 0
 
     if persona_prompt:
         parts.append(persona_prompt)
@@ -272,6 +273,7 @@ async def _assembled_system_prompt(
                 )
                 if rag_block:
                     parts.append(rag_block)
+                    rag_context_chars = len(rag_block)
 
     assembled = "\n\n".join(parts)
 
@@ -287,13 +289,15 @@ async def _assembled_system_prompt(
     preview = (assembled[:2000] + "…") if len(assembled) > 2000 else assembled
     logger.info(
         "assembled prompt mode=%s daw_id=%s len=%d daw_instruction_rows=%d "
-        "memory_entry_rows=%d mode_memory_len=%d context_window=%s preview=%s",
+        "memory_entry_rows=%d mode_memory_len=%d rag_context_chars=%d "
+        "context_window=%s preview=%s",
         mode,
         str(daw_id) if daw_id else None,
         len(assembled),
         daw_instr_count,
         mem_entries_count,
         len(mem_text),
+        rag_context_chars,
         effective_context_window,
         preview,
     )

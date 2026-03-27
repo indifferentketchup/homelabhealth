@@ -49,7 +49,7 @@ def parse_text(file_bytes: bytes) -> str:
 
 def parse_source_bytes(file_bytes: bytes, mime_type: str) -> str:
     m = (mime_type or "").lower().split(";")[0].strip()
-    if m in ("text/plain", "text/markdown"):
+    if m in ("text/plain", "text/markdown", "text/x-markdown"):
         return parse_text(file_bytes)
     if m == "application/pdf":
         return parse_pdf(file_bytes)
