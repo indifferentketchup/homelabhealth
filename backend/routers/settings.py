@@ -86,7 +86,7 @@ async def _write_ui_layout(conn: Any, data: dict[str, Any]) -> None:
 
 
 @router.get("/layout")
-async def get_ui_layout(_: dict = Depends(require_admin)) -> dict[str, Any]:
+async def get_ui_layout() -> dict[str, Any]:
     pool = await get_pool()
     async with pool.acquire() as conn:
         return await _read_ui_layout(conn)

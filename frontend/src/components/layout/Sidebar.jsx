@@ -646,7 +646,8 @@ export function Sidebar({
         </ScrollArea>
 
         <div className="mt-auto flex flex-col gap-1 border-t border-sidebar-border p-2">
-          {(appMode === 'booops' || appMode === '808notes') && ownerUi && (
+          {(appMode === 'booops' || appMode === '808notes') &&
+            currentUser?.role === 'owner' && (
             <Button
               type="button"
               variant="outline"
