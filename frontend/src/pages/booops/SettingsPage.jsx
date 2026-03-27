@@ -28,6 +28,7 @@ import {
   uploadBrandingAsset808notes,
 } from '@/api/branding.js'
 import SearchSettingsTab from '@/components/settings/SearchSettingsTab.jsx'
+import UserAdminTab from '@/components/settings/UserAdminTab.jsx'
 import { Button } from '@/components/ui/button'
 import { clear808notesLayoutLiveDraft, set808notesLayoutLiveDraft } from '@/lib/notes808Layout.js'
 import { cn } from '@/lib/utils'
@@ -143,6 +144,13 @@ function useAppBrandingMode() {
 export default function SettingsPage({ mode: initialMode = 'booops', onClose }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const currentUser = useAppStore((s) => s.currentUser)
+  const isAdminUser = currentUser?.role === 'owner' || currentUser?.role === 'super_admin'
+  const settingsTabs = useMemo(() => {
+    const next = [...TABS]
+    if (isAdminUser) next.push({ id: 'users', label: 'Users' })
+    return next
+  }, [isAdminUser])
   const storeBrandingMode = useAppBrandingMode()
   /** Host shell for this settings surface (Notes808 passes `808notes`); avoids live layout preview using a stale Zustand `mode`. */
   const appBrandingMode = initialMode === '808notes' ? '808notes' : storeBrandingMode
@@ -154,6 +162,7 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
     try {
       const v = localStorage.getItem('boolab-settings-tab')
       if (v && TABS.some((t) => t.id === v)) return v
+      if (v === 'users') return v
     } catch {
       /* ignore */
     }
@@ -168,6 +177,10 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
       /* ignore */
     }
   }, [])
+
+  useEffect(() => {
+    if (!isAdminUser && tab === 'users') setTab('branding')
+  }, [isAdminUser, tab, setTab])
 
   const handleClose = useCallback(() => {
     if (onClose) onClose()
@@ -642,7 +655,7 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="shrink-0 overflow-x-auto border-b border-border" role="tablist" aria-label="Settings sections">
           <div className="flex flex-row">
-            {TABS.map((t) => (
+            {settingsTabs.map((t) => (
               <button
                 key={t.id}
                 type="button"
@@ -909,6 +922,8 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
           )}
 
           {tab === 'search' && <SearchSettingsTab mode={selectedMode} />}
+
+          {tab === 'users' && isAdminUser ? <UserAdminTab /> : null}
         </div>
       </div>
     </div>

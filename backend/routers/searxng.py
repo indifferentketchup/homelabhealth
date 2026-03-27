@@ -7,9 +7,10 @@ import os
 from typing import Any
 
 import yaml
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from auth_deps import require_admin
 from db import get_pool
 
 logger = logging.getLogger(__name__)
@@ -153,7 +154,11 @@ async def get_searxng_config(mode: str):
 
 
 @router.patch("/{mode}")
-async def update_searxng_config(mode: str, body: SearxngConfigUpdate):
+async def update_searxng_config(
+    mode: str,
+    body: SearxngConfigUpdate,
+    _owner: dict = Depends(require_admin),
+):
     if mode not in _VALID_MODES:
         raise HTTPException(status_code=400, detail="Invalid mode")
 

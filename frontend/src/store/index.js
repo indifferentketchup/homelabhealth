@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 
+import { fetchMe } from '@/api/auth.js'
+import { BOOLAB_TOKEN_KEY, getStoredBoolabToken } from '@/api/index.js'
 import { APP_MODE } from '../mode.js'
 
 const USER_PROFILE_STORAGE_KEY = 'boolab-user-profile-v1'
@@ -59,9 +61,107 @@ function personaToUi(p) {
   return personaFieldsFromRecord(p)
 }
 
+function readBoolabToken() {
+  if (typeof localStorage === 'undefined') return null
+  try {
+    return localStorage.getItem(BOOLAB_TOKEN_KEY)
+  } catch {
+    return null
+  }
+}
+
+function revokeProfileIconObjectUrl(url) {
+  if (url && String(url).startsWith('blob:')) {
+    try {
+      URL.revokeObjectURL(url)
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 export const useAppStore = create((set, get) => ({
   /** Resolved from URL path / query / host (see `mode.js`, `ModeSync`). */
   mode: APP_MODE,
+
+  token: readBoolabToken(),
+  currentUser: null,
+  /** Authenticated fetch of `/api/auth/profile/icon-asset` as blob URL (DB accounts only). */
+  profileIconObjectUrl: null,
+  setToken: (token) => {
+    try {
+      if (token) localStorage.setItem(BOOLAB_TOKEN_KEY, token)
+      else localStorage.removeItem(BOOLAB_TOKEN_KEY)
+    } catch {
+      /* ignore */
+    }
+    set({ token: token || null })
+  },
+  clearToken: () => {
+    try {
+      localStorage.removeItem(BOOLAB_TOKEN_KEY)
+    } catch {
+      /* ignore */
+    }
+    revokeProfileIconObjectUrl(get().profileIconObjectUrl)
+    set({ token: null, currentUser: null, profileIconObjectUrl: null })
+  },
+  setCurrentUser: (user) => set({ currentUser: user }),
+  syncUserProfileFromServer: async (me) => {
+    if (!me || me.role === 'owner') {
+      revokeProfileIconObjectUrl(get().profileIconObjectUrl)
+      if (me?.role === 'owner') set({ profileIconObjectUrl: null })
+      return
+    }
+    revokeProfileIconObjectUrl(get().profileIconObjectUrl)
+    let profileIconObjectUrl = null
+    const token = getStoredBoolabToken()
+    if (me.icon_url && token) {
+      try {
+        const res = await fetch('/api/auth/profile/icon-asset', {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (res.ok) {
+          const blob = await res.blob()
+          profileIconObjectUrl = URL.createObjectURL(blob)
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    const userProfile = normalizeUserProfile({
+      displayName: me.display_name,
+      emoji: me.avatar_emoji,
+      bio: me.bio,
+      avatarDataUrl: '',
+    })
+    try {
+      localStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(userProfile))
+      localStorage.removeItem(USER_PROFILE_LEGACY_STORAGE_KEY)
+    } catch {
+      /* ignore */
+    }
+    set({ userProfile, profileIconObjectUrl })
+  },
+  bootstrapAuth: async () => {
+    const t = get().token
+    if (!t) {
+      set({ currentUser: null })
+      return
+    }
+    try {
+      const me = await fetchMe()
+      set({ currentUser: me })
+      if (me.role === 'owner') {
+        revokeProfileIconObjectUrl(get().profileIconObjectUrl)
+        set({ profileIconObjectUrl: null })
+      } else {
+        await get().syncUserProfileFromServer(me)
+      }
+    } catch {
+      get().clearToken()
+    }
+  },
   setMode: (mode) =>
     set({
       mode:

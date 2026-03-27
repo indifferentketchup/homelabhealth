@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
+from auth_deps import require_admin
 from db import get_pool
 
 router = APIRouter()
@@ -85,14 +86,17 @@ async def _write_ui_layout(conn: Any, data: dict[str, Any]) -> None:
 
 
 @router.get("/layout")
-async def get_ui_layout() -> dict[str, Any]:
+async def get_ui_layout(_: dict = Depends(require_admin)) -> dict[str, Any]:
     pool = await get_pool()
     async with pool.acquire() as conn:
         return await _read_ui_layout(conn)
 
 
 @router.patch("/layout")
-async def patch_ui_layout(body: dict[str, Any]) -> dict[str, Any]:
+async def patch_ui_layout(
+    body: dict[str, Any],
+    _owner: dict = Depends(require_admin),
+) -> dict[str, Any]:
     if not isinstance(body, dict):
         pool = await get_pool()
         async with pool.acquire() as conn:
@@ -125,7 +129,7 @@ def _read_context_window(val: str | None) -> int:
 
 
 @router.get("/global")
-async def get_global_settings() -> dict[str, Any]:
+async def get_global_settings(_: dict = Depends(require_admin)) -> dict[str, Any]:
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -135,7 +139,10 @@ async def get_global_settings() -> dict[str, Any]:
 
 
 @router.patch("/global")
-async def patch_global_settings(body: GlobalSettingsBody) -> dict[str, Any]:
+async def patch_global_settings(
+    body: GlobalSettingsBody,
+    _: dict = Depends(require_admin),
+) -> dict[str, Any]:
     data = body.model_dump(exclude_unset=True)
     if not data:
         pool = await get_pool()
@@ -192,14 +199,17 @@ async def _ollama_config_from_conn(conn: Any) -> dict[str, Any]:
 
 
 @router.get("/ollama")
-async def get_ollama_config() -> dict[str, Any]:
+async def get_ollama_config(_: dict = Depends(require_admin)) -> dict[str, Any]:
     pool = await get_pool()
     async with pool.acquire() as conn:
         return await _ollama_config_from_conn(conn)
 
 
 @router.patch("/ollama")
-async def patch_ollama_config(body: OllamaConfigPatch) -> dict[str, Any]:
+async def patch_ollama_config(
+    body: OllamaConfigPatch,
+    _: dict = Depends(require_admin),
+) -> dict[str, Any]:
     ka = body.keep_alive.strip() or "30m"
     pool = await get_pool()
     async with pool.acquire() as conn:

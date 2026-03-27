@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from auth_deps import require_admin
 from db import get_pool
 
 router = APIRouter()
@@ -37,7 +38,7 @@ def _row(r: Any) -> dict[str, Any]:
 
 
 @router.get("/")
-async def get_instructions(scope: str = Query(...)):
+async def get_instructions(scope: str = Query(...), _: dict = Depends(require_admin)):
     s = _norm_scope(scope)
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -57,7 +58,11 @@ async def get_instructions(scope: str = Query(...)):
 
 
 @router.put("/")
-async def put_instructions(body: InstructionsBody, scope: str = Query(...)):
+async def put_instructions(
+    body: InstructionsBody,
+    scope: str = Query(...),
+    _: dict = Depends(require_admin),
+):
     s = _norm_scope(scope)
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -75,7 +80,7 @@ async def put_instructions(body: InstructionsBody, scope: str = Query(...)):
 
 
 @router.delete("/")
-async def clear_instructions(scope: str = Query(...)):
+async def clear_instructions(scope: str = Query(...), _: dict = Depends(require_admin)):
     s = _norm_scope(scope)
     pool = await get_pool()
     async with pool.acquire() as conn:

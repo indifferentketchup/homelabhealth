@@ -7,9 +7,10 @@ import uuid
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Body, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from auth_deps import require_admin
 from db import get_pool
 
 router = APIRouter()
@@ -37,7 +38,7 @@ class MemoryEntryPatch(BaseModel):
 
 
 @router.get("/")
-async def get_memory(mode: str = Query("booops")):
+async def get_memory(mode: str = Query("booops"), _: dict = Depends(require_admin)):
     m = _norm_mode(mode)
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -55,7 +56,7 @@ async def get_memory(mode: str = Query("booops")):
 
 
 @router.put("/")
-async def put_memory(mode: str = Query("booops"), body: MemoryPut = Body()):
+async def put_memory(mode: str = Query("booops"), body: MemoryPut = Body(), _: dict = Depends(require_admin)):
     m = _norm_mode(mode)
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -76,7 +77,7 @@ async def put_memory(mode: str = Query("booops"), body: MemoryPut = Body()):
 
 
 @router.post("/extract")
-async def extract_memory(mode: str = Query("booops")):
+async def extract_memory(mode: str = Query("booops"), _: dict = Depends(require_admin)):
     m = _norm_mode(mode)
     model = (os.environ.get("DEFAULT_MODEL") or "qwen3.5:9b").strip()
     pool = await get_pool()
@@ -186,7 +187,7 @@ def _memory_entry_row(r: Any) -> dict[str, Any]:
 
 
 @router.get("/entries/")
-async def list_memory_entries(mode: str = Query("booops")):
+async def list_memory_entries(mode: str = Query("booops"), _: dict = Depends(require_admin)):
     m = _norm_mode(mode)
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -203,7 +204,11 @@ async def list_memory_entries(mode: str = Query("booops")):
 
 
 @router.post("/entries/")
-async def create_memory_entry(body: MemoryEntryCreate, mode: str = Query("booops")):
+async def create_memory_entry(
+    body: MemoryEntryCreate,
+    mode: str = Query("booops"),
+    _: dict = Depends(require_admin),
+):
     m = _norm_mode(mode)
     src = (body.source or "manual").strip().lower()
     if src not in ("manual", "auto"):
@@ -224,7 +229,11 @@ async def create_memory_entry(body: MemoryEntryCreate, mode: str = Query("booops
 
 
 @router.patch("/entries/{entry_id}")
-async def patch_memory_entry(entry_id: uuid.UUID, body: MemoryEntryPatch):
+async def patch_memory_entry(
+    entry_id: uuid.UUID,
+    body: MemoryEntryPatch,
+    _: dict = Depends(require_admin),
+):
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -243,7 +252,7 @@ async def patch_memory_entry(entry_id: uuid.UUID, body: MemoryEntryPatch):
 
 
 @router.delete("/entries/{entry_id}")
-async def delete_memory_entry(entry_id: uuid.UUID):
+async def delete_memory_entry(entry_id: uuid.UUID, _: dict = Depends(require_admin)):
     pool = await get_pool()
     async with pool.acquire() as conn:
         result = await conn.execute(

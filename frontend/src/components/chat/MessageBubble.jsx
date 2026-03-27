@@ -66,7 +66,9 @@ export function MessageBubble({ chatId, message, streaming = false }) {
   const hydrateFromChat = useAppStore((s) => s.hydrateFromChat)
   const personaIconUrl = useAppStore((s) => s.personaIconUrl)
   const personaEmoji = useAppStore((s) => s.personaEmoji)
+  const profileIconObjectUrl = useAppStore((s) => s.profileIconObjectUrl)
   const userAvatarUrl = useAppStore((s) => s.userProfile.avatarDataUrl)
+  const userImgSrc = profileIconObjectUrl || userAvatarUrl
   const userEmoji = useAppStore((s) => s.userProfile.emoji)
   const userDisplayName = useAppStore((s) => s.userProfile.displayName)
   const isUser = message.role === 'user'
@@ -118,9 +120,9 @@ export function MessageBubble({ chatId, message, streaming = false }) {
       onMouseLeave={() => setHover(false)}
     >
       {isUser ? (
-        userAvatarUrl ? (
+        userImgSrc ? (
           <img
-            src={userAvatarUrl}
+            src={userImgSrc}
             alt=""
             className="mt-0.5 size-8 shrink-0 rounded-full border border-border object-cover"
             aria-hidden

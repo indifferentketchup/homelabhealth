@@ -7,10 +7,11 @@ import os
 from typing import Any, AsyncIterator
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from auth_deps import require_admin
 from db import get_pool
 
 router = APIRouter()
@@ -101,7 +102,11 @@ async def get_ollama_settings(mode: str = Query("booops")):
 
 
 @router.patch("/settings")
-async def patch_ollama_settings(body: OllamaSettingsPatch, mode: str = Query("booops")):
+async def patch_ollama_settings(
+    body: OllamaSettingsPatch,
+    mode: str = Query("booops"),
+    _owner: dict = Depends(require_admin),
+):
     m = mode if mode in ("booops", "808notes") else "booops"
     dk, hk = _ollama_settings_keys(m)
     pool = await get_pool()
@@ -140,7 +145,7 @@ async def _stream_ollama_pull(model: str) -> AsyncIterator[bytes]:
 
 
 @router.post("/pull")
-async def pull_model(body: PullBody):
+async def pull_model(body: PullBody, _owner: dict = Depends(require_admin)):
     if not body.model or not body.model.strip():
         raise HTTPException(status_code=400, detail="model is required")
     return StreamingResponse(
@@ -155,7 +160,7 @@ async def pull_model(body: PullBody):
 
 
 @router.delete("/models/{model_name:path}")
-async def delete_ollama_model(model_name: str):
+async def delete_ollama_model(model_name: str, _owner: dict = Depends(require_admin)):
     if not model_name.strip():
         raise HTTPException(status_code=400, detail="model name is required")
     base = _ollama_base()
@@ -177,7 +182,7 @@ async def delete_ollama_model(model_name: str):
 
 
 @router.post("/unload-all")
-async def unload_all_models():
+async def unload_all_models(_owner: dict = Depends(require_admin)):
     base = _ollama_base()
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
@@ -254,7 +259,7 @@ async def _stream_ollama_chat(body: dict[str, Any]) -> AsyncIterator[bytes]:
 
 
 @router.post("/chat")
-async def chat_proxy(request: Request):
+async def chat_proxy(request: Request, _owner: dict = Depends(require_admin)):
     try:
         body = await request.json()
     except Exception:

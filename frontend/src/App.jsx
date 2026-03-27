@@ -6,10 +6,12 @@ import { ModeRouter } from '@/components/ModeRouter.jsx'
 import { RootRedirect } from '@/components/RootRedirect.jsx'
 import { USE_LEGACY_PATH_PREFIX } from '@/routes/paths.js'
 import { useLayoutStore } from '@/store/layoutStore.js'
+import { useAppStore } from '@/store/index.js'
 
 function LayoutBootstrap() {
   useEffect(() => {
     void useLayoutStore.getState().loadLayout()
+    void useAppStore.getState().bootstrapAuth()
   }, [])
   return null
 }

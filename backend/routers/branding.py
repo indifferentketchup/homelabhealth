@@ -8,9 +8,10 @@ import re
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Body, File, HTTPException, UploadFile
+from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
+from auth_deps import require_admin
 from db import get_pool
 
 router = APIRouter()
@@ -276,7 +277,10 @@ async def get_branding_boolab():
 
 
 @router.put("/booops")
-async def put_branding(patch: dict[str, Any] = Body(default_factory=dict)):
+async def put_branding(
+    patch: dict[str, Any] = Body(default_factory=dict),
+    _owner: dict = Depends(require_admin),
+):
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -294,19 +298,29 @@ async def put_branding(patch: dict[str, Any] = Body(default_factory=dict)):
 
 @router.put("/808notes")
 @router.patch("/808notes")
-async def patch_branding_808notes(patch: dict[str, Any] = Body(default_factory=dict)):
+async def patch_branding_808notes(
+    patch: dict[str, Any] = Body(default_factory=dict),
+    _owner: dict = Depends(require_admin),
+):
     return await _persist_808notes_patch(patch)
 
 
 @router.put("/boolab")
 @router.patch("/boolab")
-async def patch_branding_boolab(patch: dict[str, Any] = Body(default_factory=dict)):
+async def patch_branding_boolab(
+    patch: dict[str, Any] = Body(default_factory=dict),
+    _owner: dict = Depends(require_admin),
+):
     merged = await _persist_boolab_patch(patch)
     return _merge_boolab_response(merged)
 
 
 @router.post("/booops/upload/{slot}")
-async def upload_branding_asset(slot: str, file: UploadFile = File(...)):
+async def upload_branding_asset(
+    slot: str,
+    file: UploadFile = File(...),
+    _owner: dict = Depends(require_admin),
+):
     if slot not in ASSET_SLOTS:
         raise HTTPException(status_code=400, detail="invalid slot")
     suffix = Path(file.filename or "").suffix.lower()
@@ -327,7 +341,11 @@ async def upload_branding_asset(slot: str, file: UploadFile = File(...)):
 
 
 @router.post("/808notes/upload/{slot}")
-async def upload_branding_asset_808notes(slot: str, file: UploadFile = File(...)):
+async def upload_branding_asset_808notes(
+    slot: str,
+    file: UploadFile = File(...),
+    _owner: dict = Depends(require_admin),
+):
     if slot not in ASSET_SLOTS:
         raise HTTPException(status_code=400, detail="invalid slot")
     suffix = Path(file.filename or "").suffix.lower()
@@ -348,7 +366,11 @@ async def upload_branding_asset_808notes(slot: str, file: UploadFile = File(...)
 
 
 @router.post("/boolab/upload/{slot}")
-async def upload_branding_asset_boolab(slot: str, file: UploadFile = File(...)):
+async def upload_branding_asset_boolab(
+    slot: str,
+    file: UploadFile = File(...),
+    _owner: dict = Depends(require_admin),
+):
     if slot not in ASSET_SLOTS:
         raise HTTPException(status_code=400, detail="invalid slot")
     suffix = Path(file.filename or "").suffix.lower()
@@ -427,7 +449,7 @@ async def get_branding_asset_boolab(slot: str):
 
 
 @router.delete("/booops/asset/{slot}")
-async def delete_branding_asset(slot: str):
+async def delete_branding_asset(slot: str, _owner: dict = Depends(require_admin)):
     if slot not in ASSET_SLOTS:
         raise HTTPException(status_code=400, detail="invalid slot")
     _ensure_assets_dir()
@@ -438,7 +460,7 @@ async def delete_branding_asset(slot: str):
 
 
 @router.delete("/808notes/asset/{slot}")
-async def delete_branding_asset_808notes(slot: str):
+async def delete_branding_asset_808notes(slot: str, _owner: dict = Depends(require_admin)):
     if slot not in ASSET_SLOTS:
         raise HTTPException(status_code=400, detail="invalid slot")
     _ensure_assets_dir()
@@ -449,7 +471,7 @@ async def delete_branding_asset_808notes(slot: str):
 
 
 @router.delete("/boolab/asset/{slot}")
-async def delete_branding_asset_boolab(slot: str):
+async def delete_branding_asset_boolab(slot: str, _owner: dict = Depends(require_admin)):
     if slot not in ASSET_SLOTS:
         raise HTTPException(status_code=400, detail="invalid slot")
     _ensure_assets_dir()

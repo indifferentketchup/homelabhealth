@@ -339,8 +339,18 @@ export function ModelSelectorBar({
 
   const displayName = (modelLocked ? dawPinnedModel : selectedModel) || 'Select model'
 
+  const showModelPicker = useAppStore((s) => {
+    const r = s.currentUser?.role
+    return r === 'owner' || r === 'super_admin'
+  })
+  const showPersonaPicker = useAppStore((s) => {
+    const r = s.currentUser?.role
+    return r === 'owner' || r === 'super_admin' || r === 'member'
+  })
+
   return (
     <div className={cn('flex min-w-0 flex-wrap items-center justify-center gap-2', className)}>
+      {showModelPicker && (
       <div ref={modelWrapRef} className="relative">
         <span ref={modelBtnRef} className="inline-flex">
           <Button
@@ -412,8 +422,9 @@ export function ModelSelectorBar({
           </FixedDropdownPanel>
         )}
       </div>
+      )}
 
-      {!hidePersona && (
+      {!hidePersona && showPersonaPicker && (
         <div ref={personaWrapRef} className="relative">
           <span ref={personaBtnRef} className="inline-flex">
             <Button

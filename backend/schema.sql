@@ -399,3 +399,47 @@ VALUES
     ('booops', 0, FALSE, '', ''),
     ('808notes', 0, FALSE, '', '')
 ON CONFLICT (mode) DO NOTHING;
+
+-- Auth & user tiers (owner env / members table / guests by IP)
+CREATE TABLE IF NOT EXISTS users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('member')),
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS icon_url TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_emoji TEXT DEFAULT '👤';
+
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('member', 'super_admin'));
+
+UPDATE users SET display_name = username WHERE display_name IS NULL OR btrim(display_name) = '';
+UPDATE users SET bio = COALESCE(bio, '') WHERE bio IS NULL;
+UPDATE users SET avatar_emoji = COALESCE(NULLIF(trim(avatar_emoji), ''), '👤') WHERE avatar_emoji IS NULL;
+
+CREATE TABLE IF NOT EXISTS guest_message_counts (
+    ip TEXT PRIMARY KEY,
+    count INTEGER NOT NULL DEFAULT 0,
+    last_seen TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS member_message_counts (
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    date DATE NOT NULL DEFAULT CURRENT_DATE,
+    count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, date)
+);
+
+ALTER TABLE personas ADD COLUMN IF NOT EXISTS owner_id UUID REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE daws ADD COLUMN IF NOT EXISTS owner_id UUID REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE chats ADD COLUMN IF NOT EXISTS owner_id UUID REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE chats ADD COLUMN IF NOT EXISTS guest_ip TEXT;
+
+CREATE INDEX IF NOT EXISTS chats_owner_id_idx ON chats(owner_id);
+CREATE INDEX IF NOT EXISTS chats_guest_ip_idx ON chats(guest_ip) WHERE guest_ip IS NOT NULL;
+CREATE INDEX IF NOT EXISTS personas_owner_id_idx ON personas(owner_id);
+CREATE INDEX IF NOT EXISTS daws_owner_id_idx ON daws(owner_id);

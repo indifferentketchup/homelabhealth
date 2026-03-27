@@ -11,10 +11,16 @@ from typing import Any, AsyncIterator
 import asyncpg
 import httpx
 from anthropic import AsyncAnthropic
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from auth_deps import (
+    assert_daw_usable,
+    assert_persona_usable,
+    get_principal,
+    principal_can_access_chat,
+)
 from db import get_pool
 from services.pruning import summarize_and_compress
 from services.searx import searx_search_sources
@@ -26,8 +32,13 @@ logger = logging.getLogger(__name__)
 async def _default_persona_id_for_mode(conn: asyncpg.Connection, mode: str) -> uuid.UUID | None:
     """Default persona for new chat: global personas table + per-app default flags."""
     m = mode if mode in ("booops", "808notes") else "booops"
-    flag = "is_default_808notes" if m == "808notes" else "is_default_booops"
-    return await conn.fetchval(f"SELECT id FROM personas WHERE {flag} IS TRUE LIMIT 1")
+    if m == "808notes":
+        return await conn.fetchval(
+            "SELECT id FROM personas WHERE is_default_808notes IS TRUE LIMIT 1",
+        )
+    return await conn.fetchval(
+        "SELECT id FROM personas WHERE is_default_booops IS TRUE LIMIT 1",
+    )
 
 
 async def _global_context_window(conn: asyncpg.Connection) -> int:
@@ -88,12 +99,59 @@ def _first_auto_memory_sentence(text: str) -> str | None:
     return snippet or None
 
 
+async def _site_default_model(conn: asyncpg.Connection, mode: str) -> str:
+    key = "default_model_808notes" if mode == "808notes" else "default_model"
+    row = await conn.fetchrow("SELECT value FROM global_settings WHERE key = $1", key)
+    if row and row["value"]:
+        v = str(row["value"]).strip()
+        if v:
+            return v
+    return (os.environ.get("DEFAULT_MODEL", "qwen3.5:9b") or "qwen3.5:9b").strip()
+
+
+async def _bump_message_cap_or_429(conn: asyncpg.Connection, principal: dict[str, Any]) -> None:
+    if principal["kind"] == "owner":
+        return
+    if principal["kind"] == "guest":
+        ip = principal["ip"]
+        row = await conn.fetchrow(
+            """
+            INSERT INTO guest_message_counts (ip, count, last_seen)
+            VALUES ($1, 1, NOW())
+            ON CONFLICT (ip) DO UPDATE SET
+                count = guest_message_counts.count + 1,
+                last_seen = EXCLUDED.last_seen
+            WHERE guest_message_counts.count < 20
+            RETURNING count
+            """,
+            ip,
+        )
+        if row is None:
+            raise HTTPException(status_code=429, detail="guest_limit_reached")
+        return
+    uid = principal["user_id"]
+    row = await conn.fetchrow(
+        """
+        INSERT INTO member_message_counts (user_id, date, count)
+        VALUES ($1::uuid, CURRENT_DATE, 1)
+        ON CONFLICT (user_id, date) DO UPDATE SET
+            count = member_message_counts.count + 1
+        WHERE member_message_counts.count < 200
+        RETURNING count
+        """,
+        uid,
+    )
+    if row is None:
+        raise HTTPException(status_code=429, detail="member_daily_limit_reached")
+
+
 async def _assembled_system_prompt(
     conn: asyncpg.Connection,
     chat: asyncpg.Record,
     *,
     user_query_for_rag: str | None = None,
     effective_context_window: int | None = None,
+    include_site_private: bool = True,
 ) -> str:
     """Persona → DAW prompt + daw_instructions + memory_entries → context files → custom instructions → RAG → mode_memory."""
     mode = chat["mode"] if chat["mode"] in ("booops", "808notes") else "booops"
@@ -122,10 +180,14 @@ async def _assembled_system_prompt(
             persona_prompt = (pr["system_prompt"] or "").strip()
 
     if not persona_prompt:
-        flag = "is_default_808notes" if mode == "808notes" else "is_default_booops"
-        d = await conn.fetchrow(
-            f"SELECT system_prompt FROM personas WHERE {flag} IS TRUE LIMIT 1",
-        )
+        if mode == "808notes":
+            d = await conn.fetchrow(
+                "SELECT system_prompt FROM personas WHERE is_default_808notes IS TRUE LIMIT 1",
+            )
+        else:
+            d = await conn.fetchrow(
+                "SELECT system_prompt FROM personas WHERE is_default_booops IS TRUE LIMIT 1",
+            )
         if d:
             persona_prompt = (d["system_prompt"] or "").strip()
 
@@ -148,10 +210,12 @@ async def _assembled_system_prompt(
             instr_text = "\n".join([f"- {r['instruction']}" for r in daw_instructions])
             parts.append(f"### DAW Instructions\n{instr_text}")
 
-    memory_entries = await conn.fetch(
-        "SELECT content AS fact FROM memory_entries WHERE mode = $1 AND is_deleted = false ORDER BY created_at",
-        mode,
-    )
+    memory_entries: list[Any] = []
+    if include_site_private:
+        memory_entries = await conn.fetch(
+            "SELECT content AS fact FROM memory_entries WHERE mode = $1 AND is_deleted = false ORDER BY created_at",
+            mode,
+        )
     if memory_entries:
         mem_entries_count = len(memory_entries)
         bullets = "\n".join([f"- {e['fact']}" for e in memory_entries])
@@ -169,19 +233,20 @@ async def _assembled_system_prompt(
         for cf in cf_rows:
             parts.append(f"[Context file: {cf['filename']}]\n{cf['content']}")
 
-    ci_rows = await conn.fetch(
-        """
-        SELECT scope, content FROM custom_instructions
-        WHERE scope IN ('global', $1::text) AND btrim(content) <> ''
-        ORDER BY CASE WHEN scope = 'global' THEN 0 ELSE 1 END, scope ASC
-        """,
-        mode,
-    )
-    custom_instr = "\n\n".join(
-        (r["content"] or "").strip() for r in ci_rows if (r["content"] or "").strip()
-    )
-    if custom_instr:
-        parts.append(custom_instr)
+    if include_site_private:
+        ci_rows = await conn.fetch(
+            """
+            SELECT scope, content FROM custom_instructions
+            WHERE scope IN ('global', $1::text) AND btrim(content) <> ''
+            ORDER BY CASE WHEN scope = 'global' THEN 0 ELSE 1 END, scope ASC
+            """,
+            mode,
+        )
+        custom_instr = "\n\n".join(
+            (r["content"] or "").strip() for r in ci_rows if (r["content"] or "").strip()
+        )
+        if custom_instr:
+            parts.append(custom_instr)
 
     rag_ok = (
         mode == "808notes"
@@ -210,11 +275,14 @@ async def _assembled_system_prompt(
 
     assembled = "\n\n".join(parts)
 
-    mem = await conn.fetchrow("SELECT content FROM mode_memory WHERE mode = $1", mode)
-    mem_text = (mem["content"] or "").strip() if mem else ""
-    if mem_text:
-        block = "## What I know about you:\n" + mem_text
-        assembled = f"{assembled}\n\n{block}" if assembled else block
+    if include_site_private:
+        mem = await conn.fetchrow("SELECT content FROM mode_memory WHERE mode = $1", mode)
+        mem_text = (mem["content"] or "").strip() if mem else ""
+        if mem_text:
+            block = "## What I know about you:\n" + mem_text
+            assembled = f"{assembled}\n\n{block}" if assembled else block
+    else:
+        mem_text = ""
 
     preview = (assembled[:2000] + "…") if len(assembled) > 2000 else assembled
     logger.info(
@@ -516,25 +584,28 @@ def _message_row(r: asyncpg.Record) -> dict[str, Any]:
 
 
 @router.post("/")
-async def create_chat(body: ChatCreate):
+async def create_chat(body: ChatCreate, principal: dict[str, Any] = Depends(get_principal)):
     pool = await get_pool()
     mode = body.mode if body.mode in ("booops", "808notes") else "booops"
     default_model = os.environ.get("DEFAULT_MODEL", "qwen3.5:9b")
+    if principal["kind"] == "owner":
+        owner_id, guest_ip = None, None
+    elif principal["kind"] == "member":
+        owner_id, guest_ip = principal["user_id"], None
+    else:
+        owner_id, guest_ip = None, principal["ip"]
     async with pool.acquire() as conn:
-        if body.persona_id is not None:
-            ok = await conn.fetchval("SELECT 1 FROM personas WHERE id = $1::uuid", body.persona_id)
-            if ok is None:
-                raise HTTPException(status_code=400, detail="persona_id not found")
-        if body.daw_id is not None:
-            ok = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", body.daw_id)
-            if ok is None:
-                raise HTTPException(status_code=400, detail="daw_id not found")
+        await assert_persona_usable(conn, principal, body.persona_id)
+        await assert_daw_usable(conn, principal, body.daw_id)
         persona_id_for_insert = body.persona_id
         if persona_id_for_insert is None:
             persona_id_for_insert = await _default_persona_id_for_mode(conn, mode)
+        model_arg = body.model
+        if principal["kind"] != "owner":
+            model_arg = await _site_default_model(conn, mode)
         row = await conn.fetchrow(
             """
-            INSERT INTO chats (title, daw_id, mode, model, web_search_enabled, persona_id)
+            INSERT INTO chats (title, daw_id, mode, model, web_search_enabled, persona_id, owner_id, guest_ip)
             VALUES ($1, $2, $3,
                 COALESCE($4, (
                     SELECT value FROM global_settings WHERE key = (
@@ -542,17 +613,21 @@ async def create_chat(body: ChatCreate):
                     ) LIMIT 1
                 ), $6),
                 COALESCE($5, FALSE),
-                $7)
+                $7,
+                $8,
+                $9)
             RETURNING id, title, daw_id, mode, persona_id, model, web_search_enabled, rag_enabled,
                 pruning_summary, message_count, is_main_chat, created_at, updated_at
             """,
             body.title,
             body.daw_id,
             mode,
-            body.model,
+            model_arg,
             body.web_search_enabled,
             default_model,
             persona_id_for_insert,
+            owner_id,
+            guest_ip,
         )
     return _chat_row(row)
 
@@ -563,93 +638,172 @@ async def list_chats(
     offset: int = Query(0, ge=0),
     mode: str = Query("booops"),
     daw_id: uuid.UUID | None = Query(None, description="When set, only chats for this DAW workspace."),
+    principal: dict[str, Any] = Depends(get_principal),
 ):
+    if principal["kind"] == "guest":
+        return {"items": [], "total": 0, "limit": limit, "offset": offset}
     pool = await get_pool()
     m = mode if mode in ("booops", "808notes") else "booops"
+    cols = """
+                id, title, daw_id, mode, persona_id, model, web_search_enabled, rag_enabled,
+                pruning_summary, message_count, is_main_chat, created_at, updated_at
+    """
     async with pool.acquire() as conn:
-        if daw_id is not None:
-            rows = await conn.fetch(
-                """
-                SELECT id, title, daw_id, mode, persona_id, model, web_search_enabled, rag_enabled,
-                    pruning_summary, message_count, is_main_chat, created_at, updated_at
-                FROM chats
-                WHERE mode = $3 AND daw_id = $4::uuid
-                ORDER BY updated_at DESC NULLS LAST, created_at DESC
-                LIMIT $1 OFFSET $2
-                """,
-                limit,
-                offset,
-                m,
-                daw_id,
-            )
-            total = await conn.fetchval(
-                "SELECT COUNT(*)::int FROM chats WHERE mode = $1 AND daw_id = $2::uuid",
-                m,
-                daw_id,
-            )
+        if principal["kind"] == "owner":
+            scope = "owner_id IS NULL AND guest_ip IS NULL"
+            if daw_id is not None:
+                rows = await conn.fetch(
+                    f"""
+                    SELECT {cols}
+                    FROM chats
+                    WHERE mode = $3 AND daw_id = $4::uuid AND {scope}
+                    ORDER BY updated_at DESC NULLS LAST, created_at DESC
+                    LIMIT $1 OFFSET $2
+                    """,
+                    limit,
+                    offset,
+                    m,
+                    daw_id,
+                )
+                total = await conn.fetchval(
+                    f"SELECT COUNT(*)::int FROM chats WHERE mode = $1 AND daw_id = $2::uuid AND {scope}",
+                    m,
+                    daw_id,
+                )
+            else:
+                rows = await conn.fetch(
+                    f"""
+                    SELECT {cols}
+                    FROM chats
+                    WHERE mode = $3 AND {scope}
+                    ORDER BY updated_at DESC NULLS LAST, created_at DESC
+                    LIMIT $1 OFFSET $2
+                    """,
+                    limit,
+                    offset,
+                    m,
+                )
+                total = await conn.fetchval(
+                    f"SELECT COUNT(*)::int FROM chats WHERE mode = $1 AND {scope}",
+                    m,
+                )
         else:
-            rows = await conn.fetch(
-                """
-                SELECT id, title, daw_id, mode, persona_id, model, web_search_enabled, rag_enabled,
-                    pruning_summary, message_count, is_main_chat, created_at, updated_at
-                FROM chats
-                WHERE mode = $3
-                ORDER BY updated_at DESC NULLS LAST, created_at DESC
-                LIMIT $1 OFFSET $2
-                """,
-                limit,
-                offset,
-                m,
-            )
-            total = await conn.fetchval(
-                "SELECT COUNT(*)::int FROM chats WHERE mode = $1",
-                m,
-            )
+            uid = principal["user_id"]
+            if daw_id is not None:
+                rows = await conn.fetch(
+                    f"""
+                    SELECT {cols}
+                    FROM chats
+                    WHERE mode = $3 AND daw_id = $4::uuid AND owner_id = $5::uuid
+                    ORDER BY updated_at DESC NULLS LAST, created_at DESC
+                    LIMIT $1 OFFSET $2
+                    """,
+                    limit,
+                    offset,
+                    m,
+                    daw_id,
+                    uid,
+                )
+                total = await conn.fetchval(
+                    "SELECT COUNT(*)::int FROM chats WHERE mode = $1 AND daw_id = $2::uuid AND owner_id = $3::uuid",
+                    m,
+                    daw_id,
+                    uid,
+                )
+            else:
+                rows = await conn.fetch(
+                    f"""
+                    SELECT {cols}
+                    FROM chats
+                    WHERE mode = $3 AND owner_id = $4::uuid
+                    ORDER BY updated_at DESC NULLS LAST, created_at DESC
+                    LIMIT $1 OFFSET $2
+                    """,
+                    limit,
+                    offset,
+                    m,
+                    uid,
+                )
+                total = await conn.fetchval(
+                    "SELECT COUNT(*)::int FROM chats WHERE mode = $1 AND owner_id = $2::uuid",
+                    m,
+                    uid,
+                )
     return {"items": [_chat_row(r) for r in rows], "total": total, "limit": limit, "offset": offset}
 
 
 @router.delete("/non-daw")
-async def delete_non_daw_chats(mode: str = Query("booops")):
+async def delete_non_daw_chats(
+    mode: str = Query("booops"),
+    principal: dict[str, Any] = Depends(get_principal),
+):
     """Delete all chats in the given mode that are not tied to a DAW (daw_id IS NULL)."""
+    if principal["kind"] == "guest":
+        raise HTTPException(status_code=403, detail="forbidden")
     pool = await get_pool()
     m = mode if mode in ("booops", "808notes") else "booops"
     async with pool.acquire() as conn:
-        deleted = await conn.fetchval(
-            """
-            WITH deleted AS (
-                DELETE FROM chats
-                WHERE mode = $1 AND daw_id IS NULL
-                RETURNING 1
+        if principal["kind"] == "owner":
+            deleted = await conn.fetchval(
+                """
+                WITH deleted AS (
+                    DELETE FROM chats
+                    WHERE mode = $1 AND daw_id IS NULL AND owner_id IS NULL AND guest_ip IS NULL
+                    RETURNING 1
+                )
+                SELECT COUNT(*)::int FROM deleted
+                """,
+                m,
             )
-            SELECT COUNT(*)::int FROM deleted
-            """,
-            m,
-        )
+        else:
+            deleted = await conn.fetchval(
+                """
+                WITH deleted AS (
+                    DELETE FROM chats
+                    WHERE mode = $1 AND daw_id IS NULL AND owner_id = $2::uuid
+                    RETURNING 1
+                )
+                SELECT COUNT(*)::int FROM deleted
+                """,
+                m,
+                principal["user_id"],
+            )
     return {"deleted": int(deleted or 0), "mode": m}
 
 
 @router.get("/{chat_id}")
-async def get_chat(chat_id: uuid.UUID):
+async def get_chat(chat_id: uuid.UUID, principal: dict[str, Any] = Depends(get_principal)):
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
             SELECT id, title, daw_id, mode, persona_id, model, web_search_enabled, rag_enabled,
-                pruning_summary, message_count, is_main_chat, created_at, updated_at
+                pruning_summary, message_count, is_main_chat, created_at, updated_at,
+                owner_id, guest_ip
             FROM chats
             WHERE id = $1::uuid
             """,
             chat_id,
         )
-    if row is None:
+    if row is None or not principal_can_access_chat(principal, row):
         raise HTTPException(status_code=404, detail="Chat not found")
     return _chat_row(row)
 
 
 @router.patch("/{chat_id}/web-search")
-async def patch_web_search(chat_id: uuid.UUID, body: WebSearchToggleBody):
+async def patch_web_search(
+    chat_id: uuid.UUID,
+    body: WebSearchToggleBody,
+    principal: dict[str, Any] = Depends(get_principal),
+):
     pool = await get_pool()
     async with pool.acquire() as conn:
+        cur = await conn.fetchrow(
+            "SELECT id, owner_id, guest_ip FROM chats WHERE id = $1::uuid",
+            chat_id,
+        )
+        if cur is None or not principal_can_access_chat(principal, cur):
+            raise HTTPException(status_code=404, detail="Chat not found")
         row = await conn.fetchrow(
             """
             UPDATE chats
@@ -666,11 +820,17 @@ async def patch_web_search(chat_id: uuid.UUID, body: WebSearchToggleBody):
 
 
 @router.get("/{chat_id}/source-selection")
-async def get_source_selection(chat_id: uuid.UUID):
+async def get_source_selection(
+    chat_id: uuid.UUID,
+    principal: dict[str, Any] = Depends(get_principal),
+):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        exists = await conn.fetchval("SELECT 1 FROM chats WHERE id = $1::uuid", chat_id)
-        if exists is None:
+        c = await conn.fetchrow(
+            "SELECT id, owner_id, guest_ip FROM chats WHERE id = $1::uuid",
+            chat_id,
+        )
+        if c is None or not principal_can_access_chat(principal, c):
             raise HTTPException(status_code=404, detail="Chat not found")
         rows = await conn.fetch(
             "SELECT source_id FROM chat_source_selections WHERE chat_id = $1::uuid",
@@ -680,11 +840,18 @@ async def get_source_selection(chat_id: uuid.UUID):
 
 
 @router.put("/{chat_id}/source-selection")
-async def put_source_selection(chat_id: uuid.UUID, body: SourceSelectionBody):
+async def put_source_selection(
+    chat_id: uuid.UUID,
+    body: SourceSelectionBody,
+    principal: dict[str, Any] = Depends(get_principal),
+):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        exists = await conn.fetchval("SELECT 1 FROM chats WHERE id = $1::uuid", chat_id)
-        if exists is None:
+        c = await conn.fetchrow(
+            "SELECT id, owner_id, guest_ip FROM chats WHERE id = $1::uuid",
+            chat_id,
+        )
+        if c is None or not principal_can_access_chat(principal, c):
             raise HTTPException(status_code=404, detail="Chat not found")
         for sid in body.source_ids:
             ok = await conn.fetchval("SELECT 1 FROM sources WHERE id = $1::uuid", sid)
@@ -705,20 +872,27 @@ async def put_source_selection(chat_id: uuid.UUID, body: SourceSelectionBody):
 
 
 @router.patch("/{chat_id}")
-async def patch_chat(chat_id: uuid.UUID, body: ChatPatch):
+async def patch_chat(
+    chat_id: uuid.UUID,
+    body: ChatPatch,
+    principal: dict[str, Any] = Depends(get_principal),
+):
     pool = await get_pool()
     data = body.model_dump(exclude_unset=True)
+    if principal["kind"] != "owner" and "model" in data:
+        del data["model"]
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
             SELECT id, title, daw_id, mode, persona_id, model, web_search_enabled, rag_enabled,
-                pruning_summary, message_count, is_main_chat, created_at, updated_at
+                pruning_summary, message_count, is_main_chat, created_at, updated_at,
+                owner_id, guest_ip
             FROM chats
             WHERE id = $1::uuid
             """,
             chat_id,
         )
-        if row is None:
+        if row is None or not principal_can_access_chat(principal, row):
             raise HTTPException(status_code=404, detail="Chat not found")
         if not data:
             return _chat_row(row)
@@ -729,13 +903,9 @@ async def patch_chat(chat_id: uuid.UUID, body: ChatPatch):
         new_daw = row["daw_id"] if "daw_id" not in data else data["daw_id"]
 
         if new_persona is not None:
-            ok = await conn.fetchval("SELECT 1 FROM personas WHERE id = $1::uuid", new_persona)
-            if ok is None:
-                raise HTTPException(status_code=400, detail="persona_id not found")
+            await assert_persona_usable(conn, principal, new_persona)
         if new_daw is not None:
-            ok = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", new_daw)
-            if ok is None:
-                raise HTTPException(status_code=400, detail="daw_id not found")
+            await assert_daw_usable(conn, principal, new_daw)
 
         updated = await conn.fetchrow(
             """
@@ -757,9 +927,15 @@ async def patch_chat(chat_id: uuid.UUID, body: ChatPatch):
 
 
 @router.delete("/{chat_id}")
-async def delete_chat(chat_id: uuid.UUID):
+async def delete_chat(chat_id: uuid.UUID, principal: dict[str, Any] = Depends(get_principal)):
     pool = await get_pool()
     async with pool.acquire() as conn:
+        cur = await conn.fetchrow(
+            "SELECT id, owner_id, guest_ip FROM chats WHERE id = $1::uuid",
+            chat_id,
+        )
+        if cur is None or not principal_can_access_chat(principal, cur):
+            raise HTTPException(status_code=404, detail="Chat not found")
         result = await conn.execute("DELETE FROM chats WHERE id = $1::uuid", chat_id)
     if result == "DELETE 0":
         raise HTTPException(status_code=404, detail="Chat not found")
@@ -767,11 +943,14 @@ async def delete_chat(chat_id: uuid.UUID):
 
 
 @router.get("/{chat_id}/messages")
-async def list_messages(chat_id: uuid.UUID):
+async def list_messages(chat_id: uuid.UUID, principal: dict[str, Any] = Depends(get_principal)):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        exists = await conn.fetchval("SELECT 1 FROM chats WHERE id = $1::uuid", chat_id)
-        if exists is None:
+        c = await conn.fetchrow(
+            "SELECT id, owner_id, guest_ip FROM chats WHERE id = $1::uuid",
+            chat_id,
+        )
+        if c is None or not principal_can_access_chat(principal, c):
             raise HTTPException(status_code=404, detail="Chat not found")
         rows = await conn.fetch(
             """
@@ -786,20 +965,24 @@ async def list_messages(chat_id: uuid.UUID):
 
 
 @router.post("/{chat_id}/messages/{message_id}/fork")
-async def fork_chat_at_message(chat_id: uuid.UUID, message_id: uuid.UUID):
+async def fork_chat_at_message(
+    chat_id: uuid.UUID,
+    message_id: uuid.UUID,
+    principal: dict[str, Any] = Depends(get_principal),
+):
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
             src = await conn.fetchrow(
                 """
                 SELECT id, title, mode, model, persona_id, daw_id,
-                    web_search_enabled, rag_enabled
+                    web_search_enabled, rag_enabled, owner_id, guest_ip
                 FROM chats
                 WHERE id = $1::uuid
                 """,
                 chat_id,
             )
-            if src is None:
+            if src is None or not principal_can_access_chat(principal, src):
                 raise HTTPException(status_code=404, detail="Chat not found")
 
             target = await conn.fetchrow(
@@ -837,9 +1020,10 @@ async def fork_chat_at_message(chat_id: uuid.UUID, message_id: uuid.UUID):
                 """
                 INSERT INTO chats (
                     title, daw_id, mode, model, persona_id,
-                    web_search_enabled, rag_enabled, message_count
+                    web_search_enabled, rag_enabled, message_count,
+                    owner_id, guest_ip
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                 RETURNING id, title, daw_id, mode, persona_id, model, web_search_enabled, rag_enabled,
                     pruning_summary, message_count, is_main_chat, created_at, updated_at
                 """,
@@ -851,6 +1035,8 @@ async def fork_chat_at_message(chat_id: uuid.UUID, message_id: uuid.UUID):
                 src["web_search_enabled"],
                 src["rag_enabled"],
                 len(copies),
+                src["owner_id"],
+                src["guest_ip"],
             )
             assert new_chat is not None
             new_id = new_chat["id"]
@@ -880,20 +1066,24 @@ async def fork_chat_at_message(chat_id: uuid.UUID, message_id: uuid.UUID):
 
 
 @router.post("/{chat_id}/messages")
-async def append_message(chat_id: uuid.UUID, body: MessageCreate):
+async def append_message(
+    chat_id: uuid.UUID,
+    body: MessageCreate,
+    principal: dict[str, Any] = Depends(get_principal),
+):
     pool = await get_pool()
 
     async with pool.acquire() as conn:
         chat = await conn.fetchrow(
             """
             SELECT id, title, model, pruning_summary, mode, persona_id, web_search_enabled, daw_id,
-                message_count, rag_enabled
+                message_count, rag_enabled, owner_id, guest_ip
             FROM chats
             WHERE id = $1::uuid
             """,
             chat_id,
         )
-        if chat is None:
+        if chat is None or not principal_can_access_chat(principal, chat):
             raise HTTPException(status_code=404, detail="Chat not found")
 
         global_ctx = await _global_context_window(conn)
@@ -906,26 +1096,32 @@ async def append_message(chat_id: uuid.UUID, body: MessageCreate):
                 """,
                 chat["daw_id"],
             )
-        daw_pins_model = bool(
-            daw_row is not None and daw_row["model"] and str(daw_row["model"]).strip()
-        )
-        chat_model = (body.model or chat["model"] or "").strip()
-        effective_model = str(daw_row["model"]).strip() if daw_pins_model else chat_model
+        cm = chat["mode"] if chat["mode"] in ("booops", "808notes") else "booops"
+        if principal["kind"] == "owner":
+            daw_pins_model = bool(
+                daw_row is not None and daw_row["model"] and str(daw_row["model"]).strip()
+            )
+            chat_model = (body.model or chat["model"] or "").strip()
+            effective_model = str(daw_row["model"]).strip() if daw_pins_model else chat_model
+        else:
+            daw_pins_model = False
+            effective_model = (await _site_default_model(conn, cm)).strip()
         if not effective_model:
             raise HTTPException(status_code=400, detail="No model set for chat")
 
-        if daw_pins_model:
-            await conn.execute(
-                "UPDATE chats SET model = $2, updated_at = NOW() WHERE id = $1::uuid",
-                chat_id,
-                effective_model,
-            )
-        elif body.model is not None:
-            await conn.execute(
-                "UPDATE chats SET model = $2, updated_at = NOW() WHERE id = $1::uuid",
-                chat_id,
-                effective_model,
-            )
+        if principal["kind"] == "owner":
+            if daw_pins_model:
+                await conn.execute(
+                    "UPDATE chats SET model = $2, updated_at = NOW() WHERE id = $1::uuid",
+                    chat_id,
+                    effective_model,
+                )
+            elif body.model is not None:
+                await conn.execute(
+                    "UPDATE chats SET model = $2, updated_at = NOW() WHERE id = $1::uuid",
+                    chat_id,
+                    effective_model,
+                )
 
         if daw_pins_model and daw_row is not None:
             effective_max_tokens = int(daw_row["max_tokens"] or 2048)
@@ -940,26 +1136,31 @@ async def append_message(chat_id: uuid.UUID, body: MessageCreate):
         if daw_row is not None and daw_row["temperature"] is not None:
             inference_temperature = float(daw_row["temperature"])
 
-        user_id = uuid.uuid4()
-        await conn.execute(
-            """
-            INSERT INTO messages (id, chat_id, role, content, model)
-            VALUES ($1::uuid, $2::uuid, 'user', $3, $4)
-            """,
-            user_id,
-            chat_id,
-            body.content.strip(),
-            effective_model,
-        )
-        await conn.execute(
-            """
-            UPDATE chats
-            SET message_count = message_count + 1,
-                updated_at = NOW()
-            WHERE id = $1::uuid
-            """,
-            chat_id,
-        )
+        include_private = principal["kind"] == "owner"
+        first_exchange_for_auto_title = int(chat["message_count"] or 0) == 0
+
+        user_msg_id = uuid.uuid4()
+        async with conn.transaction():
+            await _bump_message_cap_or_429(conn, principal)
+            await conn.execute(
+                """
+                INSERT INTO messages (id, chat_id, role, content, model)
+                VALUES ($1::uuid, $2::uuid, 'user', $3, $4)
+                """,
+                user_msg_id,
+                chat_id,
+                body.content.strip(),
+                effective_model,
+            )
+            await conn.execute(
+                """
+                UPDATE chats
+                SET message_count = message_count + 1,
+                    updated_at = NOW()
+                WHERE id = $1::uuid
+                """,
+                chat_id,
+            )
 
         msg_rows = await conn.fetch(
             """
@@ -976,11 +1177,11 @@ async def append_message(chat_id: uuid.UUID, body: MessageCreate):
             chat,
             user_query_for_rag=body.content.strip(),
             effective_context_window=effective_ctx,
+            include_site_private=include_private,
         )
 
     summary = chat["pruning_summary"]
     user_message_text = body.content.strip()
-    first_exchange_for_auto_title = int(chat["message_count"] or 0) == 0
 
     async def gen() -> AsyncIterator[bytes]:
         sources_list: list[dict[str, str]] = []
@@ -1138,7 +1339,7 @@ async def append_message(chat_id: uuid.UUID, body: MessageCreate):
             yield _sse(json.dumps({"type": "title_update", "title": title_emit}))
 
         auto_mem = _first_auto_memory_sentence(assistant_text)
-        if auto_mem:
+        if auto_mem and principal["kind"] == "owner":
             chat_mode = chat["mode"] if chat["mode"] in ("booops", "808notes") else "booops"
             async with p.acquire() as conn_mem:
                 await conn_mem.execute(

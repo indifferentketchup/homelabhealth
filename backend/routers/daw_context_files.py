@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -91,12 +91,13 @@ class DawContextFilePatch(BaseModel):
 
 
 @router.get("/")
-async def list_context_files(daw_id: uuid.UUID = Query(...)):
+async def list_context_files(
+    daw_id: uuid.UUID = Query(...),
+    principal: dict = Depends(get_principal),
+):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        ok = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", daw_id)
-        if ok is None:
-            raise HTTPException(status_code=404, detail="DAW not found")
+        await fetch_daw_if_visible(conn, principal, daw_id)
         rows = await conn.fetch(
             """
             SELECT id, daw_id, filename, content, file_url, embeddable, sort_order, created_at
@@ -120,16 +121,38 @@ async def upload_context_file(
     daw_id: uuid.UUID = Form(...),
     file: UploadFile = File(...),
     embeddable: str | None = Form("false"),
+    principal: dict = Depends(get_principal),
 ):
+    if principal["kind"] == "guest":
+        raise HTTPException(status_code=403, detail="Forbidden")
     pool = await get_pool()
     async with pool.acquire() as conn:
-        ok = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", daw_id)
-        if ok is None:
-            raise HTTPException(status_code=404, detail="DAW not found")
+        await assert_daw_mutable(conn, principal, daw_id)
+        if principal["kind"] == "member":
+            n = await conn.fetchval(
+                """
+                SELECT COUNT(*)::int FROM sources s
+                INNER JOIN daws d ON d.id = s.daw_id
+                WHERE d.owner_id = $1::uuid
+                """,
+                principal["user_id"],
+            )
+            cf = await conn.fetchval(
+                """
+                SELECT COUNT(*)::int FROM daw_context_files f
+                INNER JOIN daws d ON d.id = f.daw_id
+                WHERE d.owner_id = $1::uuid
+                """,
+                principal["user_id"],
+            )
+            if int(n or 0) + int(cf or 0) >= 10:
+                raise HTTPException(status_code=429, detail="upload_limit_reached")
 
     orig = (file.filename or "upload").strip() or "upload"
     ext = Path(orig).suffix.lower() or ".bin"
     raw = await file.read()
+    if principal["kind"] == "member" and len(raw) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large")
     content = _extract_text(orig, raw)
 
     file_id = uuid.uuid4()
@@ -158,7 +181,13 @@ async def upload_context_file(
 
 
 @router.patch("/{file_id}")
-async def patch_context_file(file_id: uuid.UUID, body: DawContextFilePatch):
+async def patch_context_file(
+    file_id: uuid.UUID,
+    body: DawContextFilePatch,
+    principal: dict = Depends(get_principal),
+):
+    if principal["kind"] == "guest":
+        raise HTTPException(status_code=403, detail="Forbidden")
     pool = await get_pool()
     data = body.model_dump(exclude_unset=True)
     async with pool.acquire() as conn:
@@ -171,6 +200,7 @@ async def patch_context_file(file_id: uuid.UUID, body: DawContextFilePatch):
         )
         if row is None:
             raise HTTPException(status_code=404, detail="Context file not found")
+        await assert_daw_mutable(conn, principal, row["daw_id"])
         if not data:
             return _row_list(row)
         new_emb = data.get("embeddable", row["embeddable"])
@@ -190,9 +220,19 @@ async def patch_context_file(file_id: uuid.UUID, body: DawContextFilePatch):
 
 
 @router.delete("/{file_id}")
-async def delete_context_file(file_id: uuid.UUID):
-    _delete_stored_file(file_id)
+async def delete_context_file(file_id: uuid.UUID, principal: dict = Depends(get_principal)):
+    if principal["kind"] == "guest":
+        raise HTTPException(status_code=403, detail="Forbidden")
     pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT daw_id FROM daw_context_files WHERE id = $1::uuid",
+            file_id,
+        )
+        if row is None:
+            raise HTTPException(status_code=404, detail="Context file not found")
+        await assert_daw_mutable(conn, principal, row["daw_id"])
+    _delete_stored_file(file_id)
     async with pool.acquire() as conn:
         result = await conn.execute(
             "DELETE FROM daw_context_files WHERE id = $1::uuid",
@@ -204,7 +244,19 @@ async def delete_context_file(file_id: uuid.UUID):
 
 
 @router.get("/{file_id}/download")
-async def download_context_file(file_id: uuid.UUID):
+async def download_context_file(
+    file_id: uuid.UUID,
+    principal: dict = Depends(get_principal),
+):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT daw_id FROM daw_context_files WHERE id = $1::uuid",
+            file_id,
+        )
+        if row is None:
+            raise HTTPException(status_code=404, detail="File not found")
+        await fetch_daw_if_visible(conn, principal, row["daw_id"])
     path = _list_file_path(file_id)
     if path is None or not path.is_file():
         raise HTTPException(status_code=404, detail="File not found")

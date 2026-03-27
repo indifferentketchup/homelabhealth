@@ -8,8 +8,9 @@ import logging
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
+from auth_deps import assert_daw_mutable, fetch_daw_if_visible, get_principal
 from db import get_chroma_collection, get_pool
 from services.chunking import chunk_text, parse_source_bytes
 from services.embeddings import embed_batch
@@ -119,12 +120,21 @@ async def _ingest_source(source_id: uuid.UUID, daw_id: uuid.UUID, raw: bytes, mi
 
 
 @router.post("/{daw_id}/upload")
-async def upload_source(daw_id: uuid.UUID, file: UploadFile = File(...)) -> dict[str, Any]:
+async def upload_source(
+    daw_id: uuid.UUID,
+    file: UploadFile = File(...),
+    principal: dict = Depends(get_principal),
+) -> dict[str, Any]:
+    if principal["kind"] == "guest":
+        raise HTTPException(403, "Forbidden")
     raw = await file.read()
     if not raw:
         raise HTTPException(400, "Empty file")
-    if len(raw) > 50 * 1024 * 1024:
-        raise HTTPException(413, "File too large (max 50MB)")
+    max_b = 50 * 1024 * 1024
+    if principal["kind"] == "member":
+        max_b = 5 * 1024 * 1024
+    if len(raw) > max_b:
+        raise HTTPException(413, "File too large")
 
     mime = file.content_type or "application/octet-stream"
     stype = _mime_to_source_type(mime)
@@ -136,6 +146,27 @@ async def upload_source(daw_id: uuid.UUID, file: UploadFile = File(...)) -> dict
     h = _sha256(raw)
     pool = await get_pool()
     async with pool.acquire() as conn:
+        await fetch_daw_if_visible(conn, principal, daw_id)
+        if principal["kind"] == "member":
+            n = await conn.fetchval(
+                """
+                SELECT COUNT(*)::int FROM sources s
+                INNER JOIN daws d ON d.id = s.daw_id
+                WHERE d.owner_id = $1::uuid
+                """,
+                principal["user_id"],
+            )
+            cf = await conn.fetchval(
+                """
+                SELECT COUNT(*)::int FROM daw_context_files f
+                INNER JOIN daws d ON d.id = f.daw_id
+                WHERE d.owner_id = $1::uuid
+                """,
+                principal["user_id"],
+            )
+            if int(n or 0) + int(cf or 0) >= 10:
+                raise HTTPException(429, detail="upload_limit_reached")
+
         existing = await conn.fetchval("SELECT id FROM sources WHERE content_hash = $1 LIMIT 1", h)
         if existing:
             return {"source_id": str(existing), "status": "already_exists"}
@@ -168,12 +199,13 @@ async def upload_source(daw_id: uuid.UUID, file: UploadFile = File(...)) -> dict
 
 
 @router.get("/{daw_id}")
-async def list_sources(daw_id: uuid.UUID) -> list[dict[str, Any]]:
+async def list_sources(
+    daw_id: uuid.UUID,
+    principal: dict = Depends(get_principal),
+) -> list[dict[str, Any]]:
     pool = await get_pool()
     async with pool.acquire() as conn:
-        exists = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", daw_id)
-        if not exists:
-            raise HTTPException(404, "DAW not found")
+        await fetch_daw_if_visible(conn, principal, daw_id)
         rows = await conn.fetch(
             """
             SELECT id, name, chunk_count, embedding_status, created_at, source_type, mime_type
@@ -200,12 +232,18 @@ async def list_sources(daw_id: uuid.UUID) -> list[dict[str, Any]]:
 
 
 @router.delete("/by-id/{source_id}")
-async def delete_source(source_id: uuid.UUID) -> dict[str, str]:
+async def delete_source(
+    source_id: uuid.UUID,
+    principal: dict = Depends(get_principal),
+) -> dict[str, str]:
+    if principal["kind"] == "guest":
+        raise HTTPException(403, "Forbidden")
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow("SELECT id, daw_id FROM sources WHERE id = $1::uuid", source_id)
         if not row:
             raise HTTPException(404, "Source not found")
+        await assert_daw_mutable(conn, principal, row["daw_id"])
         did = str(row["daw_id"])
 
     try:

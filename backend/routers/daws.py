@@ -7,10 +7,17 @@ import uuid
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from auth_deps import (
+    assert_daw_mutable,
+    assert_persona_usable,
+    daw_row_visible,
+    fetch_daw_if_visible,
+    get_principal,
+)
 from db import get_pool
 
 router = APIRouter()
@@ -99,6 +106,7 @@ def _row(r: Any) -> dict[str, Any]:
         "context_window": int(cw) if cw is not None else 8192,
         "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
         "updated_at": r["updated_at"].isoformat() if r.get("updated_at") else None,
+        "owner_id": str(r["owner_id"]) if r.get("owner_id") else None,
     }
 
 
@@ -125,54 +133,89 @@ async def _ensure_persona(conn: Any, persona_id: uuid.UUID | None) -> None:
 
 
 @router.get("/")
-async def list_daws(mode: str | None = Query(None)):
+async def list_daws(
+    mode: str | None = Query(None),
+    principal: dict[str, Any] = Depends(get_principal),
+):
     pool = await get_pool()
     m = _norm_mode(mode) if mode is not None else None
+    sel = """
+                SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
+                    d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
+                    d.temperature, d.model, d.max_tokens, d.top_p, d.context_window,
+                    d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
+                FROM daws d
+                LEFT JOIN personas p ON p.id = d.persona_id
+    """
     async with pool.acquire() as conn:
-        if m is None:
-            rows = await conn.fetch(
-                """
-                SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
-                    d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
-                    d.temperature, d.model, d.max_tokens, d.top_p, d.context_window, d.created_at, d.updated_at, p.name AS persona_name
-                FROM daws d
-                LEFT JOIN personas p ON p.id = d.persona_id
-                ORDER BY d.sort_order ASC NULLS LAST, d.name ASC
-                """,
-            )
+        if principal["kind"] == "owner":
+            if m is None:
+                rows = await conn.fetch(
+                    sel + " ORDER BY d.sort_order ASC NULLS LAST, d.name ASC",
+                )
+            else:
+                rows = await conn.fetch(
+                    sel + " WHERE d.mode = $1 ORDER BY d.sort_order ASC NULLS LAST, d.name ASC",
+                    m,
+                )
+        elif principal["kind"] == "guest":
+            if m is None:
+                rows = await conn.fetch(
+                    sel + " WHERE d.owner_id IS NULL ORDER BY d.sort_order ASC NULLS LAST, d.name ASC",
+                )
+            else:
+                rows = await conn.fetch(
+                    sel + " WHERE d.mode = $1 AND d.owner_id IS NULL ORDER BY d.sort_order ASC NULLS LAST, d.name ASC",
+                    m,
+                )
         else:
-            rows = await conn.fetch(
-                """
-                SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
-                    d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
-                    d.temperature, d.model, d.max_tokens, d.top_p, d.context_window, d.created_at, d.updated_at, p.name AS persona_name
-                FROM daws d
-                LEFT JOIN personas p ON p.id = d.persona_id
-                WHERE d.mode = $1
-                ORDER BY d.sort_order ASC NULLS LAST, d.name ASC
-                """,
-                m,
-            )
+            uid = principal["user_id"]
+            if m is None:
+                rows = await conn.fetch(
+                    sel
+                    + " WHERE d.owner_id IS NULL OR d.owner_id = $1::uuid ORDER BY d.sort_order ASC NULLS LAST, d.name ASC",
+                    uid,
+                )
+            else:
+                rows = await conn.fetch(
+                    sel
+                    + " WHERE d.mode = $1 AND (d.owner_id IS NULL OR d.owner_id = $2::uuid) ORDER BY d.sort_order ASC NULLS LAST, d.name ASC",
+                    m,
+                    uid,
+                )
     return {"items": [_row(r) for r in rows]}
 
 
 @router.post("/")
-async def create_daw(body: DawCreate):
+async def create_daw(body: DawCreate, principal: dict[str, Any] = Depends(get_principal)):
+    if principal["kind"] == "guest":
+        raise HTTPException(status_code=403, detail="forbidden")
     mo = _norm_mode(body.mode)
     pool = await get_pool()
+    owner_uuid = None
     async with pool.acquire() as conn:
+        if principal["kind"] == "member":
+            n = await conn.fetchval(
+                "SELECT COUNT(*)::int FROM daws WHERE owner_id = $1::uuid AND mode = $2",
+                principal["user_id"],
+                mo,
+            )
+            if int(n or 0) >= 2:
+                raise HTTPException(status_code=429, detail="daw_limit_reached")
+            owner_uuid = principal["user_id"]
+        await assert_persona_usable(conn, principal, body.persona_id)
         await _ensure_persona(conn, body.persona_id)
         ins_model = (body.daw_model or "").strip() or None
         row = await conn.fetchrow(
             """
             INSERT INTO daws (
                 name, description, system_prompt, persona_id, mode, color, shared, sort_order, temperature,
-                model, max_tokens, top_p, context_window
+                model, max_tokens, top_p, context_window, owner_id
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             RETURNING id, name, description, icon_url, color, shared, sort_order,
                 pinned_booops, pinned_808notes, system_prompt, persona_id, mode, temperature,
-                model, max_tokens, top_p, context_window, created_at, updated_at
+                model, max_tokens, top_p, context_window, created_at, updated_at, owner_id
             """,
             body.name.strip(),
             body.description,
@@ -187,12 +230,14 @@ async def create_daw(body: DawCreate):
             body.max_tokens,
             body.top_p,
             body.context_window,
+            owner_uuid,
         )
         prow = await conn.fetchrow(
             """
             SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
                 d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
-                d.temperature, d.model, d.max_tokens, d.top_p, d.context_window, d.created_at, d.updated_at, p.name AS persona_name
+                d.temperature, d.model, d.max_tokens, d.top_p, d.context_window,
+                d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
             FROM daws d
             LEFT JOIN personas p ON p.id = d.persona_id
             WHERE d.id = $1::uuid
@@ -203,12 +248,13 @@ async def create_daw(body: DawCreate):
 
 
 @router.get("/{daw_id}/instructions")
-async def get_daw_instructions(daw_id: uuid.UUID):
+async def get_daw_instructions(
+    daw_id: uuid.UUID,
+    principal: dict[str, Any] = Depends(get_principal),
+):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        ok = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", daw_id)
-        if ok is None:
-            raise HTTPException(status_code=404, detail="DAW not found")
+        await fetch_daw_if_visible(conn, principal, daw_id)
         row = await conn.fetchrow(
             """
             SELECT content FROM daw_instructions
@@ -222,12 +268,16 @@ async def get_daw_instructions(daw_id: uuid.UUID):
 
 
 @router.put("/{daw_id}/instructions")
-async def put_daw_instructions(daw_id: uuid.UUID, body: DawInstructionsBody):
+async def put_daw_instructions(
+    daw_id: uuid.UUID,
+    body: DawInstructionsBody,
+    principal: dict[str, Any] = Depends(get_principal),
+):
+    if principal["kind"] == "guest":
+        raise HTTPException(status_code=403, detail="forbidden")
     pool = await get_pool()
     async with pool.acquire() as conn:
-        ok = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", daw_id)
-        if ok is None:
-            raise HTTPException(status_code=404, detail="DAW not found")
+        await assert_daw_mutable(conn, principal, daw_id)
         existing = await conn.fetchrow(
             "SELECT id FROM daw_instructions WHERE daw_id = $1::uuid LIMIT 1",
             daw_id,
@@ -255,12 +305,16 @@ async def put_daw_instructions(daw_id: uuid.UUID, body: DawInstructionsBody):
 
 
 @router.post("/{daw_id}/icon")
-async def upload_daw_icon(daw_id: uuid.UUID, file: UploadFile = File(...)):
+async def upload_daw_icon(
+    daw_id: uuid.UUID,
+    file: UploadFile = File(...),
+    principal: dict[str, Any] = Depends(get_principal),
+):
+    if principal["kind"] == "guest":
+        raise HTTPException(status_code=403, detail="forbidden")
     pool = await get_pool()
     async with pool.acquire() as conn:
-        exists = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", daw_id)
-        if exists is None:
-            raise HTTPException(status_code=404, detail="DAW not found")
+        await assert_daw_mutable(conn, principal, daw_id)
 
     orig = (file.filename or "").strip()
     ext = Path(orig).suffix.lower()
@@ -291,7 +345,8 @@ async def upload_daw_icon(daw_id: uuid.UUID, file: UploadFile = File(...)):
             """
             SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
                 d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
-                d.temperature, d.model, d.max_tokens, d.top_p, d.context_window, d.created_at, d.updated_at, p.name AS persona_name
+                d.temperature, d.model, d.max_tokens, d.top_p, d.context_window,
+                d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
             FROM daws d
             LEFT JOIN personas p ON p.id = d.persona_id
             WHERE d.id = $1::uuid
@@ -313,9 +368,16 @@ async def serve_daw_icon(daw_id: uuid.UUID):
 
 
 @router.patch("/{daw_id}/pin")
-async def patch_daw_pin(daw_id: uuid.UUID, body: DawPinBody):
+async def patch_daw_pin(
+    daw_id: uuid.UUID,
+    body: DawPinBody,
+    principal: dict[str, Any] = Depends(get_principal),
+):
+    if principal["kind"] == "guest":
+        raise HTTPException(status_code=403, detail="forbidden")
     pool = await get_pool()
     async with pool.acquire() as conn:
+        await assert_daw_mutable(conn, principal, daw_id)
         if body.slot == "booops":
             await conn.execute(
                 """
@@ -338,7 +400,8 @@ async def patch_daw_pin(daw_id: uuid.UUID, body: DawPinBody):
             """
             SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
                 d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
-                d.temperature, d.model, d.max_tokens, d.top_p, d.context_window, d.created_at, d.updated_at, p.name AS persona_name
+                d.temperature, d.model, d.max_tokens, d.top_p, d.context_window,
+                d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
             FROM daws d
             LEFT JOIN personas p ON p.id = d.persona_id
             WHERE d.id = $1::uuid
@@ -351,35 +414,43 @@ async def patch_daw_pin(daw_id: uuid.UUID, body: DawPinBody):
 
 
 @router.get("/{daw_id}")
-async def get_daw(daw_id: uuid.UUID):
+async def get_daw(daw_id: uuid.UUID, principal: dict[str, Any] = Depends(get_principal)):
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
             SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
                 d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
-                d.temperature, d.model, d.max_tokens, d.top_p, d.context_window, d.created_at, d.updated_at, p.name AS persona_name
+                d.temperature, d.model, d.max_tokens, d.top_p, d.context_window,
+                d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
             FROM daws d
             LEFT JOIN personas p ON p.id = d.persona_id
             WHERE d.id = $1::uuid
             """,
             daw_id,
         )
-    if row is None:
+    if row is None or not daw_row_visible(principal, row["owner_id"]):
         raise HTTPException(status_code=404, detail="DAW not found")
     return _row(row)
 
 
 @router.patch("/{daw_id}")
-async def patch_daw(daw_id: uuid.UUID, body: DawUpdate):
+async def patch_daw(
+    daw_id: uuid.UUID,
+    body: DawUpdate,
+    principal: dict[str, Any] = Depends(get_principal),
+):
+    if principal["kind"] == "guest":
+        raise HTTPException(status_code=403, detail="forbidden")
     pool = await get_pool()
     data = body.model_dump(exclude_unset=True)
     async with pool.acquire() as conn:
+        await assert_daw_mutable(conn, principal, daw_id)
         row = await conn.fetchrow(
             """
             SELECT id, name, description, icon_url, color, shared, sort_order,
                 pinned_booops, pinned_808notes, system_prompt, persona_id, mode,
-                temperature, model, max_tokens, top_p, context_window, created_at, updated_at
+                temperature, model, max_tokens, top_p, context_window, created_at, updated_at, owner_id
             FROM daws WHERE id = $1::uuid
             """,
             daw_id,
@@ -391,7 +462,8 @@ async def patch_daw(daw_id: uuid.UUID, body: DawUpdate):
                 """
                 SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
                     d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
-                    d.temperature, d.model, d.max_tokens, d.top_p, d.context_window, d.created_at, d.updated_at, p.name AS persona_name
+                    d.temperature, d.model, d.max_tokens, d.top_p, d.context_window,
+                    d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
                 FROM daws d
                 LEFT JOIN personas p ON p.id = d.persona_id
                 WHERE d.id = $1::uuid
@@ -446,6 +518,7 @@ async def patch_daw(daw_id: uuid.UUID, body: DawUpdate):
         if isinstance(new_sp, str):
             new_sp = new_sp or ""
 
+        await assert_persona_usable(conn, principal, new_pid)
         await _ensure_persona(conn, new_pid)
 
         await conn.execute(
@@ -476,7 +549,8 @@ async def patch_daw(daw_id: uuid.UUID, body: DawUpdate):
             """
             SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
                 d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
-                d.temperature, d.model, d.max_tokens, d.top_p, d.context_window, d.created_at, d.updated_at, p.name AS persona_name
+                d.temperature, d.model, d.max_tokens, d.top_p, d.context_window,
+                d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
             FROM daws d
             LEFT JOIN personas p ON p.id = d.persona_id
             WHERE d.id = $1::uuid
@@ -487,9 +561,22 @@ async def patch_daw(daw_id: uuid.UUID, body: DawUpdate):
 
 
 @router.delete("/{daw_id}")
-async def delete_daw(daw_id: uuid.UUID):
-    _delete_stored_icon(daw_id)
+async def delete_daw(daw_id: uuid.UUID, principal: dict[str, Any] = Depends(get_principal)):
+    if principal["kind"] == "guest":
+        raise HTTPException(status_code=403, detail="forbidden")
     pool = await get_pool()
+    async with pool.acquire() as conn:
+        meta = await conn.fetchrow(
+            "SELECT owner_id FROM daws WHERE id = $1::uuid",
+            daw_id,
+        )
+        if meta is None:
+            raise HTTPException(status_code=404, detail="DAW not found")
+        if meta["owner_id"] is None:
+            raise HTTPException(status_code=403, detail="cannot_delete_global_daw")
+        if principal["kind"] == "member" and meta["owner_id"] != principal["user_id"]:
+            raise HTTPException(status_code=403, detail="daw_not_allowed")
+    _delete_stored_icon(daw_id)
     async with pool.acquire() as conn:
         result = await conn.execute("DELETE FROM daws WHERE id = $1::uuid", daw_id)
     if result == "DELETE 0":

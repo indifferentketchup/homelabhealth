@@ -11,7 +11,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from db import apply_schema, close_pool, get_pool, init_chroma, init_pool
 from seed_assets import seed_default_assets
+from seed_users import ensure_super_admin
 from routers import (
+    auth,
     branding,
     chats,
     claude,
@@ -24,8 +26,12 @@ from routers import (
     search,
     searxng,
     settings,
+    users,
 )
 from routers.sources import router as sources_router
+
+import logging
+logging.basicConfig(level=logging.INFO)
 
 load_dotenv()
 
@@ -46,6 +52,7 @@ async def lifespan(_app: FastAPI):
     await init_pool()
     await apply_schema()
     await seed_default_assets()
+    await ensure_super_admin()
     init_chroma()
     yield
     await close_pool()
@@ -94,6 +101,8 @@ async def api_health():
     return {"status": "ok"}
 
 
+api.include_router(auth.router, prefix="/auth", tags=["auth"])
+api.include_router(users.router, prefix="/users", tags=["users"])
 api.include_router(ollama.router, prefix="/ollama", tags=["ollama"])
 api.include_router(claude.router, prefix="/claude", tags=["claude"])
 api.include_router(chats.router, prefix="/chats", tags=["chats"])

@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils'
 
 /** Small circular avatar: uploaded image, else emoji, else first letter of display name. */
 export function UserProfileAvatar({ className, size = 'button' }) {
+  const profileIconObjectUrl = useAppStore((s) => s.profileIconObjectUrl)
   const avatarDataUrl = useAppStore((s) => s.userProfile.avatarDataUrl)
   const emoji = useAppStore((s) => s.userProfile.emoji)
   const displayName = useAppStore((s) => s.userProfile.displayName)
@@ -15,10 +16,11 @@ export function UserProfileAvatar({ className, size = 'button' }) {
         ? 'size-16 text-3xl'
         : 'size-10 text-xl'
 
-  if (avatarDataUrl) {
+  const imgSrc = profileIconObjectUrl || avatarDataUrl
+  if (imgSrc) {
     return (
       <img
-        src={avatarDataUrl}
+        src={imgSrc}
         alt=""
         className={cn('shrink-0 rounded-full border border-border object-cover', dim, className)}
       />
