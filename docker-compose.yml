@@ -58,6 +58,7 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_APP_MODE: boolab
+        VITE_PUBLIC_BOOLAB_URL: ${VITE_PUBLIC_BOOLAB_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9302}
         VITE_PUBLIC_BOOOPS_URL: ${VITE_PUBLIC_BOOOPS_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9303}
         VITE_PUBLIC_808NOTES_URL: ${VITE_PUBLIC_808NOTES_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9304}
     container_name: boolab_ui
@@ -75,6 +76,8 @@ services:
       args:
         VITE_APP_MODE: booops
         VITE_PUBLIC_BOOLAB_URL: ${VITE_PUBLIC_BOOLAB_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9302}
+        VITE_PUBLIC_BOOOPS_URL: ${VITE_PUBLIC_BOOOPS_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9303}
+        VITE_PUBLIC_808NOTES_URL: ${VITE_PUBLIC_808NOTES_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9304}
     container_name: booops_ui
     environment:
       BOOLAB_API_UPSTREAM: ${BOOLAB_API_UPSTREAM:-boolab_api:8000}
@@ -90,6 +93,8 @@ services:
       args:
         VITE_APP_MODE: 808notes
         VITE_PUBLIC_BOOLAB_URL: ${VITE_PUBLIC_BOOLAB_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9302}
+        VITE_PUBLIC_BOOOPS_URL: ${VITE_PUBLIC_BOOOPS_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9303}
+        VITE_PUBLIC_808NOTES_URL: ${VITE_PUBLIC_808NOTES_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9304}
     container_name: notes808_ui
     environment:
       BOOLAB_API_UPSTREAM: ${BOOLAB_API_UPSTREAM:-boolab_api:8000}

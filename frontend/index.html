@@ -2,16 +2,39 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- %VITE_*% constants: https://vite.dev/guide/env-and-mode.html#html-constant-replacement -->
+    <!-- Absolute OG URLs (set in frontend/.env.<mode> via dotenv-expand). Per deploy: BooOps → %VITE_PUBLIC_BOOOPS_URL%/api/branding/booops/… ; 808notes → %VITE_PUBLIC_808NOTES_URL%/api/branding/808notes/… ; BooLab → %VITE_PUBLIC_BOOLAB_URL%/api/branding/boolab/… -->
+    <link
+      rel="icon"
+      type="image/png"
+      href="/api/branding/%VITE_APP_MODE%/asset/icon"
+    />
+    <link
+      rel="apple-touch-icon"
+      sizes="180x180"
+      href="/api/branding/%VITE_APP_MODE%/asset/icon"
+    />
+    <link
+      rel="manifest"
+      href='data:application/manifest+json,{"name":"%VITE_HTML_TITLE%","short_name":"%VITE_PWA_SHORT_NAME%","start_url":"/","display":"standalone","icons":[{"src":"/api/branding/%VITE_APP_MODE%/asset/icon","sizes":"512x512","type":"image/png","purpose":"any maskable"}]}'
+    />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-    <!--vite:social-meta-->
+    <meta property="og:title" content="%VITE_HTML_TITLE%" />
+    <meta property="og:description" content="%VITE_OG_DESCRIPTION%" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="%VITE_HTML_OG_URL%" />
+    <meta property="og:image" content="%VITE_HTML_OG_IMAGE%" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="%VITE_HTML_TITLE%" />
+    <meta name="twitter:description" content="%VITE_OG_DESCRIPTION%" />
+    <meta name="twitter:image" content="%VITE_HTML_OG_IMAGE%" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600&family=Share+Tech+Mono&family=Space+Grotesk:wght@400;500&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&family=Oxanium:wght@400;500&family=Exo+2:wght@400;500&family=DM+Sans:wght@400;500&family=Fira+Code:wght@400;500&family=Google+Sans+Code:wght@400;500&family=Ubuntu+Sans+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <title>boolab</title>
+    <title>%VITE_HTML_TITLE%</title>
   </head>
   <body>
     <div id="root"></div>

@@ -13,7 +13,8 @@ ENV VITE_APP_MODE=$VITE_APP_MODE
 ENV VITE_PUBLIC_BOOLAB_URL=$VITE_PUBLIC_BOOLAB_URL
 ENV VITE_PUBLIC_BOOOPS_URL=$VITE_PUBLIC_BOOOPS_URL
 ENV VITE_PUBLIC_808NOTES_URL=$VITE_PUBLIC_808NOTES_URL
-RUN npm run build
+# Split UI images: pass VITE_APP_MODE so `frontend/.env.<mode>` loads; ENV overrides file defaults.
+RUN if [ -z "$VITE_APP_MODE" ]; then npm run build; else npm run build -- --mode "$VITE_APP_MODE"; fi
 
 FROM nginx:alpine
 # Runtime: BOOLAB_API_UPSTREAM=host:port (e.g. boolab_api:8000 on Docker net, or 100.x.x.x:9300 on LAN/Tailscale)
