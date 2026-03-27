@@ -43,6 +43,21 @@ function htmlDisplayNameFromAppModePlugin(env) {
   }
 }
 
+/** HTML `%VITE_*%` uses `loadEnv` only; Docker `ARG`/`ENV` needs `process.env` bridged for OG image URLs. */
+function htmlOgImageFromShellPlugin() {
+  return {
+    name: 'html-og-image-from-shell',
+    enforce: 'pre',
+    transformIndexHtml(html) {
+      const v = process.env.VITE_HTML_OG_IMAGE
+      if (v != null && String(v).trim() !== '') {
+        return html.replaceAll('%VITE_HTML_OG_IMAGE%', v)
+      }
+      return html
+    },
+  }
+}
+
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const rootEnv = fs.existsSync(path.join(repoRoot, '.env'))
@@ -59,7 +74,11 @@ export default defineConfig(({ mode }) => {
 
   return {
     envDir: __dirname,
-    plugins: [htmlDisplayNameFromAppModePlugin(env), react()],
+    plugins: [
+      htmlDisplayNameFromAppModePlugin(env),
+      htmlOgImageFromShellPlugin(),
+      react(),
+    ],
     server: {
       proxy: {
         '/api': {
