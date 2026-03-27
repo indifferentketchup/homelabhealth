@@ -703,8 +703,8 @@ export default function AISettings() {
   }, [])
 
   const { data: personaPack } = useQuery({
-    queryKey: ['personas', MODE],
-    queryFn: () => listPersonas(MODE),
+    queryKey: ['personas'],
+    queryFn: () => listPersonas(),
     staleTime: 15_000,
   })
   const personas = personaPack?.items ?? []
@@ -811,9 +811,8 @@ export default function AISettings() {
   })
 
   const invalidatePersonas = useCallback(async () => {
-    await queryClient.refetchQueries({ queryKey: ['personas', MODE] })
-    if (MODE !== 'booops') return
-    const pack = queryClient.getQueryData(['personas', MODE])
+    await queryClient.refetchQueries({ queryKey: ['personas'] })
+    const pack = queryClient.getQueryData(['personas'])
     const items = pack?.items
     if (Array.isArray(items)) setPersonas(items)
   }, [queryClient, setPersonas])
@@ -851,7 +850,6 @@ export default function AISettings() {
     mutationFn: async () => {
       if (pForm === 'new') {
         return createPersona({
-          mode: MODE,
           name: pName.trim() || 'Unnamed',
           system_prompt: pPrompt,
           avatar_emoji: pEmoji.trim() || '🤖',
@@ -870,10 +868,10 @@ export default function AISettings() {
   })
 
   const setDefaultPersona = useMutation({
-    mutationFn: (id) => updatePersona(id, { is_default: true }),
+    mutationFn: (id) => updatePersona(id, { is_default_booops: true }),
     onSuccess: async () => {
       await invalidatePersonas()
-      const def = useAppStore.getState().personas.find((p) => p.is_default)
+      const def = useAppStore.getState().personas.find((p) => p.is_default_booops)
       if (def) setActivePersonaId(def.id)
     },
   })
@@ -1131,9 +1129,14 @@ export default function AISettings() {
                           </span>
                         )}
                         <span className="font-medium text-foreground">{p.name}</span>
-                        {p.is_default && (
+                        {p.is_default_booops && (
                           <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
-                            Default
+                            Default (BooOps)
+                          </span>
+                        )}
+                        {p.is_default_808notes && (
+                          <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
+                            Default (808notes)
                           </span>
                         )}
                       </div>
@@ -1143,7 +1146,7 @@ export default function AISettings() {
                       <Button type="button" size="sm" variant="secondary" onClick={() => openEditPersona(p)}>
                         Edit
                       </Button>
-                      {!p.is_default && (
+                      {!p.is_default_booops && (
                         <Button
                           type="button"
                           size="sm"
@@ -1151,14 +1154,14 @@ export default function AISettings() {
                           onClick={() => setDefaultPersona.mutate(p.id)}
                           disabled={setDefaultPersona.isPending}
                         >
-                          Set default
+                          Set BooOps default
                         </Button>
                       )}
                       <Button
                         type="button"
                         size="sm"
                         variant="destructive"
-                        disabled={p.is_default}
+                        disabled={p.is_default_booops || p.is_default_808notes}
                         onClick={() => delPersona.mutate(p.id)}
                       >
                         Delete

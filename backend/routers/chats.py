@@ -15,7 +15,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from db import get_pool, personas_table_columns
+from db import get_pool
 from services.pruning import summarize_and_compress
 from services.searx import searx_search_sources
 
@@ -24,58 +24,10 @@ logger = logging.getLogger(__name__)
 
 
 async def _default_persona_id_for_mode(conn: asyncpg.Connection, mode: str) -> uuid.UUID | None:
-    """Resolve default persona for chat insert; matches legacy and phase-3 persona schemas."""
-    cols = await personas_table_columns(conn)
+    """Default persona for new chat: global personas table + per-app default flags."""
     m = mode if mode in ("booops", "808notes") else "booops"
-
-    if "mode" in cols:
-        if "is_default" in cols:
-            return await conn.fetchval(
-                "SELECT id FROM personas WHERE mode = $1::text AND is_default IS TRUE LIMIT 1",
-                m,
-            )
-        if "is_default_booops" in cols and "is_default_808notes" in cols:
-            flag = "is_default_808notes" if m == "808notes" else "is_default_booops"
-            return await conn.fetchval(
-                f"SELECT id FROM personas WHERE mode = $1::text AND {flag} IS TRUE LIMIT 1",
-                m,
-            )
-        if "is_default_booops" in cols:
-            return await conn.fetchval(
-                "SELECT id FROM personas WHERE mode = $1::text AND is_default_booops IS TRUE LIMIT 1",
-                m,
-            )
-        if "is_default_808notes" in cols:
-            return await conn.fetchval(
-                "SELECT id FROM personas WHERE mode = $1::text AND is_default_808notes IS TRUE LIMIT 1",
-                m,
-            )
-        return await conn.fetchval(
-            """
-            SELECT id FROM personas
-            WHERE mode = $1::text
-            ORDER BY created_at ASC NULLS LAST
-            LIMIT 1
-            """,
-            m,
-        )
-
-    if "is_default" in cols:
-        return await conn.fetchval("SELECT id FROM personas WHERE is_default IS TRUE LIMIT 1")
-    if "is_default_booops" in cols and "is_default_808notes" in cols:
-        flag = "is_default_808notes" if m == "808notes" else "is_default_booops"
-        return await conn.fetchval(f"SELECT id FROM personas WHERE {flag} IS TRUE LIMIT 1")
-    if "is_default_booops" in cols:
-        return await conn.fetchval("SELECT id FROM personas WHERE is_default_booops IS TRUE LIMIT 1")
-    if "is_default_808notes" in cols:
-        return await conn.fetchval("SELECT id FROM personas WHERE is_default_808notes IS TRUE LIMIT 1")
-    return await conn.fetchval(
-        """
-        SELECT id FROM personas
-        ORDER BY created_at ASC NULLS LAST
-        LIMIT 1
-        """
-    )
+    flag = "is_default_808notes" if m == "808notes" else "is_default_booops"
+    return await conn.fetchval(f"SELECT id FROM personas WHERE {flag} IS TRUE LIMIT 1")
 
 
 async def _global_context_window(conn: asyncpg.Connection) -> int:
@@ -170,8 +122,9 @@ async def _assembled_system_prompt(
             persona_prompt = (pr["system_prompt"] or "").strip()
 
     if not persona_prompt:
+        flag = "is_default_808notes" if mode == "808notes" else "is_default_booops"
         d = await conn.fetchrow(
-            "SELECT system_prompt FROM personas WHERE is_default = TRUE LIMIT 1",
+            f"SELECT system_prompt FROM personas WHERE {flag} IS TRUE LIMIT 1",
         )
         if d:
             persona_prompt = (d["system_prompt"] or "").strip()

@@ -93,8 +93,8 @@ export default function Notes808App() {
   }, [ollamaSettingsBoot?.default_model, setDefaultModel])
 
   const { data: personaPack } = useQuery({
-    queryKey: ['personas', '808notes'],
-    queryFn: () => listPersonas('808notes'),
+    queryKey: ['personas'],
+    queryFn: () => listPersonas(),
     staleTime: 60_000,
   })
 

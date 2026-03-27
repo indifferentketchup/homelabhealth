@@ -1,7 +1,7 @@
 import { apiFetch } from '@/api/index.js'
 
-export function listPersonas(mode = 'booops') {
-  return apiFetch(`/api/personas/?mode=${encodeURIComponent(mode)}`)
+export function listPersonas() {
+  return apiFetch('/api/personas/')
 }
 
 export function createPersona(body) {

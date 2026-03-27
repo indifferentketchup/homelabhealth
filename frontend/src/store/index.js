@@ -32,6 +32,13 @@ function loadUserProfileFromStorage() {
   }
 }
 
+/** Active default for the given app (or BooOps when mode is boolab / unknown). */
+export function defaultPersonaForAppMode(personas, appMode) {
+  const list = Array.isArray(personas) ? personas : []
+  if (appMode === '808notes') return list.find((x) => x.is_default_808notes) ?? null
+  return list.find((x) => x.is_default_booops) ?? null
+}
+
 /** Map API persona row → store display fields (also used after AI settings refetch). */
 export function personaFieldsFromRecord(p) {
   if (!p) {
@@ -91,7 +98,7 @@ export const useAppStore = create((set, get) => ({
   setActivePersonaId: (id) =>
     set((s) => {
       if (!id) {
-        const def = s.personas.find((p) => p.is_default)
+        const def = defaultPersonaForAppMode(s.personas, s.mode)
         if (def) return { activePersonaId: def.id, ...personaToUi(def) }
         return { activePersonaId: null, ...personaToUi(null) }
       }
@@ -109,7 +116,7 @@ export const useAppStore = create((set, get) => ({
         activePersonaId = null
       }
       if (!activePersonaId) {
-        const def = personas.find((p) => p.is_default)
+        const def = defaultPersonaForAppMode(personas, s.mode)
         if (def) {
           return {
             personas,
@@ -173,7 +180,7 @@ export const useAppStore = create((set, get) => ({
       activeDawId: chat.daw_id != null ? chat.daw_id : null,
     })
     if (!personaId) {
-      const def = personas.find((x) => x.is_default)
+      const def = defaultPersonaForAppMode(personas, get().mode)
       set(personaToUi(def ?? null))
       return
     }

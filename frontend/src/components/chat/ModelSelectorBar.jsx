@@ -128,14 +128,16 @@ export function ModelSelectorBar({
     [ollamaSettings],
   )
 
-  const mode = is808notes ? '808notes' : 'booops'
   const { data: personaPack } = useQuery({
-    queryKey: ['personas', mode],
-    queryFn: () => listPersonas(mode),
+    queryKey: ['personas'],
+    queryFn: () => listPersonas(),
     staleTime: 30_000,
   })
   const personas = personaPack?.items ?? []
-  const defaultPersona = useMemo(() => personas.find((p) => p.is_default) ?? null, [personas])
+  const defaultPersona = useMemo(() => {
+    if (is808notes) return personas.find((p) => p.is_default_808notes) ?? null
+    return personas.find((p) => p.is_default_booops) ?? null
+  }, [personas, is808notes])
 
   const { data: chat } = useQuery({
     queryKey: ['chat', activeChatId],

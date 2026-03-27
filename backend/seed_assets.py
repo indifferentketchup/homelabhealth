@@ -9,7 +9,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from db import get_pool, personas_has_mode_column, personas_table_columns
+from db import get_pool
 from routers.branding import (
     BRANDING_ASSETS_DIR,
     _config_as_dict,
@@ -93,8 +93,6 @@ async def _seed_personas() -> None:
 
     pool = await get_pool()
     async with pool.acquire() as conn:
-        cols = await personas_table_columns(conn)
-        has_mode = await personas_has_mode_column(conn)
         for jf in json_files:
             stem = jf.stem
             if not _STEM_SAFE.match(stem):
@@ -108,55 +106,47 @@ async def _seed_personas() -> None:
             name = (data.get("name") or "").strip()
             if not name:
                 continue
-            mode = data.get("mode") or "booops"
-            if mode not in ("booops", "808notes"):
-                mode = "booops"
-            emoji = (data.get("emoji") or "🤖").strip() or "🤖"
-            prompt = data.get("system_prompt") or ""
+            emoji_raw = data.get("emoji")
+            emoji = (str(emoji_raw).strip() if emoji_raw is not None else "") or "🤖"
+            prompt_val = data.get("system_prompt")
+            prompt = prompt_val.strip() if isinstance(prompt_val, str) else ""
 
             existing = await conn.fetchrow(
-                "SELECT id, icon_url FROM personas WHERE name = $1::text",
+                "SELECT id, icon_url, system_prompt, avatar_emoji FROM personas WHERE name = $1::text",
                 name,
             )
             if existing is None:
-                if has_mode:
-                    await conn.execute(
-                        """
-                        INSERT INTO personas (name, system_prompt, avatar_emoji, is_default, mode)
-                        VALUES ($1::text, $2::text, $3::text, FALSE, $4::text)
-                        """,
-                        name,
-                        prompt,
-                        emoji,
-                        mode,
-                    )
-                else:
-                    if "avatar_emoji" not in cols:
-                        await conn.execute(
-                            """
-                            INSERT INTO personas (name, system_prompt, is_default)
-                            VALUES ($1::text, $2::text, FALSE)
-                            """,
-                            name,
-                            prompt,
-                        )
-                    else:
-                        await conn.execute(
-                            """
-                            INSERT INTO personas (name, system_prompt, avatar_emoji, is_default)
-                            VALUES ($1::text, $2::text, $3::text, FALSE)
-                            """,
-                            name,
-                            prompt,
-                            emoji,
-                        )
+                await conn.execute(
+                    """
+                    INSERT INTO personas (name, system_prompt, avatar_emoji, is_default_booops, is_default_808notes)
+                    VALUES ($1::text, $2::text, $3::text, FALSE, FALSE)
+                    """,
+                    name,
+                    prompt,
+                    emoji,
+                )
                 logger.info("Persona seed: inserted %s", name)
                 ins = await conn.fetchrow(
                     "SELECT id, icon_url FROM personas WHERE name = $1::text",
                     name,
                 )
             else:
-                ins = existing
+                sets: list[str] = []
+                args: list[Any] = []
+                if prompt:
+                    args.append(prompt)
+                    sets.append(f"system_prompt = ${len(args)}")
+                if "emoji" in data:
+                    args.append((str(data["emoji"]).strip() or "🤖") if data["emoji"] is not None else "🤖")
+                    sets.append(f"avatar_emoji = ${len(args)}")
+                if sets:
+                    args.append(existing["id"])
+                    await conn.execute(
+                        f"UPDATE personas SET {', '.join(sets)}, updated_at = NOW() WHERE id = ${len(args)}::uuid",
+                        *args,
+                    )
+                    logger.info("Persona seed: updated %s from %s", name, jf.name)
+                ins = {"id": existing["id"], "icon_url": existing["icon_url"]}
 
             if ins is None:
                 continue

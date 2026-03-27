@@ -33,8 +33,8 @@ export default function BooOpsApp() {
   }, [ollamaSettingsBoot?.default_model, setDefaultModel])
 
   const { data: personaPack } = useQuery({
-    queryKey: ['personas', 'booops'],
-    queryFn: () => listPersonas('booops'),
+    queryKey: ['personas'],
+    queryFn: () => listPersonas(),
     staleTime: 60_000,
   })
 

@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS personas (
     default_model TEXT,
     web_search_enabled BOOLEAN DEFAULT FALSE,
     rag_enabled BOOLEAN DEFAULT TRUE,
+    avatar_emoji TEXT DEFAULT '🤖',
     is_default_booops BOOLEAN DEFAULT FALSE,
     is_default_808notes BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -195,69 +196,65 @@ INSERT INTO global_settings (key, value) VALUES ('default_model_808notes', 'qwen
 
 UPDATE global_settings SET value = 'qwen3.5:9b' WHERE key = 'default_model' AND value = 'qwen3.5:35b';
 
--- Phase 3: personas — per-mode (legacy cols) OR global list (no mode column), see routers/personas.py
-DO $personas_phase3$
-DECLARE
-  has_legacy BOOLEAN;
-  has_mode BOOLEAN;
+-- Personas: global list (no personas.mode); one default per app via partial unique indexes
+DO $personas_global$
 BEGIN
-  -- Statement-by-statement apply_schema can commit ADD mode before legacy UPDATE fails; strip orphan mode.
+  ALTER TABLE personas ADD COLUMN IF NOT EXISTS avatar_emoji TEXT DEFAULT '🤖';
+  UPDATE personas SET avatar_emoji = COALESCE(NULLIF(trim(avatar_emoji), ''), '🤖') WHERE avatar_emoji IS NULL;
+  ALTER TABLE personas ADD COLUMN IF NOT EXISTS is_default_booops BOOLEAN DEFAULT FALSE;
+  ALTER TABLE personas ADD COLUMN IF NOT EXISTS is_default_808notes BOOLEAN DEFAULT FALSE;
+  ALTER TABLE personas ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'personas' AND column_name = 'mode'
-  ) AND NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'personas' AND column_name = 'is_default_booops'
+    WHERE table_schema = 'public' AND table_name = 'personas' AND column_name = 'is_default'
   ) THEN
-    DROP INDEX IF EXISTS personas_one_default_per_mode;
-    ALTER TABLE personas DROP CONSTRAINT IF EXISTS personas_mode_check;
-    ALTER TABLE personas DROP COLUMN mode;
+    UPDATE personas SET is_default_booops = TRUE
+    WHERE id = (
+      SELECT id FROM personas WHERE is_default IS TRUE ORDER BY created_at ASC NULLS LAST LIMIT 1
+    )
+    AND NOT EXISTS (SELECT 1 FROM personas WHERE is_default_booops IS TRUE);
+    ALTER TABLE personas DROP COLUMN is_default;
   END IF;
 
-  SELECT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'personas' AND column_name = 'is_default_booops'
-  ) INTO has_legacy;
-  SELECT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'personas' AND column_name = 'mode'
-  ) INTO has_mode;
+  DROP INDEX IF EXISTS personas_one_default_per_mode;
+  DROP INDEX IF EXISTS personas_one_default_global;
 
-  IF has_legacy OR has_mode THEN
-    DROP INDEX IF EXISTS personas_one_default_global;
-    ALTER TABLE personas ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT 'booops';
-    ALTER TABLE personas ADD COLUMN IF NOT EXISTS avatar_emoji TEXT NOT NULL DEFAULT '🤖';
-    ALTER TABLE personas ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT FALSE;
-    ALTER TABLE personas DROP CONSTRAINT IF EXISTS personas_mode_check;
-    BEGIN
-      ALTER TABLE personas ADD CONSTRAINT personas_mode_check CHECK (mode IN ('booops', '808notes'));
-    EXCEPTION
-      WHEN duplicate_object THEN NULL;
-    END;
-    CREATE UNIQUE INDEX IF NOT EXISTS personas_one_default_per_mode ON personas (mode) WHERE (is_default = TRUE);
-    IF has_legacy THEN
-      UPDATE personas SET is_default = TRUE, mode = 'booops' WHERE is_default_booops = TRUE AND is_default = FALSE;
-      UPDATE personas SET is_default = TRUE, mode = '808notes' WHERE is_default_808notes = TRUE AND is_default = FALSE;
-    END IF;
-    INSERT INTO personas (name, system_prompt, mode, is_default, avatar_emoji)
-    VALUES ('BooOps', 'You are BooOps, a helpful AI assistant.', 'booops', TRUE, '🤖')
-    ON CONFLICT (mode) WHERE (is_default = TRUE) DO NOTHING;
-    INSERT INTO personas (name, system_prompt, mode, is_default, avatar_emoji)
-    VALUES ('808notes', 'You are a helpful notebook assistant.', '808notes', TRUE, '📓')
-    ON CONFLICT (mode) WHERE (is_default = TRUE) DO NOTHING;
-  ELSE
-    ALTER TABLE personas ADD COLUMN IF NOT EXISTS avatar_emoji TEXT DEFAULT '🤖';
-    UPDATE personas SET avatar_emoji = COALESCE(NULLIF(trim(avatar_emoji), ''), '🤖') WHERE avatar_emoji IS NULL;
-    ALTER TABLE personas ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT FALSE;
-    ALTER TABLE personas ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
-    DROP INDEX IF EXISTS personas_one_default_per_mode;
-    CREATE UNIQUE INDEX IF NOT EXISTS personas_one_default_global ON personas (is_default) WHERE (is_default = TRUE);
-    UPDATE personas SET is_default = TRUE WHERE id = (
-      SELECT id FROM personas p ORDER BY p.created_at ASC NULLS LAST LIMIT 1
-    ) AND NOT EXISTS (SELECT 1 FROM personas WHERE is_default = TRUE);
+  CREATE UNIQUE INDEX IF NOT EXISTS personas_one_default_booops_idx ON personas ((1)) WHERE is_default_booops = TRUE;
+  CREATE UNIQUE INDEX IF NOT EXISTS personas_one_default_808notes_idx ON personas ((1)) WHERE is_default_808notes = TRUE;
+
+  IF NOT EXISTS (SELECT 1 FROM personas WHERE name = 'BooOps') THEN
+    INSERT INTO personas (name, system_prompt, avatar_emoji, is_default_booops, is_default_808notes)
+    VALUES (
+      'BooOps',
+      'You are BooOps, a generalist AI assistant. You are direct, pragmatic, and science-first. You help with anything — coding, writing, research, problem-solving. No fluff, no filler. Get to the point.',
+      '🤖',
+      TRUE,
+      FALSE
+    );
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM personas WHERE name = '808notes') THEN
+    INSERT INTO personas (name, system_prompt, avatar_emoji, is_default_booops, is_default_808notes)
+    VALUES (
+      '808notes',
+      'You are 808notes, a school-focused AI assistant. You are pragmatic and efficient. You help with academic writing, research, course assignments, and study tasks. Prioritize clarity and correctness. No padding.',
+      '🎵',
+      FALSE,
+      TRUE
+    );
+  END IF;
+
+  UPDATE personas SET system_prompt = 'You are BooOps, a generalist AI assistant. You are direct, pragmatic, and science-first. You help with anything — coding, writing, research, problem-solving. No fluff, no filler. Get to the point.'
+  WHERE name = 'BooOps';
+  UPDATE personas SET system_prompt = 'You are 808notes, a school-focused AI assistant. You are pragmatic and efficient. You help with academic writing, research, course assignments, and study tasks. Prioritize clarity and correctness. No padding.'
+  WHERE name = '808notes';
+
+  UPDATE personas SET is_default_booops = FALSE;
+  UPDATE personas SET is_default_808notes = FALSE;
+  UPDATE personas SET is_default_booops = TRUE WHERE name = 'BooOps';
+  UPDATE personas SET is_default_808notes = TRUE WHERE name = '808notes';
 END
-$personas_phase3$;
+$personas_global$;
 
 -- Phase 3: one markdown blob per mode (separate from memory_entries)
 CREATE TABLE IF NOT EXISTS mode_memory (
