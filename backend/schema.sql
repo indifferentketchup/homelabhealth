@@ -371,6 +371,15 @@ ALTER TABLE daws ADD COLUMN IF NOT EXISTS context_window INTEGER DEFAULT 8192;
 INSERT INTO global_settings (key, value) VALUES ('context_window_global', '16384')
 ON CONFLICT (key) DO NOTHING;
 
+INSERT INTO global_settings (key, value) VALUES ('temperature_global', '0.7')
+ON CONFLICT (key) DO NOTHING;
+INSERT INTO global_settings (key, value) VALUES ('top_p_global', '1.0')
+ON CONFLICT (key) DO NOTHING;
+INSERT INTO global_settings (key, value) VALUES ('top_k_global', '20')
+ON_CONFLICT (key) DO NOTHING;
+INSERT INTO global_settings (key, value) VALUES ('max_tokens_global', '2048')
+ON CONFLICT (key) DO NOTHING;
+
 -- Ollama host hints (applied when syncing env / restarting Ollama on sam-desktop)
 CREATE TABLE IF NOT EXISTS ollama_config (
     key TEXT PRIMARY KEY,

@@ -110,6 +110,14 @@ async def patch_ui_layout(
 
 _OLLAMA_KEYS = ("flash_attention", "max_loaded_models", "keep_alive")
 
+_GLOBAL_SETTING_KEYS = (
+    "context_window_global",
+    "temperature_global",
+    "top_p_global",
+    "top_k_global",
+    "max_tokens_global",
+)
+
 
 class GlobalSettingsBody(BaseModel):
     context_window_global: int | None = Field(
@@ -117,6 +125,10 @@ class GlobalSettingsBody(BaseModel):
         ge=1024,
         le=32768,
     )
+    temperature_global: float | None = Field(default=None, ge=0.0, le=2.0)
+    top_p_global: float | None = Field(default=None, ge=0.0, le=1.0)
+    top_k_global: int | None = Field(default=None, ge=1, le=100)
+    max_tokens_global: int | None = Field(default=None, ge=256, le=8192)
 
 
 def _read_context_window(val: str | None) -> int:
@@ -128,14 +140,66 @@ def _read_context_window(val: str | None) -> int:
         return 16384
 
 
+def _read_temperature_global(val: str | None) -> float:
+    if not val:
+        return 0.7
+    try:
+        return max(0.0, min(2.0, float(val)))
+    except ValueError:
+        return 0.7
+
+
+def _read_top_p_global(val: str | None) -> float:
+    if not val:
+        return 1.0
+    try:
+        return max(0.0, min(1.0, float(val)))
+    except ValueError:
+        return 1.0
+
+
+def _read_top_k_global(val: str | None) -> int:
+    if not val:
+        return 20
+    try:
+        return max(1, min(100, int(val)))
+    except ValueError:
+        return 20
+
+
+def _read_max_tokens_global(val: str | None) -> int:
+    if not val:
+        return 2048
+    try:
+        return max(256, min(8192, int(val)))
+    except ValueError:
+        return 2048
+
+
+def _global_settings_from_map(m: dict[str, str]) -> dict[str, Any]:
+    return {
+        "context_window_global": _read_context_window(m.get("context_window_global")),
+        "temperature_global": _read_temperature_global(m.get("temperature_global")),
+        "top_p_global": _read_top_p_global(m.get("top_p_global")),
+        "top_k_global": _read_top_k_global(m.get("top_k_global")),
+        "max_tokens_global": _read_max_tokens_global(m.get("max_tokens_global")),
+    }
+
+
+async def _fetch_global_settings_payload(conn: Any) -> dict[str, Any]:
+    rows = await conn.fetch(
+        "SELECT key, value FROM global_settings WHERE key = ANY($1::text[])",
+        list(_GLOBAL_SETTING_KEYS),
+    )
+    kv = {r["key"]: r["value"] for r in rows}
+    return _global_settings_from_map(kv)
+
+
 @router.get("/global")
 async def get_global_settings(_: dict = Depends(require_admin)) -> dict[str, Any]:
     pool = await get_pool()
     async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            "SELECT value FROM global_settings WHERE key = 'context_window_global'",
-        )
-    return {"context_window_global": _read_context_window(row["value"] if row else None)}
+        return await _fetch_global_settings_payload(conn)
 
 
 @router.patch("/global")
@@ -144,26 +208,34 @@ async def patch_global_settings(
     _: dict = Depends(require_admin),
 ) -> dict[str, Any]:
     data = body.model_dump(exclude_unset=True)
-    if not data:
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT value FROM global_settings WHERE key = 'context_window_global'",
-            )
-        return {"context_window_global": _read_context_window(row["value"] if row else None)}
-
-    cw = int(data["context_window_global"])
     pool = await get_pool()
     async with pool.acquire() as conn:
-        await conn.execute(
-            """
-            INSERT INTO global_settings (key, value)
-            VALUES ('context_window_global', $1)
-            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-            """,
-            str(cw),
-        )
-    return {"context_window_global": cw}
+        if not data:
+            return await _fetch_global_settings_payload(conn)
+
+        cur = await _fetch_global_settings_payload(conn)
+        if "context_window_global" in data:
+            cur["context_window_global"] = int(data["context_window_global"])
+        if "temperature_global" in data:
+            cur["temperature_global"] = float(data["temperature_global"])
+        if "top_p_global" in data:
+            cur["top_p_global"] = float(data["top_p_global"])
+        if "top_k_global" in data:
+            cur["top_k_global"] = int(data["top_k_global"])
+        if "max_tokens_global" in data:
+            cur["max_tokens_global"] = int(data["max_tokens_global"])
+
+        for k in data:
+            await conn.execute(
+                """
+                INSERT INTO global_settings (key, value)
+                VALUES ($1, $2)
+                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """,
+                k,
+                str(cur[k]),
+            )
+        return cur
 
 
 def _parse_flash_attention(raw: str | None) -> bool:

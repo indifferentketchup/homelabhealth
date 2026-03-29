@@ -54,6 +54,54 @@ async def _global_context_window(conn: asyncpg.Connection) -> int:
     return 16384
 
 
+async def _global_ollama_inference_defaults(conn: asyncpg.Connection) -> dict[str, float | int]:
+    keys = ("temperature_global", "top_p_global", "top_k_global", "max_tokens_global")
+    rows = await conn.fetch(
+        "SELECT key, value FROM global_settings WHERE key = ANY($1::text[])",
+        list(keys),
+    )
+    m = {r["key"]: r["value"] for r in rows}
+
+    def _temp(v: str | None) -> float:
+        if not v:
+            return 0.7
+        try:
+            return float(max(0.0, min(2.0, float(v))))
+        except ValueError:
+            return 0.7
+
+    def _top_p(v: str | None) -> float:
+        if not v:
+            return 1.0
+        try:
+            return float(max(0.0, min(1.0, float(v))))
+        except ValueError:
+            return 1.0
+
+    def _top_k(v: str | None) -> int:
+        if not v:
+            return 20
+        try:
+            return int(max(1, min(100, int(v))))
+        except ValueError:
+            return 20
+
+    def _max_t(v: str | None) -> int:
+        if not v:
+            return 2048
+        try:
+            return int(max(256, min(8192, int(v))))
+        except ValueError:
+            return 2048
+
+    return {
+        "temperature": _temp(m.get("temperature_global")),
+        "top_p": _top_p(m.get("top_p_global")),
+        "top_k": _top_k(m.get("top_k_global")),
+        "max_tokens": _max_t(m.get("max_tokens_global")),
+    }
+
+
 _AUTO_MEMORY_TRIGGERS = (
     "remember that",
     "note that",
@@ -1094,6 +1142,7 @@ async def append_message(
             raise HTTPException(status_code=404, detail="Chat not found")
 
         global_ctx = await _global_context_window(conn)
+        ollama_global_inf = await _global_ollama_inference_defaults(conn)
         daw_row = None
         if chat["daw_id"] is not None:
             daw_row = await conn.fetchrow(
@@ -1131,19 +1180,36 @@ async def append_message(
                 )
 
         if daw_pins_model and daw_row is not None:
-            effective_max_tokens = int(daw_row["max_tokens"] or 2048)
-            effective_top_p = float(daw_row["top_p"] if daw_row["top_p"] is not None else 1.0)
-            effective_top_k = int(daw_row["top_k"] if daw_row["top_k"] is not None else 20)
             effective_ctx = int(daw_row["context_window"] or 8192)
         else:
-            effective_max_tokens = 2048
-            effective_top_p = 1.0
-            effective_top_k = 20
             effective_ctx = global_ctx
 
-        inference_temperature = 0.7
-        if daw_row is not None and daw_row["temperature"] is not None:
-            inference_temperature = float(daw_row["temperature"])
+        if _is_claude_model(effective_model):
+            if daw_pins_model and daw_row is not None:
+                effective_max_tokens = int(daw_row["max_tokens"] or 2048)
+                effective_top_p = float(daw_row["top_p"] if daw_row["top_p"] is not None else 1.0)
+                effective_top_k = int(daw_row["top_k"] if daw_row["top_k"] is not None else 20)
+            else:
+                effective_max_tokens = 2048
+                effective_top_p = 1.0
+                effective_top_k = 20
+            inference_temperature = 0.7
+            if daw_row is not None and daw_row["temperature"] is not None:
+                inference_temperature = float(daw_row["temperature"])
+        else:
+            effective_max_tokens = int(ollama_global_inf["max_tokens"])
+            effective_top_p = float(ollama_global_inf["top_p"])
+            effective_top_k = int(ollama_global_inf["top_k"])
+            inference_temperature = float(ollama_global_inf["temperature"])
+            if daw_row is not None:
+                if daw_row["max_tokens"] is not None:
+                    effective_max_tokens = int(daw_row["max_tokens"])
+                if daw_row["top_p"] is not None:
+                    effective_top_p = float(daw_row["top_p"])
+                if daw_row["top_k"] is not None:
+                    effective_top_k = int(daw_row["top_k"])
+                if daw_row["temperature"] is not None:
+                    inference_temperature = float(daw_row["temperature"])
 
         include_private = principal["kind"] == "owner"
         first_exchange_for_auto_title = int(chat["message_count"] or 0) == 0
