@@ -376,7 +376,7 @@ ON CONFLICT (key) DO NOTHING;
 INSERT INTO global_settings (key, value) VALUES ('top_p_global', '1.0')
 ON CONFLICT (key) DO NOTHING;
 INSERT INTO global_settings (key, value) VALUES ('top_k_global', '20')
-ON_CONFLICT (key) DO NOTHING;
+ON CONFLICT (key) DO NOTHING;
 INSERT INTO global_settings (key, value) VALUES ('max_tokens_global', '2048')
 ON CONFLICT (key) DO NOTHING;
 
