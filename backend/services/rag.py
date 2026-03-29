@@ -10,8 +10,8 @@ from services.embeddings import embed_text
 
 logger = logging.getLogger(__name__)
 
-TOP_K_RETRIEVE = 20
-TOP_AFTER_RERANK = 6
+TOP_K_RETRIEVE = 40
+TOP_AFTER_RERANK = 10
 
 _RANKER: Any = None
 
