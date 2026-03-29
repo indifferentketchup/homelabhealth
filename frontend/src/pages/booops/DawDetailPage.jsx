@@ -65,6 +65,7 @@ export default function DawDetailPage() {
   const [inferModel, setInferModel] = useState('')
   const [inferMaxTok, setInferMaxTok] = useState(2048)
   const [inferTopP, setInferTopP] = useState(1)
+  const [inferTopK, setInferTopK] = useState(20)
   const [inferCtx, setInferCtx] = useState(8192)
   const [instrDraft, setInstrDraft] = useState('')
 
@@ -105,6 +106,8 @@ export default function DawDetailPage() {
     setInferMaxTok(typeof mt === 'number' && !Number.isNaN(mt) ? mt : 2048)
     const tp = daw.top_p
     setInferTopP(typeof tp === 'number' && !Number.isNaN(tp) ? tp : 1)
+    const tk = daw.top_k
+    setInferTopK(typeof tk === 'number' && !Number.isNaN(tk) ? tk : 20)
     const cw = daw.context_window
     setInferCtx(typeof cw === 'number' && !Number.isNaN(cw) ? cw : 8192)
   }, [daw])
@@ -194,6 +197,11 @@ export default function DawDetailPage() {
     onSuccess: () => invalidateDaw(),
   })
 
+  const patchTopKMut = useMutation({
+    mutationFn: (top_k) => updateDaw(id, { top_k }),
+    onSuccess: () => invalidateDaw(),
+  })
+
   function scheduleTemperatureSave(next) {
     setDetailTemp(next)
     if (tempSaveTimerRef.current != null) clearTimeout(tempSaveTimerRef.current)
@@ -209,6 +217,7 @@ export default function DawDetailPage() {
         model: inferModel.trim() || null,
         max_tokens: inferMaxTok,
         top_p: inferTopP,
+        top_k: inferTopK,
         context_window: inferCtx,
       }),
     onSuccess: () => invalidateDaw(),
@@ -394,6 +403,25 @@ export default function DawDetailPage() {
                     onChange={(e) => setInferTopP(Number(e.target.value))}
                     className="h-2 w-full cursor-pointer accent-primary"
                   />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="text-muted-foreground">Top-k</span>
+                    <span className="tabular-nums text-foreground">{inferTopK}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={100}
+                    step={1}
+                    value={inferTopK}
+                    onChange={(e) => setInferTopK(Number(e.target.value))}
+                    onMouseUp={(e) => patchTopKMut.mutate(Number(e.currentTarget.value))}
+                    className="h-2 w-full cursor-pointer accent-primary"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Limits token sampling to the top K candidates. Lower = more focused. Ollama only.
+                  </p>
                 </div>
                 <div className="flex flex-col gap-2">
                   <div className="flex flex-wrap items-baseline justify-between gap-2">

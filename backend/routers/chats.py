@@ -429,12 +429,14 @@ async def _stream_ollama(
     temperature: float = 0.7,
     max_tokens: int = 2048,
     top_p: float = 1.0,
+    top_k: int = 20,
     num_ctx: int = 8192,
 ) -> AsyncIterator[bytes]:
     base = _ollama_base()
     opts: dict[str, Any] = {
         "temperature": temperature,
         "top_p": top_p,
+        "top_k": top_k,
         "num_ctx": int(num_ctx),
         "num_predict": int(max_tokens),
     }
@@ -445,11 +447,12 @@ async def _stream_ollama(
         "options": opts,
     }
     logger.info(
-        "ollama /api/chat model=%s temperature=%s max_tokens=%s top_p=%s num_ctx=%s",
+        "ollama /api/chat model=%s temperature=%s max_tokens=%s top_p=%s top_k=%s num_ctx=%s",
         model,
         temperature,
         max_tokens,
         top_p,
+        top_k,
         num_ctx,
     )
     try:
@@ -1095,7 +1098,7 @@ async def append_message(
         if chat["daw_id"] is not None:
             daw_row = await conn.fetchrow(
                 """
-                SELECT model, max_tokens, top_p, context_window, temperature
+                SELECT model, max_tokens, top_p, top_k, context_window, temperature
                 FROM daws WHERE id = $1::uuid
                 """,
                 chat["daw_id"],
@@ -1130,10 +1133,12 @@ async def append_message(
         if daw_pins_model and daw_row is not None:
             effective_max_tokens = int(daw_row["max_tokens"] or 2048)
             effective_top_p = float(daw_row["top_p"] if daw_row["top_p"] is not None else 1.0)
+            effective_top_k = int(daw_row["top_k"] if daw_row["top_k"] is not None else 20)
             effective_ctx = int(daw_row["context_window"] or 8192)
         else:
             effective_max_tokens = 2048
             effective_top_p = 1.0
+            effective_top_k = 20
             effective_ctx = global_ctx
 
         inference_temperature = 0.7
@@ -1241,13 +1246,14 @@ async def append_message(
             )
         else:
             logger.info(
-                "chat inference chat_id=%s model=%s daw_id=%s context_window=%s max_tokens=%s top_p=%s temperature=%s",
+                "chat inference chat_id=%s model=%s daw_id=%s context_window=%s max_tokens=%s top_p=%s top_k=%s temperature=%s",
                 str(chat_id),
                 effective_model,
                 str(chat["daw_id"]) if chat["daw_id"] else None,
                 effective_ctx,
                 effective_max_tokens,
                 effective_top_p,
+                effective_top_k,
                 inference_temperature,
             )
             stream = _stream_ollama(
@@ -1256,6 +1262,7 @@ async def append_message(
                 temperature=inference_temperature,
                 max_tokens=effective_max_tokens,
                 top_p=effective_top_p,
+                top_k=effective_top_k,
                 num_ctx=effective_ctx,
             )
         try:

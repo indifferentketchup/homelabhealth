@@ -47,6 +47,7 @@ class DawCreate(BaseModel):
     daw_model: str | None = Field(default=None, alias="model")
     max_tokens: int = Field(2048, ge=512, le=4096)
     top_p: float = Field(1.0, ge=0.0, le=1.0)
+    top_k: int = Field(20, ge=1, le=100)
     context_window: int = Field(8192, ge=1024, le=32768)
 
 
@@ -66,6 +67,7 @@ class DawUpdate(BaseModel):
     daw_model: str | None = Field(default=None, alias="model")
     max_tokens: int | None = Field(None, ge=512, le=4096)
     top_p: float | None = Field(None, ge=0.0, le=1.0)
+    top_k: int | None = Field(None, ge=1, le=100)
     context_window: int | None = Field(None, ge=1024, le=32768)
 
 
@@ -84,6 +86,7 @@ def _row(r: Any) -> dict[str, Any]:
     m = r.get("model")
     mt = r.get("max_tokens")
     tp = r.get("top_p")
+    tk = r.get("top_k")
     cw = r.get("context_window")
     return {
         "id": str(r["id"]),
@@ -103,6 +106,7 @@ def _row(r: Any) -> dict[str, Any]:
         "model": (str(m).strip() if m else None) or None,
         "max_tokens": int(mt) if mt is not None else 2048,
         "top_p": float(tp) if tp is not None else 1.0,
+        "top_k": int(tk) if tk is not None else 20,
         "context_window": int(cw) if cw is not None else 8192,
         "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
         "updated_at": r["updated_at"].isoformat() if r.get("updated_at") else None,
@@ -142,7 +146,7 @@ async def list_daws(
     sel = """
                 SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
                     d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
-                    d.temperature, d.model, d.max_tokens, d.top_p, d.context_window,
+                    d.temperature, d.model, d.max_tokens, d.top_p, d.top_k, d.context_window,
                     d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
                 FROM daws d
                 LEFT JOIN personas p ON p.id = d.persona_id
@@ -210,12 +214,12 @@ async def create_daw(body: DawCreate, principal: dict[str, Any] = Depends(get_pr
             """
             INSERT INTO daws (
                 name, description, system_prompt, persona_id, mode, color, shared, sort_order, temperature,
-                model, max_tokens, top_p, context_window, owner_id
+                model, max_tokens, top_p, top_k, context_window, owner_id
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
             RETURNING id, name, description, icon_url, color, shared, sort_order,
                 pinned_booops, pinned_808notes, system_prompt, persona_id, mode, temperature,
-                model, max_tokens, top_p, context_window, created_at, updated_at, owner_id
+                model, max_tokens, top_p, top_k, context_window, created_at, updated_at, owner_id
             """,
             body.name.strip(),
             body.description,
@@ -229,6 +233,7 @@ async def create_daw(body: DawCreate, principal: dict[str, Any] = Depends(get_pr
             ins_model,
             body.max_tokens,
             body.top_p,
+            body.top_k,
             body.context_window,
             owner_uuid,
         )
@@ -236,7 +241,7 @@ async def create_daw(body: DawCreate, principal: dict[str, Any] = Depends(get_pr
             """
             SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
                 d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
-                d.temperature, d.model, d.max_tokens, d.top_p, d.context_window,
+                d.temperature, d.model, d.max_tokens, d.top_p, d.top_k, d.context_window,
                 d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
             FROM daws d
             LEFT JOIN personas p ON p.id = d.persona_id
@@ -345,7 +350,7 @@ async def upload_daw_icon(
             """
             SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
                 d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
-                d.temperature, d.model, d.max_tokens, d.top_p, d.context_window,
+                d.temperature, d.model, d.max_tokens, d.top_p, d.top_k, d.context_window,
                 d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
             FROM daws d
             LEFT JOIN personas p ON p.id = d.persona_id
@@ -400,7 +405,7 @@ async def patch_daw_pin(
             """
             SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
                 d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
-                d.temperature, d.model, d.max_tokens, d.top_p, d.context_window,
+                d.temperature, d.model, d.max_tokens, d.top_p, d.top_k, d.context_window,
                 d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
             FROM daws d
             LEFT JOIN personas p ON p.id = d.persona_id
@@ -421,7 +426,7 @@ async def get_daw(daw_id: uuid.UUID, principal: dict[str, Any] = Depends(get_pri
             """
             SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
                 d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
-                d.temperature, d.model, d.max_tokens, d.top_p, d.context_window,
+                d.temperature, d.model, d.max_tokens, d.top_p, d.top_k, d.context_window,
                 d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
             FROM daws d
             LEFT JOIN personas p ON p.id = d.persona_id
@@ -450,7 +455,7 @@ async def patch_daw(
             """
             SELECT id, name, description, icon_url, color, shared, sort_order,
                 pinned_booops, pinned_808notes, system_prompt, persona_id, mode,
-                temperature, model, max_tokens, top_p, context_window, created_at, updated_at, owner_id
+                temperature, model, max_tokens, top_p, top_k, context_window, created_at, updated_at, owner_id
             FROM daws WHERE id = $1::uuid
             """,
             daw_id,
@@ -462,7 +467,7 @@ async def patch_daw(
                 """
                 SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
                     d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
-                    d.temperature, d.model, d.max_tokens, d.top_p, d.context_window,
+                    d.temperature, d.model, d.max_tokens, d.top_p, d.top_k, d.context_window,
                     d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
                 FROM daws d
                 LEFT JOIN personas p ON p.id = d.persona_id
@@ -501,6 +506,11 @@ async def patch_daw(
             if "top_p" in data and data["top_p"] is not None
             else float(row["top_p"] if row["top_p"] is not None else 1.0)
         )
+        new_top_k = (
+            int(data["top_k"])
+            if "top_k" in data and data["top_k"] is not None
+            else int(row["top_k"] if row["top_k"] is not None else 20)
+        )
         new_ctx = (
             int(data["context_window"])
             if "context_window" in data and data["context_window"] is not None
@@ -526,7 +536,7 @@ async def patch_daw(
             UPDATE daws
             SET name = $2, description = $3, system_prompt = $4, persona_id = $5, mode = $6,
                 color = $7, shared = $8, sort_order = $9, icon_url = $10, temperature = $11,
-                model = $12, max_tokens = $13, top_p = $14, context_window = $15, updated_at = NOW()
+                model = $12, max_tokens = $13, top_p = $14, top_k = $15, context_window = $16, updated_at = NOW()
             WHERE id = $1::uuid
             """,
             daw_id,
@@ -543,13 +553,14 @@ async def patch_daw(
             new_model,
             new_max_tokens,
             new_top_p,
+            new_top_k,
             new_ctx,
         )
         prow = await conn.fetchrow(
             """
             SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
                 d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
-                d.temperature, d.model, d.max_tokens, d.top_p, d.context_window,
+                d.temperature, d.model, d.max_tokens, d.top_p, d.top_k, d.context_window,
                 d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
             FROM daws d
             LEFT JOIN personas p ON p.id = d.persona_id
