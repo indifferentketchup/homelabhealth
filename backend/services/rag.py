@@ -78,7 +78,7 @@ async def retrieve_context(query: str, daw_id: str, source_ids: list[str]) -> st
 
     block = (
         "### Context from sources:\n"
-        "Use this material when relevant. Mention the source label when you rely on it.\n\n"
+        "Answer using ONLY the provided source material below. Do not use outside knowledge. Always cite the source label when referencing content. If the answer is not in the sources, say so.\n\n"
         + "\n\n".join(top)
     )
     logger.info("RAG context injected chunks=%d chars=%d", len(top), len(block))
