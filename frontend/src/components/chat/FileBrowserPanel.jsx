@@ -160,19 +160,10 @@ export function FileBrowserPanel({ isOpen, onClose, onFileSelect, rootPath }) {
   const busy = loading || reading
 
   return (
-    <>
-      <button
-        type="button"
-        className="fixed inset-0 z-30 bg-background/70"
-        aria-label="Close file browser"
-        onClick={onClose}
-      />
-      <div
-        className="fixed inset-y-0 right-0 z-40 flex h-full w-[min(100vw,420px)] min-w-[280px] shadow-[var(--glow)]"
-        role="dialog"
-        aria-modal="true"
-        aria-label="File browser"
-      >
+    <div
+      className="fixed inset-y-0 right-0 z-40 flex h-full w-[min(100vw,420px)] min-w-[280px] shadow-[var(--glow)]"
+      aria-label="File browser"
+    >
         <aside className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-sidebar-border bg-sidebar text-sidebar-foreground">
           <div className="border-b border-sidebar-border">
             <div className="flex min-h-16 w-full items-center justify-between gap-2 overflow-hidden px-2 py-2">
@@ -269,7 +260,6 @@ export function FileBrowserPanel({ isOpen, onClose, onFileSelect, rootPath }) {
             </div>
           </ScrollArea>
         </aside>
-      </div>
-    </>
+    </div>
   )
 }

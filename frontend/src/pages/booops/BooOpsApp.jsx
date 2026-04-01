@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Outlet } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 import { Menu } from 'lucide-react'
 
 import { getOllamaSettings } from '@/api/ollama.js'
@@ -17,6 +17,8 @@ import { useAppStore } from '@/store/index.js'
 import BooOpsSettings from './Settings.jsx'
 
 export default function BooOpsApp() {
+  const location = useLocation()
+  const onDawRoute = location.pathname.includes('/daw/')
   const [mobileSidebar, setMobileSidebar] = useState(false)
   const setPersonas = useAppStore((s) => s.setPersonas)
   const setDefaultModel = useAppStore((s) => s.setDefaultModel)
@@ -75,11 +77,13 @@ export default function BooOpsApp() {
               placement="header"
             />
           </header>
-          <UserProfileMenu
-            profilePath={`${PATH_BOOOPS}/profile`}
-            homePath={PATH_BOOOPS_HOME}
-            placement="fixed"
-          />
+          {!onDawRoute && (
+            <UserProfileMenu
+              profilePath={`${PATH_BOOOPS}/profile`}
+              homePath={PATH_BOOOPS_HOME}
+              placement="fixed"
+            />
+          )}
           <div className="flex min-h-0 flex-1 flex-col">
             <Outlet />
           </div>

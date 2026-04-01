@@ -49,6 +49,8 @@ export function ChatView({
   hidePersonaInChatInput = false,
   /** When set (e.g. 808notes `/daw/:id`), used if Zustand `activeDawId` is stale so new chats still attach to the workspace. */
   workspaceDawId = null,
+  /** When true, skip the desktop-only model bar row (e.g. parent renders `ModelSelectorBar` in a full-width header). */
+  hideDesktopModelBar = false,
 }) {
   const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
@@ -276,9 +278,11 @@ export function ChatView({
   if (!activeChatId) {
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-background">
-        <div className="hidden shrink-0 justify-center border-b border-border py-2 md:flex">
-          <ModelSelectorBar {...modelBarProps} />
-        </div>
+        {!hideDesktopModelBar ? (
+          <div className="hidden shrink-0 justify-center border-b border-border py-2 md:flex">
+            <ModelSelectorBar {...modelBarProps} />
+          </div>
+        ) : null}
         <div
           className={cn(
             'flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-8',
@@ -321,9 +325,11 @@ export function ChatView({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
-      <div className="hidden shrink-0 justify-center border-b border-border py-2 md:flex">
-        <ModelSelectorBar {...modelBarProps} />
-      </div>
+      {!hideDesktopModelBar ? (
+        <div className="hidden shrink-0 justify-center border-b border-border py-2 md:flex">
+          <ModelSelectorBar {...modelBarProps} />
+        </div>
+      ) : null}
       <div className="mx-auto flex min-h-0 w-full flex-1 flex-col" style={{ maxWidth: chatMaxW }}>
         <div className="min-h-0 flex-1">
           {isLoading && !busy ? (
