@@ -214,13 +214,13 @@ export function ChatView({
     })
   }
 
-  async function send() {
-    const content = draft.trim()
+  async function send(contentOverride) {
+    const content = (typeof contentOverride === 'string' ? contentOverride : draft).trim()
     if (!content || busy) return
+    setDraft('')
     setSendError(null)
 
     if (!activeChatId) {
-      setDraft('')
       setPendingSend(true)
       setStreamText('')
       setOptimisticUser({ id: '__optimistic_user__', role: 'user', content })
@@ -258,7 +258,6 @@ export function ChatView({
       return
     }
 
-    setDraft('')
     setPendingSend(true)
     setStreamText('')
     setOptimisticUser({ id: '__optimistic_user__', role: 'user', content })

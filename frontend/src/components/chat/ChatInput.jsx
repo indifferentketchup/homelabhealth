@@ -110,9 +110,9 @@ export function ChatInput({
         .join('\n\n')
       const composed = blocks + (value.trim() ? '\n\n' + value.trim() : '')
       if (!composed.trim()) return
-      onChange(composed)
       setAttachedFiles([])
-      setTimeout(() => onSend(), 0)
+      onChange('')
+      onSend(composed)
     } else {
       if (!value.trim()) return
       onSend()
