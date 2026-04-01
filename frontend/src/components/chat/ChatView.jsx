@@ -316,7 +316,7 @@ export function ChatView({
         <ModelSelectorBar {...modelBarProps} />
       </div>
       <div className="mx-auto flex min-h-0 w-full flex-1 flex-col" style={{ maxWidth: chatMaxW }}>
-        <div className="min-h-0 flex-1 overflow-hidden">
+        <div className="min-h-0 flex-1">
           {isLoading && !busy ? (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading messages…</div>
           ) : (
