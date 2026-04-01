@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { FolderOpen, Plus, Search, SendHorizontal, Square } from 'lucide-react'
 
 import { dubdriveLs, dubdriveRead } from '@/api/dubdrive.js'
@@ -9,19 +10,6 @@ import { cn } from '@/lib/utils'
 
 import { FileBrowserPanel } from './FileBrowserPanel.jsx'
 import { PersonaGlyph } from './PersonaGlyph.jsx'
-
-const PLUS_MENU_PANEL_STYLE = {
-  position: 'absolute',
-  bottom: '100%',
-  left: 0,
-  marginBottom: 8,
-  zIndex: 9999,
-  minWidth: 256,
-  background: 'var(--bg-panel)',
-  border: '1px solid var(--border)',
-  borderRadius: 8,
-  boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-}
 
 export function ChatInput({
   value,
@@ -36,6 +24,9 @@ export function ChatInput({
 }) {
   const taRef = useRef(null)
   const plusWrapRef = useRef(null)
+  const plusBtnRef = useRef(null)
+  const plusMenuRef = useRef(null)
+  const [menuPos, setMenuPos] = useState({ bottom: 0, left: 0 })
   const [plusOpen, setPlusOpen] = useState(false)
   const [toastMsg, setToastMsg] = useState(null)
 
@@ -76,7 +67,12 @@ export function ChatInput({
   useEffect(() => {
     if (!plusOpen) return
     function onMouseDown(e) {
-      if (plusWrapRef.current && !plusWrapRef.current.contains(e.target)) {
+      if (
+        plusWrapRef.current &&
+        !plusWrapRef.current.contains(e.target) &&
+        plusMenuRef.current &&
+        !plusMenuRef.current.contains(e.target)
+      ) {
         setPlusOpen(false)
       }
     }
@@ -171,6 +167,14 @@ export function ChatInput({
 
   const canSend =
     (Boolean(value.trim()) || attachedFiles.length > 0) && !streaming && !disabled
+
+  function openPlus() {
+    if (plusBtnRef.current) {
+      const r = plusBtnRef.current.getBoundingClientRect()
+      setMenuPos({ bottom: window.innerHeight - r.top + 8, left: r.left })
+    }
+    setPlusOpen((o) => !o)
+  }
 
   return (
     <>
@@ -298,91 +302,20 @@ export function ChatInput({
         )}
         <div className="flex shrink-0 items-center justify-between">
           <div ref={plusWrapRef} className="relative shrink-0">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="shrink-0"
-              aria-label="More actions"
-              aria-expanded={plusOpen}
-              aria-haspopup="menu"
-              onClick={() => setPlusOpen((o) => !o)}
-            >
-              <Plus className="size-4" />
-            </Button>
-            {plusOpen && (
-              <div
-                className="w-64 p-2 text-popover-foreground outline-none"
-                style={PLUS_MENU_PANEL_STYLE}
-                role="menu"
+            <span ref={plusBtnRef} className="inline-flex shrink-0">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="shrink-0"
                 aria-label="More actions"
+                aria-expanded={plusOpen}
+                aria-haspopup="menu"
+                onClick={openPlus}
               >
-                <div className="flex flex-col gap-1">
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-foreground outline-none hover:bg-accent hover:text-accent-foreground"
-                    onClick={() => {
-                      setFileBrowserOpen(true)
-                      setPlusOpen(false)
-                    }}
-                  >
-                    <FolderOpen className="size-4 text-muted-foreground" />
-                    Browse files
-                  </button>
-                  <div
-                    className={cn(
-                      'flex items-center justify-between gap-2 rounded-md px-2 py-1.5',
-                      webSearchEnabled && 'bg-accent text-accent-foreground',
-                    )}
-                  >
-                    <span className="flex items-center gap-2 text-sm">
-                      <Search
-                        className={cn(
-                          'size-4',
-                          webSearchEnabled ? 'text-accent-foreground' : 'text-muted-foreground',
-                        )}
-                      />
-                      Web search
-                    </span>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={webSearchEnabled}
-                      onClick={() => applyWebSearch(!webSearchEnabled)}
-                      className="relative inline-flex h-6 w-10 shrink-0 rounded-full border border-border transition-colors"
-                      style={{
-                        backgroundColor: webSearchEnabled ? 'var(--primary)' : 'var(--muted)',
-                      }}
-                    >
-                      <span
-                        className={cn(
-                          'pointer-events-none block size-5 translate-x-0.5 rounded-full shadow transition-transform',
-                          webSearchEnabled && 'translate-x-[1.15rem]',
-                        )}
-                        style={{ backgroundColor: 'var(--background)' }}
-                      />
-                    </button>
-                  </div>
-                  {!hidePersonaInMenu && (
-                    <button
-                      type="button"
-                      role="menuitem"
-                      className="flex h-9 w-full cursor-default items-center gap-2 rounded-md px-2 text-left text-sm text-foreground outline-none hover:bg-accent hover:text-accent-foreground"
-                      disabled
-                    >
-                      <PersonaGlyph
-                        kind="menu"
-                        iconUrl={personaIconUrl}
-                        emoji={personaEmoji}
-                        className="text-muted-foreground"
-                      />
-                      <span className="truncate">Persona: {personaDisplayName}</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
+                <Plus className="size-4" />
+              </Button>
+            </span>
           </div>
 
           {streaming ? (
@@ -404,6 +337,92 @@ export function ChatInput({
           )}
         </div>
       </div>
+      {plusOpen &&
+        createPortal(
+          <div
+            ref={plusMenuRef}
+            className="w-64 p-2 text-popover-foreground outline-none"
+            style={{
+              position: 'fixed',
+              bottom: menuPos.bottom,
+              left: menuPos.left,
+              zIndex: 9999,
+              minWidth: 256,
+              background: 'var(--popover)',
+              border: '1px solid var(--border)',
+              borderRadius: 8,
+              boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+            }}
+            role="menu"
+            aria-label="More actions"
+          >
+            <div className="flex flex-col gap-1">
+              <button
+                type="button"
+                role="menuitem"
+                className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-foreground outline-none hover:bg-accent hover:text-accent-foreground"
+                onClick={() => {
+                  setFileBrowserOpen(true)
+                  setPlusOpen(false)
+                }}
+              >
+                <FolderOpen className="size-4 text-muted-foreground" />
+                Browse files
+              </button>
+              <div
+                className={cn(
+                  'flex items-center justify-between gap-2 rounded-md px-2 py-1.5',
+                  webSearchEnabled && 'bg-accent text-accent-foreground',
+                )}
+              >
+                <span className="flex items-center gap-2 text-sm">
+                  <Search
+                    className={cn(
+                      'size-4',
+                      webSearchEnabled ? 'text-accent-foreground' : 'text-muted-foreground',
+                    )}
+                  />
+                  Web search
+                </span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={webSearchEnabled}
+                  onClick={() => applyWebSearch(!webSearchEnabled)}
+                  className="relative inline-flex h-6 w-10 shrink-0 rounded-full border border-border transition-colors"
+                  style={{
+                    backgroundColor: webSearchEnabled ? 'var(--primary)' : 'var(--muted)',
+                  }}
+                >
+                  <span
+                    className={cn(
+                      'pointer-events-none block size-5 translate-x-0.5 rounded-full shadow transition-transform',
+                      webSearchEnabled && 'translate-x-[1.15rem]',
+                    )}
+                    style={{ backgroundColor: 'var(--background)' }}
+                  />
+                </button>
+              </div>
+              {!hidePersonaInMenu && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="flex h-9 w-full cursor-default items-center gap-2 rounded-md px-2 text-left text-sm text-foreground outline-none hover:bg-accent hover:text-accent-foreground"
+                  disabled
+                >
+                  <PersonaGlyph
+                    kind="menu"
+                    iconUrl={personaIconUrl}
+                    emoji={personaEmoji}
+                    className="text-muted-foreground"
+                  />
+                  <span className="truncate">Persona: {personaDisplayName}</span>
+                </button>
+              )}
+            </div>
+          </div>,
+          document.body,
+        )}
       <FileBrowserPanel
         isOpen={fileBrowserOpen}
         onClose={() => setFileBrowserOpen(false)}
