@@ -256,7 +256,7 @@ export function ChatInput({
                 setAtQuery(qq)
                 setAtIndex(0)
                 setAtLoading(true)
-                dubdriveLs('/data/files/samkintop/HomeLabRepos/')
+                dubdriveLs('/HomeLabRepos/')
                   .then((data) => {
                     const files = (data?.items || []).filter(
                       (i) => (i?.type || '').toLowerCase() === 'file',
