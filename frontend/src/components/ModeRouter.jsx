@@ -20,6 +20,7 @@ import {
 } from '@/pages/notes808/Notes808Workspace.jsx'
 import AISettings from '@/pages/booops/AISettings.jsx'
 import AllChats from '@/pages/booops/AllChats.jsx'
+import { BooOpsDawChat } from '@/pages/booops/BooOpsDawChat.jsx'
 import DawDetailPage from '@/pages/booops/DawDetailPage.jsx'
 import DawsPage from '@/pages/booops/DawsPage.jsx'
 import ProfilePage from '@/pages/booops/ProfilePage.jsx'
@@ -41,6 +42,7 @@ export function ModeRouter() {
       <Routes>
         <Route path="/" element={<BooOpsApp />}>
           <Route index element={<ChatView />} />
+          <Route path="daw/:dawId" element={<BooOpsDawChat />} />
           <Route path="chats" element={<AllChats />} />
           <Route path="daws" element={<DawsPage />} />
           <Route path="daws/:id" element={<DawDetailPage />} />
@@ -58,6 +60,8 @@ export function ModeRouter() {
       <Routes>
         <Route path={notes808Root} element={<Notes808App />}>
           <Route index element={<Notes808Landing />} />
+          <Route path="daws" element={<DawsPage />} />
+          <Route path="daws/:id" element={<DawDetailPage />} />
           <Route path="daw/:dawId" element={<Notes808DawLayout />}>
             <Route index element={<Notes808DawChat />} />
             <Route path="sources" element={<Notes808DawSourcesPage />} />

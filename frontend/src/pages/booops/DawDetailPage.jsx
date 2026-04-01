@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useLocation, useParams } from 'react-router-dom'
 
+import { getStoredBoolabToken } from '@/api/index.js'
 import {
   deleteContextFile,
   getDaw,
@@ -68,6 +69,10 @@ export default function DawDetailPage() {
   const [inferTopK, setInferTopK] = useState(20)
   const [inferCtx, setInferCtx] = useState(8192)
   const [instrDraft, setInstrDraft] = useState('')
+  const [syncFolder, setSyncFolder] = useState('')
+  const [syncEnabled, setSyncEnabled] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState(null)
 
   const invalidateDaw = () => {
     queryClient.invalidateQueries({ queryKey: ['daws'] })
@@ -110,6 +115,8 @@ export default function DawDetailPage() {
     setInferTopK(typeof tk === 'number' && !Number.isNaN(tk) ? tk : 20)
     const cw = daw.context_window
     setInferCtx(typeof cw === 'number' && !Number.isNaN(cw) ? cw : 8192)
+    setSyncFolder(daw.dubdrive_sync_folder || '')
+    setSyncEnabled(Boolean(daw.dubdrive_sync_enabled))
   }, [daw])
 
   useEffect(() => {
@@ -143,9 +150,37 @@ export default function DawDetailPage() {
         name: detailName.trim() || 'Untitled',
         description: detailDesc.trim() || null,
         color: detailColor || '#7c3aed',
+        dubdrive_sync_folder: syncFolder.trim() || null,
+        dubdrive_sync_enabled: syncEnabled,
       }),
     onSuccess: () => invalidateDaw(),
   })
+
+  async function triggerSync() {
+    setSyncing(true)
+    setSyncResult(null)
+    try {
+      const res = await fetch(`/api/dubdrive-sync/${id}/sync`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${getStoredBoolabToken()}` },
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setSyncResult({
+          error:
+            (typeof json?.detail === 'string' && json.detail) ||
+            (typeof json?.message === 'string' && json.message) ||
+            `Sync failed (${res.status})`,
+        })
+      } else {
+        setSyncResult(json)
+      }
+    } catch {
+      setSyncResult({ error: 'Sync failed' })
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   const saveNameInline = useMutation({
     mutationFn: () => updateDaw(id, { name: nameEdit.trim() || 'Untitled' }),
@@ -543,6 +578,43 @@ export default function DawDetailPage() {
                   ))}
                 </ul>
               )}
+            </section>
+
+            <section className="rounded-lg border border-border bg-card p-4">
+              <h2 className="mb-3 text-sm font-medium text-foreground">DubDrive Sync</h2>
+              <p className="mb-3 text-xs text-muted-foreground">
+                Folder on DubDrive to scan for files. When auto-sync is on and you run sync, new files are ingested into
+                this DAW&apos;s sources.
+              </p>
+              <div className="flex flex-col gap-3 text-sm">
+                <label className="flex flex-col gap-1">
+                  <span className="text-muted-foreground">Sync folder path</span>
+                  <input
+                    type="text"
+                    value={syncFolder}
+                    onChange={(e) => setSyncFolder(e.target.value)}
+                    placeholder="/HomeLabRepos/boolab"
+                    className="h-9 rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2"
+                  />
+                </label>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-foreground">Auto-sync enabled</span>
+                  <EmbeddableSwitch embeddable={syncEnabled} disabled={false} onToggle={setSyncEnabled} />
+                </div>
+                <Button type="button" size="sm" onClick={triggerSync} disabled={syncing || !syncFolder.trim()}>
+                  {syncing ? 'Syncing…' : 'Sync now'}
+                </Button>
+                {syncResult ? (
+                  <p className="text-sm text-muted-foreground" role="status">
+                    {syncResult.error != null
+                      ? String(syncResult.error)
+                      : `Queued ${syncResult.queued}, skipped ${syncResult.skipped} of ${syncResult.total_found}`}
+                  </p>
+                ) : null}
+                <p className="text-xs text-muted-foreground">
+                  Persist folder path and auto-sync with <span className="text-foreground">Save</span> in Details above.
+                </p>
+              </div>
             </section>
 
             <section className="rounded-lg border border-border bg-card p-4">

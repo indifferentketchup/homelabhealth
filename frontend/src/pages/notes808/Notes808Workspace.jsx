@@ -4,9 +4,10 @@ import { Link, Outlet, useNavigate, useParams } from 'react-router-dom'
 import * as LucideIcons from 'lucide-react'
 
 import { fetchBranding, patch808notesBranding } from '@/api/branding.js'
-import { createDaw, listDaws } from '@/api/daws.js'
+import { createDaw, getDaw, listDaws } from '@/api/daws.js'
 import { deleteSource, listSources, uploadSource } from '@/api/sources.js'
 import { ChatView } from '@/components/chat/ChatView.jsx'
+import { FileViewerPanel } from '@/components/chat/FileViewerPanel.jsx'
 import { FileBrowserPanel } from '@/components/FileBrowserPanel.jsx'
 import { Button } from '@/components/ui/button'
 import { PATH_808NOTES_HOME, notes808DawPath } from '@/routes/paths.js'
@@ -301,6 +302,15 @@ export function Notes808DawChat() {
   const branding = useAppStore((s) => s.branding)
   const sidebarW = branding?.sidebarWidth ?? 260
   const [fileBrowseOpen, setFileBrowseOpen] = useState(false)
+  const [viewerFile, setViewerFile] = useState(null)
+
+  const { data: workspaceDaw } = useQuery({
+    queryKey: ['daws', dawId],
+    queryFn: () => getDaw(dawId),
+    enabled: Boolean(dawId),
+    staleTime: 60_000,
+  })
+  const fileBrowseRoot = workspaceDaw?.dubdrive_sync_folder || undefined
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
@@ -311,33 +321,48 @@ export function Notes808DawChat() {
         className="hidden h-full min-h-0 shrink-0 flex-col md:flex"
         style={{ width: sidebarW }}
       >
-        <div className="flex shrink-0 items-center justify-end gap-1 border-b border-sidebar-border bg-sidebar px-1 py-1">
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            className="fs-nav h-8 gap-1 px-2"
-            onClick={() => setFileBrowseOpen(true)}
-          >
-            <FolderOpen className="size-4" />
-            Browse files
-          </Button>
-        </div>
-        <div className="flex min-h-0 flex-[3] flex-col overflow-hidden">
-          <SourcesPanel chatId={activeChatId} dawId={dawId} />
-        </div>
-        <div className="flex min-h-0 flex-[2] flex-col overflow-hidden border-t border-sidebar-border">
-          <NotesPanel dawId={dawId} />
-        </div>
+        {viewerFile ? (
+          <FileViewerPanel
+            file={viewerFile}
+            onClose={() => setViewerFile(null)}
+            onAttachLines={({ filename, content }) => {
+              window.dispatchEvent(
+                new CustomEvent('boolab:attach-chat-file', { detail: { filename, content } }),
+              )
+            }}
+          />
+        ) : (
+          <>
+            <div className="flex shrink-0 items-center justify-end gap-1 border-b border-sidebar-border bg-sidebar px-1 py-1 md:pr-14">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="fs-nav h-8 gap-1 px-2"
+                onClick={() => setFileBrowseOpen(true)}
+              >
+                <FolderOpen className="size-4" />
+                Browse files
+              </Button>
+            </div>
+            <div className="flex min-h-0 flex-[3] flex-col overflow-hidden">
+              <SourcesPanel chatId={activeChatId} dawId={dawId} />
+            </div>
+            <div className="flex min-h-0 flex-[2] flex-col overflow-hidden border-t border-sidebar-border">
+              <NotesPanel dawId={dawId} />
+            </div>
+          </>
+        )}
       </div>
       <FileBrowserPanel
         isOpen={fileBrowseOpen}
         onClose={() => setFileBrowseOpen(false)}
-        dawSyncFolder={null}
-        onFileSelect={(filename, _path, content) => {
+        rootPath={fileBrowseRoot}
+        onFileSelect={(filename, path, content) => {
           window.dispatchEvent(
             new CustomEvent('boolab:attach-chat-file', { detail: { filename, content } }),
           )
+          setViewerFile({ filename, path })
           setFileBrowseOpen(false)
         }}
       />

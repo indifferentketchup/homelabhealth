@@ -25,6 +25,7 @@ import { listDaws } from '@/api/daws.js'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
+  PATH_808NOTES,
   PATH_808NOTES_HOME,
   PATH_BOOOPS,
   PATH_BOOOPS_HOME,
@@ -519,11 +520,67 @@ export function Sidebar({
                         asChild
                       >
                         <Link
-                          to={`${PATH_BOOOPS_HOME}?daw=${encodeURIComponent(d.id)}`}
+                          to={`${PATH_BOOOPS}/daw/${d.id}`}
                           onClick={() => {
-                            setActiveDawId(d.id)
-                            setActiveChatId(null)
                             if (isMobile) onMobileOpenChange(false)
+                          }}
+                          onContextMenu={(e) => {
+                            e.preventDefault()
+                            navigate(`${PATH_BOOOPS}/daws/${d.id}`)
+                          }}
+                        >
+                          <span
+                            className="size-2.5 shrink-0 rounded-full"
+                            style={{ background: d.color || '#7c3aed' }}
+                            aria-hidden
+                          />
+                          <span className="fs-nav line-clamp-2">{d.name}</span>
+                        </Link>
+                      </Button>
+                    ))
+                  )}
+                </div>
+
+                <div className="mx-0 my-1 border-t border-sidebar-border" />
+              </>
+            )}
+
+            {appMode === '808notes' && !desktopCollapsed && (
+              <>
+                <button
+                  type="button"
+                  onClick={togglePinnedOpen}
+                  className="fs-nav flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left font-medium uppercase tracking-wide text-muted-foreground outline-none ring-sidebar-ring hover:bg-sidebar-accent/50 focus-visible:ring-2"
+                >
+                  <span>Pinned DAWs</span>
+                  <ChevronDown
+                    className={cn(
+                      'size-4 shrink-0 transition-transform duration-150',
+                      !pinnedOpen && 'rotate-180',
+                    )}
+                    aria-hidden
+                  />
+                </button>
+                <div className={cn(!pinnedOpen && 'h-0 overflow-hidden')}>
+                  {dawsListError || pinnedDaws.length === 0 ? (
+                    <span className="fs-nav block px-2 text-muted-foreground">No pinned DAWs</span>
+                  ) : (
+                    pinnedDaws.map((d) => (
+                      <Button
+                        key={d.id}
+                        type="button"
+                        variant={String(d.id) === String(activeDawId) ? 'secondary' : 'ghost'}
+                        className="h-auto min-h-9 w-full justify-start gap-2 py-2 text-left font-normal"
+                        asChild
+                      >
+                        <Link
+                          to={notes808DawPath(d.id)}
+                          onClick={() => {
+                            if (isMobile) onMobileOpenChange(false)
+                          }}
+                          onContextMenu={(e) => {
+                            e.preventDefault()
+                            navigate(`${PATH_808NOTES}/daws/${d.id}`)
                           }}
                         >
                           <span
@@ -603,14 +660,45 @@ export function Sidebar({
                 {pinnedDaws.map((d) => (
                   <Link
                     key={d.id}
-                    to={`${PATH_BOOOPS_HOME}?daw=${encodeURIComponent(d.id)}`}
+                    to={`${PATH_BOOOPS}/daw/${d.id}`}
                     title={d.name}
                     onClick={() => {
-                      setActiveDawId(d.id)
-                      setActiveChatId(null)
                       if (isMobile) onMobileOpenChange(false)
                     }}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      navigate(`${PATH_BOOOPS}/daws/${d.id}`)
+                    }}
                     className="flex h-9 w-full items-center justify-center rounded-md hover:bg-sidebar-accent/50"
+                  >
+                    <span
+                      className="size-2.5 shrink-0 rounded-full"
+                      style={{ background: d.color || '#7c3aed' }}
+                      aria-hidden
+                    />
+                  </Link>
+                ))}
+              </div>
+            )}
+
+            {appMode === '808notes' && desktopCollapsed && (
+              <div className="flex flex-col items-center gap-1 pt-1">
+                {pinnedDaws.map((d) => (
+                  <Link
+                    key={d.id}
+                    to={notes808DawPath(d.id)}
+                    title={d.name}
+                    onClick={() => {
+                      if (isMobile) onMobileOpenChange(false)
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      navigate(`${PATH_808NOTES}/daws/${d.id}`)
+                    }}
+                    className={cn(
+                      'flex h-9 w-full items-center justify-center rounded-md hover:bg-sidebar-accent/50',
+                      String(d.id) === String(activeDawId) && 'bg-sidebar-accent/60',
+                    )}
                   >
                     <span
                       className="size-2.5 shrink-0 rounded-full"

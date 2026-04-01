@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { FolderOpen, Plus, Search, SendHorizontal, Square } from 'lucide-react'
+import { FolderOpen, Plus, Search, SendHorizontal, Square, Upload } from 'lucide-react'
 
 import { dubdriveLs, dubdriveRead } from '@/api/dubdrive.js'
 import { toggleWebSearch } from '@/api/chats.js'
@@ -21,8 +21,10 @@ export function ChatInput({
   activeChatId,
   chatMaxW,
   hidePersonaInMenu = false,
+  dawSyncFolder,
 }) {
   const taRef = useRef(null)
+  const uploadInputRef = useRef(null)
   const plusWrapRef = useRef(null)
   const plusBtnRef = useRef(null)
   const plusMenuRef = useRef(null)
@@ -256,7 +258,7 @@ export function ChatInput({
                 setAtQuery(qq)
                 setAtIndex(0)
                 setAtLoading(true)
-                dubdriveLs('/HomeLabRepos')
+                dubdriveLs((dawSyncFolder && String(dawSyncFolder).trim()) || '/HomeLabRepos')
                   .then((data) => {
                     const files = (data?.items || []).filter(
                       (i) => (i?.type || '').toLowerCase() === 'file',
@@ -362,6 +364,18 @@ export function ChatInput({
                 role="menuitem"
                 className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-foreground outline-none hover:bg-accent hover:text-accent-foreground"
                 onClick={() => {
+                  setPlusOpen(false)
+                  uploadInputRef.current?.click()
+                }}
+              >
+                <Upload className="size-4 shrink-0 opacity-70" />
+                Upload file
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-foreground outline-none hover:bg-accent hover:text-accent-foreground"
+                onClick={() => {
                   setFileBrowserOpen(true)
                   setPlusOpen(false)
                 }}
@@ -423,9 +437,30 @@ export function ChatInput({
           </div>,
           document.body,
         )}
+      <input
+        ref={uploadInputRef}
+        type="file"
+        className="hidden"
+        onChange={async (e) => {
+          const file = e.target.files?.[0]
+          if (!file) return
+          e.target.value = ''
+          const text = await file.text().catch(() => null)
+          if (text == null) {
+            setToastMsg('Could not read file')
+            setTimeout(() => setToastMsg(null), 3000)
+            return
+          }
+          setAttachedFiles((prev) => {
+            if (prev.find((f) => f.filename === file.name)) return prev
+            return [...prev, { filename: file.name, path: file.name, content: text }]
+          })
+        }}
+      />
       <FileBrowserPanel
         isOpen={fileBrowserOpen}
         onClose={() => setFileBrowserOpen(false)}
+        rootPath={dawSyncFolder || undefined}
         onFileSelect={async (filename, path, content) => {
           setAttachedFiles((prev) => {
             if (prev.find((f) => f.path === path)) return prev
@@ -433,7 +468,6 @@ export function ChatInput({
           })
           setFileBrowserOpen(false)
         }}
-        dawSyncFolder={null}
       />
     </>
   )

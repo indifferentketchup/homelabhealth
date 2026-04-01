@@ -6,16 +6,22 @@ import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 
-const DEFAULT_ROOT = '/HomeLabRepos/'
+const DEFAULT_ROOT = '/HomeLabRepos'
 
 function ensureDirSlash(p) {
   if (!p) return '/'
-  return p.endsWith('/') ? p : `${p}/`
+  const s = p.replace(/\/+$/, '')
+  return s === '' ? '/' : `${s}/`
+}
+
+function normalizeRootPath(p) {
+  const raw = (p != null && String(p).trim()) || DEFAULT_ROOT
+  return raw.replace(/\/+$/, '') || '/'
 }
 
 function parentDirectoryPath(path) {
   const s = path.replace(/\/+$/, '')
-  if (!s) return '/'
+  if (!s || s === '/') return '/'
   const i = s.lastIndexOf('/')
   if (i <= 0) return '/'
   return `${s.slice(0, i + 1)}`
@@ -26,22 +32,39 @@ function isDirItem(item) {
   return t === 'dir' || t === 'directory' || Boolean(item?.is_dir || item?.isDir)
 }
 
-export function FileBrowserPanel({ isOpen, onClose, onFileSelect, dawSyncFolder = null }) {
-  const rootPath = useMemo(() => {
-    const raw = (dawSyncFolder != null && String(dawSyncFolder).trim()) || DEFAULT_ROOT
-    return ensureDirSlash(raw)
-  }, [dawSyncFolder])
+/**
+ * @param {object} props
+ * @param {boolean} props.isOpen
+ * @param {() => void} props.onClose
+ * @param {(filename: string, path: string, content: string) => void} [props.onFileSelect]
+ * @param {string} [props.rootPath] — if set, start here and clamp navigation to this root
+ */
+export function FileBrowserPanel({ isOpen, onClose, onFileSelect, rootPath }) {
+  const effectiveRoot = useMemo(() => normalizeRootPath(rootPath), [rootPath])
+  const effectiveRootDir = useMemo(() => ensureDirSlash(effectiveRoot), [effectiveRoot])
 
-  const [currentPath, setCurrentPath] = useState(rootPath)
+  const [currentPath, setCurrentPath] = useState(effectiveRootDir)
+
+  useEffect(() => {
+    if (!isOpen) return
+    setCurrentPath(effectiveRootDir)
+  }, [isOpen, effectiveRootDir])
+
+  const clampToRoot = useCallback(
+    (absPath) => {
+      const norm = normalizeRootPath(absPath.replace(/\/+$/, '') || '/')
+      if (norm === effectiveRoot || norm.startsWith(`${effectiveRoot}/`)) {
+        return ensureDirSlash(norm)
+      }
+      return effectiveRootDir
+    },
+    [effectiveRoot, effectiveRootDir],
+  )
+
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
   const [reading, setReading] = useState(false)
   const [error, setError] = useState(null)
-
-  useEffect(() => {
-    if (!isOpen) return
-    setCurrentPath(rootPath)
-  }, [isOpen, rootPath])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -91,19 +114,33 @@ export function FileBrowserPanel({ isOpen, onClose, onFileSelect, dawSyncFolder 
   }, [isOpen, load])
 
   const breadcrumbs = useMemo(() => {
-    const parts = currentPath.split('/').filter(Boolean)
-    let acc = '/'
+    const rootNorm = effectiveRoot
+    const curNorm = normalizeRootPath(currentPath)
+    let rel = ''
+    if (curNorm === rootNorm) rel = ''
+    else if (curNorm.startsWith(`${rootNorm}/`)) rel = curNorm.slice(rootNorm.length + 1)
+    const parts = rel.split('/').filter(Boolean)
+    let acc = effectiveRootDir
     return parts.map((seg) => {
-      acc = `${acc}${seg}/`
+      acc = ensureDirSlash(`${acc.replace(/\/+$/, '')}/${seg}`)
       return { label: seg, path: acc }
     })
-  }, [currentPath])
+  }, [currentPath, effectiveRoot, effectiveRootDir])
 
-  const canGoUp = parentDirectoryPath(currentPath) !== currentPath
+  const curNormForUp = normalizeRootPath(currentPath)
+  const canGoUp = curNormForUp !== effectiveRoot && curNormForUp.startsWith(`${effectiveRoot}/`)
+
+  function navigateUp() {
+    const parentRaw = parentDirectoryPath(currentPath)
+    const parentNorm = normalizeRootPath(parentRaw.replace(/\/+$/, '') || '/')
+    setCurrentPath(
+      parentNorm.startsWith(effectiveRoot) ? ensureDirSlash(parentNorm) : effectiveRootDir,
+    )
+  }
 
   async function onEntryClick(entry) {
     if (entry.type === 'dir') {
-      setCurrentPath(ensureDirSlash(entry.path))
+      setCurrentPath(clampToRoot(entry.path))
       return
     }
     setReading(true)
@@ -160,19 +197,20 @@ export function FileBrowserPanel({ isOpen, onClose, onFileSelect, dawSyncFolder 
                 size="sm"
                 className="fs-nav h-8 shrink-0 gap-1 px-2"
                 disabled={!canGoUp || busy}
-                onClick={() => setCurrentPath(parentDirectoryPath(currentPath))}
+                onClick={navigateUp}
               >
                 <ChevronLeft className="size-4" />
                 Back
               </Button>
               <div className="fs-nav min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                <span className="text-muted-foreground">{effectiveRoot.replace(/\/+$/, '') || '/'}</span>
                 {breadcrumbs.map((c, i) => (
                   <span key={`${c.path}-${i}`}>
-                    {i > 0 ? ' / ' : null}
+                    <span> / </span>
                     <button
                       type="button"
                       className="hover:text-foreground"
-                      onClick={() => setCurrentPath(c.path)}
+                      onClick={() => setCurrentPath(clampToRoot(c.path.replace(/\/+$/, '')))}
                     >
                       {c.label}
                     </button>

@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 
 import { fetchBranding } from '@/api/branding.js'
 import { createChat, getChat, listMessages, patchChat, patchRecentChatsListCache } from '@/api/chats.js'
+import { getDaw } from '@/api/daws.js'
 import { createNote } from '@/api/notes.js'
 import { useStream } from '@/hooks/useStream.js'
 import { cn } from '@/lib/utils.js'
@@ -53,6 +54,14 @@ export function ChatView({
   const [searchParams] = useSearchParams()
   const dawFromQuery = normalizeDawUuid(searchParams.get('daw'))
   const resolvedWorkspaceDaw = normalizeDawUuid(workspaceDawId) || dawFromQuery
+  const workspaceDawKey = normalizeDawUuid(workspaceDawId)
+  const { data: activeDaw } = useQuery({
+    queryKey: ['daws', workspaceDawKey],
+    queryFn: () => getDaw(workspaceDawKey),
+    enabled: Boolean(workspaceDawKey),
+    staleTime: 60_000,
+  })
+  const dawSyncFolder = activeDaw?.dubdrive_sync_folder || null
   const storeBranding = useAppStore((s) => s.branding)
   const { data: branding } = useQuery({
     queryKey: ['branding', chatMode],
@@ -302,6 +311,7 @@ export function ChatView({
               activeChatId={null}
               chatMaxW={chatMaxW}
               hidePersonaInMenu={hidePersonaInChatInput}
+              dawSyncFolder={dawSyncFolder}
             />
           </div>
         </div>
@@ -344,6 +354,7 @@ export function ChatView({
             activeChatId={activeChatId}
             chatMaxW={chatMaxW}
             hidePersonaInMenu={hidePersonaInChatInput}
+            dawSyncFolder={dawSyncFolder}
           />
         </div>
       </div>
