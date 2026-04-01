@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
-import { FolderOpen } from 'lucide-react'
+import { ChevronRight, FolderOpen, PanelRight } from 'lucide-react'
 
 import { getDaw } from '@/api/daws.js'
 import { ChatView } from '@/components/chat/ChatView.jsx'
@@ -10,6 +10,7 @@ import { FileViewerPanel } from '@/components/chat/FileViewerPanel.jsx'
 import { FileBrowserPanel } from '@/components/FileBrowserPanel.jsx'
 import { UserProfileMenu } from '@/components/layout/UserProfileMenu.jsx'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import { PATH_BOOOPS, PATH_BOOOPS_HOME } from '@/routes/paths.js'
 import { useAppStore } from '@/store/index.js'
 
@@ -23,6 +24,8 @@ export function BooOpsDawChat() {
 
   const [viewerFile, setViewerFile] = useState(null)
   const [fileBrowseOpen, setFileBrowseOpen] = useState(false)
+  const [filesPanelExpanded, setFilesPanelExpanded] = useState(true)
+  const filesRailCollapsed = !filesPanelExpanded && !viewerFile
 
   const { data: workspaceDaw } = useQuery({
     queryKey: ['daws', dawId],
@@ -56,8 +59,11 @@ export function BooOpsDawChat() {
           <ChatView chatMode="booops" workspaceDawId={dawId} hideDesktopModelBar />
         </div>
         <div
-          className="hidden h-full min-h-0 shrink-0 flex-col md:flex"
-          style={{ width: sidebarW }}
+          className={cn(
+            'hidden h-full min-h-0 shrink-0 flex-col border-l border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width] duration-200 ease-out md:flex',
+            filesRailCollapsed && 'w-14',
+          )}
+          style={!filesRailCollapsed ? { width: sidebarW } : undefined}
         >
           {viewerFile ? (
             <FileViewerPanel
@@ -70,32 +76,50 @@ export function BooOpsDawChat() {
               }}
             />
           ) : (
-            <div className="flex shrink-0 items-center justify-end gap-1 border-b border-sidebar-border bg-sidebar px-1 py-1">
+            <div className="flex shrink-0 flex-col gap-2 border-b border-sidebar-border p-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className={cn(
+                  'h-9 w-9 shrink-0 border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent',
+                  filesRailCollapsed ? 'mx-auto' : 'self-end',
+                )}
+                onClick={() => setFilesPanelExpanded((v) => !v)}
+                aria-label={filesRailCollapsed ? 'Expand files panel' : 'Collapse files panel'}
+              >
+                {filesRailCollapsed ? <PanelRight className="size-4" /> : <ChevronRight className="size-4" />}
+              </Button>
               <Button
                 type="button"
                 variant="secondary"
-                size="sm"
-                className="fs-nav h-8 gap-1 px-2"
+                size={filesRailCollapsed ? 'icon' : 'sm'}
+                className={cn(
+                  'fs-nav shrink-0 border-sidebar-border',
+                  filesRailCollapsed ? 'mx-auto h-9 w-9' : 'h-9 w-full justify-start gap-2 px-2',
+                )}
                 onClick={() => setFileBrowseOpen(true)}
+                aria-label="Browse files"
               >
-                <FolderOpen className="size-4" />
-                Browse files
+                <FolderOpen className="size-4 shrink-0" />
+                {!filesRailCollapsed ? <span>Browse files</span> : null}
               </Button>
             </div>
           )}
-          <FileBrowserPanel
-            isOpen={fileBrowseOpen}
-            onClose={() => setFileBrowseOpen(false)}
-            rootPath={dawSyncFolder || undefined}
-            onFileSelect={(filename, path, content) => {
-              window.dispatchEvent(
-                new CustomEvent('boolab:attach-chat-file', { detail: { filename, content } }),
-              )
-              setViewerFile({ filename, path })
-              setFileBrowseOpen(false)
-            }}
-          />
         </div>
+        <FileBrowserPanel
+          variant="dock"
+          isOpen={fileBrowseOpen}
+          onClose={() => setFileBrowseOpen(false)}
+          rootPath={dawSyncFolder || undefined}
+          onFileSelect={(filename, path, content) => {
+            window.dispatchEvent(
+              new CustomEvent('boolab:attach-chat-file', { detail: { filename, content } }),
+            )
+            setViewerFile({ filename, path })
+            setFileBrowseOpen(false)
+          }}
+        />
       </div>
     </div>
   )

@@ -259,6 +259,14 @@ async def _assembled_system_prompt(
             instr_text = "\n".join([f"- {r['instruction']}" for r in daw_instructions])
             parts.append(f"### DAW Instructions\n{instr_text}")
 
+        daw_mem_rows = await conn.fetch(
+            "SELECT content FROM daw_memory WHERE daw_id = $1::uuid ORDER BY created_at ASC",
+            daw_id,
+        )
+        if daw_mem_rows:
+            mem_lines = "\n".join(f"- {r['content']}" for r in daw_mem_rows)
+            parts.append(f"[DAW Memory]\n{mem_lines}")
+
     memory_entries: list[Any] = []
     if include_site_private:
         memory_entries = await conn.fetch(

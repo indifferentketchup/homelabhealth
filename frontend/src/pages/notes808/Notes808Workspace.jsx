@@ -17,7 +17,7 @@ import { useAppStore } from '@/store/index.js'
 import { NotesPanel } from './NotesPanel.jsx'
 import { SourcesPanel } from './SourcesPanel.jsx'
 
-const { ChevronLeft, FolderOpen } = LucideIcons
+const { ChevronLeft, ChevronRight, FolderOpen, PanelRight } = LucideIcons
 
 function LandingLucide({ name, className, style }) {
   const C =
@@ -303,6 +303,8 @@ export function Notes808DawChat() {
   const sidebarW = branding?.sidebarWidth ?? 260
   const [fileBrowseOpen, setFileBrowseOpen] = useState(false)
   const [viewerFile, setViewerFile] = useState(null)
+  const [filesPanelExpanded, setFilesPanelExpanded] = useState(true)
+  const filesRailCollapsed = !filesPanelExpanded && !viewerFile
 
   const { data: workspaceDaw } = useQuery({
     queryKey: ['daws', dawId],
@@ -318,8 +320,11 @@ export function Notes808DawChat() {
         <ChatView chatMode="808notes" workspaceDawId={dawId} />
       </div>
       <div
-        className="hidden h-full min-h-0 shrink-0 flex-col md:flex"
-        style={{ width: sidebarW }}
+        className={cn(
+          'hidden h-full min-h-0 shrink-0 flex-col border-l border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width] duration-200 ease-out md:flex',
+          filesRailCollapsed && 'w-14',
+        )}
+        style={!filesRailCollapsed ? { width: sidebarW } : undefined}
       >
         {viewerFile ? (
           <FileViewerPanel
@@ -333,28 +338,50 @@ export function Notes808DawChat() {
           />
         ) : (
           <>
-            <div className="flex shrink-0 items-center justify-end gap-1 border-b border-sidebar-border bg-sidebar px-1 py-1 md:pr-14">
+            <div className="flex shrink-0 flex-col gap-2 border-b border-sidebar-border p-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className={cn(
+                  'h-9 w-9 shrink-0 border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent',
+                  filesRailCollapsed ? 'mx-auto' : 'self-end',
+                )}
+                onClick={() => setFilesPanelExpanded((v) => !v)}
+                aria-label={filesRailCollapsed ? 'Expand workspace panel' : 'Collapse workspace panel'}
+              >
+                {filesRailCollapsed ? <PanelRight className="size-4" /> : <ChevronRight className="size-4" />}
+              </Button>
               <Button
                 type="button"
                 variant="secondary"
-                size="sm"
-                className="fs-nav h-8 gap-1 px-2"
+                size={filesRailCollapsed ? 'icon' : 'sm'}
+                className={cn(
+                  'fs-nav shrink-0 border-sidebar-border',
+                  filesRailCollapsed ? 'mx-auto h-9 w-9' : 'h-9 w-full justify-start gap-2 px-2',
+                )}
                 onClick={() => setFileBrowseOpen(true)}
+                aria-label="Browse files"
               >
-                <FolderOpen className="size-4" />
-                Browse files
+                <FolderOpen className="size-4 shrink-0" />
+                {!filesRailCollapsed ? <span>Browse files</span> : null}
               </Button>
             </div>
-            <div className="flex min-h-0 flex-[3] flex-col overflow-hidden">
-              <SourcesPanel chatId={activeChatId} dawId={dawId} />
-            </div>
-            <div className="flex min-h-0 flex-[2] flex-col overflow-hidden border-t border-sidebar-border">
-              <NotesPanel dawId={dawId} />
-            </div>
+            {!filesRailCollapsed ? (
+              <>
+                <div className="flex min-h-0 flex-[3] flex-col overflow-hidden">
+                  <SourcesPanel chatId={activeChatId} dawId={dawId} />
+                </div>
+                <div className="flex min-h-0 flex-[2] flex-col overflow-hidden border-t border-sidebar-border">
+                  <NotesPanel dawId={dawId} />
+                </div>
+              </>
+            ) : null}
           </>
         )}
       </div>
       <FileBrowserPanel
+        variant="dock"
         isOpen={fileBrowseOpen}
         onClose={() => setFileBrowseOpen(false)}
         rootPath={fileBrowseRoot}

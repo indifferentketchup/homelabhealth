@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useLocation, useParams } from 'react-router-dom'
 
-import { getStoredBoolabToken } from '@/api/index.js'
+import { addDawMemory, deleteDawMemory, getDawMemory, getStoredBoolabToken } from '@/api/index.js'
 import {
   deleteContextFile,
   getDaw,
@@ -69,6 +69,7 @@ export default function DawDetailPage() {
   const [inferTopK, setInferTopK] = useState(20)
   const [inferCtx, setInferCtx] = useState(8192)
   const [instrDraft, setInstrDraft] = useState('')
+  const [memoryDraft, setMemoryDraft] = useState('')
   const [syncFolder, setSyncFolder] = useState('')
   const [syncEnabled, setSyncEnabled] = useState(false)
   const [syncing, setSyncing] = useState(false)
@@ -143,6 +144,21 @@ export default function DawDetailPage() {
   useEffect(() => {
     if (instrPack && typeof instrPack.content === 'string') setInstrDraft(instrPack.content)
   }, [instrPack])
+
+  const { data: dawMemoryList = [], isError: dawMemoryError } = useQuery({
+    queryKey: ['daws', id, 'memory'],
+    queryFn: () => getDawMemory(id),
+    enabled: Boolean(id),
+    staleTime: 15_000,
+  })
+  const memoryRows = Array.isArray(dawMemoryList) ? dawMemoryList : []
+
+  function formatMemoryDate(iso) {
+    if (!iso) return ''
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return ''
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  }
 
   const saveDetails = useMutation({
     mutationFn: () =>
@@ -220,6 +236,19 @@ export default function DawDetailPage() {
   const saveInstr = useMutation({
     mutationFn: () => putDawInstructions(id, instrDraft),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['daws', id, 'instructions'] }),
+  })
+
+  const addMemoryMut = useMutation({
+    mutationFn: () => addDawMemory(id, memoryDraft.trim()),
+    onSuccess: () => {
+      setMemoryDraft('')
+      queryClient.invalidateQueries({ queryKey: ['daws', id, 'memory'] })
+    },
+  })
+
+  const delMemoryMut = useMutation({
+    mutationFn: (entryId) => deleteDawMemory(id, entryId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['daws', id, 'memory'] }),
   })
 
   const pinMut = useMutation({
@@ -581,6 +610,84 @@ export default function DawDetailPage() {
             </section>
 
             <section className="rounded-lg border border-border bg-card p-4">
+              <h2 className="mb-3 text-sm font-medium text-foreground">Instructions</h2>
+              <textarea
+                value={instrDraft}
+                onChange={(e) => setInstrDraft(e.target.value)}
+                rows={8}
+                className="mb-3 w-full resize-y rounded-md border border-border bg-background px-2 py-2 text-sm text-foreground outline-none ring-ring focus-visible:ring-2"
+              />
+              <Button type="button" size="sm" onClick={() => saveInstr.mutate()} disabled={saveInstr.isPending}>
+                Save
+              </Button>
+            </section>
+
+            <section className="rounded-lg border border-border bg-card p-4">
+              <h2 className="mb-3 text-sm font-medium text-foreground">DAW Memory</h2>
+              <p className="mb-3 text-xs text-muted-foreground">
+                Entries are injected into every conversation in this DAW.
+              </p>
+              {dawMemoryError ? (
+                <p className="text-sm text-muted-foreground">Memory is only available to the site owner.</p>
+              ) : memoryRows.length === 0 ? (
+                <p className="mb-3 text-sm text-muted-foreground">No memory entries yet.</p>
+              ) : (
+                <ul className="mb-4 flex flex-col gap-3">
+                  {memoryRows.map((entry) => (
+                    <li
+                      key={entry.id}
+                      className="flex flex-col gap-1 rounded-md border border-border/60 px-3 py-2 sm:flex-row sm:items-start sm:justify-between"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="whitespace-pre-wrap break-words text-sm text-foreground">{entry.content}</p>
+                        <p className="text-xs text-muted-foreground">{formatMemoryDate(entry.created_at)}</p>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="shrink-0 self-end sm:self-start"
+                        onClick={() => delMemoryMut.mutate(entry.id)}
+                        disabled={delMemoryMut.isPending}
+                      >
+                        Delete
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="flex flex-col gap-2">
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-muted-foreground">New entry</span>
+                  <textarea
+                    value={memoryDraft}
+                    onChange={(e) => setMemoryDraft(e.target.value)}
+                    rows={3}
+                    maxLength={2000}
+                    className="w-full resize-y rounded-md border border-border bg-background px-2 py-2 text-sm text-foreground outline-none ring-ring focus-visible:ring-2"
+                  />
+                </label>
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                  <span>
+                    {memoryDraft.length} / 2000
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => addMemoryMut.mutate()}
+                    disabled={
+                      addMemoryMut.isPending ||
+                      !memoryDraft.trim() ||
+                      memoryDraft.trim().length > 2000
+                    }
+                  >
+                    Add Memory
+                  </Button>
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-lg border border-border bg-card p-4">
               <h2 className="mb-3 text-sm font-medium text-foreground">DubDrive Sync</h2>
               <p className="mb-3 text-xs text-muted-foreground">
                 Folder on DubDrive to scan for files. When auto-sync is on and you run sync, new files are ingested into
@@ -615,19 +722,6 @@ export default function DawDetailPage() {
                   Persist folder path and auto-sync with <span className="text-foreground">Save</span> in Details above.
                 </p>
               </div>
-            </section>
-
-            <section className="rounded-lg border border-border bg-card p-4">
-              <h2 className="mb-3 text-sm font-medium text-foreground">Instructions</h2>
-              <textarea
-                value={instrDraft}
-                onChange={(e) => setInstrDraft(e.target.value)}
-                rows={8}
-                className="mb-3 w-full resize-y rounded-md border border-border bg-background px-2 py-2 text-sm text-foreground outline-none ring-ring focus-visible:ring-2"
-              />
-              <Button type="button" size="sm" onClick={() => saveInstr.mutate()} disabled={saveInstr.isPending}>
-                Save
-              </Button>
             </section>
 
             <section className="rounded-lg border border-border bg-card p-4">

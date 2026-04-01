@@ -19,6 +19,7 @@ from routers import (
     claude,
     custom_instructions,
     daw_context_files,
+    daw_memory,
     daws,
     memory,
     ollama,
@@ -113,6 +114,7 @@ api.include_router(branding.router, prefix="/branding", tags=["branding"])
 api.include_router(personas.router, prefix="/personas", tags=["personas"])
 api.include_router(memory.router, prefix="/memory", tags=["memory"])
 api.include_router(daws.router, prefix="/daws", tags=["daws"])
+api.include_router(daw_memory.router)
 api.include_router(daw_context_files.router, prefix="/daw-context-files", tags=["daw-context-files"])
 api.include_router(custom_instructions.router, prefix="/custom-instructions", tags=["custom-instructions"])
 api.include_router(settings.router, prefix="/settings", tags=["settings"])

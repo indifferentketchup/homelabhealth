@@ -105,3 +105,21 @@ export async function apiFetch(path, options = {}) {
   return res.text()
 }
 
+// DAW Memory (owner-only; callers should handle 403 for non-owners)
+export async function getDawMemory(dawId) {
+  return apiFetch(`/api/daws/${encodeURIComponent(dawId)}/memory`)
+}
+
+export async function addDawMemory(dawId, content) {
+  return apiFetch(`/api/daws/${encodeURIComponent(dawId)}/memory`, {
+    method: 'POST',
+    json: { content },
+  })
+}
+
+export async function deleteDawMemory(dawId, entryId) {
+  return apiFetch(`/api/daws/${encodeURIComponent(dawId)}/memory/${encodeURIComponent(entryId)}`, {
+    method: 'DELETE',
+  })
+}
+

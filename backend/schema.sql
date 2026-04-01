@@ -463,3 +463,12 @@ CREATE INDEX IF NOT EXISTS chats_owner_id_idx ON chats(owner_id);
 CREATE INDEX IF NOT EXISTS chats_guest_ip_idx ON chats(guest_ip) WHERE guest_ip IS NOT NULL;
 CREATE INDEX IF NOT EXISTS personas_owner_id_idx ON personas(owner_id);
 CREATE INDEX IF NOT EXISTS daws_owner_id_idx ON daws(owner_id);
+
+CREATE TABLE IF NOT EXISTS daw_memory (
+    id SERIAL PRIMARY KEY,
+    daw_id UUID NOT NULL REFERENCES daws(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS daw_memory_daw_id_idx ON daw_memory(daw_id);
