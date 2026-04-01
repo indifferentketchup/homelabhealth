@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
-import os
 import uuid
 from collections import deque
 from typing import Any
@@ -16,54 +15,60 @@ from fastapi import APIRouter, Depends, HTTPException
 from auth_deps import get_principal
 from db import get_pool
 from routers.sources import _ingest_source, _mime_to_source_type
+from services import dubdrive_auth
 
 router = APIRouter(prefix="/dubdrive-sync", tags=["dubdrive-sync"])
 logger = logging.getLogger(__name__)
 
-_DEFAULT_DUBDRIVE_URL = "http://100.114.205.53:9200"
-
-
-def _dubdrive_base_url() -> str:
-    return (os.environ.get("DUBDRIVE_URL") or _DEFAULT_DUBDRIVE_URL).strip().rstrip("/")
-
-
-def _dubdrive_headers() -> dict[str, str]:
-    token = (os.environ.get("DUBDRIVE_TOKEN") or "").strip()
-    if token:
-        return {"Authorization": f"Bearer {token}"}
-    return {}
-
 
 async def _dubdrive_ls(path: str) -> list[dict[str, Any]]:
     """Call DubDrive GET /api/ls?path= and return the items list."""
-    base = _dubdrive_base_url()
+    base = dubdrive_auth._dubdrive_base_url()
     url = f"{base}/api/ls"
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
-            r = await client.get(url, params={"path": path}, headers=_dubdrive_headers())
-            r.raise_for_status()
-            data = r.json()
+        token = await dubdrive_auth.get_token()
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            r = await client.get(url, params={"path": path}, cookies=dubdrive_auth.get_cookies(token))
+
+        if r.status_code == 401:
+            token = await dubdrive_auth.invalidate_and_relogin()
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                r = await client.get(url, params={"path": path}, cookies=dubdrive_auth.get_cookies(token))
+
+        if r.status_code != 200:
+            logger.warning("DubDrive ls failed path=%r: %s %s", path, r.status_code, r.text[:200])
+            return []
+        data = r.json()
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            return data.get("items", data.get("files", []))
+        return []
     except Exception as e:
         logger.warning("DubDrive ls failed path=%r: %s", path, e)
         return []
-    if isinstance(data, list):
-        return data
-    if isinstance(data, dict):
-        items = data.get("items") or data.get("entries") or data.get("files")
-        if isinstance(items, list):
-            return items
-    return []
 
 
 async def _dubdrive_read_bytes(path: str) -> bytes | None:
     """Call DubDrive GET /api/raw?path= and return raw bytes."""
-    base = _dubdrive_base_url()
+    base = dubdrive_auth._dubdrive_base_url()
     url = f"{base}/api/raw"
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
-            r = await client.get(url, params={"path": path}, headers=_dubdrive_headers())
-            r.raise_for_status()
-            return r.content
+        token = await dubdrive_auth.get_token()
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            r = await client.get(url, params={"path": path}, cookies=dubdrive_auth.get_cookies(token))
+
+        if r.status_code == 401:
+            token = await dubdrive_auth.invalidate_and_relogin()
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                r = await client.get(url, params={"path": path}, cookies=dubdrive_auth.get_cookies(token))
+
+        if r.status_code != 200:
+            logger.warning("DubDrive raw read failed path=%r: %s %s", path, r.status_code, r.text[:200])
+            return None
+        return r.content
     except Exception as e:
         logger.warning("DubDrive raw read failed path=%r: %s", path, e)
         return None

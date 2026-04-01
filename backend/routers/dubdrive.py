@@ -2,24 +2,45 @@
 
 from __future__ import annotations
 
-import os
-
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse, Response
 
 from auth_deps import get_principal
+from services import dubdrive_auth
 
 router = APIRouter()
 
-_DEFAULT_DUBDRIVE_URL = "http://100.114.205.53:9200"
 
+async def _proxy_get(api_path: str, params: dict, raw: bool = False):
+    """Proxy a GET to DubDrive with auto-reauth on 401."""
+    base = dubdrive_auth._dubdrive_base_url()
+    url = f"{base}{api_path}"
 
-def _dubdrive_base_url() -> str:
-    raw = (os.environ.get("DUBDRIVE_URL") or "").strip().rstrip("/")
+    token = await dubdrive_auth.get_token()
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            r = await client.get(url, params=params, cookies=dubdrive_auth.get_cookies(token))
+    except httpx.RequestError:
+        raise HTTPException(502, "dubdrive_unreachable")
+
+    if r.status_code == 401:
+        # Token expired — re-login and retry once
+        try:
+            token = await dubdrive_auth.invalidate_and_relogin()
+        except RuntimeError as e:
+            raise HTTPException(502, str(e))
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                r = await client.get(url, params=params, cookies=dubdrive_auth.get_cookies(token))
+        except httpx.RequestError:
+            raise HTTPException(502, "dubdrive_unreachable")
+
     if raw:
-        return raw
-    return _DEFAULT_DUBDRIVE_URL.rstrip("/")
+        return r  # caller handles content
+
+    ct = r.headers.get("content-type")
+    return Response(content=r.content, status_code=r.status_code, media_type=ct)
 
 
 @router.get("/ls")
@@ -29,43 +50,17 @@ async def dubdrive_ls(
 ) -> Response:
     if principal["kind"] == "guest":
         raise HTTPException(403, "Forbidden")
-    base = _dubdrive_base_url()
-    token = (os.environ.get("DUBDRIVE_TOKEN") or "").strip()
-    headers: dict[str, str] = {}
-    cookies: dict[str, str] = {}
-    if token:
-        cookies["dubdrive_token"] = token
-    url = f"{base}/api/ls"
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            r = await client.get(url, params={"path": path}, headers={}, cookies=cookies)
-    except httpx.RequestError:
-        raise HTTPException(status_code=502, detail="dubdrive_unreachable") from None
-    ct = r.headers.get("content-type")
-    return Response(content=r.content, status_code=r.status_code, media_type=ct)
+    return await _proxy_get("/api/ls", {"path": path})
 
 
 @router.get("/read")
 async def dubdrive_read(
-    path: str = Query(..., min_length=1, description="File path for DubDrive /api/read"),
+    path: str = Query(..., min_length=1),
     principal: dict = Depends(get_principal),
 ) -> Response:
     if principal["kind"] == "guest":
         raise HTTPException(403, "Forbidden")
-    base = _dubdrive_base_url()
-    token = (os.environ.get("DUBDRIVE_TOKEN") or "").strip()
-    headers: dict[str, str] = {}
-    cookies: dict[str, str] = {}
-    if token:
-        cookies["dubdrive_token"] = token
-    url = f"{base}/api/read"
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            r = await client.get(url, params={"path": path}, headers={}, cookies=cookies)
-    except httpx.RequestError:
-        raise HTTPException(status_code=502, detail="dubdrive_unreachable") from None
-    ct = r.headers.get("content-type")
-    return Response(content=r.content, status_code=r.status_code, media_type=ct)
+    return await _proxy_get("/api/read", {"path": path})
 
 
 @router.get("/preview")
@@ -76,24 +71,12 @@ async def dubdrive_preview(
     if principal["kind"] == "guest":
         raise HTTPException(403, "Forbidden")
 
-    base = _dubdrive_base_url()
-    token = (os.environ.get("DUBDRIVE_TOKEN") or "").strip()
-    cookies: dict[str, str] = {}
-    if token:
-        cookies["dubdrive_token"] = token
+    resp = await _proxy_get("/api/raw", {"path": path}, raw=True)
+    if resp.status_code != 200:
+        raise HTTPException(resp.status_code, "dubdrive_error")
 
-    url = f"{base}/api/raw"
-    try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            r = await client.get(url, params={"path": path}, cookies=cookies)
-    except httpx.RequestError:
-        raise HTTPException(502, "dubdrive_unreachable")
-
-    if r.status_code != 200:
-        raise HTTPException(r.status_code, "dubdrive_error")
-
-    content_type = (r.headers.get("content-type") or "").lower().split(";")[0].strip()
-    raw = r.content
+    content_type = (resp.headers.get("content-type") or "").lower().split(";")[0].strip()
+    raw = resp.content
     ext = path.lower().rsplit(".", 1)[-1] if "." in path else ""
 
     if content_type == "application/pdf" or ext == "pdf":
