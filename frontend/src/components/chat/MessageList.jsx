@@ -65,14 +65,14 @@ export function MessageList({
   const all = [...messages, ...tail]
 
   return (
-    <ScrollArea className="h-full min-h-0 w-full flex-1">
+    <ScrollArea className="h-full min-h-0 w-full flex-1 overflow-x-hidden">
       <div className="flex flex-col gap-4 p-4 pb-28">
         {all.map((m, i) => {
           const rowSources = m.role === 'assistant' ? sourcesByMessageIndex[i] : null
           return (
             <div key={m.id} className="flex flex-col gap-1">
               {rowSources?.length ? (
-                <div className="flex w-full gap-2 flex-row">
+                <div className="flex w-full min-w-0 gap-2 flex-row">
                   <div className="mt-0.5 size-8 shrink-0" aria-hidden />
                   <div className="min-w-0 max-w-[80%]">
                     <WebSourcesRow sources={rowSources} />
