@@ -96,7 +96,7 @@ export default function DawsPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-auto bg-background">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-4">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-4 md:pr-[4.75rem]">
         <div>
           <h1 className="text-lg font-semibold tracking-tight text-foreground">DAWs</h1>
           {is808notes ? (
