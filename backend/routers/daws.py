@@ -49,6 +49,8 @@ class DawCreate(BaseModel):
     top_p: float = Field(1.0, ge=0.0, le=1.0)
     top_k: int = Field(20, ge=1, le=100)
     context_window: int = Field(8192, ge=1024, le=32768)
+    dubdrive_sync_folder: str | None = None
+    dubdrive_sync_enabled: bool = False
 
 
 class DawUpdate(BaseModel):
@@ -69,6 +71,8 @@ class DawUpdate(BaseModel):
     top_p: float | None = Field(None, ge=0.0, le=1.0)
     top_k: int | None = Field(None, ge=1, le=100)
     context_window: int | None = Field(None, ge=1024, le=32768)
+    dubdrive_sync_folder: str | None = None
+    dubdrive_sync_enabled: bool = False
 
 
 class DawPinBody(BaseModel):
@@ -111,6 +115,11 @@ def _row(r: Any) -> dict[str, Any]:
         "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
         "updated_at": r["updated_at"].isoformat() if r.get("updated_at") else None,
         "owner_id": str(r["owner_id"]) if r.get("owner_id") else None,
+        "dubdrive_sync_folder": r.get("dubdrive_sync_folder"),
+        "dubdrive_sync_enabled": bool(r.get("dubdrive_sync_enabled")),
+        "dubdrive_last_synced_at": r["dubdrive_last_synced_at"].isoformat()
+        if r.get("dubdrive_last_synced_at")
+        else None,
     }
 
 
@@ -147,6 +156,7 @@ async def list_daws(
                 SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
                     d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
                     d.temperature, d.model, d.max_tokens, d.top_p, d.top_k, d.context_window,
+                    d.dubdrive_sync_folder, d.dubdrive_sync_enabled, d.dubdrive_last_synced_at,
                     d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
                 FROM daws d
                 LEFT JOIN personas p ON p.id = d.persona_id
@@ -219,7 +229,9 @@ async def create_daw(body: DawCreate, principal: dict[str, Any] = Depends(get_pr
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
             RETURNING id, name, description, icon_url, color, shared, sort_order,
                 pinned_booops, pinned_808notes, system_prompt, persona_id, mode, temperature,
-                model, max_tokens, top_p, top_k, context_window, created_at, updated_at, owner_id
+                model, max_tokens, top_p, top_k, context_window,
+                dubdrive_sync_folder, dubdrive_sync_enabled, dubdrive_last_synced_at,
+                created_at, updated_at, owner_id
             """,
             body.name.strip(),
             body.description,
@@ -242,6 +254,7 @@ async def create_daw(body: DawCreate, principal: dict[str, Any] = Depends(get_pr
             SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
                 d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
                 d.temperature, d.model, d.max_tokens, d.top_p, d.top_k, d.context_window,
+                d.dubdrive_sync_folder, d.dubdrive_sync_enabled, d.dubdrive_last_synced_at,
                 d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
             FROM daws d
             LEFT JOIN personas p ON p.id = d.persona_id
@@ -351,6 +364,7 @@ async def upload_daw_icon(
             SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
                 d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
                 d.temperature, d.model, d.max_tokens, d.top_p, d.top_k, d.context_window,
+                d.dubdrive_sync_folder, d.dubdrive_sync_enabled, d.dubdrive_last_synced_at,
                 d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
             FROM daws d
             LEFT JOIN personas p ON p.id = d.persona_id
@@ -406,6 +420,7 @@ async def patch_daw_pin(
             SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
                 d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
                 d.temperature, d.model, d.max_tokens, d.top_p, d.top_k, d.context_window,
+                d.dubdrive_sync_folder, d.dubdrive_sync_enabled, d.dubdrive_last_synced_at,
                 d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
             FROM daws d
             LEFT JOIN personas p ON p.id = d.persona_id
@@ -427,6 +442,7 @@ async def get_daw(daw_id: uuid.UUID, principal: dict[str, Any] = Depends(get_pri
             SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
                 d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
                 d.temperature, d.model, d.max_tokens, d.top_p, d.top_k, d.context_window,
+                d.dubdrive_sync_folder, d.dubdrive_sync_enabled, d.dubdrive_last_synced_at,
                 d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
             FROM daws d
             LEFT JOIN personas p ON p.id = d.persona_id
@@ -455,7 +471,9 @@ async def patch_daw(
             """
             SELECT id, name, description, icon_url, color, shared, sort_order,
                 pinned_booops, pinned_808notes, system_prompt, persona_id, mode,
-                temperature, model, max_tokens, top_p, top_k, context_window, created_at, updated_at, owner_id
+                temperature, model, max_tokens, top_p, top_k, context_window,
+                dubdrive_sync_folder, dubdrive_sync_enabled, dubdrive_last_synced_at,
+                created_at, updated_at, owner_id
             FROM daws WHERE id = $1::uuid
             """,
             daw_id,
@@ -468,6 +486,7 @@ async def patch_daw(
                 SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
                     d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
                     d.temperature, d.model, d.max_tokens, d.top_p, d.top_k, d.context_window,
+                    d.dubdrive_sync_folder, d.dubdrive_sync_enabled, d.dubdrive_last_synced_at,
                     d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
                 FROM daws d
                 LEFT JOIN personas p ON p.id = d.persona_id
@@ -516,6 +535,16 @@ async def patch_daw(
             if "context_window" in data and data["context_window"] is not None
             else int(row["context_window"] if row["context_window"] is not None else 8192)
         )
+        new_dd_folder = (
+            data["dubdrive_sync_folder"]
+            if "dubdrive_sync_folder" in data
+            else row["dubdrive_sync_folder"]
+        )
+        new_dd_enabled = (
+            bool(data["dubdrive_sync_enabled"])
+            if "dubdrive_sync_enabled" in data
+            else bool(row["dubdrive_sync_enabled"])
+        )
         new_icon = row["icon_url"]
         if "icon_url" in data:
             if data["icon_url"] is None:
@@ -536,7 +565,8 @@ async def patch_daw(
             UPDATE daws
             SET name = $2, description = $3, system_prompt = $4, persona_id = $5, mode = $6,
                 color = $7, shared = $8, sort_order = $9, icon_url = $10, temperature = $11,
-                model = $12, max_tokens = $13, top_p = $14, top_k = $15, context_window = $16, updated_at = NOW()
+                model = $12, max_tokens = $13, top_p = $14, top_k = $15, context_window = $16,
+                dubdrive_sync_folder = $17, dubdrive_sync_enabled = $18, updated_at = NOW()
             WHERE id = $1::uuid
             """,
             daw_id,
@@ -555,12 +585,15 @@ async def patch_daw(
             new_top_p,
             new_top_k,
             new_ctx,
+            new_dd_folder,
+            new_dd_enabled,
         )
         prow = await conn.fetchrow(
             """
             SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
                 d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
                 d.temperature, d.model, d.max_tokens, d.top_p, d.top_k, d.context_window,
+                d.dubdrive_sync_folder, d.dubdrive_sync_enabled, d.dubdrive_last_synced_at,
                 d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
             FROM daws d
             LEFT JOIN personas p ON p.id = d.persona_id

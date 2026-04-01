@@ -1,7 +1,7 @@
 # All-in-one convenience (same Docker network). For split deploy: docker-compose.core.yml + docker-compose.ui.yml
 services:
   boolab_db:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: boolab_db
     environment:
       POSTGRES_USER: boolab
@@ -39,6 +39,8 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql://boolab:boolab@boolab_db:5432/boolab}
       CHROMA_HOST: boolab_chroma
       CHROMA_PORT: '8000'
+      DUBDRIVE_URL: ${DUBDRIVE_URL:-http://100.114.205.53:9200}
+      DUBDRIVE_TOKEN: ${DUBDRIVE_TOKEN:-}
     depends_on:
       boolab_db:
         condition: service_healthy

@@ -11,7 +11,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from auth_deps import assert_daw_mutable, fetch_daw_if_visible, get_principal
-from db import get_chroma_collection, get_pool
+from db import get_pool
 from services.chunking import chunk_text, parse_source_bytes
 from services.embeddings import embed_batch
 
@@ -100,30 +100,20 @@ async def _ingest_source(source_id: uuid.UUID, daw_id: uuid.UUID, raw: bytes, mi
         if len(embeddings) != len(chunks):
             raise RuntimeError("embedding count mismatch")
 
-        sid = str(source_id)
-        did = str(daw_id)
-        ids_chroma = [f"{sid}_{i}" for i in range(len(chunks))]
-        metadatas = [
-            {"source_id": sid, "daw_id": did, "chunk_index": str(i), "source_name": name}
-            for i in range(len(chunks))
-        ]
-
-        collection = get_chroma_collection(did)
-        collection.add(ids=ids_chroma, documents=chunks, embeddings=embeddings, metadatas=metadatas)
-
         async with pool.acquire() as conn:
             async with conn.transaction():
                 await conn.execute("DELETE FROM source_chunks WHERE source_id = $1::uuid", source_id)
                 for i, chunk in enumerate(chunks):
                     await conn.execute(
                         """
-                        INSERT INTO source_chunks (id, source_id, chunk_index, text)
-                        VALUES ($1::uuid, $2::uuid, $3, $4)
+                        INSERT INTO source_chunks (id, source_id, chunk_index, text, embedding)
+                        VALUES ($1::uuid, $2::uuid, $3, $4, $5::vector)
                         """,
                         uuid.uuid4(),
                         source_id,
                         i,
                         chunk,
+                        str(embeddings[i]),
                     )
                 await conn.execute(
                     """
@@ -152,11 +142,6 @@ async def _ingest_source(source_id: uuid.UUID, daw_id: uuid.UUID, raw: bytes, mi
                     source_id,
                     str(e)[:900],
                 )
-        except Exception:
-            pass
-        try:
-            coll = get_chroma_collection(str(daw_id))
-            coll.delete(ids=[f"{source_id}_{i}" for i in range(500)])
         except Exception:
             pass
 
@@ -285,14 +270,6 @@ async def delete_source(
         if not row:
             raise HTTPException(404, "Source not found")
         await assert_daw_mutable(conn, principal, row["daw_id"])
-        did = str(row["daw_id"])
-
-    try:
-        coll = get_chroma_collection(did)
-        coll.delete(where={"source_id": str(source_id)})
-    except Exception as e:
-        logger.debug("Chroma delete best-effort: %s", e)
-
     async with pool.acquire() as conn:
         await conn.execute("DELETE FROM sources WHERE id = $1::uuid", source_id)
 

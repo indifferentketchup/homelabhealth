@@ -355,6 +355,18 @@ CREATE TABLE IF NOT EXISTS source_chunks (
 
 CREATE INDEX IF NOT EXISTS source_chunks_source_id_idx ON source_chunks(source_id);
 
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- pgvector migration: add embedding column to source_chunks
+ALTER TABLE source_chunks ADD COLUMN IF NOT EXISTS embedding vector(1024);
+CREATE INDEX IF NOT EXISTS source_chunks_embedding_idx
+    ON source_chunks USING hnsw (embedding vector_cosine_ops);
+
+-- DubDrive sync folder per DAW
+ALTER TABLE daws ADD COLUMN IF NOT EXISTS dubdrive_sync_folder TEXT;
+ALTER TABLE daws ADD COLUMN IF NOT EXISTS dubdrive_sync_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE daws ADD COLUMN IF NOT EXISTS dubdrive_last_synced_at TIMESTAMPTZ;
+
 ALTER TABLE sources ADD COLUMN IF NOT EXISTS mime_type TEXT;
 ALTER TABLE sources ADD COLUMN IF NOT EXISTS file_size_bytes INTEGER;
 

@@ -105,6 +105,18 @@ export function ChatView({
   const [draft, setDraft] = useState('')
   const [streamText, setStreamText] = useState('')
   const [sendError, setSendError] = useState(null)
+
+  useEffect(() => {
+    function onAttachChatFile(e) {
+      const { filename, content } = e.detail || {}
+      if (filename == null || content == null) return
+      const body = typeof content === 'string' ? content : JSON.stringify(content, null, 2)
+      const block = `**\`${filename}\`**\n\`\`\`\n${body}\n\`\`\``
+      setDraft((d) => (d?.trim() ? `${d}\n\n${block}` : block))
+    }
+    window.addEventListener('boolab:attach-chat-file', onAttachChatFile)
+    return () => window.removeEventListener('boolab:attach-chat-file', onAttachChatFile)
+  }, [])
   const { consumeStream, abort } = useStream()
   const [pendingSend, setPendingSend] = useState(false)
   const [optimisticUser, setOptimisticUser] = useState(null)

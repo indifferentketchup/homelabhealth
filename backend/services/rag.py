@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Any
 
-from db import get_chroma_collection
+from db import get_pool
 from services.embeddings import embed_text
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,7 @@ def _reranked_passage_text(p: dict[str, Any]) -> str:
 
 
 async def retrieve_context(query: str, daw_id: str, source_ids: list[str]) -> str:
+    del daw_id  # retained for call-site compatibility; scope is source_ids only
     if not query.strip() or not source_ids:
         return ""
 
@@ -40,27 +42,34 @@ async def retrieve_context(query: str, daw_id: str, source_ids: list[str]) -> st
         logger.warning("RAG query embed failed: %s", e)
         return ""
 
+    pool = await get_pool()
     try:
-        collection = get_chroma_collection(daw_id)
-        q = collection.query(
-            query_embeddings=[q_emb],
-            n_results=min(TOP_K_RETRIEVE, max(1, TOP_K_RETRIEVE)),
-            where={"source_id": {"$in": list(source_ids)}},
-        )
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT sc.text, s.name AS source_name
+                FROM source_chunks sc
+                JOIN sources s ON s.id = sc.source_id
+                WHERE sc.source_id = ANY($3::uuid[])
+                  AND sc.embedding IS NOT NULL
+                ORDER BY sc.embedding <=> $2::vector
+                LIMIT $1
+                """,
+                TOP_K_RETRIEVE,
+                str(q_emb),
+                [uuid.UUID(sid) for sid in source_ids],
+            )
     except Exception as e:
-        logger.warning("RAG Chroma query failed: %s", e)
+        logger.warning("RAG vector query failed: %s", e)
         return ""
 
-    docs = (q.get("documents") or [[]])[0]
-    metas = (q.get("metadatas") or [[]])[0]
-    if not docs:
+    if not rows:
         return ""
 
     passages: list[dict[str, Any]] = []
-    for i, doc in enumerate(docs):
-        meta = metas[i] if i < len(metas) else {}
-        name = (meta or {}).get("source_name") or "source"
-        label = f"[SOURCE: {name}]\n{doc}"
+    for i, row in enumerate(rows):
+        name = row["source_name"] or "source"
+        label = f"[SOURCE: {name}]\n{row['text']}"
         passages.append({"id": str(i), "text": label})
 
     try:
