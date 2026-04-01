@@ -359,8 +359,6 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 -- pgvector migration: add embedding column to source_chunks
 ALTER TABLE source_chunks ADD COLUMN IF NOT EXISTS embedding vector(1024);
-CREATE INDEX IF NOT EXISTS source_chunks_embedding_idx
-    ON source_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 
 -- DubDrive sync folder per DAW
 ALTER TABLE daws ADD COLUMN IF NOT EXISTS dubdrive_sync_folder TEXT;
