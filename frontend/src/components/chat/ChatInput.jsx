@@ -1,14 +1,13 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { flushSync } from 'react-dom'
-import { FileUp, Plus, Search, SendHorizontal, Square, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { FolderOpen, Plus, Search, SendHorizontal, Square } from 'lucide-react'
 
-import { dubdriveLs, dubdriveRead } from '@/api/index.js'
+import { dubdriveLs, dubdriveRead } from '@/api/dubdrive.js'
 import { toggleWebSearch } from '@/api/chats.js'
 import { Button } from '@/components/ui/button'
-import { collectAllFilesUnder, DUBDRIVE_HOMELAB_ROOT, fuzzyMatchFilename, getActiveMention } from '@/lib/dubdriveEntries.js'
 import { useAppStore } from '@/store/index.js'
 import { cn } from '@/lib/utils'
 
+import { FileBrowserPanel } from './FileBrowserPanel.jsx'
 import { PersonaGlyph } from './PersonaGlyph.jsx'
 
 const PLUS_MENU_PANEL_STYLE = {
@@ -24,71 +23,6 @@ const PLUS_MENU_PANEL_STYLE = {
   boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
 }
 
-function getCaretViewportPoint(textarea, position) {
-  const style = window.getComputedStyle(textarea)
-  const div = document.createElement('div')
-  const props = [
-    'fontFamily',
-    'fontSize',
-    'fontWeight',
-    'fontStyle',
-    'letterSpacing',
-    'textTransform',
-    'wordSpacing',
-    'textIndent',
-    'whiteSpace',
-    'overflowWrap',
-    'width',
-    'paddingTop',
-    'paddingRight',
-    'paddingBottom',
-    'paddingLeft',
-    'borderTopWidth',
-    'borderRightWidth',
-    'borderBottomWidth',
-    'borderLeftWidth',
-    'boxSizing',
-    'lineHeight',
-  ]
-  for (const p of props) {
-    div.style[p] = style[p]
-  }
-  div.style.position = 'absolute'
-  div.style.visibility = 'hidden'
-  div.style.whiteSpace = 'pre-wrap'
-  div.style.wordWrap = 'break-word'
-  div.style.overflow = 'hidden'
-  div.style.width = `${textarea.clientWidth}px`
-  div.textContent = textarea.value.slice(0, position)
-  const marker = document.createElement('span')
-  marker.textContent = textarea.value.slice(position, position + 1) || '.'
-  div.appendChild(marker)
-  document.body.appendChild(div)
-  const y = marker.offsetTop
-  const x = marker.offsetLeft
-  document.body.removeChild(div)
-  const ta = textarea.getBoundingClientRect()
-  const lh = parseFloat(style.lineHeight) || 20
-  return {
-    top: ta.top + y - textarea.scrollTop,
-    left: ta.left + x - textarea.scrollLeft,
-    lineHeight: lh,
-  }
-}
-
-function formatAttachedBlock(filename, content) {
-  const body = typeof content === 'string' ? content : JSON.stringify(content, null, 2)
-  return `**\`${filename}\`**\n\`\`\`\n${body}\n\`\`\``
-}
-
-function composeOutgoingMessage(userText, files) {
-  const t = userText.trim()
-  const blocks = (files || []).map((f) => formatAttachedBlock(f.filename, f.content))
-  if (blocks.length === 0) return t
-  if (!t) return blocks.join('\n\n')
-  return `${blocks.join('\n\n')}\n\n${t}`
-}
-
 export function ChatInput({
   value,
   onChange,
@@ -101,25 +35,29 @@ export function ChatInput({
   hidePersonaInMenu = false,
 }) {
   const taRef = useRef(null)
-  const caretRef = useRef(0)
   const plusWrapRef = useRef(null)
-  const pickRef = useRef(null)
   const [plusOpen, setPlusOpen] = useState(false)
   const [toastMsg, setToastMsg] = useState(null)
-  const [caretBump, setCaretBump] = useState(0)
+
   const [attachedFiles, setAttachedFiles] = useState([])
-  const [flatFiles, setFlatFiles] = useState([])
-  const [flatErr, setFlatErr] = useState(null)
-  const [flatLoading, setFlatLoading] = useState(false)
-  const [pickPos, setPickPos] = useState(null)
-  const flatLoadingRef = useRef(false)
-  const mentionWasActiveRef = useRef(false)
+  const [atQuery, setAtQuery] = useState(null)
+  const [atResults, setAtResults] = useState([])
+  const [atLoading, setAtLoading] = useState(false)
+  const [atIndex, setAtIndex] = useState(0)
+  const [fileBrowserOpen, setFileBrowserOpen] = useState(false)
+  const [isDragOver, setIsDragOver] = useState(false)
 
   const webSearchEnabled = useAppStore((s) => s.webSearchEnabled)
   const setWebSearchEnabled = useAppStore((s) => s.setWebSearchEnabled)
   const personaDisplayName = useAppStore((s) => s.personaDisplayName)
   const personaIconUrl = useAppStore((s) => s.personaIconUrl)
   const personaEmoji = useAppStore((s) => s.personaEmoji)
+
+  const q = (atQuery || '').toLowerCase()
+  const filtered =
+    atQuery !== null
+      ? atResults.filter((item) => item.name.toLowerCase().includes(q)).slice(0, 8)
+      : []
 
   useEffect(() => {
     if (!toastMsg) return
@@ -155,53 +93,6 @@ export function ChatInput({
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [plusOpen])
 
-  function bumpCaret() {
-    const el = taRef.current
-    if (el) caretRef.current = el.selectionStart ?? 0
-    setCaretBump((n) => n + 1)
-  }
-
-  useEffect(() => {
-    const caret = caretRef.current ?? value.length
-    const m = getActiveMention(value, caret)
-    if (!m) {
-      mentionWasActiveRef.current = false
-      flatLoadingRef.current = false
-      setFlatLoading(false)
-      return
-    }
-    if (!mentionWasActiveRef.current) {
-      flatLoadingRef.current = false
-    }
-    mentionWasActiveRef.current = true
-    if (flatLoadingRef.current) return
-    flatLoadingRef.current = true
-    setFlatErr(null)
-    setFlatLoading(true)
-    void (async () => {
-      try {
-        const files = await collectAllFilesUnder(DUBDRIVE_HOMELAB_ROOT, dubdriveLs)
-        setFlatFiles(files.filter((f) => !f.isDir))
-      } catch (e) {
-        setFlatErr(e instanceof Error ? e.message : String(e))
-        flatLoadingRef.current = false
-      } finally {
-        setFlatLoading(false)
-      }
-    })()
-  }, [value, caretBump])
-
-  useLayoutEffect(() => {
-    const el = taRef.current
-    const caret = caretRef.current ?? value.length
-    const m = getActiveMention(value, caret)
-    if (!m || !el) {
-      setPickPos(null)
-      return
-    }
-    setPickPos(getCaretViewportPoint(el, caret))
-  }, [value, caretBump])
-
   async function applyWebSearch(next) {
     const prev = webSearchEnabled
     setWebSearchEnabled(next)
@@ -215,55 +106,71 @@ export function ChatInput({
     }
   }
 
-  function submitComposed() {
-    const composed = composeOutgoingMessage(value, attachedFiles)
-    if (!composed.trim() || streaming || disabled) return
-    flushSync(() => {
-      onChange(composed.trim())
+  function handleSend() {
+    if (streaming || disabled) return
+    if (attachedFiles.length > 0) {
+      const blocks = attachedFiles
+        .map((f) => `**\`${f.filename}\`**\n\`\`\`\n${f.content}\n\`\`\``)
+        .join('\n\n')
+      const composed = blocks + (value.trim() ? '\n\n' + value.trim() : '')
+      if (!composed.trim()) return
+      onChange(composed)
       setAttachedFiles([])
-    })
-    onSend()
+      setTimeout(() => onSend(), 0)
+    } else {
+      if (!value.trim()) return
+      onSend()
+    }
+  }
+
+  async function selectAtFile(item) {
+    setAtQuery(null)
+    setAtResults([])
+    const newVal = value.replace(/(?:^|\s)@\S*$/, (m) => (m.startsWith('@') ? '' : m[0]))
+    onChange(newVal.trimEnd())
+    try {
+      const content = await dubdriveRead(item.path)
+      setAttachedFiles((prev) => {
+        if (prev.find((f) => f.path === item.path)) return prev
+        return [...prev, { filename: item.name, path: item.path, content }]
+      })
+    } catch {
+      /* silently fail — file just won't be attached */
+    }
   }
 
   function onKeyDownTa(e) {
+    if (atQuery !== null) {
+      const flen = filtered.length
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setAtIndex((i) => Math.min(i + 1, Math.max(0, flen - 1)))
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setAtIndex((i) => Math.max(i - 1, 0))
+        return
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        if (filtered[atIndex]) void selectAtFile(filtered[atIndex])
+        return
+      }
+      if (e.key === 'Escape') {
+        setAtQuery(null)
+        setAtResults([])
+        return
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      submitComposed()
+      handleSend()
     }
   }
 
-  async function onPickFile(entry) {
-    const el = taRef.current
-    const caret = el?.selectionStart ?? value.length
-    const m = getActiveMention(value, caret)
-    if (!m) return
-    try {
-      const raw = await dubdriveRead(entry.path)
-      const text = typeof raw === 'string' ? raw : JSON.stringify(raw, null, 2)
-      const next = value.slice(0, m.start) + value.slice(caret)
-      onChange(next)
-      setAttachedFiles((prev) => [...prev, { filename: entry.name, content: text }])
-      requestAnimationFrame(() => {
-        if (el) {
-          const pos = m.start
-          el.focus()
-          el.setSelectionRange(pos, pos)
-          caretRef.current = pos
-        }
-      })
-    } catch (err) {
-      setToastMsg(err instanceof Error ? err.message : 'Could not read file')
-    }
-  }
-
-  const caretNow = caretRef.current ?? value.length
-  const activeMention = getActiveMention(value, caretNow)
-  const pickFiltered =
-    activeMention && !flatErr
-      ? flatFiles.filter((f) => fuzzyMatchFilename(f.name, activeMention.query)).slice(0, 100)
-      : []
-  const outgoingPreview = composeOutgoingMessage(value, attachedFiles)
-  const canSend = Boolean(outgoingPreview.trim()) && !streaming && !disabled
+  const canSend =
+    (Boolean(value.trim()) || attachedFiles.length > 0) && !streaming && !disabled
 
   return (
     <>
@@ -275,93 +182,120 @@ export function ChatInput({
           {toastMsg}
         </div>
       )}
-      {pickPos && activeMention ? (
-        <div
-          ref={pickRef}
-          className="p-1 text-popover-foreground outline-none"
-          role="listbox"
-          aria-label="Attach file from DubDrive"
-          style={{
-            position: 'fixed',
-            top: `${pickPos.top + pickPos.lineHeight}px`,
-            left: `${pickPos.left}px`,
-            zIndex: 10000,
-            minWidth: 220,
-            maxWidth: 'min(90vw, 360px)',
-            maxHeight: 240,
-            overflowY: 'auto',
-            background: 'var(--bg-panel)',
-            border: '1px solid var(--border)',
-            borderRadius: 8,
-            boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-          }}
-        >
-          {flatErr ? (
-            <p className="px-2 py-1.5 text-sm text-destructive" role="alert">
-              {flatErr}
-            </p>
-          ) : flatLoading ? (
-            <p className="px-2 py-1.5 text-sm text-muted-foreground">Loading files…</p>
-          ) : pickFiltered.length === 0 ? (
-            <p className="px-2 py-1.5 text-sm text-muted-foreground">No matches</p>
-          ) : (
-            <ul className="flex flex-col gap-0.5 py-0.5">
-              {pickFiltered.map((f) => (
-                <li key={f.path}>
-                  <button
-                    type="button"
-                    role="option"
-                    className="flex w-full truncate rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-accent hover:text-accent-foreground"
-                    onClick={() => void onPickFile(f)}
-                  >
-                    {f.name}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      ) : null}
       <div
-        className="mx-auto w-full max-h-[40vh] min-h-0 flex-shrink-0 flex flex-col overflow-hidden rounded-2xl border border-border bg-card px-4 pb-1.5 pt-3"
+        className="relative mx-auto w-full max-h-[40vh] min-h-0 flex-shrink-0 flex flex-col overflow-hidden rounded-2xl border border-border bg-card px-4 pb-1.5 pt-3"
         style={{ maxWidth: chatMaxW ?? '100%' }}
+        onDragOver={(e) => {
+          e.preventDefault()
+          setIsDragOver(true)
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget)) setIsDragOver(false)
+        }}
+        onDrop={async (e) => {
+          e.preventDefault()
+          setIsDragOver(false)
+          const files = Array.from(e.dataTransfer.files)
+          for (const file of files) {
+            const text = await file.text().catch(() => null)
+            if (text === null) continue
+            setAttachedFiles((prev) => {
+              if (prev.find((f) => f.filename === file.name)) return prev
+              return [...prev, { filename: file.name, path: file.name, content: text }]
+            })
+          }
+        }}
       >
-        <textarea
-          ref={taRef}
-          value={value}
-          onChange={(e) => {
-            caretRef.current = e.target.selectionStart ?? 0
-            onChange(e.target.value)
-          }}
-          onSelect={bumpCaret}
-          onClick={bumpCaret}
-          onKeyUp={bumpCaret}
-          onKeyDown={onKeyDownTa}
-          placeholder="Message…"
-          disabled={disabled || streaming}
-          rows={3}
-          className="fs-input max-h-[calc(40vh-2.75rem)] min-h-12 w-full resize-none overflow-y-auto border-0 bg-transparent text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
-        />
-        {attachedFiles.length > 0 ? (
-          <div className="flex flex-wrap gap-1.5 pb-2 pt-0.5">
-            {attachedFiles.map((f, i) => (
+        {isDragOver && (
+          <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary bg-primary/10">
+            <span className="text-sm font-medium text-primary">Drop files to attach</span>
+          </div>
+        )}
+        <div className="relative min-h-0">
+          {atQuery !== null && (
+            <div className="absolute bottom-full left-0 z-50 mb-2 w-72 overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
+              {atLoading && <div className="px-3 py-2 text-sm text-muted-foreground">Loading…</div>}
+              {!atLoading && filtered.length === 0 && (
+                <div className="px-3 py-2 text-sm text-muted-foreground">No files found</div>
+              )}
+              {!atLoading &&
+                filtered.map((item, i) => (
+                  <button
+                    key={item.path}
+                    type="button"
+                    className={cn(
+                      'flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent',
+                      i === atIndex && 'bg-accent text-accent-foreground',
+                    )}
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      void selectAtFile(item)
+                    }}
+                  >
+                    <span className="truncate">{item.name}</span>
+                    <span className="ml-auto max-w-[120px] truncate text-xs text-muted-foreground">
+                      {item.path}
+                    </span>
+                  </button>
+                ))}
+            </div>
+          )}
+          <textarea
+            ref={taRef}
+            value={value}
+            onChange={(e) => {
+              const val = e.target.value
+              onChange(val)
+              const match = val.match(/(?:^|\s)@(\S*)$/)
+              if (match) {
+                const qq = match[1]
+                setAtQuery(qq)
+                setAtIndex(0)
+                setAtLoading(true)
+                dubdriveLs('/data/files/samkintop/HomeLabRepos/')
+                  .then((data) => {
+                    const files = (data?.items || []).filter(
+                      (i) => (i?.type || '').toLowerCase() === 'file',
+                    )
+                    setAtResults(files)
+                    setAtLoading(false)
+                  })
+                  .catch(() => {
+                    setAtResults([])
+                    setAtLoading(false)
+                  })
+              } else {
+                setAtQuery(null)
+                setAtResults([])
+              }
+            }}
+            onKeyDown={onKeyDownTa}
+            placeholder="Message…"
+            disabled={disabled || streaming}
+            rows={3}
+            className="fs-input max-h-[calc(40vh-2.75rem)] min-h-12 w-full resize-none overflow-y-auto border-0 bg-transparent text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
+          />
+        </div>
+        {attachedFiles.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 pb-1.5 pt-0.5">
+            {attachedFiles.map((f) => (
               <span
-                key={`${f.filename}-${i}`}
-                className="inline-flex max-w-[min(100%,14rem)] items-center gap-1 rounded-full border border-border bg-muted/50 px-2 py-0.5 text-xs text-foreground"
+                key={f.path}
+                className="flex items-center gap-1 rounded-md border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground"
               >
-                <span className="truncate">{f.filename}</span>
+                <span className="max-w-[180px] truncate">{f.filename}</span>
                 <button
                   type="button"
-                  className="shrink-0 rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
                   aria-label={`Remove ${f.filename}`}
-                  onClick={() => setAttachedFiles((prev) => prev.filter((_, j) => j !== i))}
+                  className="ml-0.5 hover:text-foreground"
+                  onClick={() => setAttachedFiles((prev) => prev.filter((x) => x.path !== f.path))}
                 >
-                  <X className="size-3.5" />
+                  ✕
                 </button>
               </span>
             ))}
           </div>
-        ) : null}
+        )}
         <div className="flex shrink-0 items-center justify-between">
           <div ref={plusWrapRef} className="relative shrink-0">
             <Button
@@ -389,12 +323,12 @@ export function ChatInput({
                     role="menuitem"
                     className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-foreground outline-none hover:bg-accent hover:text-accent-foreground"
                     onClick={() => {
-                      setToastMsg('Coming soon')
+                      setFileBrowserOpen(true)
                       setPlusOpen(false)
                     }}
                   >
-                    <FileUp className="size-4 text-muted-foreground" />
-                    Upload files
+                    <FolderOpen className="size-4 text-muted-foreground" />
+                    Browse files
                   </button>
                   <div
                     className={cn(
@@ -403,7 +337,12 @@ export function ChatInput({
                     )}
                   >
                     <span className="flex items-center gap-2 text-sm">
-                      <Search className={cn('size-4', webSearchEnabled ? 'text-accent-foreground' : 'text-muted-foreground')} />
+                      <Search
+                        className={cn(
+                          'size-4',
+                          webSearchEnabled ? 'text-accent-foreground' : 'text-muted-foreground',
+                        )}
+                      />
                       Web search
                     </span>
                     <button
@@ -456,7 +395,7 @@ export function ChatInput({
               variant="ghost"
               size="icon"
               className="shrink-0"
-              onClick={submitComposed}
+              onClick={handleSend}
               disabled={disabled || !canSend}
               aria-label="Send"
             >
@@ -465,6 +404,18 @@ export function ChatInput({
           )}
         </div>
       </div>
+      <FileBrowserPanel
+        isOpen={fileBrowserOpen}
+        onClose={() => setFileBrowserOpen(false)}
+        onFileSelect={async (filename, path, content) => {
+          setAttachedFiles((prev) => {
+            if (prev.find((f) => f.path === path)) return prev
+            return [...prev, { filename, path, content }]
+          })
+          setFileBrowserOpen(false)
+        }}
+        dawSyncFolder={null}
+      />
     </>
   )
 }

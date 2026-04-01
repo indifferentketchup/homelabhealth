@@ -12,12 +12,14 @@ from auth_deps import get_principal
 
 router = APIRouter()
 
+_DEFAULT_DUBDRIVE_URL = "http://100.114.205.53:9200"
+
 
 def _dubdrive_base_url() -> str:
     raw = (os.environ.get("DUBDRIVE_URL") or "").strip().rstrip("/")
-    if not raw:
-        raise HTTPException(status_code=503, detail="dubdrive_not_configured")
-    return raw
+    if raw:
+        return raw
+    return _DEFAULT_DUBDRIVE_URL.rstrip("/")
 
 
 @router.get("/ls")
@@ -33,11 +35,11 @@ async def dubdrive_ls(
     if token:
         headers["Authorization"] = f"Bearer {token}"
     url = f"{base}/api/ls"
-    async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
-        try:
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             r = await client.get(url, params={"path": path}, headers=headers)
-        except httpx.HTTPError as e:
-            raise HTTPException(status_code=502, detail=f"dubdrive_upstream_error: {e}") from e
+    except httpx.RequestError:
+        raise HTTPException(status_code=502, detail="dubdrive_unreachable") from None
     ct = r.headers.get("content-type")
     return Response(content=r.content, status_code=r.status_code, media_type=ct)
 
@@ -55,10 +57,10 @@ async def dubdrive_read(
     if token:
         headers["Authorization"] = f"Bearer {token}"
     url = f"{base}/api/read"
-    async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
-        try:
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             r = await client.get(url, params={"path": path}, headers=headers)
-        except httpx.HTTPError as e:
-            raise HTTPException(status_code=502, detail=f"dubdrive_upstream_error: {e}") from e
+    except httpx.RequestError:
+        raise HTTPException(status_code=502, detail="dubdrive_unreachable") from None
     ct = r.headers.get("content-type")
     return Response(content=r.content, status_code=r.status_code, media_type=ct)

@@ -333,7 +333,8 @@ export function Notes808DawChat() {
       <FileBrowserPanel
         isOpen={fileBrowseOpen}
         onClose={() => setFileBrowseOpen(false)}
-        onFileSelect={(filename, content) => {
+        dawSyncFolder={null}
+        onFileSelect={(filename, _path, content) => {
           window.dispatchEvent(
             new CustomEvent('boolab:attach-chat-file', { detail: { filename, content } }),
           )
