@@ -57,6 +57,25 @@ const mdComponents = {
   ),
 }
 
+function formatTimestamp(isoString) {
+  if (!isoString) return null
+  const d = new Date(isoString)
+  if (isNaN(d)) return null
+  const now = new Date()
+  const isToday =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  if (isToday) {
+    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase()
+  }
+  return (
+    d.toLocaleDateString([], { month: 'short', day: 'numeric' }) +
+    ', ' +
+    d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase()
+  )
+}
+
 export function MessageBubble({ chatId, message, streaming = false, onSaveMessageAsNote }) {
   const [hover, setHover] = useState(false)
   const [forkError, setForkError] = useState(null)
@@ -114,6 +133,7 @@ export function MessageBubble({ chatId, message, streaming = false, onSaveMessag
     message.id !== '__optimistic_user__'
 
   const canSaveAsNote = Boolean(onSaveMessageAsNote && canFork && !streaming)
+  const tsLabel = formatTimestamp(message.created_at)
 
   return (
     <div
@@ -165,6 +185,13 @@ export function MessageBubble({ chatId, message, streaming = false, onSaveMessag
             </div>
           )}
         </div>
+        {tsLabel ? (
+          <p
+            className={`mt-0.5 text-xs text-white/40 ${message.role === 'user' ? 'text-right' : 'text-left'}`}
+          >
+            {tsLabel}
+          </p>
+        ) : null}
         {!isUser && (
           <div
             className={cn(
