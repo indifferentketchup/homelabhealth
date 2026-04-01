@@ -32,12 +32,13 @@ async def dubdrive_ls(
     base = _dubdrive_base_url()
     token = (os.environ.get("DUBDRIVE_TOKEN") or "").strip()
     headers: dict[str, str] = {}
+    cookies: dict[str, str] = {}
     if token:
-        headers["Authorization"] = f"Bearer {token}"
+        cookies["dubdrive_token"] = token
     url = f"{base}/api/ls"
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            r = await client.get(url, params={"path": path}, headers=headers)
+            r = await client.get(url, params={"path": path}, headers={}, cookies=cookies)
     except httpx.RequestError:
         raise HTTPException(status_code=502, detail="dubdrive_unreachable") from None
     ct = r.headers.get("content-type")
@@ -54,12 +55,13 @@ async def dubdrive_read(
     base = _dubdrive_base_url()
     token = (os.environ.get("DUBDRIVE_TOKEN") or "").strip()
     headers: dict[str, str] = {}
+    cookies: dict[str, str] = {}
     if token:
-        headers["Authorization"] = f"Bearer {token}"
+        cookies["dubdrive_token"] = token
     url = f"{base}/api/read"
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            r = await client.get(url, params={"path": path}, headers=headers)
+            r = await client.get(url, params={"path": path}, headers={}, cookies=cookies)
     except httpx.RequestError:
         raise HTTPException(status_code=502, detail="dubdrive_unreachable") from None
     ct = r.headers.get("content-type")
