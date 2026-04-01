@@ -1,0 +1,26 @@
+services:
+  boolab_db:
+    container_name: boolab_staging_db
+
+  boolab_chroma:
+    container_name: boolab_staging_chroma
+
+  boolab_api:
+    container_name: boolab_staging_api
+    ports:
+      - "100.114.205.53:9310:8000"
+
+  boolab_ui:
+    container_name: boolab_staging_ui
+    ports:
+      - "100.114.205.53:9312:80"
+
+  booops_ui:
+    container_name: booops_staging_ui
+    ports:
+      - "100.114.205.53:9313:80"
+
+  notes808_ui:
+    container_name: notes808_staging_ui
+    ports:
+      - "100.114.205.53:9314:80"
