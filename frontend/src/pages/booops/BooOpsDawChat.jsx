@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { PanelRight } from 'lucide-react'
 import { useParams } from 'react-router-dom'
 
 import { getDaw } from '@/api/daws.js'
@@ -8,6 +9,7 @@ import { ModelSelectorBar } from '@/components/chat/ModelSelectorBar.jsx'
 import { FileViewerPanel } from '@/components/chat/FileViewerPanel.jsx'
 import { FileBrowserPanel } from '@/components/FileBrowserPanel.jsx'
 import { UserProfileMenu } from '@/components/layout/UserProfileMenu.jsx'
+import { Button } from '@/components/ui/button'
 import { PATH_BOOOPS, PATH_BOOOPS_HOME } from '@/routes/paths.js'
 import { useAppStore } from '@/store/index.js'
 
@@ -19,6 +21,7 @@ export function BooOpsDawChat() {
   const prevDawIdRef = useRef(null)
 
   const [viewerFile, setViewerFile] = useState(null)
+  const [browserOpen, setBrowserOpen] = useState(true)
 
   const { data: workspaceDaw } = useQuery({
     queryKey: ['daws', dawId],
@@ -64,18 +67,36 @@ export function BooOpsDawChat() {
             />
           </div>
         ) : (
-          <FileBrowserPanel
-            variant="dock"
-            isOpen={true}
-            onClose={() => {}}
-            rootPath={dawSyncFolder || undefined}
-            onFileSelect={(filename, path, content) => {
-              window.dispatchEvent(
-                new CustomEvent('boolab:attach-chat-file', { detail: { filename, content } }),
-              )
-              setViewerFile({ filename, path })
-            }}
-          />
+          <>
+            <FileBrowserPanel
+              variant="dock"
+              isOpen={browserOpen}
+              onClose={() => setBrowserOpen(false)}
+              rootPath={dawSyncFolder || undefined}
+              onFileSelect={(filename, path, content) => {
+                window.dispatchEvent(
+                  new CustomEvent('boolab:attach-chat-file', { detail: { filename, content } }),
+                )
+                setViewerFile({ filename, path })
+              }}
+            />
+            {!browserOpen ? (
+              <div className="hidden h-full min-h-0 w-14 shrink-0 flex-col border-l border-sidebar-border bg-sidebar text-sidebar-foreground md:flex">
+                <div className="flex shrink-0 flex-col gap-2 border-b border-sidebar-border p-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="mx-auto h-9 w-9 shrink-0 border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent"
+                    onClick={() => setBrowserOpen(true)}
+                    aria-label="Open file browser"
+                  >
+                    <PanelRight className="size-4" />
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </>
         )}
       </div>
     </div>
