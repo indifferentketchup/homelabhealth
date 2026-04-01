@@ -48,7 +48,7 @@ export function FileBrowserPanel({ isOpen, onClose, onFileSelect, dawSyncFolder 
     setError(null)
     try {
       const data = await dubdriveLs(currentPath.replace(/\/+$/, ''))
-      const rows = Array.isArray(data?.items) ? data.items : []
+      const rows = Array.isArray(data) ? data : []
       const base = currentPath.endsWith('/') ? currentPath : `${currentPath}/`
       const normalized = rows
         .map((row) => {
