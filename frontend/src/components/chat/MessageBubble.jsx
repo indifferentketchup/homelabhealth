@@ -32,7 +32,7 @@ const mdComponents = {
       return (
         <code
           className={cn(
-            'fs-code max-w-full break-words rounded bg-muted px-1 py-0.5 text-[0.9em]',
+            'fs-code max-w-full [overflow-wrap:anywhere] break-words rounded bg-muted px-1 py-0.5 text-[0.9em]',
             mobileCodeSize,
           )}
           style={mono}
@@ -45,7 +45,7 @@ const mdComponents = {
     return (
       <code
         className={cn(
-          'fs-code block w-full min-w-0 max-w-full whitespace-pre-wrap break-words rounded-md border border-border bg-muted p-3',
+          'fs-code block w-full min-w-0 max-w-full [overflow-wrap:anywhere] whitespace-pre-wrap break-words rounded-md border border-border bg-muted p-3',
           mobileCodeSize,
           className,
         )}
@@ -59,7 +59,7 @@ const mdComponents = {
   pre: ({ children }) => (
     <pre
       className={cn(
-        'mb-2 last:mb-0 block w-full min-w-0 max-w-full overflow-x-auto whitespace-pre-wrap break-words',
+        'mb-2 last:mb-0 block w-full min-w-0 max-w-full overflow-x-auto whitespace-pre-wrap break-words [overflow-wrap:anywhere]',
         'max-[600px]:max-h-[300px] max-[600px]:overflow-auto max-[600px]:!text-[0.85rem]',
       )}
     >
