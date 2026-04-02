@@ -306,8 +306,7 @@ async def _assembled_system_prompt(
             parts.append(custom_instr)
 
     rag_ok = (
-        mode == "808notes"
-        and bool(user_query_for_rag and str(user_query_for_rag).strip())
+        bool(user_query_for_rag and str(user_query_for_rag).strip())
         and daw_id is not None
         and chat.get("rag_enabled") is not False
     )
@@ -319,6 +318,12 @@ async def _assembled_system_prompt(
                 cid,
             )
             source_ids = [str(r["source_id"]) for r in sel]
+            if not source_ids:
+                daw_sources = await conn.fetch(
+                    "SELECT id FROM sources WHERE daw_id = $1::uuid AND embedding_status = 'complete'",
+                    uuid.UUID(str(daw_id)),
+                )
+                source_ids = [str(r["id"]) for r in daw_sources]
             if source_ids:
                 from services.rag import retrieve_context
 
@@ -676,7 +681,7 @@ async def create_chat(body: ChatCreate, principal: dict[str, Any] = Depends(get_
                     ) LIMIT 1
                 ), $6),
                 COALESCE($5, FALSE),
-                ($2 IS NOT NULL),
+                $10,
                 $7,
                 $8,
                 $9)
@@ -692,6 +697,7 @@ async def create_chat(body: ChatCreate, principal: dict[str, Any] = Depends(get_
             persona_id_for_insert,
             owner_id,
             guest_ip,
+            body.daw_id is not None,
         )
     return _chat_row(row)
 

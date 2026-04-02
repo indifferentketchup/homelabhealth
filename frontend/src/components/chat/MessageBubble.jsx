@@ -40,7 +40,7 @@ const mdComponents = {
     }
     return (
       <code
-        className={cn('fs-code block rounded-md border border-border bg-muted p-3', className)}
+        className={cn('fs-code block overflow-x-auto max-w-full min-w-0 rounded-md border border-border bg-muted p-3', className)}
         style={mono}
         {...props}
       >
@@ -48,13 +48,7 @@ const mdComponents = {
       </code>
     )
   },
-  pre: ({ children }) => (
-    <div style={{ overflowX: 'auto', maxWidth: '100%' }}>
-      <pre className="mb-2 last:mb-0" style={{ width: 'max-content', minWidth: '100%' }}>
-        {children}
-      </pre>
-    </div>
-  ),
+  pre: ({ children }) => <pre className="mb-2 last:mb-0" style={{overflowX:"auto",maxWidth:"100%",minWidth:0,display:"block"}}>{children}</pre>,
   h1: ({ children }) => <h1 className="mb-2 text-lg font-semibold">{children}</h1>,
   h2: ({ children }) => <h2 className="mb-2 text-base font-semibold">{children}</h2>,
   h3: ({ children }) => <h3 className="mb-1 text-sm font-semibold">{children}</h3>,
@@ -171,20 +165,20 @@ export function MessageBubble({ chatId, message, streaming = false, onSaveMessag
       )}
       <div
         className={cn(
-          'flex min-w-0 max-w-[80%] flex-col',
+          'flex min-w-0 max-w-[80%] overflow-x-hidden flex-col',
           isUser ? 'items-end' : 'items-start',
         )}
       >
         <div
           className={cn(
-            'w-fit max-w-full rounded-xl border border-border px-3 py-2',
+            'w-full rounded-xl border border-border px-3 py-2',
             isUser ? 'bg-card text-foreground' : 'bg-secondary text-secondary-foreground',
           )}
         >
           {isUser ? (
             <p className="fs-chat whitespace-pre-wrap break-words leading-relaxed text-foreground">{message.content}</p>
           ) : (
-            <div className="prose-chat min-w-0 overflow-x-hidden break-words leading-relaxed">
+            <div className="prose-chat break-words leading-relaxed">
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
                 {message.content || (streaming ? '…' : '')}
               </ReactMarkdown>
