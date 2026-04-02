@@ -209,24 +209,28 @@ export function ChatView({
       },
       onDone: async () => {
         streamingChatRef.current = null
-        await queryClient.invalidateQueries({ queryKey: ['messages', chatId] })
-        await queryClient.invalidateQueries({ queryKey: ['chats'] })
-        await queryClient.invalidateQueries({ queryKey: ['chat', chatId] })
-        setOptimisticUser(null)
-        setPendingSend(false)
-        setStreamText('')
-        setSendError(null)
+        try {
+          await queryClient.invalidateQueries({ queryKey: ['messages', chatId] })
+          await queryClient.invalidateQueries({ queryKey: ['chats'] })
+          await queryClient.invalidateQueries({ queryKey: ['chat', chatId] })
+          setSendError(null)
+        } finally {
+          setOptimisticUser(null)
+          setPendingSend(false)
+          setStreamText('')
+        }
       },
       onError: async (err) => {
         streamingChatRef.current = null
-        await queryClient.invalidateQueries({ queryKey: ['messages', chatId] })
-        setOptimisticUser(null)
-        setPendingSend(false)
-        setStreamText('')
-        if (err?.name !== 'AbortError') {
-          setSendError(
-            friendlyStreamError(err instanceof Error ? err.message : String(err)),
-          )
+        try {
+          await queryClient.invalidateQueries({ queryKey: ['messages', chatId] })
+        } finally {
+          setOptimisticUser(null)
+          setPendingSend(false)
+          setStreamText('')
+          if (err?.name !== 'AbortError') {
+            setSendError(friendlyStreamError(err instanceof Error ? err.message : String(err)))
+          }
         }
       },
     })
