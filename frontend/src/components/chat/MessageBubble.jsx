@@ -27,10 +27,14 @@ const mdComponents = {
   code: ({ className, children, ...props }) => {
     const inline = !className
     const mono = { fontFamily: 'var(--font-mono), ui-monospace, monospace' }
+    const mobileCodeSize = 'max-[600px]:!text-[0.85rem]'
     if (inline) {
       return (
         <code
-          className="fs-code rounded bg-muted px-1 py-0.5 text-[0.9em]"
+          className={cn(
+            'fs-code max-w-full break-words rounded bg-muted px-1 py-0.5 text-[0.9em]',
+            mobileCodeSize,
+          )}
           style={mono}
           {...props}
         >
@@ -40,7 +44,11 @@ const mdComponents = {
     }
     return (
       <code
-        className={cn('fs-code block overflow-x-auto max-w-full min-w-0 rounded-md border border-border bg-muted p-3', className)}
+        className={cn(
+          'fs-code block w-full min-w-0 max-w-full whitespace-pre-wrap break-words rounded-md border border-border bg-muted p-3',
+          mobileCodeSize,
+          className,
+        )}
         style={mono}
         {...props}
       >
@@ -48,7 +56,16 @@ const mdComponents = {
       </code>
     )
   },
-  pre: ({ children }) => <pre className="mb-2 last:mb-0" style={{overflowX:"auto",maxWidth:"100%",minWidth:0,display:"block"}}>{children}</pre>,
+  pre: ({ children }) => (
+    <pre
+      className={cn(
+        'mb-2 last:mb-0 block w-full min-w-0 max-w-full overflow-x-auto whitespace-pre-wrap break-words',
+        'max-[600px]:max-h-[300px] max-[600px]:overflow-auto max-[600px]:!text-[0.85rem]',
+      )}
+    >
+      {children}
+    </pre>
+  ),
   h1: ({ children }) => <h1 className="mb-2 text-lg font-semibold">{children}</h1>,
   h2: ({ children }) => <h2 className="mb-2 text-base font-semibold">{children}</h2>,
   h3: ({ children }) => <h3 className="mb-1 text-sm font-semibold">{children}</h3>,
@@ -171,14 +188,14 @@ export function MessageBubble({ chatId, message, streaming = false, onSaveMessag
       >
         <div
           className={cn(
-            'w-full rounded-xl border border-border px-3 py-2',
+            'w-full min-w-0 rounded-xl border border-border px-3 py-2',
             isUser ? 'bg-card text-foreground' : 'bg-secondary text-secondary-foreground',
           )}
         >
           {isUser ? (
             <p className="fs-chat whitespace-pre-wrap break-words leading-relaxed text-foreground">{message.content}</p>
           ) : (
-            <div className="prose-chat break-words leading-relaxed">
+            <div className="prose-chat w-full max-w-full overflow-x-hidden break-words leading-relaxed">
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
                 {message.content || (streaming ? '…' : '')}
               </ReactMarkdown>
