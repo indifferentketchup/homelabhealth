@@ -12,6 +12,7 @@ import { FileBrowserPanel } from './FileBrowserPanel.jsx'
 import { PersonaGlyph } from './PersonaGlyph.jsx'
 
 export function ChatInput({
+  inputRef,
   value,
   onChange,
   onSend,
@@ -247,7 +248,10 @@ export function ChatInput({
             </div>
           )}
           <textarea
-            ref={taRef}
+            ref={(el) => {
+              taRef.current = el
+              if (inputRef != null) inputRef.current = el
+            }}
             value={value}
             onChange={(e) => {
               const val = e.target.value

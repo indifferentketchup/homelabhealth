@@ -135,8 +135,15 @@ export function ChatView({
   const streamAssistantIndexRef = useRef(0)
   /** Chat id for the in-flight POST /messages stream (not null only while consumeStream runs). */
   const streamingChatRef = useRef(null)
+  const inputRef = useRef(null)
 
   const busy = pendingSend
+
+  useEffect(() => {
+    if (!busy && inputRef.current) {
+      inputRef.current.focus()
+    }
+  }, [busy])
 
   // Avoid double user bubbles: new-chat flow enables the messages query as the stream runs, so the
   // server copy of the user message can appear in `messages` while `optimisticUser` is still set.
@@ -306,6 +313,7 @@ export function ChatView({
               </p>
             ) : null}
             <ChatInput
+              inputRef={inputRef}
               value={draft}
               onChange={setDraft}
               onSend={send}
@@ -351,6 +359,7 @@ export function ChatView({
             </p>
           ) : null}
           <ChatInput
+            inputRef={inputRef}
             value={draft}
             onChange={setDraft}
             onSend={send}

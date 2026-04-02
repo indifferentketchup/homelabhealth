@@ -668,7 +668,7 @@ async def create_chat(body: ChatCreate, principal: dict[str, Any] = Depends(get_
             model_arg = await _site_default_model(conn, mode)
         row = await conn.fetchrow(
             """
-            INSERT INTO chats (title, daw_id, mode, model, web_search_enabled, persona_id, owner_id, guest_ip)
+            INSERT INTO chats (title, daw_id, mode, model, web_search_enabled, rag_enabled, persona_id, owner_id, guest_ip)
             VALUES ($1, $2, $3,
                 COALESCE($4, (
                     SELECT value FROM global_settings WHERE key = (
@@ -676,6 +676,7 @@ async def create_chat(body: ChatCreate, principal: dict[str, Any] = Depends(get_
                     ) LIMIT 1
                 ), $6),
                 COALESCE($5, FALSE),
+                ($2 IS NOT NULL),
                 $7,
                 $8,
                 $9)
