@@ -500,6 +500,7 @@ async def _stream_ollama(
         "top_k": top_k,
         "num_ctx": int(num_ctx),
         "num_predict": int(max_tokens),
+        "stop": ["<|im_end|>", "<|endoftext|>"],
     }
     payload = {
         "model": model,
