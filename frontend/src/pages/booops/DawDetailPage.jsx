@@ -52,6 +52,7 @@ export default function DawDetailPage() {
   const { pathname } = useLocation()
   const storeMode = useAppStore((s) => s.mode)
   const routeBase = is808notesRouteContext(pathname, storeMode) ? PATH_808NOTES : PATH_BOOOPS
+  const is808notesWorkspace = routeBase === PATH_808NOTES
   const queryClient = useQueryClient()
   const fileInputRef = useRef(null)
   const iconInputRef = useRef(null)
@@ -68,6 +69,7 @@ export default function DawDetailPage() {
   const [inferTopP, setInferTopP] = useState(1)
   const [inferTopK, setInferTopK] = useState(20)
   const [inferCtx, setInferCtx] = useState(8192)
+  const [ragMode, setRagMode] = useState('auto')
   const [instrDraft, setInstrDraft] = useState('')
   const [memoryDraft, setMemoryDraft] = useState('')
   const [syncFolder, setSyncFolder] = useState('')
@@ -116,6 +118,8 @@ export default function DawDetailPage() {
     setInferTopK(typeof tk === 'number' && !Number.isNaN(tk) ? tk : 20)
     const cw = daw.context_window
     setInferCtx(typeof cw === 'number' && !Number.isNaN(cw) ? cw : 8192)
+    const rm = daw.rag_mode
+    setRagMode(rm === 'always' || rm === 'off' || rm === 'auto' ? rm : 'auto')
     setSyncFolder(daw.dubdrive_sync_folder || '')
     setSyncEnabled(Boolean(daw.dubdrive_sync_enabled))
   }, [daw])
@@ -276,14 +280,19 @@ export default function DawDetailPage() {
   }
 
   const saveInferMut = useMutation({
-    mutationFn: () =>
-      updateDaw(id, {
+    mutationFn: () => {
+      const payload = {
         model: inferModel.trim() || null,
         max_tokens: inferMaxTok,
         top_p: inferTopP,
         top_k: inferTopK,
         context_window: inferCtx,
-      }),
+      }
+      if (!is808notesWorkspace) {
+        payload.rag_mode = ragMode
+      }
+      return updateDaw(id, payload)
+    },
     onSuccess: () => invalidateDaw(),
   })
 
@@ -502,6 +511,23 @@ export default function DawDetailPage() {
                     className="h-2 w-full cursor-pointer accent-primary"
                   />
                 </div>
+                <label className="flex flex-col gap-1">
+                  <span className="text-muted-foreground">RAG Mode</span>
+                  <select
+                    value={is808notesWorkspace ? 'always' : ragMode}
+                    onChange={(e) => setRagMode(e.target.value)}
+                    disabled={is808notesWorkspace || saveInferMut.isPending}
+                    title={is808notesWorkspace ? '808notes always uses RAG' : undefined}
+                    className="h-9 rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <option value="auto">Auto (intent gate)</option>
+                    <option value="always">Always</option>
+                    <option value="off">Off</option>
+                  </select>
+                </label>
+                {is808notesWorkspace ? (
+                  <p className="text-xs text-muted-foreground">808notes always uses RAG.</p>
+                ) : null}
                 <Button type="button" size="sm" onClick={() => saveInferMut.mutate()} disabled={saveInferMut.isPending}>
                   Save inference settings
                 </Button>

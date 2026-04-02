@@ -132,6 +132,7 @@ export function ChatView({
   const [pendingSend, setPendingSend] = useState(false)
   const [optimisticUser, setOptimisticUser] = useState(null)
   const [sourcesByMessageIndex, setSourcesByMessageIndex] = useState({})
+  const [streamingRag, setStreamingRag] = useState(null)
   const streamAssistantIndexRef = useRef(0)
   /** Chat id for the in-flight POST /messages stream (not null only while consumeStream runs). */
   const streamingChatRef = useRef(null)
@@ -163,6 +164,7 @@ export function ChatView({
 
   useEffect(() => {
     setSourcesByMessageIndex({})
+    setStreamingRag(null)
   }, [activeChatId])
 
   // Drop streaming UI when leaving the chat being streamed (abort + reset), and clear any leaked
@@ -198,6 +200,7 @@ export function ChatView({
         const idx = streamAssistantIndexRef.current
         setSourcesByMessageIndex((prev) => ({ ...prev, [idx]: sources }))
       },
+      onRagContext: (info) => setStreamingRag(info),
       onTitleUpdate: (title) => {
         const id = String(chatId)
         setChats(
@@ -218,6 +221,7 @@ export function ChatView({
           setOptimisticUser(null)
           setPendingSend(false)
           setStreamText('')
+          setStreamingRag(null)
         }
       },
       onError: async (err) => {
@@ -228,6 +232,7 @@ export function ChatView({
           setOptimisticUser(null)
           setPendingSend(false)
           setStreamText('')
+          setStreamingRag(null)
           if (err?.name !== 'AbortError') {
             setSendError(friendlyStreamError(err instanceof Error ? err.message : String(err)))
           }
@@ -352,6 +357,7 @@ export function ChatView({
               messages={displayMessages}
               streamingAssistant={busy ? streamText : null}
               sourcesByMessageIndex={sourcesByMessageIndex}
+              streamingRagContext={busy ? streamingRag : null}
               onSaveMessageAsNote={notesDawIdForSave ? saveMessageAsNote : undefined}
             />
           )}

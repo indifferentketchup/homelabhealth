@@ -23,6 +23,7 @@ from auth_deps import (
 )
 from db import get_pool
 from services.pruning import summarize_and_compress
+from services.rag import retrieve_context, retrieve_memory_facts, should_retrieve
 from services.searx import searx_search_sources
 
 router = APIRouter()
@@ -200,21 +201,28 @@ async def _assembled_system_prompt(
     user_query_for_rag: str | None = None,
     effective_context_window: int | None = None,
     include_site_private: bool = True,
-) -> str:
-    """Persona → DAW prompt + daw_instructions + memory_entries → context files → custom instructions → RAG → mode_memory."""
+) -> tuple[str, dict[str, int] | None]:
+    """Persona → DAW prompt + daw_instructions + semantic memory facts → context files → custom instructions → RAG → mode_memory."""
     mode = chat["mode"] if chat["mode"] in ("booops", "808notes") else "booops"
     pid = chat["persona_id"]
     daw_id = chat["daw_id"]
     daw_prompt = ""
     daw_persona_id = None
+    daw_rag_mode_effective = "auto"
     if daw_id is not None:
         ws = await conn.fetchrow(
-            "SELECT system_prompt, persona_id FROM daws WHERE id = $1::uuid",
+            "SELECT system_prompt, persona_id, mode, rag_mode FROM daws WHERE id = $1::uuid",
             daw_id,
         )
         if ws:
             daw_prompt = (ws["system_prompt"] or "").strip()
             daw_persona_id = ws["persona_id"]
+            daw_table_mode = ws["mode"] if ws["mode"] in ("booops", "808notes") else "booops"
+            if daw_table_mode == "808notes":
+                daw_rag_mode_effective = "always"
+            else:
+                rm = ws.get("rag_mode")
+                daw_rag_mode_effective = rm if rm in ("auto", "always", "off") else "auto"
 
     resolve_pid = pid if pid is not None else daw_persona_id
 
@@ -267,16 +275,12 @@ async def _assembled_system_prompt(
             mem_lines = "\n".join(f"- {r['content']}" for r in daw_mem_rows)
             parts.append(f"[DAW Memory]\n{mem_lines}")
 
-    memory_entries: list[Any] = []
-    if include_site_private:
-        memory_entries = await conn.fetch(
-            "SELECT content AS fact FROM memory_entries WHERE mode = $1 AND is_deleted = false ORDER BY created_at",
-            mode,
-        )
-    if memory_entries:
-        mem_entries_count = len(memory_entries)
-        bullets = "\n".join([f"- {e['fact']}" for e in memory_entries])
-        parts.append(f"### Remembered Facts\n{bullets}")
+    if daw_id is not None and include_site_private and user_query_for_rag:
+        memory_facts = await retrieve_memory_facts(str(user_query_for_rag), mode, conn)
+        if memory_facts:
+            mem_entries_count = len(memory_facts)
+            bullets = "\n".join([f"- {f}" for f in memory_facts])
+            parts.append(f"### Relevant Context\n{bullets}")
 
     if daw_id is not None:
         cf_rows = await conn.fetch(
@@ -305,11 +309,31 @@ async def _assembled_system_prompt(
         if custom_instr:
             parts.append(custom_instr)
 
+    q_for_rag = str(user_query_for_rag or "").strip()
+    rag_disabled = daw_rag_mode_effective == "off"
+    use_intent_gate = daw_rag_mode_effective == "auto"
+    if (
+        daw_id is not None
+        and q_for_rag
+        and chat.get("rag_enabled") is not False
+        and not rag_disabled
+        and use_intent_gate
+        and not should_retrieve(q_for_rag, mode)
+    ):
+        logger.info(
+            "RAG skipped by intent gate query_words=%d mode=%s",
+            len(q_for_rag.split()),
+            mode,
+        )
+
     rag_ok = (
-        bool(user_query_for_rag and str(user_query_for_rag).strip())
+        not rag_disabled
+        and bool(user_query_for_rag and str(user_query_for_rag).strip())
         and daw_id is not None
         and chat.get("rag_enabled") is not False
+        and (should_retrieve(q_for_rag, mode) if use_intent_gate else True)
     )
+    sse_rag_meta: dict[str, int] | None = None
     if rag_ok:
         cid = chat.get("id")
         if cid is not None:
@@ -325,9 +349,7 @@ async def _assembled_system_prompt(
                 )
                 source_ids = [str(r["id"]) for r in daw_sources]
             if source_ids:
-                from services.rag import retrieve_context
-
-                rag_block = await retrieve_context(
+                rag_block, rag_n = await retrieve_context(
                     str(user_query_for_rag).strip(),
                     str(daw_id),
                     source_ids,
@@ -335,25 +357,28 @@ async def _assembled_system_prompt(
                 if rag_block:
                     parts.append(rag_block)
                     rag_context_chars = len(rag_block)
+                    sse_rag_meta = {"count": rag_n, "chars": rag_context_chars}
 
     assembled = "\n\n".join(parts)
 
-    if include_site_private:
+    mem_text = ""
+    if daw_id is not None and include_site_private:
         mem = await conn.fetchrow("SELECT content FROM mode_memory WHERE mode = $1", mode)
         mem_text = (mem["content"] or "").strip() if mem else ""
         if mem_text:
+            if len(mem_text) > 2000:
+                mem_text = mem_text[:2000] + "\n[truncated]"
             block = "## What I know about you:\n" + mem_text
             assembled = f"{assembled}\n\n{block}" if assembled else block
-    else:
-        mem_text = ""
 
     preview = (assembled[:2000] + "…") if len(assembled) > 2000 else assembled
     logger.info(
-        "assembled prompt mode=%s daw_id=%s len=%d daw_instruction_rows=%d "
+        "assembled prompt mode=%s daw_id=%s is_daw_chat=%s len=%d daw_instruction_rows=%d "
         "memory_entry_rows=%d mode_memory_len=%d rag_context_chars=%d "
         "context_window=%s preview=%s",
         mode,
         str(daw_id) if daw_id else None,
+        daw_id is not None,
         len(assembled),
         daw_instr_count,
         mem_entries_count,
@@ -364,7 +389,7 @@ async def _assembled_system_prompt(
     )
     logger.debug("assembled prompt full text=%s", assembled)
 
-    return assembled
+    return assembled, sse_rag_meta
 
 
 def _sse(data: str) -> bytes:
@@ -1263,7 +1288,7 @@ async def append_message(
             chat_id,
         )
 
-        assembled = await _assembled_system_prompt(
+        assembled, rag_sse_meta = await _assembled_system_prompt(
             conn,
             chat,
             user_query_for_rag=body.content.strip(),
@@ -1284,6 +1309,16 @@ async def append_message(
             )
         if sources_list:
             yield _sse(json.dumps({"type": "search_sources", "sources": sources_list}))
+        if rag_sse_meta:
+            yield _sse(
+                json.dumps(
+                    {
+                        "type": "rag_context",
+                        "chunks": rag_sse_meta["chars"],
+                        "count": rag_sse_meta["count"],
+                    }
+                )
+            )
 
         api_messages: list[dict[str, str]] = []
         system_blocks: list[str] = []
@@ -1435,14 +1470,32 @@ async def append_message(
         if auto_mem and principal["kind"] == "owner":
             chat_mode = chat["mode"] if chat["mode"] in ("booops", "808notes") else "booops"
             async with p.acquire() as conn_mem:
-                await conn_mem.execute(
+                mem_row = await conn_mem.fetchrow(
                     """
                     INSERT INTO memory_entries (content, source, mode)
                     VALUES ($1, 'auto', $2)
+                    RETURNING id
                     """,
                     auto_mem,
                     chat_mode,
                 )
+                if mem_row:
+                    try:
+                        from services.embeddings import embed_text
+
+                        emb = await embed_text(auto_mem)
+                        if emb:
+                            await conn_mem.execute(
+                                """
+                                UPDATE memory_entries
+                                SET embedding = $1::vector, embedded_at = NOW()
+                                WHERE id = $2::uuid
+                                """,
+                                str(emb),
+                                mem_row["id"],
+                            )
+                    except Exception as e:
+                        logger.warning("Failed to embed memory entry: %s", e)
 
         await summarize_and_compress(str(chat_id), p, max_context_tokens=effective_ctx)
 

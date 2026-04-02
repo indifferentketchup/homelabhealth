@@ -4,13 +4,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getCustomInstructions, putCustomInstructions } from '@/api/customInstructions.js'
 import { getGlobalSettings, getOllamaConfig, patchGlobalSettings, patchOllamaConfig } from '@/api/settings.js'
 import { createDaw, deleteDaw, listDaws, updateDaw } from '@/api/daws.js'
-import { extractMemory, getMemory, putMemory } from '@/api/memory.js'
-import {
-  createMemoryEntry,
-  deleteMemoryEntry,
-  listMemoryEntries,
-  updateMemoryEntry,
-} from '@/api/memoryEntries.js'
+import { embedAllMemories, extractMemory, getMemory, putMemory } from '@/api/memory.js'
+import { createMemoryEntry, deleteMemoryEntry, listMemoryEntries } from '@/api/memoryEntries.js'
 import {
   DEFAULT_OLLAMA_MODEL,
   deleteModel,
@@ -691,6 +686,8 @@ export default function AISettings() {
   const setPersonas = useAppStore((s) => s.setPersonas)
   const setActivePersonaId = useAppStore((s) => s.setActivePersonaId)
   const [tab, setTab] = useState('personas')
+  /** BooOps vs 808notes for memory blob + semantic facts on the Memory tab */
+  const [memoryTabMode, setMemoryTabMode] = useState('booops')
   const [ollamaDawMode, setOllamaDawModeState] = useState(readAiOllamaDawMode)
 
   const setOllamaDawMode = useCallback((m) => {
@@ -714,8 +711,8 @@ export default function AISettings() {
   }, [personaPack, setPersonas])
 
   const { data: memoryRow, isLoading: memLoading } = useQuery({
-    queryKey: ['memory', MODE],
-    queryFn: () => getMemory(MODE),
+    queryKey: ['memory', memoryTabMode],
+    queryFn: () => getMemory(memoryTabMode),
     enabled: tab === 'memory',
     staleTime: 15_000,
   })
@@ -726,15 +723,15 @@ export default function AISettings() {
   }, [memoryRow])
 
   const saveMem = useMutation({
-    mutationFn: () => putMemory(MODE, memDraft),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['memory', MODE] }),
+    mutationFn: () => putMemory(memoryTabMode, memDraft),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['memory', memoryTabMode] }),
   })
 
   const extractMem = useMutation({
-    mutationFn: () => extractMemory(MODE),
+    mutationFn: () => extractMemory(memoryTabMode),
     onSuccess: (r) => {
       if (r?.content != null) setMemDraft(r.content)
-      queryClient.invalidateQueries({ queryKey: ['memory', MODE] })
+      queryClient.invalidateQueries({ queryKey: ['memory', memoryTabMode] })
     },
   })
 
@@ -747,8 +744,8 @@ export default function AISettings() {
   const daws = dawPack?.items ?? []
 
   const { data: entriesRaw } = useQuery({
-    queryKey: ['memory', 'entries'],
-    queryFn: listMemoryEntries,
+    queryKey: ['memory', 'entries', memoryTabMode],
+    queryFn: () => listMemoryEntries(memoryTabMode),
     enabled: tab === 'memory',
     staleTime: 15_000,
   })
@@ -778,8 +775,14 @@ export default function AISettings() {
 
   const [entryAdding, setEntryAdding] = useState(false)
   const [entryNewContent, setEntryNewContent] = useState('')
-  const [entryEditId, setEntryEditId] = useState(null)
-  const [entryEditContent, setEntryEditContent] = useState('')
+  const [expandedFactIds, setExpandedFactIds] = useState(() => new Set())
+  const [embedResultMsg, setEmbedResultMsg] = useState(null)
+
+  useEffect(() => {
+    if (!embedResultMsg) return
+    const t = window.setTimeout(() => setEmbedResultMsg(null), 5000)
+    return () => window.clearTimeout(t)
+  }, [embedResultMsg])
 
   const saveGlobalInstr = useMutation({
     mutationFn: () => putCustomInstructions('global', gInstrDraft),
@@ -791,24 +794,44 @@ export default function AISettings() {
   })
 
   const addEntry = useMutation({
-    mutationFn: () => createMemoryEntry(entryNewContent.trim()),
+    mutationFn: () => createMemoryEntry(entryNewContent.trim(), memoryTabMode),
     onSuccess: () => {
       setEntryAdding(false)
       setEntryNewContent('')
-      queryClient.invalidateQueries({ queryKey: ['memory', 'entries'] })
-    },
-  })
-  const saveEntry = useMutation({
-    mutationFn: () => updateMemoryEntry(entryEditId, entryEditContent.trim()),
-    onSuccess: () => {
-      setEntryEditId(null)
-      queryClient.invalidateQueries({ queryKey: ['memory', 'entries'] })
+      queryClient.invalidateQueries({ queryKey: ['memory', 'entries', memoryTabMode] })
     },
   })
   const delEntry = useMutation({
     mutationFn: (id) => deleteMemoryEntry(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['memory', 'entries'] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['memory', 'entries', memoryTabMode] }),
   })
+  const embedAllMut = useMutation({
+    mutationFn: () => embedAllMemories(),
+    onSuccess: (r) => {
+      const embedded = typeof r?.embedded === 'number' ? r.embedded : 0
+      const total = typeof r?.total === 'number' ? r.total : embedded
+      setEmbedResultMsg(`Re-embedded ${embedded} of ${total} pending fact(s).`)
+      queryClient.invalidateQueries({ queryKey: ['memory', 'entries', memoryTabMode] })
+    },
+    onError: (e) => {
+      setEmbedResultMsg(e instanceof Error ? e.message : String(e))
+    },
+  })
+
+  function toggleFactExpanded(id) {
+    setExpandedFactIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  useEffect(() => {
+    setExpandedFactIds(new Set())
+    setEntryAdding(false)
+    setEntryNewContent('')
+  }, [memoryTabMode])
 
   const invalidatePersonas = useCallback(async () => {
     await queryClient.refetchQueries({ queryKey: ['personas'] })
@@ -1191,51 +1214,65 @@ export default function AISettings() {
 
         {tab === 'memory' && (
           <div className="flex flex-col gap-6">
-            <div className="flex flex-col gap-3">
-              {memoryRow?.updated_at && (
-                <p className="text-xs text-muted-foreground">Last updated: {memoryRow.updated_at}</p>
-              )}
-              {memLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
-              <textarea
-                value={memDraft}
-                onChange={(e) => setMemDraft(e.target.value)}
-                rows={18}
-                className="min-h-[12rem] w-full resize-y rounded-md border border-border bg-card px-3 py-2 font-mono text-sm text-foreground outline-none ring-ring focus-visible:ring-2"
-                placeholder="Markdown: headings and bullet lists…"
-              />
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" size="sm" onClick={() => saveMem.mutate()} disabled={saveMem.isPending}>
-                  Save
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => extractMem.mutate()}
-                  disabled={extractMem.isPending}
+            <div className="space-y-3 rounded-lg border border-border bg-card/40 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap gap-2" role="group" aria-label="Memory app mode">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={memoryTabMode === 'booops' ? 'default' : 'outline'}
+                    onClick={() => setMemoryTabMode('booops')}
+                  >
+                    BooOps
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={memoryTabMode === '808notes' ? 'default' : 'outline'}
+                    onClick={() => setMemoryTabMode('808notes')}
+                  >
+                    808notes
+                  </Button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" size="sm" variant="secondary" onClick={() => setEntryAdding((a) => !a)}>
+                    Add fact
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={embedAllMut.isPending}
+                    onClick={() => embedAllMut.mutate()}
+                  >
+                    {embedAllMut.isPending ? 'Re-embedding…' : 'Re-embed all'}
+                  </Button>
+                </div>
+              </div>
+              {embedResultMsg ? (
+                <p
+                  className={cn(
+                    'text-sm',
+                    embedAllMut.isError ? 'text-destructive' : 'text-muted-foreground',
+                  )}
+                  role="status"
                 >
-                  {extractMem.isPending ? 'Extracting…' : 'Extract from recent chat'}
-                </Button>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-4 border-t border-border pt-6">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="text-sm font-medium text-foreground">Entries</h2>
-                <Button type="button" size="sm" onClick={() => setEntryAdding((a) => !a)}>
-                  Add entry
-                </Button>
-              </div>
-              {entryAdding && (
+                  {embedResultMsg}
+                </p>
+              ) : null}
+              {entryAdding ? (
                 <div className="rounded-lg border border-border bg-card p-4">
-                  <textarea
-                    value={entryNewContent}
-                    onChange={(e) => setEntryNewContent(e.target.value)}
-                    rows={3}
-                    className="mb-3 w-full resize-y rounded-md border border-border bg-background px-2 py-2 text-sm text-foreground outline-none ring-ring focus-visible:ring-2"
-                    placeholder="Memory entry…"
-                  />
-                  <div className="flex gap-2">
+                  <label className="flex flex-col gap-1 text-sm">
+                    <span className="text-muted-foreground">New fact</span>
+                    <textarea
+                      value={entryNewContent}
+                      onChange={(e) => setEntryNewContent(e.target.value)}
+                      rows={4}
+                      className="w-full resize-y rounded-md border border-border bg-background px-2 py-2 text-sm text-foreground outline-none ring-ring focus-visible:ring-2"
+                      placeholder="Something to remember…"
+                    />
+                  </label>
+                  <div className="mt-3 flex flex-wrap gap-2">
                     <Button
                       type="button"
                       size="sm"
@@ -1257,77 +1294,112 @@ export default function AISettings() {
                     </Button>
                   </div>
                 </div>
-              )}
+              ) : null}
               {memoryEntries.length === 0 && !entryAdding ? (
-                <p className="text-sm text-muted-foreground">No memory entries</p>
+                <p className="text-sm text-muted-foreground">
+                  No memory facts stored. Facts are saved automatically when you use &apos;remember that&apos; in chat,
+                  or add them manually here.
+                </p>
               ) : (
-                <ul className="flex flex-col gap-3">
-                  {memoryEntries.map((e) => (
-                    <li key={e.id} className="rounded-lg border border-border bg-card p-4">
-                      {entryEditId === e.id ? (
-                        <div className="flex flex-col gap-2">
-                          <textarea
-                            value={entryEditContent}
-                            onChange={(ev) => setEntryEditContent(ev.target.value)}
-                            rows={3}
-                            className="w-full resize-y rounded-md border border-border bg-background px-2 py-2 text-sm text-foreground outline-none ring-ring focus-visible:ring-2"
-                          />
-                          <div className="flex gap-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              onClick={() => saveEntry.mutate()}
-                              disabled={saveEntry.isPending || !entryEditContent.trim()}
-                            >
-                              Save
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setEntryEditId(null)}
-                            >
-                              Cancel
-                            </Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex flex-wrap items-start justify-between gap-2">
-                          <div className="min-w-0 flex-1">
-                            <p className="line-clamp-3 whitespace-pre-wrap text-sm text-foreground">{e.content}</p>
+                <ul className="flex flex-col gap-2">
+                  {memoryEntries.map((e) => {
+                    const full = e.content || ''
+                    const isLong = full.length > 120
+                    const display =
+                      expandedFactIds.has(e.id) || !isLong ? full : `${full.slice(0, 120)}…`
+                    const hasEmb = e.has_embedding === true
+                    const meta = (
+                      <>
+                        <p className="whitespace-pre-wrap text-sm text-foreground">{display}</p>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                          <span
+                            className={cn(
+                              'inline-block rounded-full px-2 py-0.5 text-xs font-medium',
+                              e.source === 'auto'
+                                ? 'bg-secondary text-secondary-foreground'
+                                : 'bg-primary/15 text-foreground',
+                            )}
+                          >
+                            {e.source === 'auto' ? 'auto' : 'manual'}
+                          </span>
+                          <span
+                            className="flex items-center gap-1.5 text-xs text-muted-foreground"
+                            title={hasEmb ? 'Has vector embedding' : 'No embedding yet'}
+                          >
                             <span
-                              className={cn(
-                                'mt-2 inline-block rounded-full px-2 py-0.5 text-xs font-medium',
-                                e.source === 'auto'
-                                  ? 'bg-secondary text-secondary-foreground'
-                                  : 'bg-muted text-muted-foreground',
-                              )}
-                            >
-                              {e.source || 'manual'}
-                            </span>
-                          </div>
-                          <div className="flex shrink-0 gap-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="secondary"
-                              onClick={() => {
-                                setEntryEditId(e.id)
-                                setEntryEditContent(e.content || '')
-                              }}
-                            >
-                              Edit
-                            </Button>
-                            <Button type="button" size="sm" variant="destructive" onClick={() => delEntry.mutate(e.id)}>
-                              Delete
-                            </Button>
-                          </div>
+                              className={cn('size-2 shrink-0 rounded-full', hasEmb ? 'bg-emerald-600' : 'bg-muted-foreground/45')}
+                              aria-hidden
+                            />
+                            <span className="sr-only">{hasEmb ? 'Embedded' : 'Not embedded'}</span>
+                          </span>
                         </div>
-                      )}
-                    </li>
-                  ))}
+                      </>
+                    )
+                    return (
+                      <li
+                        key={e.id}
+                        className="flex items-start gap-1 rounded-md border border-border bg-card px-3 py-2.5"
+                      >
+                        {isLong ? (
+                          <button
+                            type="button"
+                            className="min-w-0 flex-1 rounded-sm text-left outline-none ring-ring focus-visible:ring-2"
+                            onClick={() => toggleFactExpanded(e.id)}
+                          >
+                            {meta}
+                          </button>
+                        ) : (
+                          <div className="min-w-0 flex-1">{meta}</div>
+                        )}
+                        <button
+                          type="button"
+                          className="shrink-0 rounded px-2 py-1 text-lg leading-none text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          aria-label="Delete fact"
+                          disabled={delEntry.isPending}
+                          onClick={() => delEntry.mutate(e.id)}
+                        >
+                          ×
+                        </button>
+                      </li>
+                    )
+                  })}
                 </ul>
               )}
+            </div>
+
+            <div className="flex flex-col gap-3 border-t border-border pt-6">
+              <div>
+                <h2 className="text-sm font-medium text-foreground">Markdown memory</h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Long-form notes for this mode (separate from the searchable facts above). Last updated applies to this
+                  editor only.
+                </p>
+              </div>
+              {memoryRow?.updated_at && (
+                <p className="text-xs text-muted-foreground">Last updated: {memoryRow.updated_at}</p>
+              )}
+              {memLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+              <textarea
+                value={memDraft}
+                onChange={(e) => setMemDraft(e.target.value)}
+                rows={14}
+                className="min-h-[10rem] w-full resize-y rounded-md border border-border bg-card px-3 py-2 font-mono text-sm text-foreground outline-none ring-ring focus-visible:ring-2"
+                placeholder="Markdown: headings and bullet lists…"
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" size="sm" onClick={() => saveMem.mutate()} disabled={saveMem.isPending}>
+                  Save
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => extractMem.mutate()}
+                  disabled={extractMem.isPending}
+                >
+                  {extractMem.isPending ? 'Extracting…' : 'Extract from recent chat'}
+                </Button>
+              </div>
             </div>
           </div>
         )}

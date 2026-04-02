@@ -49,6 +49,7 @@ export function MessageList({
   messages,
   streamingAssistant,
   sourcesByMessageIndex = {},
+  streamingRagContext = null,
   onSaveMessageAsNote,
 }) {
   const bottomRef = useRef(null)
@@ -69,6 +70,11 @@ export function MessageList({
       <div className="flex flex-col gap-4 p-4 pb-28">
         {all.map((m, i) => {
           const rowSources = m.role === 'assistant' ? sourcesByMessageIndex[i] : null
+          const showRagPill =
+            m.id === '__stream__' &&
+            streamingRagContext &&
+            typeof streamingRagContext.count === 'number' &&
+            streamingRagContext.count > 0
           return (
             <div key={m.id} className="flex flex-col gap-1">
               {rowSources?.length ? (
@@ -76,6 +82,23 @@ export function MessageList({
                   <div className="mt-0.5 size-8 shrink-0" aria-hidden />
                   <div className="min-w-0 max-w-[80%]">
                     <WebSourcesRow sources={rowSources} />
+                  </div>
+                </div>
+              ) : null}
+              {showRagPill ? (
+                <div className="flex w-full min-w-0 gap-2 flex-row">
+                  <div className="mt-0.5 size-8 shrink-0" aria-hidden />
+                  <div className="min-w-0 max-w-[80%]">
+                    <div
+                      className="fs-chat rounded-md border px-2 py-1.5 text-xs"
+                      style={{
+                        borderColor: 'var(--border)',
+                        backgroundColor: 'var(--bg-card)',
+                        color: 'var(--text-dim)',
+                      }}
+                    >
+                      RAG: {streamingRagContext.count} chunks
+                    </div>
                   </div>
                 </div>
               ) : null}

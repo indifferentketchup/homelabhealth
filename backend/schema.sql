@@ -194,6 +194,13 @@ INSERT INTO global_settings (key, value) VALUES ('default_model', 'qwen3.5:9b') 
 INSERT INTO global_settings (key, value) VALUES ('ollama_hidden_models_808notes', '[]') ON CONFLICT (key) DO NOTHING;
 INSERT INTO global_settings (key, value) VALUES ('default_model_808notes', 'qwen3.5:9b') ON CONFLICT (key) DO NOTHING;
 
+INSERT INTO global_settings (key, value) VALUES
+  ('rag_similarity_threshold', '0.35'),
+  ('memory_similarity_threshold', '0.45'),
+  ('rag_intent_gate_enabled', 'true'),
+  ('rag_min_words_for_intent', '8')
+ON CONFLICT (key) DO NOTHING;
+
 UPDATE global_settings SET value = 'qwen3.5:9b' WHERE key = 'default_model' AND value = 'qwen3.5:35b';
 
 -- Personas: global list (no personas.mode); one default per app via partial unique indexes
@@ -343,6 +350,10 @@ EXCEPTION
 END
 $mem_mode_chk$;
 
+-- Phase 04: semantic memory retrieval (same embedding dim as source_chunks)
+ALTER TABLE memory_entries ADD COLUMN IF NOT EXISTS embedding vector(1024);
+ALTER TABLE memory_entries ADD COLUMN IF NOT EXISTS embedded_at TIMESTAMPTZ;
+
 -- Phase 5: RAG chunk storage + upload metadata
 CREATE TABLE IF NOT EXISTS source_chunks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -377,6 +388,10 @@ ALTER TABLE daws ADD COLUMN IF NOT EXISTS max_tokens INTEGER DEFAULT 2048;
 ALTER TABLE daws ADD COLUMN IF NOT EXISTS top_p REAL DEFAULT 1.0;
 ALTER TABLE daws ADD COLUMN IF NOT EXISTS top_k INTEGER DEFAULT 20;
 ALTER TABLE daws ADD COLUMN IF NOT EXISTS context_window INTEGER DEFAULT 8192;
+
+-- Phase 06: per-DAW RAG mode (auto / always / off). 808notes DAWs use always.
+ALTER TABLE daws ADD COLUMN IF NOT EXISTS rag_mode TEXT NOT NULL DEFAULT 'auto';
+UPDATE daws SET rag_mode = 'always' WHERE mode = '808notes';
 
 INSERT INTO global_settings (key, value) VALUES ('context_window_global', '16384')
 ON CONFLICT (key) DO NOTHING;

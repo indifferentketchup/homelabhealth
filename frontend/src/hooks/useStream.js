@@ -45,6 +45,7 @@ export function useStream() {
      *   body?: unknown
      *   onToken?: (chunk: string) => void
      *   onSearchSources?: (sources: Array<{ title: string; url: string }>) => void
+     *   onRagContext?: (info: { count: number; chunks: number }) => void
      *   onTitleUpdate?: (title: string) => void
      *   onDone?: () => void
      *   onError?: (err: Error) => void
@@ -58,6 +59,7 @@ export function useStream() {
         body,
         onToken,
         onSearchSources,
+        onRagContext,
         onTitleUpdate,
         onDone,
         onError,
@@ -85,6 +87,13 @@ export function useStream() {
           }
           if (obj.type === 'search_sources' && Array.isArray(obj.sources)) {
             onSearchSources?.(obj.sources)
+            return { kind: 'ok' }
+          }
+          if (obj.type === 'rag_context') {
+            onRagContext?.({
+              count: typeof obj.count === 'number' ? obj.count : 0,
+              chunks: typeof obj.chunks === 'number' ? obj.chunks : 0,
+            })
             return { kind: 'ok' }
           }
           if (obj.type === 'title_update' && typeof obj.title === 'string') {

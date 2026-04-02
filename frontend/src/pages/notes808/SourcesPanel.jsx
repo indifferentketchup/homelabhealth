@@ -10,6 +10,25 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/index.js'
 
+function EmbeddingStatusDot({ status }) {
+  const s = status ?? ''
+  const cls =
+    s === 'complete'
+      ? 'bg-green-500'
+      : s === 'error'
+        ? 'bg-red-500'
+        : s === 'pending' || s === 'processing'
+          ? 'bg-amber-400'
+          : 'bg-muted-foreground/60'
+  return (
+    <span
+      className={cn('size-2 shrink-0 rounded-full', cls)}
+      title={s || 'unknown'}
+      aria-hidden
+    />
+  )
+}
+
 export function SourcesPanel({ chatId, dawId }) {
   const queryClient = useQueryClient()
   const fileRef = useRef(null)
@@ -220,11 +239,13 @@ export function SourcesPanel({ chatId, dawId }) {
                     />
                     <span className="min-w-0 flex-1">
                       <span className="fs-nav flex items-center gap-1.5 font-medium text-foreground">
+                        <EmbeddingStatusDot status={src.embedding_status} />
                         <FileStack className="size-3.5 shrink-0 opacity-70" aria-hidden />
                         <span className="line-clamp-2">{src.name}</span>
                       </span>
                       <span className="fs-nav block text-muted-foreground">
-                        {src.chunk_count ?? 0} chunks · {src.embedding_status}
+                        {src.chunk_count ?? 0} chunks
+                        {src.embedding_status ? ` · ${src.embedding_status}` : ''}
                       </span>
                     </span>
                   </label>

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 from typing import Any
@@ -10,10 +11,11 @@ import httpx
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from auth_deps import require_admin
+from auth_deps import get_principal, require_admin
 from db import get_pool
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _norm_mode(m: str) -> str:
@@ -177,13 +179,54 @@ async def extract_memory(mode: str = Query("booops"), _: dict = Depends(require_
 
 
 def _memory_entry_row(r: Any) -> dict[str, Any]:
-    return {
+    out: dict[str, Any] = {
         "id": str(r["id"]),
         "content": r["content"] or "",
         "source": r["source"] or "manual",
         "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
         "updated_at": r["updated_at"].isoformat() if r.get("updated_at") else None,
     }
+    if "embedded_at" in r:
+        ea = r["embedded_at"]
+        out["embedded_at"] = ea.isoformat() if ea else None
+    if "has_embedding" in r:
+        out["has_embedding"] = bool(r["has_embedding"])
+    return out
+
+
+@router.post("/embed-all")
+async def embed_all_memories(principal: dict[str, Any] = Depends(get_principal)):
+    if principal.get("kind") != "owner":
+        raise HTTPException(status_code=403, detail="owner_only")
+    pool = await get_pool()
+    from services.embeddings import embed_text
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, content FROM memory_entries
+            WHERE embedding IS NULL AND is_deleted = FALSE
+            """
+        )
+    count = 0
+    for row in rows:
+        try:
+            emb = await embed_text(row["content"])
+            if emb:
+                async with pool.acquire() as conn:
+                    await conn.execute(
+                        """
+                        UPDATE memory_entries
+                        SET embedding = $1::vector, embedded_at = NOW()
+                        WHERE id = $2::uuid
+                        """,
+                        str(emb),
+                        row["id"],
+                    )
+                count += 1
+        except Exception as e:
+            logger.warning("embed_all_memories failed for %s: %s", row["id"], e)
+    return {"embedded": count, "total": len(rows)}
 
 
 @router.get("/entries/")
@@ -193,7 +236,8 @@ async def list_memory_entries(mode: str = Query("booops"), _: dict = Depends(req
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
-            SELECT id, content, source, created_at, updated_at
+            SELECT id, content, source, created_at, updated_at,
+                   embedded_at, (embedding IS NOT NULL) AS has_embedding
             FROM memory_entries
             WHERE mode = $1 AND is_deleted = FALSE
             ORDER BY created_at DESC NULLS LAST, id DESC

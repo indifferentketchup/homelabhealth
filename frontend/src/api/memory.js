@@ -14,3 +14,7 @@ export function putMemory(mode, content) {
 export function extractMemory(mode = 'booops') {
   return apiFetch(`/api/memory/extract?mode=${encodeURIComponent(mode)}`, { method: 'POST' })
 }
+
+export function embedAllMemories() {
+  return apiFetch('/api/memory/embed-all', { method: 'POST' })
+}
