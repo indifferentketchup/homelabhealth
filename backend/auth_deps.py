@@ -20,6 +20,15 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer(auto_error=False)
 
 
+def _boolab_skip_auth() -> bool:
+    return os.getenv("BOOLAB_SKIP_AUTH", "0").strip() == "1"
+
+
+def _skip_auth_owner_user() -> dict[str, Any]:
+    """Same shape as JWT owner session (sub=owner, role=owner) after env password login."""
+    return {"role": "owner"}
+
+
 def client_ip(request: Request) -> str:
     xff = (request.headers.get("x-forwarded-for") or "").strip()
     if xff:
@@ -64,6 +73,8 @@ def _decode_token(token: str) -> dict[str, Any] | None:
 async def get_current_user(
     creds: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> dict[str, Any] | None:
+    if _boolab_skip_auth():
+        return _skip_auth_owner_user()
     if creds is None or (creds.scheme or "").lower() != "bearer":
         return None
     token = (creds.credentials or "").strip()
@@ -139,12 +150,16 @@ def is_admin_user(user: dict[str, Any] | None) -> bool:
 
 
 async def require_owner(user: dict[str, Any] | None = Depends(get_current_user)) -> dict[str, Any]:
+    if _boolab_skip_auth():
+        return _skip_auth_owner_user()
     if not user or user.get("role") != "owner":
         raise HTTPException(status_code=403, detail="owner_only")
     return user
 
 
 async def require_admin(user: dict[str, Any] | None = Depends(get_current_user)) -> dict[str, Any]:
+    if _boolab_skip_auth():
+        return _skip_auth_owner_user()
     if not is_admin_user(user):
         raise HTTPException(status_code=403, detail="admin_only")
     return user
@@ -161,6 +176,8 @@ async def require_db_account(user: dict[str, Any] | None = Depends(get_current_u
 async def require_member_or_owner(
     user: dict[str, Any] | None = Depends(get_current_user),
 ) -> dict[str, Any]:
+    if _boolab_skip_auth():
+        return _skip_auth_owner_user()
     if not user or user.get("role") not in ("owner", "member", "super_admin"):
         raise HTTPException(status_code=401, detail="authentication_required")
     return user
@@ -170,6 +187,8 @@ async def get_principal(
     request: Request,
     user: dict[str, Any] | None = Depends(get_current_user),
 ) -> dict[str, Any]:
+    if _boolab_skip_auth():
+        return {"kind": "owner", "ip": client_ip(request)}
     if user and user.get("role") == "owner":
         return {"kind": "owner", "ip": client_ip(request)}
     if user and user.get("role") in ("member", "super_admin"):

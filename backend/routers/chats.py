@@ -25,6 +25,7 @@ from db import get_pool
 from services.pruning import summarize_and_compress
 from services.rag import retrieve_context, retrieve_memory_facts, should_retrieve
 from services.searx import searx_search_sources
+from services.ollama_router import get_ollama_url_for_model
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -396,10 +397,6 @@ def _sse(data: str) -> bytes:
     return f"data: {data}\n\n".encode("utf-8")
 
 
-def _ollama_base() -> str:
-    return os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
-
-
 def _clean_auto_title(raw: str) -> str:
     t = (raw or "").strip()
     while len(t) >= 2 and t[0] in "\"'" and t[0] == t[-1]:
@@ -409,7 +406,10 @@ def _clean_auto_title(raw: str) -> str:
 
 async def _ollama_short_chat_title(model: str, user_message_text: str) -> str | None:
     """Non-streaming title via Ollama; returns None on failure."""
-    base = _ollama_base()
+    try:
+        base = await get_ollama_url_for_model(model)
+    except ValueError:
+        return None
     excerpt = (user_message_text or "")[:300]
     prompt = (
         "Generate a short chat title (4-6 words, no punctuation, no quotes) for a conversation "
@@ -518,7 +518,7 @@ async def _stream_ollama(
     top_k: int = 20,
     num_ctx: int = 8192,
 ) -> AsyncIterator[bytes]:
-    base = _ollama_base()
+    base = await get_ollama_url_for_model(model)
     opts: dict[str, Any] = {
         "temperature": temperature,
         "top_p": top_p,
@@ -1298,6 +1298,12 @@ async def append_message(
 
     summary = chat["pruning_summary"]
     user_message_text = body.content.strip()
+
+    if not _is_claude_model(effective_model):
+        try:
+            await get_ollama_url_for_model(effective_model)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from e
 
     async def gen() -> AsyncIterator[bytes]:
         sources_list: list[dict[str, str]] = []
