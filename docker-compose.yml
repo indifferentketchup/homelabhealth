@@ -17,17 +17,6 @@ services:
       timeout: 5s
       retries: 5
 
-  boolab_chroma:
-    image: chromadb/chroma:latest
-    container_name: boolab_chroma
-    environment:
-      CHROMA_SERVER_HOST: 0.0.0.0
-      CHROMA_SERVER_HTTP_PORT: '8000'
-    volumes:
-      - boolab_chroma_data:/chroma/chroma
-    networks:
-      - boolab_net
-
   boolab_api:
     build:
       context: ./backend
@@ -37,15 +26,11 @@ services:
       - .env
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql://boolab:boolab@boolab_db:5432/boolab}
-      CHROMA_HOST: boolab_chroma
-      CHROMA_PORT: '8000'
       DUBDRIVE_URL: ${DUBDRIVE_URL:-http://100.114.205.53:9200}
       DUBDRIVE_TOKEN: ${DUBDRIVE_TOKEN:-}
     depends_on:
       boolab_db:
         condition: service_healthy
-      boolab_chroma:
-        condition: service_started
     ports:
       - "${BOOLAB_PORT_API:-9300}:8000"
     volumes:
@@ -121,6 +106,5 @@ networks:
 
 volumes:
   boolab_db_data:
-  boolab_chroma_data:
   boolab_uploads:
   boolab_branding:
