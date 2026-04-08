@@ -235,14 +235,7 @@ export function ChatView({
           setStreamingRag(null)
           if (err?.name !== 'AbortError') {
             const raw = err instanceof Error ? err.message : String(err)
-            if (raw.includes('not assigned to any machine')) {
-              const m = selectedModel || 'this model'
-              setSendError(
-                `Model '${m}' is not assigned to a machine in ollamactl. Go to ai.indifferentketchup.com/machines to assign it.`,
-              )
-            } else {
-              setSendError(friendlyStreamError(raw))
-            }
+            setSendError(friendlyStreamError(raw))
           }
         }
       },

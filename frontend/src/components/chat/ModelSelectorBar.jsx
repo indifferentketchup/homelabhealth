@@ -15,9 +15,9 @@ import { is808notesRouteContext } from '@/routes/paths.js'
 import { PersonaGlyph } from './PersonaGlyph.jsx'
 
 const CLAUDE_PICKER_MODELS = [
-  { name: 'claude-sonnet', size: null },
-  { name: 'claude-haiku', size: null },
-  { name: 'claude-opus', size: null },
+  { id: 'claude-sonnet', size: null },
+  { id: 'claude-haiku', size: null },
+  { id: 'claude-opus', size: null },
 ]
 
 function read808notesClaudeEnabled() {
@@ -160,17 +160,17 @@ export function ModelSelectorBar({
   }, [])
 
   const models = useMemo(() => {
-    const raw = Array.isArray(ollamaData?.models) ? ollamaData.models : []
+    const raw = Array.isArray(ollamaData?.data) ? ollamaData.data : []
     let list = raw
       .map((m) => ({
-        name: typeof m?.name === 'string' ? m.name : '',
+        id: typeof m?.id === 'string' ? m.id : '',
         size: m?.size,
       }))
-      .filter((m) => m.name && !hiddenNames.has(m.name))
+      .filter((m) => m.id && !hiddenNames.has(m.id))
     if (is808notes && read808notesClaudeEnabled()) {
-      const have = new Set(list.map((m) => m.name))
+      const have = new Set(list.map((m) => m.id))
       for (const c of CLAUDE_PICKER_MODELS) {
-        if (!have.has(c.name)) list = [...list, c]
+        if (!have.has(c.id)) list = [...list, c]
       }
     }
     return list
@@ -179,11 +179,11 @@ export function ModelSelectorBar({
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase()
     if (!s) return models
-    return models.filter((m) => m.name.toLowerCase().includes(s))
+    return models.filter((m) => m.id.toLowerCase().includes(s))
   }, [models, q])
 
   const sortedFiltered = useMemo(
-    () => sortSelectedFirst(filtered, selectedModel, 'name'),
+    () => sortSelectedFirst(filtered, selectedModel, 'id'),
     [filtered, selectedModel],
   )
 
@@ -236,9 +236,9 @@ export function ModelSelectorBar({
     if (!models.length) return
     if (userTouchedLandingModelRef.current) return
     const def = String(ollamaSettings?.default_model ?? '').trim() || DEFAULT_OLLAMA_MODEL
-    const pick = models.some((m) => m.name === def)
+    const pick = models.some((m) => m.id === def)
       ? def
-      : (models.find((m) => m.name === DEFAULT_OLLAMA_MODEL)?.name ?? models[0].name)
+      : (models.find((m) => m.id === DEFAULT_OLLAMA_MODEL)?.id ?? models[0].id)
     if (useAppStore.getState().selectedModel === pick) return
     setSelectedModel(pick)
   }, [
@@ -291,15 +291,15 @@ export function ModelSelectorBar({
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [personaOpen])
 
-  async function selectModel(name) {
+  async function selectModel(modelId) {
     if (modelLocked) return
     if (!activeChatId) userTouchedLandingModelRef.current = true
-    setSelectedModel(name)
+    setSelectedModel(modelId)
     setModelOpen(false)
     setQ('')
     if (activeChatId) {
       try {
-        await patchChat(activeChatId, { model: name })
+        await patchChat(activeChatId, { model: modelId })
         await queryClient.invalidateQueries({ queryKey: ['chat', activeChatId] })
       } catch {
         /* ignore */
@@ -391,19 +391,19 @@ export function ModelSelectorBar({
               )}
               <ul className="flex min-w-0 flex-col gap-0.5">
                 {sortedFiltered.map((m) => {
-                  const sel = m.name === selectedModel
+                  const sel = m.id === selectedModel
                   return (
-                    <li key={m.name} className="min-w-0">
+                    <li key={m.id} className="min-w-0">
                       <button
                         type="button"
                         className={cn(
                           'flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground',
                           sel && 'bg-muted',
                         )}
-                        onClick={() => selectModel(m.name)}
+                        onClick={() => selectModel(m.id)}
                       >
                         <span className="size-8 shrink-0 rounded-full border border-border bg-muted" aria-hidden />
-                        <span className="min-w-0 flex-1 truncate font-medium text-foreground">{m.name}</span>
+                        <span className="min-w-0 flex-1 truncate font-medium text-foreground">{m.id}</span>
                         <span className="shrink-0 text-xs text-muted-foreground">{formatModelSize(m.size)}</span>
                         {sel && (
                           <span

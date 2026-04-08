@@ -6,15 +6,7 @@ import { getGlobalSettings, getOllamaConfig, patchGlobalSettings, patchOllamaCon
 import { createDaw, deleteDaw, listDaws, updateDaw } from '@/api/daws.js'
 import { embedAllMemories, extractMemory, getMemory, putMemory } from '@/api/memory.js'
 import { createMemoryEntry, deleteMemoryEntry, listMemoryEntries } from '@/api/memoryEntries.js'
-import {
-  DEFAULT_OLLAMA_MODEL,
-  deleteModel,
-  fetchOllamaModels,
-  getOllamaSettings,
-  patchOllamaSettings,
-  pullModel,
-  unloadAllModels,
-} from '@/api/ollama.js'
+import { DEFAULT_OLLAMA_MODEL, fetchOllamaModels, getOllamaSettings, patchOllamaSettings } from '@/api/ollama.js'
 import { createPersona, deletePersona, listPersonas, updatePersona, uploadPersonaIcon } from '@/api/personas.js'
 import { Button } from '@/components/ui/button'
 import { cn, sortSelectedFirst } from '@/lib/utils'
@@ -134,41 +126,11 @@ const OLLAMA_SELECT_CLASS =
 
 const CLAUDE_STORAGE_KEY_808 = '808notes_claude_enabled'
 
-function parseSsePullBuffer(buffer) {
-  const events = []
-  let rest = buffer
-  let idx
-  while ((idx = rest.indexOf('\n\n')) >= 0) {
-    const block = rest.slice(0, idx)
-    rest = rest.slice(idx + 2)
-    for (const line of block.split('\n')) {
-      if (line.startsWith('data: ')) events.push(line.slice(6).trim())
-    }
-  }
-  return { events, rest }
-}
-
 function OllamaDawModelsSection({ queryClient, selectClass, mode }) {
-  const [pullName, setPullName] = useState('')
-  const [pulling, setPulling] = useState(false)
-  const [pullStatus, setPullStatus] = useState('')
-  const [pullCompleted, setPullCompleted] = useState(null)
-  const [pullTotal, setPullTotal] = useState(null)
-  const [pullError, setPullError] = useState(null)
-  const [pullCompleteMsg, setPullCompleteMsg] = useState(false)
-  const [deleteTarget, setDeleteTarget] = useState('')
-  const [deleteConfirm, setDeleteConfirm] = useState(false)
-  const [toastMsg, setToastMsg] = useState(null)
-  const [unloadPending, setUnloadPending] = useState(false)
-  const [unloadSuccessMsg, setUnloadSuccessMsg] = useState(null)
-  const [unloadErr, setUnloadErr] = useState(null)
-  const pullAbortRef = useRef(null)
-
   const {
     data: ollamaData,
     isLoading: modelsLoading,
     isError: modelsError,
-    refetch: refetchModels,
   } = useQuery({
     queryKey: ['ollama', 'models'],
     queryFn: fetchOllamaModels,
@@ -183,54 +145,18 @@ function OllamaDawModelsSection({ queryClient, selectClass, mode }) {
   })
 
   const modelEntries = useMemo(() => {
-    const raw = Array.isArray(ollamaData?.models) ? ollamaData.models : []
+    const raw = Array.isArray(ollamaData?.data) ? ollamaData.data : []
     return raw
       .map((m) => ({
-        name: typeof m?.name === 'string' ? m.name : '',
-        parameterSize: m?.details?.parameter_size ?? null,
+        id: typeof m?.id === 'string' ? m.id : '',
       }))
-      .filter((m) => m.name)
+      .filter((m) => m.id)
   }, [ollamaData])
 
   const hiddenSet = useMemo(
     () => new Set(Array.isArray(ollamaSettings?.hidden_models) ? ollamaSettings.hidden_models : []),
     [ollamaSettings],
   )
-
-  useEffect(() => {
-    if (!toastMsg) return
-    const t = window.setTimeout(() => setToastMsg(null), 2200)
-    return () => window.clearTimeout(t)
-  }, [toastMsg])
-
-  useEffect(() => {
-    if (pullCompleteMsg) {
-      const t = window.setTimeout(() => {
-        setPullCompleteMsg(false)
-        setPullStatus('')
-        setPullCompleted(null)
-        setPullTotal(null)
-      }, 3000)
-      return () => window.clearTimeout(t)
-    }
-  }, [pullCompleteMsg])
-
-  useEffect(
-    () => () => {
-      pullAbortRef.current?.abort()
-    },
-    [],
-  )
-
-  useEffect(() => {
-    if (modelEntries.length === 0) {
-      setDeleteTarget('')
-      return
-    }
-    if (!deleteTarget || !modelEntries.some((m) => m.name === deleteTarget)) {
-      setDeleteTarget(modelEntries[0].name)
-    }
-  }, [modelEntries, deleteTarget])
 
   async function onDefaultModelChange(value) {
     try {
@@ -241,13 +167,13 @@ function OllamaDawModelsSection({ queryClient, selectClass, mode }) {
     }
   }
 
-  async function setModelVisibility(name, visible) {
+  async function setModelVisibility(modelId, visible) {
     const current = Array.isArray(ollamaSettings?.hidden_models) ? [...ollamaSettings.hidden_models] : []
     let next
     if (visible) {
-      next = current.filter((h) => h !== name)
-    } else if (!current.includes(name)) {
-      next = [...current, name]
+      next = current.filter((h) => h !== modelId)
+    } else if (!current.includes(modelId)) {
+      next = [...current, modelId]
     } else {
       next = current
     }
@@ -259,184 +185,31 @@ function OllamaDawModelsSection({ queryClient, selectClass, mode }) {
     }
   }
 
-  async function onPullSubmit(e) {
-    e.preventDefault()
-    const model = pullName.trim()
-    if (!model || pulling) return
-    pullAbortRef.current?.abort()
-    const ac = new AbortController()
-    pullAbortRef.current = ac
-    setPulling(true)
-    setPullError(null)
-    setPullCompleteMsg(false)
-    setPullStatus('')
-    setPullCompleted(null)
-    setPullTotal(null)
-    try {
-      const res = await fetch(pullModel(model), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model }),
-        signal: ac.signal,
-      })
-      if (!res.ok) {
-        const t = await res.text().catch(() => '')
-        throw new Error(t || res.statusText || String(res.status))
-      }
-      const reader = res.body?.getReader()
-      if (!reader) throw new Error('No response body')
-      const decoder = new TextDecoder()
-      let buf = ''
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buf += decoder.decode(value, { stream: true })
-        const { events, rest } = parseSsePullBuffer(buf)
-        buf = rest
-        for (const data of events) {
-          if (data === '[DONE]') {
-            setPullCompleteMsg(true)
-            setPullStatus('✓ Pull complete')
-            await refetchModels()
-            await queryClient.invalidateQueries({ queryKey: ['ollama', 'settings', mode] })
-            setPulling(false)
-            pullAbortRef.current = null
-            return
-          }
-          try {
-            const obj = JSON.parse(data)
-            if (obj.error) {
-              setPullError(String(obj.error))
-              setPulling(false)
-              pullAbortRef.current = null
-              return
-            }
-            if (obj.status != null) setPullStatus(String(obj.status))
-            if (obj.completed != null && obj.total != null) {
-              setPullCompleted(Number(obj.completed))
-              setPullTotal(Number(obj.total))
-            }
-          } catch {
-            /* ignore malformed */
-          }
-        }
-      }
-      if (buf.trim()) {
-        const { events } = parseSsePullBuffer(`${buf}\n\n`)
-        for (const data of events) {
-          if (data === '[DONE]') {
-            setPullCompleteMsg(true)
-            setPullStatus('✓ Pull complete')
-            await refetchModels()
-            await queryClient.invalidateQueries({ queryKey: ['ollama', 'settings', mode] })
-          }
-        }
-      }
-    } catch (err) {
-      if (err?.name === 'AbortError') {
-        setPulling(false)
-        pullAbortRef.current = null
-        return
-      }
-      setPullError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setPulling(false)
-      pullAbortRef.current = null
-    }
-  }
-
-  async function onUnloadAll() {
-    if (unloadPending) return
-    setUnloadSuccessMsg(null)
-    setUnloadErr(null)
-    setUnloadPending(true)
-    try {
-      const res = await unloadAllModels()
-      const names = Array.isArray(res?.unloaded) ? res.unloaded : []
-      if (names.length === 0) {
-        setUnloadSuccessMsg('Nothing loaded')
-      } else {
-        setUnloadSuccessMsg(`Unloaded: ${names.join(', ')}`)
-      }
-      await refetchModels()
-    } catch (e) {
-      setUnloadErr(e instanceof Error ? e.message : String(e))
-    } finally {
-      setUnloadPending(false)
-    }
-  }
-
-  async function onConfirmDelete() {
-    const name = deleteTarget
-    if (!name) return
-    const wasDefault = ollamaSettings?.default_model === name
-    const prevHidden = Array.isArray(ollamaSettings?.hidden_models) ? ollamaSettings.hidden_models : []
-    const nextHidden = prevHidden.filter((h) => h !== name)
-    try {
-      await deleteModel(name)
-      if (nextHidden.length !== prevHidden.length) {
-        const out = await patchOllamaSettings({ hidden_models: nextHidden }, mode)
-        queryClient.setQueryData(['ollama', 'settings', mode], out)
-      }
-      await refetchModels()
-      const pack = await queryClient.fetchQuery({
-        queryKey: ['ollama', 'models'],
-        queryFn: fetchOllamaModels,
-      })
-      const raw = Array.isArray(pack?.models) ? pack.models : []
-      const names = raw.map((m) => (typeof m?.name === 'string' ? m.name : '')).filter(Boolean)
-      if (wasDefault) {
-        const nextDef = names.find((n) => n === DEFAULT_OLLAMA_MODEL) ?? names[0] ?? ''
-        const out = await patchOllamaSettings({ default_model: nextDef }, mode)
-        queryClient.setQueryData(['ollama', 'settings', mode], out)
-      }
-      setDeleteConfirm(false)
-      setDeleteTarget((prev) => (prev === name ? names[0] ?? '' : prev))
-      setToastMsg('Model deleted')
-    } catch (e) {
-      setToastMsg(e instanceof Error ? e.message : 'Delete failed')
-      setDeleteConfirm(false)
-    }
-  }
-
   const defaultModel = useMemo(() => {
     const api = String(ollamaSettings?.default_model ?? '').trim()
     const prefer = api || DEFAULT_OLLAMA_MODEL
-    if (modelEntries.some((m) => m.name === prefer)) return prefer
-    const nine = modelEntries.find((m) => m.name === DEFAULT_OLLAMA_MODEL)
-    if (nine) return nine.name
-    return modelEntries[0]?.name ?? prefer
+    if (modelEntries.some((m) => m.id === prefer)) return prefer
+    const fallback = modelEntries.find((m) => m.id === DEFAULT_OLLAMA_MODEL)
+    if (fallback) return fallback.id
+    return modelEntries[0]?.id ?? prefer
   }, [ollamaSettings?.default_model, modelEntries])
-  const progressPct =
-    pullTotal != null && pullTotal > 0 && pullCompleted != null
-      ? Math.min(100, Math.round((pullCompleted / pullTotal) * 100))
-      : null
 
   const dawAppLabel = mode === '808notes' ? '808notes' : 'BooOps'
 
   return (
     <section className="space-y-6">
-      {toastMsg && (
-        <div
-          role="status"
-          className="rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground"
-        >
-          {toastMsg}
-        </div>
-      )}
-
       <div>
         <h2 className="text-sm font-medium text-foreground">Models ({dawAppLabel})</h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          One Ollama server for all DAWs. Switch BooOps or 808notes to set that DAW’s default model and which models
-          appear in the picker.
+          Shared OpenAI-compatible inference (Bifrost). Switch BooOps or 808notes to set that app&apos;s default model
+          and which models appear in the picker.
         </p>
       </div>
 
       <div className="space-y-3 rounded-lg border border-border bg-card/40 p-4">
         <h3 className="text-sm font-medium text-foreground">Default model</h3>
         {modelsError ? (
-          <p className="text-sm text-muted-foreground">Ollama unavailable</p>
+          <p className="text-sm text-muted-foreground">Inference backend unavailable</p>
         ) : (
           <label className="flex flex-col gap-1 text-sm">
             <span className="sr-only">Choose default model</span>
@@ -450,8 +223,8 @@ function OllamaDawModelsSection({ queryClient, selectClass, mode }) {
                 <option value="">No models</option>
               ) : null}
               {modelEntries.map((m) => (
-                <option key={m.name} value={m.name}>
-                  {m.name}
+                <option key={m.id} value={m.id}>
+                  {m.id}
                 </option>
               ))}
             </select>
@@ -462,33 +235,30 @@ function OllamaDawModelsSection({ queryClient, selectClass, mode }) {
       <div className="space-y-3 rounded-lg border border-border bg-card/40 p-4">
         <h3 className="text-sm font-medium text-foreground">Visible models</h3>
         {modelsError ? (
-          <p className="text-sm text-muted-foreground">Ollama unavailable</p>
+          <p className="text-sm text-muted-foreground">Inference backend unavailable</p>
         ) : modelsLoading ? (
           <p className="text-sm text-muted-foreground">Loading models…</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {modelEntries.map((m) => {
-              const visible = !hiddenSet.has(m.name)
+              const visible = !hiddenSet.has(m.id)
               return (
                 <li
-                  key={m.name}
+                  key={m.id}
                   className={cn(
                     'flex items-center justify-between gap-3 rounded-md px-2 py-2',
                     visible && 'bg-accent/30',
                   )}
                 >
                   <div className="min-w-0 flex-1">
-                    <span className="text-sm font-medium text-foreground">{m.name}</span>
-                    {m.parameterSize ? (
-                      <span className="ml-2 text-xs text-muted-foreground">{m.parameterSize}</span>
-                    ) : null}
+                    <span className="text-sm font-medium text-foreground">{m.id}</span>
                   </div>
                   <button
                     type="button"
                     role="switch"
                     aria-checked={visible}
-                    aria-label={visible ? `Hide ${m.name}` : `Show ${m.name}`}
-                    onClick={() => void setModelVisibility(m.name, !visible)}
+                    aria-label={visible ? `Hide ${m.id}` : `Show ${m.id}`}
+                    onClick={() => void setModelVisibility(m.id, !visible)}
                     className="relative inline-flex h-6 w-10 shrink-0 rounded-full border border-border transition-colors"
                     style={{
                       backgroundColor: visible ? 'var(--primary)' : 'var(--muted)',
@@ -507,113 +277,6 @@ function OllamaDawModelsSection({ queryClient, selectClass, mode }) {
             })}
           </ul>
         )}
-      </div>
-
-      <div className="space-y-3 rounded-lg border border-border bg-card/40 p-4">
-        <h3 className="text-sm font-medium text-foreground">Pull model</h3>
-        <form onSubmit={(e) => void onPullSubmit(e)} className="flex flex-wrap items-end gap-2">
-          <label className="flex min-w-[12rem] flex-1 flex-col gap-1 text-sm">
-            <span className="text-muted-foreground">Model name</span>
-            <input
-              value={pullName}
-              onChange={(e) => setPullName(e.target.value)}
-              disabled={pulling}
-              placeholder="e.g. llama3.2:latest"
-              className="h-9 rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2"
-            />
-          </label>
-          <Button type="submit" size="sm" disabled={pulling || !pullName.trim()}>
-            {pulling ? 'Pulling…' : 'Pull'}
-          </Button>
-        </form>
-        {(pullStatus || pullError || progressPct != null) && (
-          <div className="space-y-2 pt-1">
-            {pullError ? (
-              <p className="text-sm text-destructive">{pullError}</p>
-            ) : (
-              <p className="text-sm text-muted-foreground">{pullStatus}</p>
-            )}
-            {progressPct != null && !pullError ? (
-              <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full bg-primary transition-[width] duration-300"
-                  style={{ width: `${progressPct}%` }}
-                />
-              </div>
-            ) : null}
-          </div>
-        )}
-      </div>
-
-      <div className="space-y-3 rounded-lg border border-border bg-card/40 p-4">
-        <h3 className="text-sm font-medium text-foreground">Delete model</h3>
-        {modelsError ? (
-          <p className="text-sm text-muted-foreground">Ollama unavailable</p>
-        ) : (
-          <>
-            <div className="flex flex-wrap items-end gap-2">
-              <label className="flex min-w-[12rem] flex-1 flex-col gap-1 text-sm">
-                <span className="text-muted-foreground">Model</span>
-                <select
-                  className={selectClass}
-                  disabled={modelsLoading || modelEntries.length === 0}
-                  value={deleteTarget}
-                  onChange={(e) => {
-                    setDeleteTarget(e.target.value)
-                    setDeleteConfirm(false)
-                  }}
-                >
-                  {modelEntries.map((m) => (
-                    <option key={m.name} value={m.name}>
-                      {m.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                disabled={!deleteTarget || modelsLoading}
-                onClick={() => setDeleteConfirm(true)}
-              >
-                Delete
-              </Button>
-            </div>
-            {deleteConfirm && deleteTarget ? (
-              <div className="rounded-md border border-border bg-background/80 p-3 text-sm">
-                <p className="text-foreground">
-                  Delete {deleteTarget}? This cannot be undone.
-                </p>
-                <div className="mt-2 flex gap-2">
-                  <Button type="button" size="sm" variant="destructive" onClick={() => void onConfirmDelete()}>
-                    Confirm
-                  </Button>
-                  <Button type="button" size="sm" variant="outline" onClick={() => setDeleteConfirm(false)}>
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-          </>
-        )}
-      </div>
-
-      <div className="space-y-3 rounded-lg border border-border bg-card/40 p-4">
-        <h3 className="text-sm font-medium text-foreground">VRAM</h3>
-        <p className="text-sm text-muted-foreground">Unload all models from VRAM</p>
-        <Button type="button" size="sm" disabled={unloadPending} onClick={() => void onUnloadAll()}>
-          {unloadPending ? 'Unloading…' : 'Unload all'}
-        </Button>
-        {unloadErr ? (
-          <p className="text-sm text-destructive" role="status">
-            {unloadErr}
-          </p>
-        ) : unloadSuccessMsg ? (
-          <p className="text-sm text-muted-foreground" role="status">
-            {unloadSuccessMsg}
-          </p>
-        ) : null}
       </div>
     </section>
   )
@@ -1503,8 +1166,7 @@ export default function AISettings() {
             <div className="rounded-lg border border-border bg-card p-4">
               <h2 className="mb-1 text-sm font-medium text-foreground">DAW</h2>
               <p className="text-xs text-muted-foreground">
-                BooOps and 808notes each have DAW model settings here. Pull, delete, and unload apply to the shared
-                Ollama server.
+                BooOps and 808notes each have default model and visibility settings for the shared inference backend.
               </p>
               <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Ollama DAW">
                 <Button

@@ -1,4 +1,4 @@
-"""Chat CRUD, message listing, and streaming sends (Ollama or Claude)."""
+"""Chat CRUD, message listing, and streaming sends (OpenAI-compatible local inference or Claude)."""
 
 from __future__ import annotations
 
@@ -25,7 +25,6 @@ from db import get_pool
 from services.pruning import summarize_and_compress
 from services.rag import retrieve_context, retrieve_memory_facts, should_retrieve
 from services.searx import searx_search_sources
-from services.ollama_router import get_ollama_url_for_model
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -156,7 +155,9 @@ async def _site_default_model(conn: asyncpg.Connection, mode: str) -> str:
         v = str(row["value"]).strip()
         if v:
             return v
-    return (os.environ.get("DEFAULT_MODEL", "qwen3.5:9b") or "qwen3.5:9b").strip()
+    return (
+        os.environ.get("DEFAULT_MODEL", "llama-gpu/qwen3.5-9b-exl3") or "llama-gpu/qwen3.5-9b-exl3"
+    ).strip()
 
 
 async def _bump_message_cap_or_429(conn: asyncpg.Connection, principal: dict[str, Any]) -> None:
@@ -397,6 +398,18 @@ def _sse(data: str) -> bytes:
     return f"data: {data}\n\n".encode("utf-8")
 
 
+def _inference_base() -> str:
+    return os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+
+
+def _openai_headers() -> dict[str, str]:
+    h = {"Content-Type": "application/json"}
+    key = (os.environ.get("OPENAI_API_KEY") or os.environ.get("BIFROST_API_KEY") or "").strip()
+    if key:
+        h["Authorization"] = f"Bearer {key}"
+    return h
+
+
 def _clean_auto_title(raw: str) -> str:
     t = (raw or "").strip()
     while len(t) >= 2 and t[0] in "\"'" and t[0] == t[-1]:
@@ -404,25 +417,34 @@ def _clean_auto_title(raw: str) -> str:
     return (t.strip(" \"'") or "")[:60]
 
 
-async def _ollama_short_chat_title(model: str, user_message_text: str) -> str | None:
-    """Non-streaming title via Ollama; returns None on failure."""
-    try:
-        base = await get_ollama_url_for_model(model)
-    except ValueError:
-        return None
+async def _openai_short_chat_title(model: str, user_message_text: str) -> str | None:
+    """Non-streaming title via OpenAI-compatible /v1/chat/completions; returns None on failure."""
+    base = _inference_base()
     excerpt = (user_message_text or "")[:300]
     prompt = (
         "Generate a short chat title (4-6 words, no punctuation, no quotes) for a conversation "
         f"that starts with this message: {excerpt}"
     )
-    payload = {"model": model, "messages": [{"role": "user", "content": prompt}], "stream": False}
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": False,
+        "max_tokens": 48,
+    }
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
-            r = await client.post(f"{base}/api/chat", json=payload)
+            r = await client.post(
+                f"{base}/v1/chat/completions",
+                json=payload,
+                headers=_openai_headers(),
+            )
             if r.status_code >= 400:
                 return None
             data = r.json()
-            msg = data.get("message") or {}
+            choices = data.get("choices") or []
+            if not choices:
+                return None
+            msg = choices[0].get("message") or {}
             raw = (msg.get("content") or "").strip()
             cleaned = _clean_auto_title(raw)
             return cleaned or None
@@ -463,7 +485,7 @@ async def _anthropic_short_chat_title(user_message_text: str) -> str | None:
 async def _ai_short_chat_title(model: str, user_message_text: str) -> str | None:
     if _is_claude_model(model):
         return await _anthropic_short_chat_title(user_message_text)
-    return await _ollama_short_chat_title(model, user_message_text)
+    return await _openai_short_chat_title(model, user_message_text)
 
 
 CLAUDE_ALIASES: dict[str, str] = {
@@ -518,56 +540,59 @@ async def _stream_ollama(
     top_k: int = 20,
     num_ctx: int = 8192,
 ) -> AsyncIterator[bytes]:
-    base = await get_ollama_url_for_model(model)
-    opts: dict[str, Any] = {
-        "temperature": temperature,
-        "top_p": top_p,
-        "top_k": top_k,
-        "num_ctx": int(num_ctx),
-        "num_predict": int(max_tokens),
-        "stop": ["<|im_end|>", "<|endoftext|>"],
-    }
-    payload = {
+    del top_k, num_ctx
+    base = _inference_base()
+    payload: dict[str, Any] = {
         "model": model,
         "messages": messages,
         "stream": True,
-        "options": opts,
+        "temperature": temperature,
+        "max_tokens": int(max_tokens),
+        "top_p": top_p,
     }
     logger.info(
-        "ollama /api/chat model=%s temperature=%s max_tokens=%s top_p=%s top_k=%s num_ctx=%s",
+        "openai /v1/chat/completions model=%s temperature=%s max_tokens=%s top_p=%s",
         model,
         temperature,
         max_tokens,
         top_p,
-        top_k,
-        num_ctx,
     )
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:
-            async with client.stream("POST", f"{base}/api/chat", json=payload) as resp:
+            async with client.stream(
+                "POST",
+                f"{base}/v1/chat/completions",
+                json=payload,
+                headers=_openai_headers(),
+            ) as resp:
                 if resp.status_code >= 400:
                     text = await resp.aread()
                     err = text.decode("utf-8", errors="replace")[:2000]
-                    yield _sse(json.dumps({"error": f"Ollama error {resp.status_code}: {err}"}))
+                    yield _sse(json.dumps({"error": f"Inference error {resp.status_code}: {err}"}))
                     return
                 async for line in resp.aiter_lines():
                     if not line.strip():
                         continue
-                    try:
-                        chunk = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    if chunk.get("error"):
-                        yield _sse(json.dumps({"error": str(chunk["error"])}))
-                        return
-                    msg = chunk.get("message") or {}
-                    piece = msg.get("content") or ""
-                    if piece:
-                        yield _sse(json.dumps({"content": piece}))
-                    if chunk.get("done"):
-                        break
+                    if line.startswith("data: "):
+                        raw = line[6:].strip()
+                        if raw == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(raw)
+                        except json.JSONDecodeError:
+                            continue
+                        err = chunk.get("error")
+                        if err is not None:
+                            yield _sse(json.dumps({"error": str(err)}))
+                            return
+                        choices = chunk.get("choices")
+                        if isinstance(choices, list) and len(choices) > 0:
+                            delta = (choices[0] or {}).get("delta") or {}
+                            piece = delta.get("content") or ""
+                            if piece:
+                                yield _sse(json.dumps({"content": piece}))
     except httpx.HTTPError as e:
-        yield _sse(json.dumps({"error": f"Ollama request failed: {e}"}))
+        yield _sse(json.dumps({"error": f"Inference request failed: {e}"}))
         return
     yield _sse("[DONE]")
 
@@ -681,7 +706,7 @@ def _message_row(r: asyncpg.Record) -> dict[str, Any]:
 async def create_chat(body: ChatCreate, principal: dict[str, Any] = Depends(get_principal)):
     pool = await get_pool()
     mode = body.mode if body.mode in ("booops", "808notes") else "booops"
-    default_model = os.environ.get("DEFAULT_MODEL", "qwen3.5:9b")
+    default_model = os.environ.get("DEFAULT_MODEL", "llama-gpu/qwen3.5-9b-exl3")
     if principal["kind"] == "owner":
         owner_id, guest_ip = None, None
     elif principal["kind"] == "member":
@@ -1298,12 +1323,6 @@ async def append_message(
 
     summary = chat["pruning_summary"]
     user_message_text = body.content.strip()
-
-    if not _is_claude_model(effective_model):
-        try:
-            await get_ollama_url_for_model(effective_model)
-        except ValueError as e:
-            raise HTTPException(status_code=422, detail=str(e)) from e
 
     async def gen() -> AsyncIterator[bytes]:
         sources_list: list[dict[str, str]] = []

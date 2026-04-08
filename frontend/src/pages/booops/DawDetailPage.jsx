@@ -21,7 +21,13 @@ import { PATH_808NOTES, PATH_BOOOPS, is808notesRouteContext } from '@/routes/pat
 import { useAppStore } from '@/store/index.js'
 import { cn } from '@/lib/utils'
 
-const FALLBACK_CHAT_MODELS = ['qwen3.5:9b', 'qwen3.5:35b', 'claude-sonnet', 'claude-haiku', 'claude-opus']
+const FALLBACK_CHAT_MODELS = [
+  'llama-gpu/qwen3.5-9b-exl3',
+  'qwen3.5:35b',
+  'claude-sonnet',
+  'claude-haiku',
+  'claude-opus',
+]
 
 function EmbeddableSwitch({ embeddable, disabled, onToggle }) {
   return (
@@ -95,8 +101,8 @@ export default function DawDetailPage() {
   })
 
   const inferModelOptions = useMemo(() => {
-    const raw = Array.isArray(ollamaData?.models) ? ollamaData.models : []
-    const names = raw.map((m) => (typeof m?.name === 'string' ? m.name : '')).filter(Boolean)
+    const raw = Array.isArray(ollamaData?.data) ? ollamaData.data : []
+    const names = raw.map((m) => (typeof m?.id === 'string' ? m.id : '')).filter(Boolean)
     const set = new Set([...FALLBACK_CHAT_MODELS, ...names])
     return Array.from(set).sort((a, b) => a.localeCompare(b))
   }, [ollamaData])

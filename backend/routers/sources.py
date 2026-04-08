@@ -98,12 +98,14 @@ async def _ingest_source(source_id: uuid.UUID, daw_id: uuid.UUID, raw: bytes, mi
 
         embeddings = await embed_batch(chunks)
         if len(embeddings) != len(chunks):
-            raise RuntimeError("embedding count mismatch")
+            embeddings = [[] for _ in chunks]
 
         async with pool.acquire() as conn:
             async with conn.transaction():
                 await conn.execute("DELETE FROM source_chunks WHERE source_id = $1::uuid", source_id)
                 for i, chunk in enumerate(chunks):
+                    emb = embeddings[i] if i < len(embeddings) else []
+                    emb_param = str(emb) if emb else None
                     await conn.execute(
                         """
                         INSERT INTO source_chunks (id, source_id, chunk_index, text, embedding)
@@ -113,7 +115,7 @@ async def _ingest_source(source_id: uuid.UUID, daw_id: uuid.UUID, raw: bytes, mi
                         source_id,
                         i,
                         chunk,
-                        str(embeddings[i]),
+                        emb_param,
                     )
                 await conn.execute(
                     """

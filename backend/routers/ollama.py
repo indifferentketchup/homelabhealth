@@ -1,4 +1,4 @@
-"""Ollama proxy: model list + streaming chat (SSE) + settings / pull / delete."""
+"""OpenAI-compatible inference proxy (Bifrost): model list, streaming chat (SSE), settings."""
 
 from __future__ import annotations
 
@@ -22,11 +22,19 @@ def _default_ollama_model() -> str:
         v = (os.environ.get(key) or "").strip()
         if v:
             return v
-    return "qwen3.5:9b"
+    return "llama-gpu/qwen3.5-9b-exl3"
 
 
 def _ollama_base() -> str:
     return os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+
+
+def _openai_headers() -> dict[str, str]:
+    h = {"Content-Type": "application/json"}
+    key = (os.environ.get("OPENAI_API_KEY") or os.environ.get("BIFROST_API_KEY") or "").strip()
+    if key:
+        h["Authorization"] = f"Bearer {key}"
+    return h
 
 
 def _sse(data: str) -> bytes:
@@ -77,19 +85,15 @@ class OllamaSettingsPatch(BaseModel):
     hidden_models: list[str] | None = None
 
 
-class PullBody(BaseModel):
-    model: str
-
-
 @router.get("/models")
 async def list_models():
     base = _ollama_base()
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
-            r = await client.get(f"{base}/api/tags")
+            r = await client.get(f"{base}/v1/models", headers=_openai_headers())
             r.raise_for_status()
     except httpx.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"Ollama unreachable: {e}") from e
+        raise HTTPException(status_code=502, detail=f"Inference backend unreachable: {e}") from e
     return r.json()
 
 
@@ -118,142 +122,56 @@ async def patch_ollama_settings(
         return await _ollama_settings_payload(conn, m)
 
 
-async def _stream_ollama_pull(model: str) -> AsyncIterator[bytes]:
+async def _stream_openai_chat_completions(body: dict[str, Any]) -> AsyncIterator[bytes]:
     base = _ollama_base()
-    payload = {"model": model, "stream": True}
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(None)) as client:
-            async with client.stream("POST", f"{base}/api/pull", json=payload) as resp:
-                if resp.status_code >= 400:
-                    text = await resp.aread()
-                    err = text.decode("utf-8", errors="replace")[:2000]
-                    yield _sse(json.dumps({"error": f"Ollama error {resp.status_code}: {err}"}))
-                    return
-                async for line in resp.aiter_lines():
-                    if not line.strip():
-                        continue
-                    try:
-                        chunk = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    yield _sse(json.dumps(chunk))
-                    if chunk.get("status") == "success":
-                        yield _sse("[DONE]")
-                        return
-    except httpx.HTTPError as e:
-        yield _sse(json.dumps({"error": str(e)}))
-
-
-@router.post("/pull")
-async def pull_model(body: PullBody, _owner: dict = Depends(require_admin)):
-    if not body.model or not body.model.strip():
-        raise HTTPException(status_code=400, detail="model is required")
-    return StreamingResponse(
-        _stream_ollama_pull(body.model.strip()),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
-@router.delete("/models/{model_name:path}")
-async def delete_ollama_model(model_name: str, _owner: dict = Depends(require_admin)):
-    if not model_name.strip():
-        raise HTTPException(status_code=400, detail="model name is required")
-    base = _ollama_base()
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
-            r = await client.request(
-                "DELETE",
-                f"{base}/api/delete",
-                json={"name": model_name},
-            )
-    except httpx.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"Ollama unreachable: {e}") from e
-    if r.status_code == 404:
-        raise HTTPException(status_code=404, detail="Model not found")
-    if r.status_code >= 400:
-        detail = r.text[:2000] if r.text else r.status_text
-        raise HTTPException(status_code=502, detail=f"Ollama error: {detail}")
-    return {"ok": True}
-
-
-@router.post("/unload-all")
-async def unload_all_models(_owner: dict = Depends(require_admin)):
-    base = _ollama_base()
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
-            r = await client.get(f"{base}/api/ps")
-            r.raise_for_status()
-    except httpx.HTTPError:
-        raise HTTPException(status_code=502, detail="Ollama unreachable") from None
-    try:
-        data = r.json()
-    except Exception:
-        raise HTTPException(status_code=502, detail="Ollama unreachable") from None
-
-    models = data.get("models")
-    if not isinstance(models, list) or len(models) == 0:
-        return {"unloaded": []}
-
-    names: list[str] = []
-    for item in models:
-        if not isinstance(item, dict):
-            continue
-        raw = item.get("name") or item.get("model")
-        if isinstance(raw, str) and raw.strip():
-            names.append(raw.strip())
-
-    if not names:
-        return {"unloaded": []}
-
-    unloaded: list[str] = []
-    async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
-        for name in names:
-            try:
-                await client.post(
-                    f"{base}/api/generate",
-                    json={"model": name, "keep_alive": 0, "stream": False},
-                )
-            except httpx.HTTPError:
-                pass
-            unloaded.append(name)
-
-    return {"unloaded": unloaded}
-
-
-async def _stream_ollama_chat(body: dict[str, Any]) -> AsyncIterator[bytes]:
-    base = _ollama_base()
-    payload = {**body, "stream": True}
+    model = body.get("model")
+    messages = body.get("messages")
+    if not model or not isinstance(messages, list):
+        yield _sse(json.dumps({"error": "model and messages are required"}))
+        yield _sse("[DONE]")
+        return
+    payload: dict[str, Any] = {"model": model, "messages": messages, "stream": True}
+    for opt_key in ("temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"):
+        if opt_key in body and body[opt_key] is not None:
+            payload[opt_key] = body[opt_key]
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:
-            async with client.stream("POST", f"{base}/api/chat", json=payload) as resp:
+            async with client.stream(
+                "POST",
+                f"{base}/v1/chat/completions",
+                json=payload,
+                headers=_openai_headers(),
+            ) as resp:
                 if resp.status_code >= 400:
                     text = await resp.aread()
                     err = text.decode("utf-8", errors="replace")[:2000]
-                    yield _sse(json.dumps({"error": f"Ollama error {resp.status_code}: {err}"}))
+                    yield _sse(
+                        json.dumps({"error": f"Inference error {resp.status_code}: {err}"}),
+                    )
                     return
                 async for line in resp.aiter_lines():
                     if not line.strip():
                         continue
-                    try:
-                        chunk = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    if chunk.get("error"):
-                        yield _sse(json.dumps({"error": str(chunk["error"])}))
-                        return
-                    msg = chunk.get("message") or {}
-                    piece = msg.get("content") or ""
-                    if piece:
-                        yield _sse(json.dumps({"content": piece}))
-                    if chunk.get("done"):
-                        break
+                    if line.startswith("data: "):
+                        raw = line[6:].strip()
+                        if raw == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(raw)
+                        except json.JSONDecodeError:
+                            continue
+                        err = chunk.get("error")
+                        if err is not None:
+                            yield _sse(json.dumps({"error": str(err)}))
+                            return
+                        choices = chunk.get("choices")
+                        if isinstance(choices, list) and len(choices) > 0:
+                            delta = (choices[0] or {}).get("delta") or {}
+                            piece = delta.get("content") or ""
+                            if piece:
+                                yield _sse(json.dumps({"content": piece}))
     except httpx.HTTPError as e:
-        yield _sse(json.dumps({"error": f"Ollama request failed: {e}"}))
+        yield _sse(json.dumps({"error": f"Inference request failed: {e}"}))
         return
     yield _sse("[DONE]")
 
@@ -272,7 +190,7 @@ async def chat_proxy(request: Request, _owner: dict = Depends(require_admin)):
         raise HTTPException(status_code=400, detail="messages is required")
 
     return StreamingResponse(
-        _stream_ollama_chat(body),
+        _stream_openai_chat_completions(body),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

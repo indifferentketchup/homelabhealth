@@ -167,6 +167,8 @@ async def retrieve_context(query: str, daw_id: str, source_ids: list[str]) -> tu
     except Exception as e:
         logger.warning("RAG query embed failed: %s", e)
         return "", 0
+    if not q_emb:
+        return "", 0
 
     pool = await get_pool()
     try:

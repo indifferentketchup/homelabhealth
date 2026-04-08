@@ -20,18 +20,27 @@ async def _get_setting(conn: asyncpg.Connection, key: str, default: str) -> str:
     return row["value"] if row else default
 
 
-def _ollama_base() -> str:
+def _inference_base() -> str:
     return os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
 
 
-async def _ollama_summarize(
+def _openai_headers() -> dict[str, str]:
+    h = {"Content-Type": "application/json"}
+    key = (os.environ.get("OPENAI_API_KEY") or os.environ.get("BIFROST_API_KEY") or "").strip()
+    if key:
+        h["Authorization"] = f"Bearer {key}"
+    return h
+
+
+async def _openai_summarize(
     model: str,
     text: str,
 ) -> str:
-    base = _ollama_base()
-    payload = {
+    base = _inference_base()
+    payload: dict[str, Any] = {
         "model": model,
         "stream": False,
+        "max_tokens": 1024,
         "messages": [
             {
                 "role": "user",
@@ -45,10 +54,17 @@ async def _ollama_summarize(
         ],
     }
     async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
-        r = await client.post(f"{base}/api/chat", json=payload)
+        r = await client.post(
+            f"{base}/v1/chat/completions",
+            json=payload,
+            headers=_openai_headers(),
+        )
         r.raise_for_status()
         data: dict[str, Any] = r.json()
-    msg = data.get("message") or {}
+    choices = data.get("choices") or []
+    if not choices:
+        return ""
+    msg = choices[0].get("message") or {}
     return (msg.get("content") or "").strip()
 
 
@@ -130,9 +146,9 @@ async def summarize_and_compress(
         prev = chat["pruning_summary"] or ""
         bundle = f"Previous summary:\n{prev}\n\nMessages to compress:\n{transcript}" if prev else transcript
 
-        default_model = await _get_setting(conn, "default_model", "qwen3.5:9b")
+        default_model = await _get_setting(conn, "default_model", "llama-gpu/qwen3.5-9b-exl3")
         try:
-            summary = await _ollama_summarize(default_model, bundle)
+            summary = await _openai_summarize(default_model, bundle)
         except Exception:
             return
 

@@ -1,4 +1,4 @@
-"""Per-mode memory blob (markdown) + Ollama extraction."""
+"""Per-mode memory blob (markdown) + OpenAI-compatible extraction."""
 
 from __future__ import annotations
 
@@ -22,8 +22,16 @@ def _norm_mode(m: str) -> str:
     return m if m in ("booops", "808notes") else "booops"
 
 
-def _ollama_base() -> str:
+def _inference_base() -> str:
     return os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+
+
+def _openai_headers() -> dict[str, str]:
+    h = {"Content-Type": "application/json"}
+    key = (os.environ.get("OPENAI_API_KEY") or os.environ.get("BIFROST_API_KEY") or "").strip()
+    if key:
+        h["Authorization"] = f"Bearer {key}"
+    return h
 
 
 class MemoryPut(BaseModel):
@@ -81,7 +89,7 @@ async def put_memory(mode: str = Query("booops"), body: MemoryPut = Body(), _: d
 @router.post("/extract")
 async def extract_memory(mode: str = Query("booops"), _: dict = Depends(require_admin)):
     m = _norm_mode(mode)
-    model = (os.environ.get("DEFAULT_MODEL") or "qwen3.5:9b").strip()
+    model = (os.environ.get("DEFAULT_MODEL") or "llama-gpu/qwen3.5-9b-exl3").strip()
     pool = await get_pool()
 
     async with pool.acquire() as conn:
@@ -137,25 +145,32 @@ async def extract_memory(mode: str = Query("booops"), _: dict = Depends(require_
         f"Recent conversation:\n{messages_text}"
     )
 
-    base = _ollama_base()
+    base = _inference_base()
     payload: dict[str, Any] = {
         "model": model,
         "messages": [{"role": "user", "content": user_prompt}],
         "stream": False,
+        "max_tokens": 2048,
     }
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
-            resp = await client.post(f"{base}/api/chat", json=payload)
+            resp = await client.post(
+                f"{base}/v1/chat/completions",
+                json=payload,
+                headers=_openai_headers(),
+            )
             if resp.status_code >= 400:
                 raise HTTPException(
                     status_code=502,
-                    detail=f"Ollama error {resp.status_code}: {resp.text[:500]}",
+                    detail=f"Inference error {resp.status_code}: {resp.text[:500]}",
                 )
             data = resp.json()
     except httpx.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"Ollama request failed: {e}") from e
+        raise HTTPException(status_code=502, detail=f"Inference request failed: {e}") from e
 
-    msg = data.get("message") or {}
+    choices = data.get("choices") or []
+    msg = choices[0].get("message") if choices else {}
+    msg = msg or {}
     updated = (msg.get("content") or "").strip()
     if not updated:
         raise HTTPException(status_code=502, detail="Model returned empty memory")
