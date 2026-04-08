@@ -3,7 +3,6 @@ services:
   boolab_db:
     image: pgvector/pgvector:pg16
     container_name: boolab_db
-    restart: unless-stopped
     environment:
       POSTGRES_USER: boolab
       POSTGRES_PASSWORD: boolab
@@ -18,21 +17,35 @@ services:
       timeout: 5s
       retries: 5
 
+  boolab_chroma:
+    image: chromadb/chroma:latest
+    container_name: boolab_chroma
+    environment:
+      CHROMA_SERVER_HOST: 0.0.0.0
+      CHROMA_SERVER_HTTP_PORT: '8000'
+    volumes:
+      - boolab_chroma_data:/chroma/chroma
+    networks:
+      - boolab_net
+
   boolab_api:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: boolab_api
-    restart: unless-stopped
     env_file:
       - .env
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql://boolab:boolab@boolab_db:5432/boolab}
+      CHROMA_HOST: boolab_chroma
+      CHROMA_PORT: '8000'
       DUBDRIVE_URL: ${DUBDRIVE_URL:-http://100.114.205.53:9200}
       DUBDRIVE_TOKEN: ${DUBDRIVE_TOKEN:-}
     depends_on:
       boolab_db:
         condition: service_healthy
+      boolab_chroma:
+        condition: service_started
     ports:
       - "${BOOLAB_PORT_API:-9300}:8000"
     volumes:
@@ -54,7 +67,6 @@ services:
         VITE_PUBLIC_BOOOPS_URL: ${VITE_PUBLIC_BOOOPS_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9303}
         VITE_PUBLIC_808NOTES_URL: ${VITE_PUBLIC_808NOTES_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9304}
     container_name: boolab_ui
-    restart: unless-stopped
     environment:
       BOOLAB_API_UPSTREAM: ${BOOLAB_API_UPSTREAM:-boolab_api:8000}
     ports:
@@ -75,7 +87,6 @@ services:
         VITE_PUBLIC_BOOOPS_URL: ${VITE_PUBLIC_BOOOPS_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9303}
         VITE_PUBLIC_808NOTES_URL: ${VITE_PUBLIC_808NOTES_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9304}
     container_name: booops_ui
-    restart: unless-stopped
     environment:
       BOOLAB_API_UPSTREAM: ${BOOLAB_API_UPSTREAM:-boolab_api:8000}
     ports:
@@ -96,7 +107,6 @@ services:
         VITE_PUBLIC_BOOOPS_URL: ${VITE_PUBLIC_BOOOPS_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9303}
         VITE_PUBLIC_808NOTES_URL: ${VITE_PUBLIC_808NOTES_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9304}
     container_name: notes808_ui
-    restart: unless-stopped
     environment:
       BOOLAB_API_UPSTREAM: ${BOOLAB_API_UPSTREAM:-boolab_api:8000}
     ports:
@@ -111,5 +121,6 @@ networks:
 
 volumes:
   boolab_db_data:
+  boolab_chroma_data:
   boolab_uploads:
   boolab_branding:

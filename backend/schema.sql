@@ -227,8 +227,8 @@ BEGIN
   DROP INDEX IF EXISTS personas_one_default_per_mode;
   DROP INDEX IF EXISTS personas_one_default_global;
 
-  CREATE UNIQUE INDEX IF NOT EXISTS personas_one_default_booops_idx ON personas ((1)) WHERE is_default_booops = TRUE;
-  CREATE UNIQUE INDEX IF NOT EXISTS personas_one_default_808notes_idx ON personas ((1)) WHERE is_default_808notes = TRUE;
+  DROP INDEX IF EXISTS personas_one_default_booops_idx;
+  DROP INDEX IF EXISTS personas_one_default_808notes_idx;
 
   IF NOT EXISTS (SELECT 1 FROM personas WHERE name = 'BooOps') THEN
     INSERT INTO personas (name, system_prompt, avatar_emoji, is_default_booops, is_default_808notes)
@@ -260,6 +260,8 @@ BEGIN
   UPDATE personas SET is_default_808notes = FALSE;
   UPDATE personas SET is_default_booops = TRUE WHERE name = 'BooOps';
   UPDATE personas SET is_default_808notes = TRUE WHERE name = '808notes';
+  CREATE UNIQUE INDEX IF NOT EXISTS personas_one_default_booops_idx ON personas ((1)) WHERE is_default_booops = TRUE;
+  CREATE UNIQUE INDEX IF NOT EXISTS personas_one_default_808notes_idx ON personas ((1)) WHERE is_default_808notes = TRUE;
 END
 $personas_global$;
 

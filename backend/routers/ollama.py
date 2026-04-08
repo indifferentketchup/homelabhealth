@@ -94,7 +94,13 @@ async def list_models():
             r.raise_for_status()
     except httpx.HTTPError as e:
         raise HTTPException(status_code=502, detail=f"Inference backend unreachable: {e}") from e
-    return r.json()
+    data = r.json()
+    # Bifrost returns empty data[] for custom providers — fall back to env-configured model list
+    if not data.get("data"):
+        raw = os.environ.get("BIFROST_MODELS", "")
+        models = [m.strip() for m in raw.split(",") if m.strip()]
+        data = {"data": [{"id": m, "object": "model"} for m in models]}
+    return data
 
 
 @router.get("/settings")
