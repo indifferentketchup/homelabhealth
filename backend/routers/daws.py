@@ -146,7 +146,7 @@ async def list_daws(
 ):
     pool = await get_pool()
     m = _norm_mode(mode) if mode is not None else None
-   sel = """
+    sel = """
                 SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
                     d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
                     d.model, d.rag_mode,
