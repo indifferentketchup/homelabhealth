@@ -154,7 +154,6 @@ async def list_daws(
                     d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
                 FROM daws d
                 LEFT JOIN personas p ON p.id = d.persona_id
-                WHERE d.mode = $1 AND (d.owner_id IS NULL OR d.owner_id = $2::uuid) ORDER BY d.sort_order ASC NULLS LAST, d.name ASC
             """
     async with pool.acquire() as conn:
         if principal["kind"] == "owner":
@@ -181,14 +180,12 @@ async def list_daws(
             uid = principal["user_id"]
             if m is None:
                 rows = await conn.fetch(
-                    sel
-                    + " WHERE d.owner_id IS NULL OR d.owner_id = $1::uuid ORDER BY d.sort_order ASC NULLS LAST, d.name ASC",
+                    sel + " WHERE (d.owner_id IS NULL OR d.owner_id = $1::uuid) ORDER BY d.sort_order ASC NULLS LAST, d.name ASC",
                     uid,
                 )
             else:
                 rows = await conn.fetch(
-                    sel
-                    + " WHERE d.mode = $1 AND (d.owner_id IS NULL OR d.owner_id = $2::uuid) ORDER BY d.sort_order ASC NULLS LAST, d.name ASC",
+                    sel + " WHERE d.mode = $1 AND (d.owner_id IS NULL OR d.owner_id = $2::uuid) ORDER BY d.sort_order ASC NULLS LAST, d.name ASC",
                     m,
                     uid,
                 )
