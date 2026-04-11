@@ -318,7 +318,7 @@ async def _assembled_system_prompt(
             assembled = f"{assembled}\n\n{block}" if assembled else block
 
     preview = (assembled[:2000] + "…") if len(assembled) > 2000 else assembled
-      logger.info(
+    logger.info(
         "assembled prompt mode=%s daw_id=%s is_daw_chat=%s len=%d daw_instruction_rows=%d "
         "memory_entry_rows=%d mode_memory_len=%d rag_context_chars=%d preview=%s",
         mode,
