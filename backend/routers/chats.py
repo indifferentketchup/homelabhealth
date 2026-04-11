@@ -1376,7 +1376,7 @@ async def append_message(
                     except Exception as e:
                         logger.warning("Failed to embed memory entry: %s", e)
 
-        await summarize_and_compress(str(chat_id), p, max_context_tokens=effective_ctx)
+        await summarize_and_compress(str(chat_id), p)
 
         yield _sse("[DONE]")
 
