@@ -245,7 +245,7 @@ async def create_daw(body: DawCreate, principal: dict[str, Any] = Depends(get_pr
             rag_ins,
             owner_uuid,
         )
-               prow = await conn.fetchrow(
+        prow = await conn.fetchrow(
             """
             SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
                 d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
@@ -433,7 +433,7 @@ async def patch_daw_pin(
 async def get_daw(daw_id: uuid.UUID, principal: dict[str, Any] = Depends(get_principal)):
     pool = await get_pool()
     async with pool.acquire() as conn:
-   row = await conn.fetchrow(
+        row = await conn.fetchrow(
             """
             SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
                 d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
@@ -477,7 +477,7 @@ async def patch_daw(
         if row is None:
             raise HTTPException(status_code=404, detail="DAW not found")
         if not data:
-    prow = await conn.fetchrow(
+            prow = await conn.fetchrow(
             """
             SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
                 d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
@@ -492,24 +492,24 @@ async def patch_daw(
         )
             return _row(prow)
 
-   new_name = data.get("name", row["name"])
-    new_desc = data.get("description", row["description"])
-    new_sp = data.get("system_prompt", row["system_prompt"])
-    new_pid = row["persona_id"] if "persona_id" not in data else data["persona_id"]
-   new_mode = _norm_mode(data["mode"]) if "mode" in data else row["mode"]
-    new_color = data.get("color", row["color"])
-    new_shared = data.get("shared", row["shared"])
-    new_sort = data.get("sort_order", row["sort_order"])
-    if "daw_model" in data:
-        raw_m = data["daw_model"]
-        new_model = None if raw_m is None or str(raw_m).strip() == "" else str(raw_m).strip()
-    else:
-        raw_rm = row["model"]
-        new_model = None if raw_rm is None or str(raw_rm).strip() == "" else str(raw_rm).strip()
-    cur_rm = row.get("rag_mode")
-    if cur_rm not in ("auto", "always", "off"):
-        cur_rm = "auto"
-    new_rag = cast(Literal["auto", "always", "off"], cur_rm)
+        new_name = data.get("name", row["name"])
+        new_desc = data.get("description", row["description"])
+        new_sp = data.get("system_prompt", row["system_prompt"])
+        new_pid = row["persona_id"] if "persona_id" not in data else data["persona_id"]
+        new_mode = _norm_mode(data["mode"]) if "mode" in data else row["mode"]
+        new_color = data.get("color", row["color"])
+        new_shared = data.get("shared", row["shared"])
+        new_sort = data.get("sort_order", row["sort_order"])
+        if "daw_model" in data:
+            raw_m = data["daw_model"]
+            new_model = None if raw_m is None or str(raw_m).strip() == "" else str(raw_m).strip()
+        else:
+            raw_rm = row["model"]
+            new_model = None if raw_rm is None or str(raw_rm).strip() == "" else str(raw_rm).strip()
+        cur_rm = row.get("rag_mode")
+        if cur_rm not in ("auto", "always", "off"):
+            cur_rm = "auto"
+        new_rag = cast(Literal["auto", "always", "off"], cur_rm)
         if "rag_mode" in data and data["rag_mode"] is not None:
             cand = data["rag_mode"]
             if cand not in ("auto", "always", "off"):
