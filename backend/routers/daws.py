@@ -521,6 +521,8 @@ async def patch_daw(
                 new_icon = None
             else:
                 new_icon = data["icon_url"]
+        new_dd_folder = data.get("dubdrive_sync_folder", row["dubdrive_sync_folder"])
+        new_dd_enabled = data.get("dubdrive_sync_enabled", row["dubdrive_sync_enabled"])
         if isinstance(new_name, str):
             new_name = new_name.strip() or row["name"]
         if isinstance(new_sp, str):
