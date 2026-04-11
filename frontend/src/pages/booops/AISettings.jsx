@@ -618,36 +618,11 @@ export default function AISettings() {
   })
 
   const { data: globalSettings } = useQuery({
-    queryKey: ['settings', 'global'],
-    queryFn: getGlobalSettings,
-    enabled: tab === 'ollama',
-    staleTime: 15_000,
-  })
-  const [gCtxDraft, setGCtxDraft] = useState(16384)
-  const [gTempDraft, setGTempDraft] = useState(0.7)
-  const [gTopPDraft, setGTopPDraft] = useState(1.0)
-  const [gTopKDraft, setGTopKDraft] = useState(20)
-  const [gMaxTokensDraft, setGMaxTokensDraft] = useState(2048)
-  useEffect(() => {
-    const v = globalSettings?.context_window_global
-    if (typeof v === 'number' && !Number.isNaN(v)) setGCtxDraft(v)
-    if (typeof globalSettings?.temperature_global === 'number') setGTempDraft(globalSettings.temperature_global)
-    if (typeof globalSettings?.top_p_global === 'number') setGTopPDraft(globalSettings.top_p_global)
-    if (typeof globalSettings?.top_k_global === 'number') setGTopKDraft(globalSettings.top_k_global)
-    if (typeof globalSettings?.max_tokens_global === 'number') setGMaxTokensDraft(globalSettings.max_tokens_global)
-  }, [globalSettings])
-
-  const saveGlobalCtx = useMutation({
-    mutationFn: () =>
-      patchGlobalSettings({
-        context_window_global: gCtxDraft,
-        temperature_global: gTempDraft,
-        top_p_global: gTopPDraft,
-        top_k_global: gTopKDraft,
-        max_tokens_global: gMaxTokensDraft,
-      }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings', 'global'] }),
-  })
+     queryKey: ['settings', 'global'],
+     queryFn: getGlobalSettings,
+     enabled: tab === 'ollama',
+     staleTime: 15_000,
+   })
 
   const { data: ollamaConfig } = useQuery({
     queryKey: ['settings', 'ollama'],
@@ -1067,137 +1042,10 @@ export default function AISettings() {
           </div>
         )}
 
-        {tab === 'ollama' && (
+       {tab === 'ollama' && (
           <div className="flex flex-col gap-6">
             <div className="rounded-lg border border-border bg-card p-4">
-              <h2 className="mb-2 text-sm font-medium text-foreground">Global context window</h2>
-              <p className="mb-3 text-xs text-muted-foreground">
-                Default context size for chats that use the DAW model picker (no pinned model on the DAW). DAWs with a
-                pinned model use that DAW’s context window instead.
-              </p>
-              <div className="flex flex-col gap-4 text-sm">
-                <div className="flex flex-col gap-2">
-                  <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <span className="text-muted-foreground">Context window (tokens)</span>
-                    <span className="tabular-nums text-foreground">{gCtxDraft}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={1024}
-                    max={32768}
-                    step={1024}
-                    value={gCtxDraft}
-                    onChange={(e) => setGCtxDraft(Number(e.target.value))}
-                    className="h-2 w-full cursor-pointer accent-primary"
-                  />
-                </div>
-                <div className="flex flex-col gap-2 border-t border-border pt-4">
-                  <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <span className="text-muted-foreground">Temperature</span>
-                    <span className="tabular-nums text-foreground">{gTempDraft}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={2}
-                    step={0.05}
-                    value={gTempDraft}
-                    onChange={(e) => setGTempDraft(Number(e.target.value))}
-                    className="h-2 w-full cursor-pointer accent-primary"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Default temperature for chats using DAW model picker. DAW overrides this.
-                  </p>
-                </div>
-                <div className="flex flex-col gap-2">
-                  <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <span className="text-muted-foreground">Top-p</span>
-                    <span className="tabular-nums text-foreground">{gTopPDraft}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={gTopPDraft}
-                    onChange={(e) => setGTopPDraft(Number(e.target.value))}
-                    className="h-2 w-full cursor-pointer accent-primary"
-                  />
-                  <p className="text-xs text-muted-foreground">Nucleus sampling. DAW overrides this.</p>
-                </div>
-                <div className="flex flex-col gap-2">
-                  <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <span className="text-muted-foreground">Top-k</span>
-                    <span className="tabular-nums text-foreground">{gTopKDraft}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={1}
-                    max={100}
-                    step={1}
-                    value={gTopKDraft}
-                    onChange={(e) => setGTopKDraft(Number(e.target.value))}
-                    className="h-2 w-full cursor-pointer accent-primary"
-                  />
-                  <p className="text-xs text-muted-foreground">Token sampling pool. Ollama only. DAW overrides this.</p>
-                </div>
-                <div className="flex flex-col gap-2">
-                  <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <span className="text-muted-foreground">Max tokens</span>
-                    <span className="tabular-nums text-foreground">{gMaxTokensDraft}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={256}
-                    max={8192}
-                    step={256}
-                    value={gMaxTokensDraft}
-                    onChange={(e) => setGMaxTokensDraft(Number(e.target.value))}
-                    className="h-2 w-full cursor-pointer accent-primary"
-                  />
-                  <p className="text-xs text-muted-foreground">Default max response tokens. DAW overrides this.</p>
-                </div>
-                <Button type="button" size="sm" onClick={() => saveGlobalCtx.mutate()} disabled={saveGlobalCtx.isPending}>
-                  Save
-                </Button>
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-border bg-card p-4">
-              <h2 className="mb-1 text-sm font-medium text-foreground">DAW</h2>
-              <p className="text-xs text-muted-foreground">
-                BooOps and 808notes each have default model and visibility settings for the shared inference backend.
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Ollama DAW">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={ollamaDawMode === 'booops' ? 'default' : 'outline'}
-                  onClick={() => setOllamaDawMode('booops')}
-                >
-                  BooOps
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={ollamaDawMode === '808notes' ? 'default' : 'outline'}
-                  onClick={() => setOllamaDawMode('808notes')}
-                >
-                  808notes
-                </Button>
-              </div>
-            </div>
-
-            <OllamaDawModelsSection
-              queryClient={queryClient}
-              selectClass={OLLAMA_SELECT_CLASS}
-              mode={ollamaDawMode}
-            />
-
-            {ollamaDawMode === '808notes' ? <Claude808notesModelPrefs /> : null}
-
-            <div className="rounded-lg border border-border bg-card p-4">
-              <h2 className="mb-2 text-sm font-medium text-foreground">Ollama config</h2>
+              <h2 className="mb-2 text-sm font-medium text-foreground">Ollama Configuration</h2>
               <p className="mb-3 text-xs text-muted-foreground">
                 Changes apply to next Ollama restart on sam-desktop.
               </p>

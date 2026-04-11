@@ -42,65 +42,10 @@ async def _default_persona_id_for_mode(conn: asyncpg.Connection, mode: str) -> u
     )
 
 
-async def _global_context_window(conn: asyncpg.Connection) -> int:
-    row = await conn.fetchrow(
-        "SELECT value FROM global_settings WHERE key = 'context_window_global'",
-    )
-    if row and row["value"]:
-        try:
-            v = int(row["value"])
-            return max(1024, min(32768, v))
-        except ValueError:
-            pass
-    return 16384
 
 
-async def _global_ollama_inference_defaults(conn: asyncpg.Connection) -> dict[str, float | int]:
-    keys = ("temperature_global", "top_p_global", "top_k_global", "max_tokens_global")
-    rows = await conn.fetch(
-        "SELECT key, value FROM global_settings WHERE key = ANY($1::text[])",
-        list(keys),
-    )
-    m = {r["key"]: r["value"] for r in rows}
 
-    def _temp(v: str | None) -> float:
-        if not v:
-            return 0.7
-        try:
-            return float(max(0.0, min(2.0, float(v))))
-        except ValueError:
-            return 0.7
 
-    def _top_p(v: str | None) -> float:
-        if not v:
-            return 1.0
-        try:
-            return float(max(0.0, min(1.0, float(v))))
-        except ValueError:
-            return 1.0
-
-    def _top_k(v: str | None) -> int:
-        if not v:
-            return 20
-        try:
-            return int(max(1, min(100, int(v))))
-        except ValueError:
-            return 20
-
-    def _max_t(v: str | None) -> int:
-        if not v:
-            return 2048
-        try:
-            return int(max(256, min(8192, int(v))))
-        except ValueError:
-            return 2048
-
-    return {
-        "temperature": _temp(m.get("temperature_global")),
-        "top_p": _top_p(m.get("top_p_global")),
-        "top_k": _top_k(m.get("top_k_global")),
-        "max_tokens": _max_t(m.get("max_tokens_global")),
-    }
 
 
 _AUTO_MEMORY_TRIGGERS = (
@@ -201,7 +146,6 @@ async def _assembled_system_prompt(
     chat: asyncpg.Record,
     *,
     user_query_for_rag: str | None = None,
-    effective_context_window: int | None = None,
     include_site_private: bool = True,
 ) -> tuple[str, dict[str, int] | None]:
     """Persona → DAW prompt + daw_instructions + semantic memory facts → context files → custom instructions → RAG → mode_memory."""
@@ -374,10 +318,9 @@ async def _assembled_system_prompt(
             assembled = f"{assembled}\n\n{block}" if assembled else block
 
     preview = (assembled[:2000] + "…") if len(assembled) > 2000 else assembled
-    logger.info(
+      logger.info(
         "assembled prompt mode=%s daw_id=%s is_daw_chat=%s len=%d daw_instruction_rows=%d "
-        "memory_entry_rows=%d mode_memory_len=%d rag_context_chars=%d "
-        "context_window=%s preview=%s",
+        "memory_entry_rows=%d mode_memory_len=%d rag_context_chars=%d preview=%s",
         mode,
         str(daw_id) if daw_id else None,
         daw_id is not None,
@@ -386,7 +329,6 @@ async def _assembled_system_prompt(
         mem_entries_count,
         len(mem_text),
         rag_context_chars,
-        effective_context_window,
         preview,
     )
     logger.debug("assembled prompt full text=%s", assembled)
@@ -533,30 +475,14 @@ def _split_system_for_claude(
 async def _stream_ollama(
     model: str,
     messages: list[dict[str, str]],
-    *,
-    temperature: float = 0.7,
-    max_tokens: int = 2048,
-    top_p: float = 1.0,
-    top_k: int = 20,
-    num_ctx: int = 8192,
 ) -> AsyncIterator[bytes]:
-    del top_k, num_ctx
     base = _inference_base()
     payload: dict[str, Any] = {
         "model": model,
         "messages": messages,
         "stream": True,
-        "temperature": temperature,
-        "max_tokens": int(max_tokens),
-        "top_p": top_p,
     }
-    logger.info(
-        "openai /v1/chat/completions model=%s temperature=%s max_tokens=%s top_p=%s",
-        model,
-        temperature,
-        max_tokens,
-        top_p,
-    )
+    logger.info("openai /v1/chat/completions model=%s", model)
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:
             async with client.stream(
@@ -600,10 +526,6 @@ async def _stream_ollama(
 async def _stream_claude(
     model: str,
     messages: list[dict[str, str]],
-    *,
-    temperature: float = 1.0,
-    max_tokens: int = 4096,
-    top_p: float = 1.0,
 ) -> AsyncIterator[bytes]:
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
@@ -613,23 +535,13 @@ async def _stream_claude(
     system, api_messages = _split_system_for_claude(messages)
     client = AsyncAnthropic(api_key=api_key)
     try:
-        mt = max(1, min(8192, int(max_tokens)))
         kwargs: dict[str, Any] = {
             "model": resolved,
-            "max_tokens": mt,
             "messages": api_messages,
-            "temperature": temperature,
-            "top_p": max(0.0, min(1.0, float(top_p))),
         }
         if system:
             kwargs["system"] = system
-        logger.info(
-            "claude messages.stream model=%s temperature=%s max_tokens=%s top_p=%s",
-            resolved,
-            temperature,
-            mt,
-            top_p,
-        )
+        logger.info("claude messages.stream model=%s", resolved)
         async with client.messages.stream(**kwargs) as stream:
             async for text in stream.text_stream:
                 if text:
@@ -1207,15 +1119,10 @@ async def append_message(
         if chat is None or not principal_can_access_chat(principal, chat):
             raise HTTPException(status_code=404, detail="Chat not found")
 
-        global_ctx = await _global_context_window(conn)
-        ollama_global_inf = await _global_ollama_inference_defaults(conn)
         daw_row = None
         if chat["daw_id"] is not None:
             daw_row = await conn.fetchrow(
-                """
-                SELECT model, max_tokens, top_p, top_k, context_window, temperature
-                FROM daws WHERE id = $1::uuid
-                """,
+                "SELECT model FROM daws WHERE id = $1::uuid",
                 chat["daw_id"],
             )
         cm = chat["mode"] if chat["mode"] in ("booops", "808notes") else "booops"
@@ -1244,38 +1151,6 @@ async def append_message(
                     chat_id,
                     effective_model,
                 )
-
-        if daw_pins_model and daw_row is not None:
-            effective_ctx = int(daw_row["context_window"] or 8192)
-        else:
-            effective_ctx = global_ctx
-
-        if _is_claude_model(effective_model):
-            if daw_pins_model and daw_row is not None:
-                effective_max_tokens = int(daw_row["max_tokens"] or 2048)
-                effective_top_p = float(daw_row["top_p"] if daw_row["top_p"] is not None else 1.0)
-                effective_top_k = int(daw_row["top_k"] if daw_row["top_k"] is not None else 20)
-            else:
-                effective_max_tokens = 2048
-                effective_top_p = 1.0
-                effective_top_k = 20
-            inference_temperature = 0.7
-            if daw_row is not None and daw_row["temperature"] is not None:
-                inference_temperature = float(daw_row["temperature"])
-        else:
-            effective_max_tokens = int(ollama_global_inf["max_tokens"])
-            effective_top_p = float(ollama_global_inf["top_p"])
-            effective_top_k = int(ollama_global_inf["top_k"])
-            inference_temperature = float(ollama_global_inf["temperature"])
-            if daw_row is not None:
-                if daw_row["max_tokens"] is not None:
-                    effective_max_tokens = int(daw_row["max_tokens"])
-                if daw_row["top_p"] is not None:
-                    effective_top_p = float(daw_row["top_p"])
-                if daw_row["top_k"] is not None:
-                    effective_top_k = int(daw_row["top_k"])
-                if daw_row["temperature"] is not None:
-                    inference_temperature = float(daw_row["temperature"])
 
         include_private = principal["kind"] == "owner"
         first_exchange_for_auto_title = int(chat["message_count"] or 0) == 0
@@ -1317,7 +1192,6 @@ async def append_message(
             conn,
             chat,
             user_query_for_rag=body.content.strip(),
-            effective_context_window=effective_ctx,
             include_site_private=include_private,
         )
 
@@ -1366,46 +1240,26 @@ async def append_message(
         full: list[str] = []
         had_error = False
         if _is_claude_model(effective_model):
-            claude_t = max(0.0, min(1.0, inference_temperature))
             logger.info(
-                "chat inference chat_id=%s model=%s daw_id=%s context_window=%s max_tokens=%s top_p=%s "
-                "temperature_daw=%s temperature_claude=%s",
+                "chat inference chat_id=%s model=%s daw_id=%s",
                 str(chat_id),
                 effective_model,
                 str(chat["daw_id"]) if chat["daw_id"] else None,
-                effective_ctx,
-                effective_max_tokens,
-                effective_top_p,
-                inference_temperature,
-                claude_t,
             )
             stream = _stream_claude(
                 effective_model,
                 api_messages,
-                temperature=claude_t,
-                max_tokens=effective_max_tokens,
-                top_p=effective_top_p,
             )
         else:
             logger.info(
-                "chat inference chat_id=%s model=%s daw_id=%s context_window=%s max_tokens=%s top_p=%s top_k=%s temperature=%s",
+                "chat inference chat_id=%s model=%s daw_id=%s",
                 str(chat_id),
                 effective_model,
                 str(chat["daw_id"]) if chat["daw_id"] else None,
-                effective_ctx,
-                effective_max_tokens,
-                effective_top_p,
-                effective_top_k,
-                inference_temperature,
             )
             stream = _stream_ollama(
                 effective_model,
                 api_messages,
-                temperature=inference_temperature,
-                max_tokens=effective_max_tokens,
-                top_p=effective_top_p,
-                top_k=effective_top_k,
-                num_ctx=effective_ctx,
             )
         try:
             async for chunk in stream:

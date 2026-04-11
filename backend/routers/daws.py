@@ -43,12 +43,7 @@ class DawCreate(BaseModel):
     color: str = "#7c3aed"
     shared: bool = False
     sort_order: int = 0
-    temperature: float = Field(0.7, ge=0.0, le=2.0)
     daw_model: str | None = Field(default=None, alias="model")
-    max_tokens: int = Field(2048, ge=512, le=4096)
-    top_p: float = Field(1.0, ge=0.0, le=1.0)
-    top_k: int = Field(20, ge=1, le=100)
-    context_window: int = Field(8192, ge=1024, le=32768)
     dubdrive_sync_folder: str | None = None
     dubdrive_sync_enabled: bool = False
     rag_mode: Literal["auto", "always", "off"] | None = None
@@ -66,12 +61,7 @@ class DawUpdate(BaseModel):
     shared: bool | None = None
     sort_order: int | None = None
     icon_url: str | None = None
-    temperature: float | None = Field(None, ge=0.0, le=2.0)
     daw_model: str | None = Field(default=None, alias="model")
-    max_tokens: int | None = Field(None, ge=512, le=4096)
-    top_p: float | None = Field(None, ge=0.0, le=1.0)
-    top_k: int | None = Field(None, ge=1, le=100)
-    context_window: int | None = Field(None, ge=1024, le=32768)
     dubdrive_sync_folder: str | None = None
     dubdrive_sync_enabled: bool = False
     rag_mode: Literal["auto", "always", "off"] | None = None
@@ -88,12 +78,7 @@ class DawInstructionsBody(BaseModel):
 
 def _row(r: Any) -> dict[str, Any]:
     pn = r.get("persona_name")
-    t = r.get("temperature")
     m = r.get("model")
-    mt = r.get("max_tokens")
-    tp = r.get("top_p")
-    tk = r.get("top_k")
-    cw = r.get("context_window")
     return {
         "id": str(r["id"]),
         "name": r["name"],
@@ -108,12 +93,7 @@ def _row(r: Any) -> dict[str, Any]:
         "pinned_booops": bool(r["pinned_booops"]),
         "pinned_808notes": bool(r["pinned_808notes"]),
         "icon_url": r["icon_url"],
-        "temperature": float(t) if t is not None else 0.7,
         "model": (str(m).strip() if m else None) or None,
-        "max_tokens": int(mt) if mt is not None else 2048,
-        "top_p": float(tp) if tp is not None else 1.0,
-        "top_k": int(tk) if tk is not None else 20,
-        "context_window": int(cw) if cw is not None else 8192,
         "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
         "updated_at": r["updated_at"].isoformat() if r.get("updated_at") else None,
         "owner_id": str(r["owner_id"]) if r.get("owner_id") else None,
@@ -166,15 +146,16 @@ async def list_daws(
 ):
     pool = await get_pool()
     m = _norm_mode(mode) if mode is not None else None
-    sel = """
+   sel = """
                 SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
                     d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
-                    d.temperature, d.model, d.max_tokens, d.top_p, d.top_k, d.context_window, d.rag_mode,
+                    d.model, d.rag_mode,
                     d.dubdrive_sync_folder, d.dubdrive_sync_enabled, d.dubdrive_last_synced_at,
                     d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
                 FROM daws d
                 LEFT JOIN personas p ON p.id = d.persona_id
-    """
+                WHERE d.mode = $1 AND (d.owner_id IS NULL OR d.owner_id = $2::uuid) ORDER BY d.sort_order ASC NULLS LAST, d.name ASC
+            """
     async with pool.acquire() as conn:
         if principal["kind"] == "owner":
             if m is None:
@@ -242,13 +223,13 @@ async def create_daw(body: DawCreate, principal: dict[str, Any] = Depends(get_pr
         row = await conn.fetchrow(
             """
             INSERT INTO daws (
-                name, description, system_prompt, persona_id, mode, color, shared, sort_order, temperature,
-                model, max_tokens, top_p, top_k, context_window, rag_mode, owner_id
+                name, description, system_prompt, persona_id, mode, color, shared, sort_order,
+                model, rag_mode, owner_id
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             RETURNING id, name, description, icon_url, color, shared, sort_order,
-                pinned_booops, pinned_808notes, system_prompt, persona_id, mode, temperature,
-                model, max_tokens, top_p, top_k, context_window, rag_mode,
+                pinned_booops, pinned_808notes, system_prompt, persona_id, mode,
+                model, rag_mode,
                 dubdrive_sync_folder, dubdrive_sync_enabled, dubdrive_last_synced_at,
                 created_at, updated_at, owner_id
             """,
@@ -260,20 +241,15 @@ async def create_daw(body: DawCreate, principal: dict[str, Any] = Depends(get_pr
             body.color or "#7c3aed",
             body.shared,
             body.sort_order,
-            body.temperature,
             ins_model,
-            body.max_tokens,
-            body.top_p,
-            body.top_k,
-            body.context_window,
             rag_ins,
             owner_uuid,
         )
-        prow = await conn.fetchrow(
+               prow = await conn.fetchrow(
             """
             SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
                 d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
-                d.temperature, d.model, d.max_tokens, d.top_p, d.top_k, d.context_window, d.rag_mode,
+                d.model, d.rag_mode,
                 d.dubdrive_sync_folder, d.dubdrive_sync_enabled, d.dubdrive_last_synced_at,
                 d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
             FROM daws d
@@ -383,7 +359,7 @@ async def upload_daw_icon(
             """
             SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
                 d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
-                d.temperature, d.model, d.max_tokens, d.top_p, d.top_k, d.context_window, d.rag_mode,
+                d.model, d.rag_mode,
                 d.dubdrive_sync_folder, d.dubdrive_sync_enabled, d.dubdrive_last_synced_at,
                 d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
             FROM daws d
@@ -439,7 +415,7 @@ async def patch_daw_pin(
             """
             SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
                 d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
-                d.temperature, d.model, d.max_tokens, d.top_p, d.top_k, d.context_window, d.rag_mode,
+                d.model, d.rag_mode,
                 d.dubdrive_sync_folder, d.dubdrive_sync_enabled, d.dubdrive_last_synced_at,
                 d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
             FROM daws d
@@ -457,11 +433,11 @@ async def patch_daw_pin(
 async def get_daw(daw_id: uuid.UUID, principal: dict[str, Any] = Depends(get_principal)):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        row = await conn.fetchrow(
+   row = await conn.fetchrow(
             """
             SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
                 d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
-                d.temperature, d.model, d.max_tokens, d.top_p, d.top_k, d.context_window, d.rag_mode,
+                d.model, d.rag_mode,
                 d.dubdrive_sync_folder, d.dubdrive_sync_enabled, d.dubdrive_last_synced_at,
                 d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
             FROM daws d
@@ -491,7 +467,7 @@ async def patch_daw(
             """
             SELECT id, name, description, icon_url, color, shared, sort_order,
                 pinned_booops, pinned_808notes, system_prompt, persona_id, mode,
-                temperature, model, max_tokens, top_p, top_k, context_window, rag_mode,
+                model, rag_mode,
                 dubdrive_sync_folder, dubdrive_sync_enabled, dubdrive_last_synced_at,
                 created_at, updated_at, owner_id
             FROM daws WHERE id = $1::uuid
@@ -501,74 +477,39 @@ async def patch_daw(
         if row is None:
             raise HTTPException(status_code=404, detail="DAW not found")
         if not data:
-            prow = await conn.fetchrow(
-                """
-                SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
-                    d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
-                    d.temperature, d.model, d.max_tokens, d.top_p, d.top_k, d.context_window, d.rag_mode,
-                    d.dubdrive_sync_folder, d.dubdrive_sync_enabled, d.dubdrive_last_synced_at,
-                    d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
-                FROM daws d
-                LEFT JOIN personas p ON p.id = d.persona_id
-                WHERE d.id = $1::uuid
-                """,
-                daw_id,
-            )
+    prow = await conn.fetchrow(
+            """
+            SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
+                d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
+                d.model, d.rag_mode,
+                d.dubdrive_sync_folder, d.dubdrive_sync_enabled, d.dubdrive_last_synced_at,
+                d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
+            FROM daws d
+            LEFT JOIN personas p ON p.id = d.persona_id
+            WHERE d.id = $1::uuid
+            """,
+            daw_id,
+        )
             return _row(prow)
 
-        new_name = data.get("name", row["name"])
-        new_desc = data.get("description", row["description"])
-        new_sp = data.get("system_prompt", row["system_prompt"])
-        new_pid = row["persona_id"] if "persona_id" not in data else data["persona_id"]
-        new_mode = _norm_mode(data["mode"]) if "mode" in data else row["mode"]
-        new_color = data.get("color", row["color"])
-        new_shared = data.get("shared", row["shared"])
-        new_sort = data.get("sort_order", row["sort_order"])
-        new_temp = (
-            float(data["temperature"])
-            if "temperature" in data and data["temperature"] is not None
-            else float(row["temperature"] if row["temperature"] is not None else 0.7)
-        )
-        if "daw_model" in data:
-            raw_m = data["daw_model"]
-            new_model = None if raw_m is None or str(raw_m).strip() == "" else str(raw_m).strip()
-        else:
-            raw_rm = row["model"]
-            new_model = None if raw_rm is None or str(raw_rm).strip() == "" else str(raw_rm).strip()
-        new_max_tokens = (
-            int(data["max_tokens"])
-            if "max_tokens" in data and data["max_tokens"] is not None
-            else int(row["max_tokens"] if row["max_tokens"] is not None else 2048)
-        )
-        new_top_p = (
-            float(data["top_p"])
-            if "top_p" in data and data["top_p"] is not None
-            else float(row["top_p"] if row["top_p"] is not None else 1.0)
-        )
-        new_top_k = (
-            int(data["top_k"])
-            if "top_k" in data and data["top_k"] is not None
-            else int(row["top_k"] if row["top_k"] is not None else 20)
-        )
-        new_ctx = (
-            int(data["context_window"])
-            if "context_window" in data and data["context_window"] is not None
-            else int(row["context_window"] if row["context_window"] is not None else 8192)
-        )
-        new_dd_folder = (
-            data["dubdrive_sync_folder"]
-            if "dubdrive_sync_folder" in data
-            else row["dubdrive_sync_folder"]
-        )
-        new_dd_enabled = (
-            bool(data["dubdrive_sync_enabled"])
-            if "dubdrive_sync_enabled" in data
-            else bool(row["dubdrive_sync_enabled"])
-        )
-        cur_rm = row.get("rag_mode")
-        if cur_rm not in ("auto", "always", "off"):
-            cur_rm = "auto"
-        new_rag = cast(Literal["auto", "always", "off"], cur_rm)
+   new_name = data.get("name", row["name"])
+    new_desc = data.get("description", row["description"])
+    new_sp = data.get("system_prompt", row["system_prompt"])
+    new_pid = row["persona_id"] if "persona_id" not in data else data["persona_id"]
+   new_mode = _norm_mode(data["mode"]) if "mode" in data else row["mode"]
+    new_color = data.get("color", row["color"])
+    new_shared = data.get("shared", row["shared"])
+    new_sort = data.get("sort_order", row["sort_order"])
+    if "daw_model" in data:
+        raw_m = data["daw_model"]
+        new_model = None if raw_m is None or str(raw_m).strip() == "" else str(raw_m).strip()
+    else:
+        raw_rm = row["model"]
+        new_model = None if raw_rm is None or str(raw_rm).strip() == "" else str(raw_rm).strip()
+    cur_rm = row.get("rag_mode")
+    if cur_rm not in ("auto", "always", "off"):
+        cur_rm = "auto"
+    new_rag = cast(Literal["auto", "always", "off"], cur_rm)
         if "rag_mode" in data and data["rag_mode"] is not None:
             cand = data["rag_mode"]
             if cand not in ("auto", "always", "off"):
@@ -595,9 +536,8 @@ async def patch_daw(
             """
             UPDATE daws
             SET name = $2, description = $3, system_prompt = $4, persona_id = $5, mode = $6,
-                color = $7, shared = $8, sort_order = $9, icon_url = $10, temperature = $11,
-                model = $12, max_tokens = $13, top_p = $14, top_k = $15, context_window = $16,
-                dubdrive_sync_folder = $17, dubdrive_sync_enabled = $18, rag_mode = $19, updated_at = NOW()
+                color = $7, shared = $8, sort_order = $9, icon_url = $10, model = $11,
+                dubdrive_sync_folder = $12, dubdrive_sync_enabled = $13, rag_mode = $14, updated_at = NOW()
             WHERE id = $1::uuid
             """,
             daw_id,
@@ -610,12 +550,7 @@ async def patch_daw(
             new_shared,
             new_sort,
             new_icon,
-            new_temp,
             new_model,
-            new_max_tokens,
-            new_top_p,
-            new_top_k,
-            new_ctx,
             new_dd_folder,
             new_dd_enabled,
             new_rag,
@@ -624,7 +559,7 @@ async def patch_daw(
             """
             SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
                 d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
-                d.temperature, d.model, d.max_tokens, d.top_p, d.top_k, d.context_window, d.rag_mode,
+                d.model, d.rag_mode,
                 d.dubdrive_sync_folder, d.dubdrive_sync_enabled, d.dubdrive_last_synced_at,
                 d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
             FROM daws d

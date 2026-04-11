@@ -68,13 +68,7 @@ export default function DawDetailPage() {
   const [detailName, setDetailName] = useState('')
   const [detailDesc, setDetailDesc] = useState('')
   const [detailColor, setDetailColor] = useState('#7c3aed')
-  const [detailTemp, setDetailTemp] = useState(0.7)
-  const tempSaveTimerRef = useRef(null)
   const [inferModel, setInferModel] = useState('')
-  const [inferMaxTok, setInferMaxTok] = useState(2048)
-  const [inferTopP, setInferTopP] = useState(1)
-  const [inferTopK, setInferTopK] = useState(20)
-  const [inferCtx, setInferCtx] = useState(8192)
   const [ragMode, setRagMode] = useState('auto')
   const [instrDraft, setInstrDraft] = useState('')
   const [memoryDraft, setMemoryDraft] = useState('')
@@ -113,17 +107,7 @@ export default function DawDetailPage() {
     setDetailName(daw.name || '')
     setDetailDesc(daw.description || '')
     setDetailColor(daw.color || '#7c3aed')
-    const t = daw.temperature
-    setDetailTemp(typeof t === 'number' && !Number.isNaN(t) ? t : 0.7)
     setInferModel((daw.model && String(daw.model).trim()) || '')
-    const mt = daw.max_tokens
-    setInferMaxTok(typeof mt === 'number' && !Number.isNaN(mt) ? mt : 2048)
-    const tp = daw.top_p
-    setInferTopP(typeof tp === 'number' && !Number.isNaN(tp) ? tp : 1)
-    const tk = daw.top_k
-    setInferTopK(typeof tk === 'number' && !Number.isNaN(tk) ? tk : 20)
-    const cw = daw.context_window
-    setInferCtx(typeof cw === 'number' && !Number.isNaN(cw) ? cw : 8192)
     const rm = daw.rag_mode
     setRagMode(rm === 'always' || rm === 'off' || rm === 'auto' ? rm : 'auto')
     setSyncFolder(daw.dubdrive_sync_folder || '')
@@ -131,9 +115,7 @@ export default function DawDetailPage() {
   }, [daw])
 
   useEffect(() => {
-    return () => {
-      if (tempSaveTimerRef.current != null) clearTimeout(tempSaveTimerRef.current)
-    }
+    return () => {}
   }, [])
 
   const { data: files = [] } = useQuery({
@@ -261,46 +243,23 @@ export default function DawDetailPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['daws', id, 'memory'] }),
   })
 
-  const pinMut = useMutation({
-    mutationFn: ({ slot, pinned }) => pinDaw(id, slot, pinned),
-    onSuccess: () => invalidateDaw(),
-  })
+const pinMut = useMutation({
+     mutationFn: ({ slot, pinned }) => pinDaw(id, slot, pinned),
+     onSuccess: () => invalidateDaw(),
+   })
 
-  const patchTemperatureMut = useMutation({
-    mutationFn: (temperature) => updateDaw(id, { temperature }),
-    onSuccess: () => invalidateDaw(),
-  })
-
-  const patchTopKMut = useMutation({
-    mutationFn: (top_k) => updateDaw(id, { top_k }),
-    onSuccess: () => invalidateDaw(),
-  })
-
-  function scheduleTemperatureSave(next) {
-    setDetailTemp(next)
-    if (tempSaveTimerRef.current != null) clearTimeout(tempSaveTimerRef.current)
-    tempSaveTimerRef.current = setTimeout(() => {
-      tempSaveTimerRef.current = null
-      patchTemperatureMut.mutate(next)
-    }, 350)
-  }
-
-  const saveInferMut = useMutation({
-    mutationFn: () => {
-      const payload = {
-        model: inferModel.trim() || null,
-        max_tokens: inferMaxTok,
-        top_p: inferTopP,
-        top_k: inferTopK,
-        context_window: inferCtx,
-      }
-      if (!is808notesWorkspace) {
-        payload.rag_mode = ragMode
-      }
-      return updateDaw(id, payload)
-    },
-    onSuccess: () => invalidateDaw(),
-  })
+const saveInferMut = useMutation({
+     mutationFn: () => {
+       const payload = {
+         model: inferModel.trim() || null,
+       }
+       if (!is808notesWorkspace) {
+         payload.rag_mode = ragMode
+       }
+       return updateDaw(id, payload)
+     },
+     onSuccess: () => invalidateDaw(),
+   })
 
   if (!id) {
     return (
@@ -394,70 +353,63 @@ export default function DawDetailPage() {
                     className="resize-y rounded-md border border-border bg-background px-2 py-2 text-sm text-foreground outline-none ring-ring focus-visible:ring-2"
                   />
                 </label>
-                <label className="flex flex-col gap-1 text-sm">
-                  <span className="text-muted-foreground">Color</span>
-                  <input
-                    type="color"
-                    value={detailColor}
-                    onChange={(e) => setDetailColor(e.target.value)}
-                    className="h-9 w-24 cursor-pointer rounded-md border border-border bg-background"
-                  />
-                </label>
-                <div className="flex flex-col gap-2 text-sm">
-                  <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <span className="text-muted-foreground">Temperature</span>
-                    <span className="tabular-nums text-foreground">{detailTemp.toFixed(2)}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={2}
-                    step={0.05}
-                    value={detailTemp}
-                    onChange={(e) => scheduleTemperatureSave(Number(e.target.value))}
-                    disabled={patchTemperatureMut.isPending}
-                    className="h-2 w-full cursor-pointer accent-primary disabled:opacity-50"
-                    aria-valuemin={0}
-                    aria-valuemax={2}
-                    aria-valuenow={detailTemp}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Lower values are more deterministic. Used for Ollama; Claude uses the same setting clamped to 0–1.
-                  </p>
-                </div>
-                <Button type="button" size="sm" onClick={() => saveDetails.mutate()} disabled={saveDetails.isPending}>
-                  Save
-                </Button>
-              </div>
-            </section>
+                 <label className="flex flex-col gap-1 text-sm">
+                   <span className="text-muted-foreground">Color</span>
+                   <input
+                     type="color"
+                     value={detailColor}
+                     onChange={(e) => setDetailColor(e.target.value)}
+                     className="h-9 w-24 cursor-pointer rounded-md border border-border bg-background"
+                   />
+                 </label>
+                 <Button type="button" size="sm" onClick={() => saveDetails.mutate()} disabled={saveDetails.isPending}>
+                   Save
+                 </Button>
+               </div>
+             </section>
 
             <section className="rounded-lg border border-border bg-card p-4">
               <h2 className="mb-3 text-sm font-medium text-foreground">Model and generation</h2>
               <p className="mb-3 text-xs text-muted-foreground">
-                Optional pinned model for this DAW. When set, chat uses these parameters and the model cannot be changed
-                from the chat bar. Leave as “Global default” to use the DAW model picker and global context window.
-              </p>
-              <div className="flex flex-col gap-4 text-sm">
-                <label className="flex flex-col gap-1">
-                  <span className="text-muted-foreground">Model</span>
-                  <select
-                    value={inferModel}
-                    onChange={(e) => setInferModel(e.target.value)}
-                    className="h-9 rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2"
-                  >
-                    <option value="">Global default (DAW model picker)</option>
-                    {inferModelOptions.map((name) => (
-                      <option key={name} value={name}>
-                        {name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className="flex flex-col gap-2">
-                  <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <span className="text-muted-foreground">Max tokens</span>
-                    <span className="tabular-nums text-foreground">{inferMaxTok}</span>
-                  </div>
+                 Optional pinned model for this DAW. Leave as "Global default" to use the DAW model picker.
+               </p>
+               <div className="flex flex-col gap-4 text-sm">
+                 <label className="flex flex-col gap-1">
+                   <span className="text-muted-foreground">Model</span>
+                   <select
+                     value={inferModel}
+                     onChange={(e) => setInferModel(e.target.value)}
+                     className="h-9 rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2"
+                   >
+                     <option value="">Global default (DAW model picker)</option>
+                     {inferModelOptions.map((name) => (
+                       <option key={name} value={name}>
+                         {name}
+                       </option>
+                     ))}
+                   </select>
+                 </label>
+                 <label className="flex flex-col gap-1">
+                   <span className="text-muted-foreground">RAG Mode</span>
+                   <select
+                     value={is808notesWorkspace ? 'always' : ragMode}
+                     onChange={(e) => setRagMode(e.target.value)}
+                     disabled={is808notesWorkspace || saveInferMut.isPending}
+                     title={is808notesWorkspace ? '808notes always uses RAG' : undefined}
+                     className="h-9 rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
+                   >
+                     <option value="auto">Auto (intent gate)</option>
+                     <option value="always">Always</option>
+                     <option value="off">Off</option>
+                   </select>
+                 </label>
+                 {is808notesWorkspace ? (
+                   <p className="text-xs text-muted-foreground">808notes always uses RAG.</p>
+                 ) : null}
+                 <Button type="button" size="sm" onClick={() => saveInferMut.mutate()} disabled={saveInferMut.isPending}>
+                   Save inference settings
+                 </Button>
+               </div>
                   <input
                     type="range"
                     min={512}

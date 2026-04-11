@@ -137,9 +137,6 @@ async def _stream_openai_chat_completions(body: dict[str, Any]) -> AsyncIterator
         yield _sse("[DONE]")
         return
     payload: dict[str, Any] = {"model": model, "messages": messages, "stream": True}
-    for opt_key in ("temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty"):
-        if opt_key in body and body[opt_key] is not None:
-            payload[opt_key] = body[opt_key]
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:
             async with client.stream(

@@ -40,7 +40,6 @@ async def _openai_summarize(
     payload: dict[str, Any] = {
         "model": model,
         "stream": False,
-        "max_tokens": 1024,
         "messages": [
             {
                 "role": "user",

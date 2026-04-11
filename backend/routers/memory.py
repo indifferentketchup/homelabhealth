@@ -150,7 +150,6 @@ async def extract_memory(mode: str = Query("booops"), _: dict = Depends(require_
         "model": model,
         "messages": [{"role": "user", "content": user_prompt}],
         "stream": False,
-        "max_tokens": 2048,
     }
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:

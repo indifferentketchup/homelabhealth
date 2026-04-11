@@ -381,31 +381,14 @@ ALTER TABLE daws ADD COLUMN IF NOT EXISTS dubdrive_last_synced_at TIMESTAMPTZ;
 ALTER TABLE sources ADD COLUMN IF NOT EXISTS mime_type TEXT;
 ALTER TABLE sources ADD COLUMN IF NOT EXISTS file_size_bytes INTEGER;
 
--- DAW inference: sampling temperature (Ollama 0–2; Claude uses clamped 0–1 at call site)
-ALTER TABLE daws ADD COLUMN IF NOT EXISTS temperature REAL DEFAULT 0.7;
-
--- DAW inference: model pin + generation / context (model NULL = use global chat model)
+-- DAW inference: model pin (model NULL = use global chat model)
 ALTER TABLE daws ADD COLUMN IF NOT EXISTS model TEXT;
-ALTER TABLE daws ADD COLUMN IF NOT EXISTS max_tokens INTEGER DEFAULT 2048;
-ALTER TABLE daws ADD COLUMN IF NOT EXISTS top_p REAL DEFAULT 1.0;
-ALTER TABLE daws ADD COLUMN IF NOT EXISTS top_k INTEGER DEFAULT 20;
-ALTER TABLE daws ADD COLUMN IF NOT EXISTS context_window INTEGER DEFAULT 8192;
 
 -- Phase 06: per-DAW RAG mode (auto / always / off). 808notes DAWs use always.
 ALTER TABLE daws ADD COLUMN IF NOT EXISTS rag_mode TEXT NOT NULL DEFAULT 'auto';
 UPDATE daws SET rag_mode = 'always' WHERE mode = '808notes';
 
-INSERT INTO global_settings (key, value) VALUES ('context_window_global', '16384')
-ON CONFLICT (key) DO NOTHING;
 
-INSERT INTO global_settings (key, value) VALUES ('temperature_global', '0.7')
-ON CONFLICT (key) DO NOTHING;
-INSERT INTO global_settings (key, value) VALUES ('top_p_global', '1.0')
-ON CONFLICT (key) DO NOTHING;
-INSERT INTO global_settings (key, value) VALUES ('top_k_global', '20')
-ON CONFLICT (key) DO NOTHING;
-INSERT INTO global_settings (key, value) VALUES ('max_tokens_global', '2048')
-ON CONFLICT (key) DO NOTHING;
 
 -- Ollama host hints (applied when syncing env / restarting Ollama on sam-desktop)
 CREATE TABLE IF NOT EXISTS ollama_config (
