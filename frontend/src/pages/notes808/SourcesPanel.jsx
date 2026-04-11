@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, FileStack, Trash2, Upload } from 'lucide-react'
 
@@ -139,6 +139,14 @@ export function SourcesPanel({ chatId, dawId }) {
     }
   }
 
+  const completeSourceIds = useMemo(() => {
+    return sources
+      .filter((s) => s.embedding_status === 'complete')
+      .map((s) => s.id)
+  }, [sources])
+
+  const allSelected = completeSourceIds.length > 0 && completeSourceIds.every((id) => selectedIds.has(id))
+
   return (
     <aside className="flex h-full min-h-0 w-full min-w-0 shrink-0 flex-col border-l border-sidebar-border bg-sidebar text-sidebar-foreground">
       <div className="border-b border-sidebar-border">
@@ -201,7 +209,25 @@ export function SourcesPanel({ chatId, dawId }) {
             onClick={() => setLibraryOpen((o) => !o)}
             className="fs-nav mt-1 flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left font-medium uppercase tracking-wide text-muted-foreground outline-none ring-sidebar-ring hover:bg-sidebar-accent/50 focus-visible:ring-2"
           >
-            <span>Library</span>
+            <div className="flex items-center gap-2">
+              <span>Library</span>
+              {chatId && completeSourceIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (allSelected) {
+                      void syncSelection(new Set())
+                    } else {
+                      void syncSelection(new Set(completeSourceIds))
+                    }
+                  }}
+                  className="text-xs text-muted-foreground underline-offset-2 hover:underline hover:text-foreground"
+                >
+                  {allSelected ? 'none' : 'all'}
+                </button>
+              )}
+            </div>
             <ChevronDown
               className={cn(
                 'size-4 shrink-0 transition-transform duration-150',
