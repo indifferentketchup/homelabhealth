@@ -354,20 +354,22 @@ const saveInferMut = useMutation({
                   />
                 </label>
                  <label className="flex flex-col gap-1 text-sm">
-                   <span className="text-muted-foreground">Color</span>
-                   <input
-                     type="color"
-                     value={detailColor}
-                     onChange={(e) => setDetailColor(e.target.value)}
-                     className="h-9 w-24 cursor-pointer rounded-md border border-border bg-background"
-                   />
-                 </label>
+                    <span className="text-muted-foreground">Color</span>
+                    <div>
+                      <input
+                        type="color"
+                        value={detailColor}
+                        onChange={(e) => setDetailColor(e.target.value)}
+                        className="h-9 w-24 cursor-pointer rounded-md border border-border bg-background"
+                      />
+                    </div>
+                  </label>
                  <Button type="button" size="sm" onClick={() => saveDetails.mutate()} disabled={saveDetails.isPending}>
                    Save
                  </Button>
-               </div>
-             </section>
-
+             </div>
+            </section>
+            
             <section className="rounded-lg border border-border bg-card p-4">
               <h2 className="mb-3 text-sm font-medium text-foreground">Model and generation</h2>
               <p className="mb-3 text-xs text-muted-foreground">
@@ -407,90 +409,10 @@ const saveInferMut = useMutation({
                    <p className="text-xs text-muted-foreground">808notes always uses RAG.</p>
                  ) : null}
                  <Button type="button" size="sm" onClick={() => saveInferMut.mutate()} disabled={saveInferMut.isPending}>
-                   Save inference settings
-                 </Button>
-               </div>
-                  <input
-                    type="range"
-                    min={512}
-                    max={4096}
-                    step={256}
-                    value={inferMaxTok}
-                    onChange={(e) => setInferMaxTok(Number(e.target.value))}
-                    className="h-2 w-full cursor-pointer accent-primary"
-                  />
+                    Save inference settings
+                  </Button>
                 </div>
-                <div className="flex flex-col gap-2">
-                  <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <span className="text-muted-foreground">Top-p</span>
-                    <span className="tabular-nums text-foreground">{inferTopP.toFixed(1)}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.1}
-                    value={inferTopP}
-                    onChange={(e) => setInferTopP(Number(e.target.value))}
-                    className="h-2 w-full cursor-pointer accent-primary"
-                  />
-                </div>
-                <div className="flex flex-col gap-2">
-                  <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <span className="text-muted-foreground">Top-k</span>
-                    <span className="tabular-nums text-foreground">{inferTopK}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={1}
-                    max={100}
-                    step={1}
-                    value={inferTopK}
-                    onChange={(e) => setInferTopK(Number(e.target.value))}
-                    onMouseUp={(e) => patchTopKMut.mutate(Number(e.currentTarget.value))}
-                    className="h-2 w-full cursor-pointer accent-primary"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Limits token sampling to the top K candidates. Lower = more focused. Ollama only.
-                  </p>
-                </div>
-                <div className="flex flex-col gap-2">
-                  <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <span className="text-muted-foreground">Context window</span>
-                    <span className="tabular-nums text-foreground">{inferCtx}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={1024}
-                    max={32768}
-                    step={1024}
-                    value={inferCtx}
-                    onChange={(e) => setInferCtx(Number(e.target.value))}
-                    className="h-2 w-full cursor-pointer accent-primary"
-                  />
-                </div>
-                <label className="flex flex-col gap-1">
-                  <span className="text-muted-foreground">RAG Mode</span>
-                  <select
-                    value={is808notesWorkspace ? 'always' : ragMode}
-                    onChange={(e) => setRagMode(e.target.value)}
-                    disabled={is808notesWorkspace || saveInferMut.isPending}
-                    title={is808notesWorkspace ? '808notes always uses RAG' : undefined}
-                    className="h-9 rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <option value="auto">Auto (intent gate)</option>
-                    <option value="always">Always</option>
-                    <option value="off">Off</option>
-                  </select>
-                </label>
-                {is808notesWorkspace ? (
-                  <p className="text-xs text-muted-foreground">808notes always uses RAG.</p>
-                ) : null}
-                <Button type="button" size="sm" onClick={() => saveInferMut.mutate()} disabled={saveInferMut.isPending}>
-                  Save inference settings
-                </Button>
-              </div>
-            </section>
+              </section>
 
             <section className="rounded-lg border border-border bg-card p-4">
               <h2 className="mb-3 text-sm font-medium text-foreground">Icon</h2>
