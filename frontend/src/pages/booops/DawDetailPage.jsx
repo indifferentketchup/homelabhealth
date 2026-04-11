@@ -74,6 +74,7 @@ export default function DawDetailPage() {
   const [memoryDraft, setMemoryDraft] = useState('')
   const [syncFolder, setSyncFolder] = useState('')
   const [syncEnabled, setSyncEnabled] = useState(false)
+  const [pinned808notes, setPinned808notes] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState(null)
 
@@ -112,6 +113,7 @@ export default function DawDetailPage() {
     setRagMode(rm === 'always' || rm === 'off' || rm === 'auto' ? rm : 'auto')
     setSyncFolder(daw.dubdrive_sync_folder || '')
     setSyncEnabled(Boolean(daw.dubdrive_sync_enabled))
+    setPinned808notes(Boolean(daw.pinned_808notes))
   }, [daw])
 
   useEffect(() => {
@@ -160,6 +162,7 @@ export default function DawDetailPage() {
         color: detailColor || '#7c3aed',
         dubdrive_sync_folder: syncFolder.trim() || null,
         dubdrive_sync_enabled: syncEnabled,
+        pinned_808notes: pinned808notes,
       }),
     onSuccess: () => invalidateDaw(),
   })
@@ -353,22 +356,26 @@ const saveInferMut = useMutation({
                     className="resize-y rounded-md border border-border bg-background px-2 py-2 text-sm text-foreground outline-none ring-ring focus-visible:ring-2"
                   />
                 </label>
-                 <label className="flex flex-col gap-1 text-sm">
-                    <span className="text-muted-foreground">Color</span>
-                    <div>
-                      <input
-                        type="color"
-                        value={detailColor}
-                        onChange={(e) => setDetailColor(e.target.value)}
-                        className="h-9 w-24 cursor-pointer rounded-md border border-border bg-background"
-                      />
-                    </div>
-                  </label>
-                 <Button type="button" size="sm" onClick={() => saveDetails.mutate()} disabled={saveDetails.isPending}>
-                   Save
-                 </Button>
-             </div>
-            </section>
+                  <label className="flex flex-col gap-1 text-sm">
+                     <span className="text-muted-foreground">Color</span>
+                     <div>
+                       <input
+                         type="color"
+                         value={detailColor}
+                         onChange={(e) => setDetailColor(e.target.value)}
+                         className="h-9 w-24 cursor-pointer rounded-md border border-border bg-background"
+                       />
+                     </div>
+                   </label>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm text-foreground">Pin to 808notes sidebar</span>
+                    <EmbeddableSwitch embeddable={pinned808notes} disabled={false} onToggle={setPinned808notes} />
+                  </div>
+                  <Button type="button" size="sm" onClick={() => saveDetails.mutate()} disabled={saveDetails.isPending}>
+                    Save
+                  </Button>
+              </div>
+             </section>
             
             <section className="rounded-lg border border-border bg-card p-4">
               <h2 className="mb-3 text-sm font-medium text-foreground">Model and generation</h2>
