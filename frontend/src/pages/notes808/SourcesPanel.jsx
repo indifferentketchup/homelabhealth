@@ -253,15 +253,15 @@ export function SourcesPanel({ chatId, dawId }) {
                   <label
                     className={cn(
                       'flex min-w-0 flex-1 cursor-pointer items-start gap-2 rounded-md px-1 py-1.5',
-                      !chatId || !ready ? 'cursor-not-allowed opacity-60' : '',
+                      !ready ? 'cursor-not-allowed opacity-60' : '',
                     )}
                   >
                     <input
                       type="checkbox"
                       className="mt-1.5 size-3.5 shrink-0"
                       checked={on}
-                      disabled={!chatId || !ready}
-                      onChange={() => ready && chatId && toggleSource(src.id)}
+                      disabled={!ready}
+                      onChange={() => ready && toggleSource(src.id)}
                     />
                     <span className="min-w-0 flex-1">
                       <span className="fs-nav flex items-center gap-1.5 font-medium text-foreground">
