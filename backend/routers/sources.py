@@ -106,6 +106,7 @@ async def _ingest_source(source_id: uuid.UUID, daw_id: uuid.UUID, raw: bytes, mi
                 for i, chunk in enumerate(chunks):
                     emb = embeddings[i] if i < len(embeddings) else []
                     emb_param = str(emb) if emb else None
+                    text = chunk.replace('\x00', '')
                     await conn.execute(
                         """
                         INSERT INTO source_chunks (id, source_id, chunk_index, text, embedding)
@@ -114,7 +115,7 @@ async def _ingest_source(source_id: uuid.UUID, daw_id: uuid.UUID, raw: bytes, mi
                         uuid.uuid4(),
                         source_id,
                         i,
-                        chunk,
+                        text,
                         emb_param,
                     )
                 await conn.execute(

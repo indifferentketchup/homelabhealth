@@ -11,10 +11,11 @@ EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "BAAI/bge-m3")
 
 
 async def embed_text(text: str) -> list[float]:
+    text = text.replace('\x00', '')
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
             r = await client.post(
-                f"{EMBEDDING_URL}/v1/embeddings",
+                f"{EMBEDDING_URL}/embeddings",
                 json={"model": EMBEDDING_MODEL, "input": text},
             )
             r.raise_for_status()
@@ -25,10 +26,11 @@ async def embed_text(text: str) -> list[float]:
 
 
 async def embed_batch(texts: list[str]) -> list[list[float]]:
+    texts = [t.replace('\x00', '') for t in texts]
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
             r = await client.post(
-                f"{EMBEDDING_URL}/v1/embeddings",
+                f"{EMBEDDING_URL}/embeddings",
                 json={"model": EMBEDDING_MODEL, "input": texts},
             )
             r.raise_for_status()
