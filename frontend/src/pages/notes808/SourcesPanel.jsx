@@ -32,6 +32,7 @@ function EmbeddingStatusDot({ status }) {
 export function SourcesPanel({ chatId, dawId }) {
   const queryClient = useQueryClient()
   const fileRef = useRef(null)
+  const pendingSelectionRef = useRef(null)
   const setActiveDawId = useAppStore((s) => s.setActiveDawId)
 
   const [uploading, setUploading] = useState(false)
@@ -71,7 +72,15 @@ export function SourcesPanel({ chatId, dawId }) {
       try {
         const pack = await getChatSourceSelection(chatId)
         const ids = Array.isArray(pack?.source_ids) ? pack.source_ids : []
-        if (!cancelled) setSelectedIds(new Set(ids.map(String)))
+        if (!cancelled) {
+          if (pendingSelectionRef.current) {
+            await setChatSourceSelection(chatId, Array.from(pendingSelectionRef.current))
+            setSelectedIds(pendingSelectionRef.current)
+            pendingSelectionRef.current = null
+          } else {
+            setSelectedIds(new Set(ids.map(String)))
+          }
+        }
       } catch {
         if (!cancelled) setSelectedIds(new Set())
       }
@@ -92,6 +101,8 @@ export function SourcesPanel({ chatId, dawId }) {
       } catch {
         setStatus('Could not save source selection')
       }
+    } else {
+      pendingSelectionRef.current = nextSet
     }
   }
 

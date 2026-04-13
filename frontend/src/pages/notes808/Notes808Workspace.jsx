@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Outlet, useNavigate, useParams } from 'react-router-dom'
+import { Pin } from 'lucide-react'
 import * as LucideIcons from 'lucide-react'
 
 import { fetchBranding, patch808notesBranding } from '@/api/branding.js'
-import { createDaw, getDaw, listDaws } from '@/api/daws.js'
+import { createDaw, deleteDaw, getDaw, listDaws, pinDaw } from '@/api/daws.js'
 import { deleteSource, listSources, uploadSource } from '@/api/sources.js'
+import { getChatSourceSelection, setChatSourceSelection } from '@/api/chats.js'
 import { ChatView } from '@/components/chat/ChatView.jsx'
 import { FileViewerPanel } from '@/components/chat/FileViewerPanel.jsx'
 import { FileBrowserPanel } from '@/components/FileBrowserPanel.jsx'
 import { Button } from '@/components/ui/button'
-import { PATH_808NOTES_HOME, notes808DawPath } from '@/routes/paths.js'
+import { PATH_808NOTES, PATH_808NOTES_HOME, notes808DawPath } from '@/routes/paths.js'
 import { cn } from '@/lib/utils.js'
 import { useAppStore } from '@/store/index.js'
 
@@ -71,6 +73,7 @@ export function Notes808Landing() {
   const [newName, setNewName] = useState('')
   const [newDesc, setNewDesc] = useState('')
   const [newEmoji, setNewEmoji] = useState('🎛️')
+  const [deleteId, setDeleteId] = useState(null)
 
   /**
    * Hero copy: `fetchBranding` snapshot (q) then Zustand (s). Store wins for live edits; if
@@ -124,6 +127,19 @@ export function Notes808Landing() {
     },
   })
 
+  const pinMut = useMutation({
+    mutationFn: ({ id, pinned }) => pinDaw(id, '808notes', pinned),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['daws'] }),
+  })
+
+  const delMut = useMutation({
+    mutationFn: (id) => deleteDaw(id),
+    onSuccess: () => {
+      setDeleteId(null)
+      queryClient.invalidateQueries({ queryKey: ['daws'] })
+    },
+  })
+
   const hubTitle = (typeof branding?.title === 'string' && branding.title.trim()) || '808notes'
   /** From Settings → Branding → Subtitle / slogan (`subtitle` in API; `tagline` kept for older rows). */
   const hubTagline =
@@ -137,18 +153,6 @@ export function Notes808Landing() {
   return (
     <div ref={layoutRef} className="notes808-landing flex min-h-0 flex-1 flex-col overflow-auto">
       <div className="notes808-landing__shell">
-        <div className="notes808-landing__banner">
-          {bannerUrl ? (
-            <img src={bannerUrl} alt="" className="notes808-landing__banner-img" />
-          ) : (
-            <div className="notes808-landing__banner-fallback" aria-hidden>
-              <span className="notes808-landing__banner-fallback-badge">// 808notes</span>
-            </div>
-          )}
-          <div className="notes808-landing-banner-grid pointer-events-none" aria-hidden />
-          <div className="notes808-landing__banner-fade pointer-events-none" />
-        </div>
-
         <header className="notes808-landing__hero">
           <div className="notes808-landing__hero-row">
             <div className="notes808-landing__logo-box">
@@ -192,34 +196,107 @@ export function Notes808Landing() {
             <p className="text-sm text-muted-foreground">No DAWs yet — create one to get started.</p>
           )}
           <div className="notes808-landing__cards">
-            {items.map((d) => (
-              <Link
-                key={d.id}
-                to={notes808DawPath(d.id)}
-                className={cn(
-                  'notes808-landing-card group text-card-foreground',
-                  'transition-colors hover:border-accent',
-                )}
-                style={
-                  d?.color
-                    ? { '--notes808-card-tint': d.color }
-                    : undefined
-                }
-              >
-                <div className="notes808-landing-card__ribbon" aria-hidden />
-                <div className="notes808-landing-card__body">
-                  <DawLandingIcon daw={d} />
-                  <h2 className="notes808-landing-card__name">{d.name || 'Untitled'}</h2>
-                  {d.description ? (
-                    <p className="notes808-landing-card__desc">{d.description}</p>
+            {items.map((d) => {
+              const pinned = d.pinned_808notes === true
+              return (
+                <div
+                  key={d.id}
+                  className={cn(
+                    'notes808-landing-card group text-card-foreground',
+                    'transition-colors hover:border-accent',
+                    'relative',
+                  )}
+                  style={
+                    d?.color
+                      ? { '--notes808-card-tint': d.color }
+                      : undefined
+                  }
+                >
+                  <div className="notes808-landing-card__ribbon" aria-hidden />
+                  <Link
+                    to={notes808DawPath(d.id)}
+                    className="notes808-landing-card__body"
+                  >
+                    <DawLandingIcon daw={d} />
+                    <h2 className="notes808-landing-card__name">{d.name || 'Untitled'}</h2>
+                    {d.description ? (
+                      <p className="notes808-landing-card__desc">{d.description}</p>
+                    ) : (
+                      <p className="notes808-landing-card__desc notes808-landing-card__desc--placeholder">
+                        No description
+                      </p>
+                    )}
+                  </Link>
+                  {deleteId === d.id ? (
+                    <div className="notes808-landing-card__footer">
+                      <p className="text-sm text-muted-foreground">Delete this DAW?</p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setDeleteId(null)}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => delMut.mutate(d.id)}
+                          disabled={delMut.isPending}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </div>
                   ) : (
-                    <p className="notes808-landing-card__desc notes808-landing-card__desc--placeholder">
-                      No description
-                    </p>
+                    <div className="notes808-landing-card__footer">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          title={
+                            pinned
+                              ? 'Unpin from 808notes sidebar'
+                              : 'Pin to 808notes sidebar'
+                          }
+                          onClick={() => pinMut.mutate({ id: d.id, pinned: !pinned })}
+                          disabled={pinMut.isPending}
+                          className="flex items-center gap-1 rounded-md p-1.5 text-muted-foreground hover:bg-background/50 hover:text-foreground disabled:opacity-50"
+                        >
+                          <Pin
+                            className={cn(
+                              'size-5 text-foreground',
+                              pinned ? 'fill-current' : 'fill-none stroke-2',
+                            )}
+                            aria-hidden
+                          />
+                          <span className="sr-only">Pin 808notes</span>
+                        </button>
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => navigate(`${PATH_808NOTES}/daws/${d.id}`)}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => setDeleteId(d.id)}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
                   )}
                 </div>
-              </Link>
-            ))}
+              )
+            })}
           </div>
         </section>
       </div>
@@ -401,7 +478,10 @@ export function Notes808DawSourcesPage() {
   const { dawId } = useParams()
   const queryClient = useQueryClient()
   const fileRef = useRef(null)
+  const pendingSelectionRef = useRef(null)
+  const activeChatId = useAppStore((s) => s.activeChatId)
   const [uploading, setUploading] = useState(false)
+  const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [status, setStatus] = useState('')
 
   const { data: sources = [], isLoading } = useQuery({
@@ -416,6 +496,57 @@ export function Notes808DawSourcesPage() {
         : false
     },
   })
+
+  useEffect(() => {
+    if (!activeChatId) {
+      setSelectedIds(new Set())
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const pack = await getChatSourceSelection(activeChatId)
+        const ids = Array.isArray(pack?.source_ids) ? pack.source_ids : []
+        if (!cancelled) {
+          if (pendingSelectionRef.current) {
+            await setChatSourceSelection(activeChatId, Array.from(pendingSelectionRef.current))
+            setSelectedIds(pendingSelectionRef.current)
+            pendingSelectionRef.current = null
+          } else {
+            setSelectedIds(new Set(ids.map(String)))
+          }
+        }
+      } catch {
+        if (!cancelled) setSelectedIds(new Set())
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [activeChatId])
+
+  async function syncSelection(nextSet) {
+    setSelectedIds(nextSet)
+    if (activeChatId) {
+      try {
+        await setChatSourceSelection(
+          activeChatId,
+          Array.from(nextSet).map((id) => id),
+        )
+      } catch {
+        setStatus('Could not save source selection')
+      }
+    } else {
+      pendingSelectionRef.current = nextSet
+    }
+  }
+
+  function toggleSource(id) {
+    const next = new Set(selectedIds)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    void syncSelection(next)
+  }
 
   async function onUpload(e) {
     const file = e.target.files?.[0]
@@ -444,6 +575,14 @@ export function Notes808DawSourcesPage() {
       setStatus('Delete failed')
     }
   }
+
+  const completeSourceIds = useMemo(() => {
+    return sources
+      .filter((s) => s.embedding_status === 'complete')
+      .map((s) => s.id)
+  }, [sources])
+
+  const allSelected = completeSourceIds.length > 0 && completeSourceIds.every((id) => selectedIds.has(id))
 
   const backPath = notes808DawPath(dawId)
 
@@ -475,6 +614,19 @@ export function Notes808DawSourcesPage() {
           >
             Upload
           </Button>
+          {activeChatId && completeSourceIds.length > 0 ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="px-0"
+              onClick={() => {
+                void syncSelection(allSelected ? new Set() : new Set(completeSourceIds))
+              }}
+            >
+              {allSelected ? 'Deselect all' : 'Select all'}
+            </Button>
+          ) : null}
           {status ? <span className="text-sm text-muted-foreground">{status}</span> : null}
         </div>
 
@@ -483,28 +635,40 @@ export function Notes808DawSourcesPage() {
           {!isLoading && sources.length === 0 && (
             <li className="text-sm text-muted-foreground">No sources yet.</li>
           )}
-          {sources.map((s) => (
-            <li
-              key={s.id}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-3"
-            >
-              <div className="min-w-0">
-                <p className="truncate font-medium text-foreground">{s.name || s.filename || 'Source'}</p>
-                {s.embedding_status ? (
-                  <p className="text-xs text-muted-foreground">{s.embedding_status}</p>
-                ) : null}
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="shrink-0 text-destructive hover:bg-destructive/10"
-                onClick={() => onDeleteSource(s.id, s.name || s.filename)}
+          {sources.map((s) => {
+            const ready = s.embedding_status === 'complete'
+            return (
+              <li
+                key={s.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-3"
               >
-                Delete
-              </Button>
-            </li>
-          ))}
+                <div className="flex items-start gap-3 min-w-0">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 size-4 shrink-0"
+                    checked={selectedIds.has(s.id)}
+                    disabled={!ready}
+                    onChange={() => ready && toggleSource(s.id)}
+                  />
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-foreground">{s.name || s.filename || 'Source'}</p>
+                    {s.embedding_status ? (
+                      <p className="text-xs text-muted-foreground">{s.embedding_status}</p>
+                    ) : null}
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 text-destructive hover:bg-destructive/10"
+                  onClick={() => onDeleteSource(s.id, s.name || s.filename)}
+                >
+                  Delete
+                </Button>
+              </li>
+            )
+          })}
         </ul>
       </div>
     </div>
