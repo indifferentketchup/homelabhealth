@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
-from auth_deps import assert_daw_mutable, fetch_daw_if_visible, get_principal
+from auth_deps import assert_daw_mutable, fetch_daw_if_visible, get_principal, require_admin
 from db import get_pool
 from services.chunking import chunk_text, parse_source_bytes
 from services.embeddings import embed_batch
@@ -277,3 +277,28 @@ async def delete_source(
         await conn.execute("DELETE FROM sources WHERE id = $1::uuid", source_id)
 
     return {"deleted": str(source_id)}
+
+
+@router.post("/daw/{daw_id}/clear-embeddings")
+async def clear_daw_embeddings(daw_id: str, admin: dict = Depends(require_admin)) -> dict[str, Any]:
+    """Delete all chunks and reset embedding status for all sources in a DAW."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        # Delete chunks for all sources in this DAW
+        await conn.execute(
+            """
+            DELETE FROM source_chunks
+            WHERE source_id IN (SELECT id FROM sources WHERE daw_id = $1::uuid)
+            """,
+            uuid.UUID(daw_id),
+        )
+        # Reset all sources to pending
+        await conn.execute(
+            """
+            UPDATE sources
+            SET embedding_status = 'pending', chunk_count = 0, error_message = NULL, updated_at = NOW()
+            WHERE daw_id = $1::uuid
+            """,
+            uuid.UUID(daw_id),
+        )
+    return {"ok": True, "daw_id": daw_id}

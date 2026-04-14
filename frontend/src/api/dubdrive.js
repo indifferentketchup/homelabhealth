@@ -12,3 +12,12 @@ export async function dubdriveRead(path) {
   const q = new URLSearchParams({ path })
   return apiFetch(`/api/dubdrive/read?${q}`)
 }
+
+/** DubDrive proxy: append entry to .dubignore */
+export async function dubignoreAppend(syncFolder, entryName, entryType) {
+  return apiFetch('/api/dubdrive/dubignore-append', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sync_folder: syncFolder, entry_name: entryName, entry_type: entryType }),
+  })
+}

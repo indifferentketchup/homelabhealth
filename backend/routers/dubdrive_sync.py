@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import pathlib
 import uuid
 from collections import deque
 from typing import Any
@@ -19,6 +20,73 @@ from services import dubdrive_auth
 
 router = APIRouter(prefix="/dubdrive-sync", tags=["dubdrive-sync"])
 logger = logging.getLogger(__name__)
+
+_DEFAULT_SKIP_DIRS = frozenset({
+    "node_modules", "__pycache__", ".git", ".venv", "venv",
+    "dist", "build", ".next", ".nuxt", ".cache",
+    "vendor", "target", "coverage", ".tox",
+})
+
+_DEFAULT_SKIP_EXTENSIONS = frozenset({
+    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".webp", ".bmp",
+    ".woff", ".woff2", ".ttf", ".eot", ".otf",
+    ".zip", ".tar", ".gz", ".bz2", ".7z", ".rar",
+    ".exe", ".dll", ".so", ".dylib", ".bin",
+    ".mp3", ".mp4", ".wav", ".avi", ".mov", ".mkv",
+    ".pdf", ".lock", ".pyc", ".pyo", ".class", ".o", ".obj",
+    ".map", ".min.js", ".min.css",
+})
+
+_DEFAULT_SKIP_NAMES = frozenset({
+    "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
+    "Thumbs.db", "desktop.ini", ".DS_Store",
+})
+
+
+async def _load_dubignore(root: str) -> tuple[set[str], set[str], set[str]]:
+    """
+    Load .dubignore from root of sync folder via DubDrive API.
+    Returns (skip_dirs, skip_extensions, skip_names) merged with defaults.
+    
+    .dubignore format (one pattern per line, # comments):
+      dir:node_modules        — skip directory by name
+      ext:.png                — skip files by extension
+      name:package-lock.json  — skip files by exact name
+    
+    Lines without a prefix are treated as dir: patterns.
+    """
+    skip_dirs = set(_DEFAULT_SKIP_DIRS)
+    skip_exts = set(_DEFAULT_SKIP_EXTENSIONS)
+    skip_names = set(_DEFAULT_SKIP_NAMES)
+    try:
+        sep = "/" if root.endswith("/") else "/"
+        ignore_path = f"{root}{sep}.dubignore"
+        content = await _dubdrive_read(ignore_path)
+        if not content:
+            return skip_dirs, skip_exts, skip_names
+        for raw_line in content.splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("dir:"):
+                skip_dirs.add(line[4:].strip())
+            elif line.startswith("ext:"):
+                e = line[4:].strip()
+                if not e.startswith("."):
+                    e = "." + e
+                skip_exts.add(e)
+            elif line.startswith("name:"):
+                skip_names.add(line[5:].strip())
+            else:
+                # bare word = directory name
+                skip_dirs.add(line)
+        logger.info(".dubignore loaded: +%d dirs, +%d exts, +%d names",
+                     len(skip_dirs) - len(_DEFAULT_SKIP_DIRS),
+                     len(skip_exts) - len(_DEFAULT_SKIP_EXTENSIONS),
+                     len(skip_names) - len(_DEFAULT_SKIP_NAMES))
+    except Exception as e:
+        logger.debug(".dubignore not found or unreadable: %s", e)
+    return skip_dirs, skip_exts, skip_names
 
 
 async def _dubdrive_ls(path: str) -> list[dict[str, Any]]:
@@ -50,6 +118,26 @@ async def _dubdrive_ls(path: str) -> list[dict[str, Any]]:
         return []
 
 
+async def _dubdrive_read(path: str) -> str | None:
+    """Read a text file from DubDrive. Returns content string or None."""
+    try:
+        base = dubdrive_auth._dubdrive_base_url()
+        token = await dubdrive_auth.get_token()
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.get(
+                f"{base}/api/read",
+                params={"path": path},
+                cookies=dubdrive_auth.get_cookies(token),
+            )
+            if r.status_code == 404:
+                return None
+            r.raise_for_status()
+            data = r.json()
+            return data.get("content") or data.get("text") or None
+    except Exception:
+        return None
+
+
 async def _dubdrive_read_bytes(path: str) -> bytes | None:
     """Call DubDrive GET /api/raw?path= and return raw bytes."""
     base = dubdrive_auth._dubdrive_base_url()
@@ -74,7 +162,10 @@ async def _dubdrive_read_bytes(path: str) -> bytes | None:
         return None
 
 
-async def _collect_files(root: str, max_files: int = 200) -> list[dict[str, Any]]:
+async def _collect_files(root: str, max_files: int = 200,
+                         skip_dirs: set[str] | None = None,
+                         skip_exts: set[str] | None = None,
+                         skip_names: set[str] | None = None) -> list[dict[str, Any]]:
     """
     Recursively walk DubDrive directory tree starting at root.
     Returns list of {path, name, size} for files only (not dirs).
@@ -113,8 +204,13 @@ async def _collect_files(root: str, max_files: int = 200) -> list[dict[str, Any]
                 or item.get("Type") == "directory"
             )
             if is_dir:
+                if skip_dirs and name in skip_dirs:
+                    continue
                 queue.append(str(path))
             else:
+                ext = "." + name.rsplit(".", 1)[-1].lower() if "." in name else ""
+                if (skip_names and name in skip_names) or (skip_exts and ext in skip_exts):
+                    continue
                 size = item.get("size") or item.get("Size") or 0
                 try:
                     size_i = int(size)
@@ -209,7 +305,8 @@ async def dubdrive_sync_run(
 
         sync_folder_str = str(sync_folder).strip()
 
-    files = await _collect_files(sync_folder_str)
+    skip_dirs, skip_exts, skip_names = await _load_dubignore(sync_folder_str)
+    files = await _collect_files(sync_folder_str, skip_dirs=skip_dirs, skip_exts=skip_exts, skip_names=skip_names)
     total_found = len(files)
     queued = 0
     skipped = 0

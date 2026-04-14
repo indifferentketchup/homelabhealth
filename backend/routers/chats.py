@@ -4,16 +4,14 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import uuid
-from typing import Any, AsyncIterator
+from pathlib import Path
+from typing import Any
 
 import asyncpg
-import httpx
-from anthropic import AsyncAnthropic
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+import json as json_module
 
 from auth_deps import (
     assert_daw_usable,
@@ -147,6 +145,7 @@ async def _assembled_system_prompt(
     *,
     user_query_for_rag: str | None = None,
     include_site_private: bool = True,
+    session_skill_ids: list[str] | None = None,
 ) -> tuple[str, dict[str, int] | None]:
     """Persona → DAW prompt + daw_instructions + semantic memory facts → context files → custom instructions → RAG → mode_memory."""
     mode = chat["mode"] if chat["mode"] in ("booops", "808notes") else "booops"
@@ -220,6 +219,36 @@ async def _assembled_system_prompt(
         if daw_mem_rows:
             mem_lines = "\n".join(f"- {r['content']}" for r in daw_mem_rows)
             parts.append(f"[DAW Memory]\n{mem_lines}")
+
+        # Skills injection: DAW skills + optional session skills (deduplicated)
+        session_skill_set = set(session_skill_ids) if session_skill_ids else set()
+        if daw_id and not session_skill_set:
+            # Only fetch DAW skills if no session skills provided (session skills override DAW skills)
+            skill_rows = await conn.fetch(
+                """
+                SELECT s.raw_content 
+                FROM daw_skills ds
+                JOIN skills s ON s.id = ds.skill_id
+                WHERE ds.daw_id = $1::uuid AND ds.active = true
+                ORDER BY ds.added_at DESC
+                """,
+                daw_id,
+            )
+            for sr in skill_rows:
+                if sr["raw_content"]:
+                    parts.append(f"\n---\n## Active Skill\n{sr['raw_content']}")
+        elif session_skill_set:
+            # Fetch session skills only
+            if session_skill_set:
+                skill_rows = await conn.fetch(
+                    """
+                    SELECT id, raw_content FROM skills WHERE id = ANY($1::uuid[])
+                    """,
+                    list(session_skill_set),
+                )
+                for sr in skill_rows:
+                    if sr["raw_content"]:
+                        parts.append(f"\n---\n## Active Skill\n{sr['raw_content']}")
 
     if daw_id is not None and include_site_private and user_query_for_rag:
         memory_facts = await retrieve_memory_facts(str(user_query_for_rag), mode, conn)
@@ -572,6 +601,7 @@ class ChatPatch(BaseModel):
 class MessageCreate(BaseModel):
     content: str = Field(..., min_length=1)
     model: str | None = None
+    session_skill_ids: list[str] | None = None
 
 
 class WebSearchToggleBody(BaseModel):
@@ -1193,6 +1223,7 @@ async def append_message(
             chat,
             user_query_for_rag=body.content.strip(),
             include_site_private=include_private,
+            session_skill_ids=body.session_skill_ids,
         )
 
     summary = chat["pruning_summary"]

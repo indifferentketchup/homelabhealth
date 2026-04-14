@@ -1,8 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useLocation, useParams } from 'react-router-dom'
 
-import { addDawMemory, deleteDawMemory, getDawMemory, getStoredBoolabToken } from '@/api/index.js'
+import {
+  addDawMemory,
+  clearDawEmbeddings,
+  deleteDawMemory,
+  getDawMemory,
+  getStoredBoolabToken,
+} from '@/api/index.js'
 import {
   deleteContextFile,
   getDaw,
@@ -16,7 +22,9 @@ import {
   uploadDawIcon,
 } from '@/api/daws.js'
 import { fetchOllamaModels } from '@/api/ollama.js'
+import { listSkills, getDawSkills, addSkillToDaw, removeSkillFromDaw, toggleDawSkill } from '@/api/skills'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { PATH_808NOTES, PATH_BOOOPS, is808notesRouteContext } from '@/routes/paths.js'
 import { useAppStore } from '@/store/index.js'
 import { cn } from '@/lib/utils'
@@ -77,6 +85,9 @@ export default function DawDetailPage() {
   const [pinned808notes, setPinned808notes] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState(null)
+  const [showClearConfirm, setShowClearConfirm] = useState(false)
+  const [clearing, setClearing] = useState(false)
+  const [skillsAddDialogOpen, setSkillsAddDialogOpen] = useState(false)
 
   const invalidateDaw = () => {
     queryClient.invalidateQueries({ queryKey: ['daws'] })
@@ -146,6 +157,43 @@ export default function DawDetailPage() {
     staleTime: 15_000,
   })
   const memoryRows = Array.isArray(dawMemoryList) ? dawMemoryList : []
+
+  const { data: dawSkillsList = [] } = useQuery({
+    queryKey: ['daws', id, 'skills'],
+    queryFn: () => getDawSkills(id),
+    enabled: Boolean(id),
+    staleTime: 15_000,
+  })
+
+  const { data: allSkills = [] } = useQuery({
+    queryKey: ['skills'],
+    queryFn: listSkills,
+    staleTime: 30_000,
+  })
+
+  const attachSkillMutation = useMutation({
+    mutationFn: ({ skillId, active }) => addSkillToDaw(id, skillId, active),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['daws', id, 'skills'] })
+    },
+  })
+
+  const detachSkillMutation = useMutation({
+    mutationFn: (skillId) => removeSkillFromDaw(id, skillId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['daws', id, 'skills'] })
+    },
+  })
+
+  const toggleSkillMutation = useMutation({
+    mutationFn: ({ skillId, active }) => toggleDawSkill(id, skillId, active),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['daws', id, 'skills'] })
+    },
+  })
+
+  const attachedSkillIds = new Set(dawSkillsList.map(s => s.id))
+  const unattachedSkills = allSkills.filter(s => !attachedSkillIds.has(s.id))
 
   function formatMemoryDate(iso) {
     if (!iso) return ''
@@ -252,17 +300,26 @@ const pinMut = useMutation({
    })
 
 const saveInferMut = useMutation({
-     mutationFn: () => {
-       const payload = {
-         model: inferModel.trim() || null,
-       }
-       if (!is808notesWorkspace) {
-         payload.rag_mode = ragMode
-       }
-       return updateDaw(id, payload)
-     },
-     onSuccess: () => invalidateDaw(),
-   })
+      mutationFn: () => {
+        const payload = {
+          model: inferModel.trim() || null,
+        }
+        if (!is808notesWorkspace) {
+          payload.rag_mode = ragMode
+        }
+        return updateDaw(id, payload)
+      },
+      onSuccess: () => invalidateDaw(),
+    })
+
+  const clearEmbeddingsMut = useMutation({
+    mutationFn: () => clearDawEmbeddings(id),
+    onSuccess: () => {
+      invalidateDaw()
+      setShowClearConfirm(false)
+      setClearing(false)
+    },
+  })
 
   if (!id) {
     return (
@@ -601,6 +658,107 @@ const saveInferMut = useMutation({
             </section>
 
             <section className="rounded-lg border border-border bg-card p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-sm font-medium text-foreground">Skills</h2>
+                <Button type="button" size="sm" onClick={() => setSkillsAddDialogOpen(true)}>
+                  <Plus className="mr-1 h-3 w-3" />
+                  Add from Library
+                </Button>
+              </div>
+              <p className="mb-3 text-xs text-muted-foreground">
+                AI skills attached to this DAW are injected into every conversation.
+              </p>
+              {dawSkillsList.length === 0 ? (
+                <p className="mb-3 text-sm text-muted-foreground">No skills attached yet.</p>
+              ) : (
+                <ul className="mb-4 flex flex-col gap-2">
+                  {dawSkillsList.map((skill) => (
+                    <li
+                      key={skill.id}
+                      className="flex items-start justify-between gap-3 rounded-md border border-border/60 px-3 py-2"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-sm text-foreground">{skill.name}</span>
+                          {skill.active && (
+                            <Badge variant="default" className="h-5 px-1.5 text-[10px]">Active</Badge>
+                          )}
+                        </div>
+                        {skill.description && (
+                          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{skill.description}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => toggleSkillMutation.mutate({ skillId: skill.id, active: !skill.active })}
+                          disabled={toggleSkillMutation.isPending}
+                          title={skill.active ? 'Deactivate' : 'Activate'}
+                        >
+                          {skill.active ? '✓' : '○'}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => detachSkillMutation.mutate(skill.id)}
+                          disabled={detachSkillMutation.isPending}
+                          title="Remove"
+                        >
+                          <X className="h-3.5 w-3.5 text-destructive" />
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {/* Add Skill Dialog */}
+              <Dialog open={skillsAddDialogOpen} onOpenChange={setSkillsAddDialogOpen}>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Add Skill to DAW</DialogTitle>
+                    <DialogDescription>
+                      Choose a skill from your library to attach to this DAW.
+                    </DialogDescription>
+                  </DialogHeader>
+                  {unattachedSkills.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No skills available in library.</p>
+                  ) : (
+                    <div className="max-h-64 overflow-y-auto space-y-2">
+                      {unattachedSkills.map((skill) => (
+                        <div
+                          key={skill.id}
+                          className="flex items-start justify-between gap-2 rounded-md border border-border p-2 hover:bg-muted/50"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="font-medium text-sm">{skill.name}</div>
+                            {skill.description && (
+                              <div className="line-clamp-2 text-xs text-muted-foreground">{skill.description}</div>
+                            )}
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => {
+                              attachSkillMutation.mutate({ skillId: skill.id, active: true })
+                              setSkillsAddDialogOpen(false)
+                            }}
+                            disabled={attachSkillMutation.isPending}
+                          >
+                            Add
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </DialogContent>
+              </Dialog>
+            </section>
+
+            <section className="rounded-lg border border-border bg-card p-4">
               <h2 className="mb-3 text-sm font-medium text-foreground">DubDrive Sync</h2>
               <p className="mb-3 text-xs text-muted-foreground">
                 Folder on DubDrive to scan for files. When auto-sync is on and you run sync, new files are ingested into
@@ -658,9 +816,71 @@ const saveInferMut = useMutation({
                 </li>
               </ul>
             </section>
+
+            <section className="rounded-lg border border-destructive bg-destructive/5 p-4">
+              <h2 className="mb-3 text-sm font-medium text-destructive">Danger zone</h2>
+              <p className="mb-4 text-xs text-muted-foreground">
+                Irreversible actions that affect this DAW&apos;s embeddings and sources.
+              </p>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-sm">
+                  <span className="font-medium text-foreground">Clear Embeddings</span>
+                  <p className="text-xs text-muted-foreground">
+                    Delete all chunks and reset sources to pending. Re-sync required.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => setShowClearConfirm(true)}
+                  disabled={clearing || clearEmbeddingsMut.isPending}
+                >
+                  {clearing || clearEmbeddingsMut.isPending ? 'Clearing…' : 'Clear Embeddings'}
+                </Button>
+              </div>
+            </section>
           </>
         )}
       </div>
+
+      {showClearConfirm ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-lg">
+            <h3 className="mb-2 text-lg font-semibold text-foreground">Clear Embeddings?</h3>
+            <p className="mb-4 text-sm text-muted-foreground">
+              This will delete all chunks and embeddings for this DAW. Sources will need to be re-synced.
+              Continue?
+            </p>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setShowClearConfirm(false)
+                  setClearing(false)
+                }}
+                disabled={clearing || clearEmbeddingsMut.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="destructive"
+                onClick={() => {
+                  setClearing(true)
+                  clearEmbeddingsMut.mutate()
+                }}
+                disabled={clearing || clearEmbeddingsMut.isPending}
+              >
+                {clearing || clearEmbeddingsMut.isPending ? 'Clearing…' : 'Clear'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

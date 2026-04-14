@@ -5,8 +5,9 @@ from __future__ import annotations
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse, Response
+from pydantic import BaseModel
 
-from auth_deps import get_principal
+from auth_deps import get_principal, require_admin
 from services import dubdrive_auth
 
 router = APIRouter()
@@ -97,3 +98,62 @@ async def dubdrive_preview(
             text = raw.decode("latin-1", errors="replace")
 
     return JSONResponse({"text": text, "ext": ext})
+
+
+class DubignoreAppendBody(BaseModel):
+    sync_folder: str
+    entry_name: str
+    entry_type: str  # "dir" or "name"
+
+
+@router.post("/dubignore-append")
+async def append_dubignore(body: DubignoreAppendBody, admin: dict = Depends(require_admin)):
+    """Append an entry to .dubignore in the given sync folder root."""
+    sync_folder = body.sync_folder.rstrip("/")
+    ignore_path = f"{sync_folder}/.dubignore"
+
+    # Read existing content
+    existing = ""
+    try:
+        token = await dubdrive_auth.get_token()
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.get(
+                f"{dubdrive_auth._dubdrive_base_url()}/api/read",
+                params={"path": ignore_path},
+                cookies=dubdrive_auth.get_cookies(token),
+            )
+            if r.status_code == 200:
+                data = r.json()
+                existing = data.get("content") or data.get("text") or ""
+    except Exception:
+        pass
+
+    # Build the new line based on type
+    if body.entry_type == "dir":
+        new_line = f"dir:{body.entry_name}"
+    else:
+        new_line = f"name:{body.entry_name}"
+
+    # Check for duplicates
+    existing_lines = [l.strip() for l in existing.splitlines()]
+    if new_line in existing_lines:
+        return {"ok": True, "duplicate": True}
+
+    # Append and write back
+    if existing.strip():
+        updated = existing.rstrip("\n") + "\n" + new_line + "\n"
+    else:
+        updated = new_line + "\n"
+
+    token = await dubdrive_auth.get_token()
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.post(
+            f"{dubdrive_auth._dubdrive_base_url()}/api/write",
+            params={"path": ignore_path},
+            cookies=dubdrive_auth.get_cookies(token),
+            content=updated,
+            headers={"Content-Type": "text/plain"},
+        )
+        r.raise_for_status()
+
+    return {"ok": True, "added": new_line}

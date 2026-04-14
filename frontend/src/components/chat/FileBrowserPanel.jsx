@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ChevronLeft, File, Folder, Loader2, X } from 'lucide-react'
 
-import { dubdriveLs, dubdriveRead } from '@/api/dubdrive.js'
+import { dubdriveLs, dubdriveRead, dubignoreAppend } from '@/api/dubdrive.js'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
@@ -66,8 +66,10 @@ export function FileBrowserPanel({ isOpen, onClose, onFileSelect, rootPath, vari
   const [loading, setLoading] = useState(false)
   const [reading, setReading] = useState(false)
   const [error, setError] = useState(null)
+  const [contextMenu, setContextMenu] = useState(null) // { x, y, entry }
 
   const load = useCallback(async () => {
+    setContextMenu(null)
     setLoading(true)
     setError(null)
     try {
@@ -156,6 +158,23 @@ export function FileBrowserPanel({ isOpen, onClose, onFileSelect, rootPath, vari
     }
   }
 
+  function handleContextMenu(e, entry) {
+    e.preventDefault()
+    setContextMenu({ x: e.clientX, y: e.clientY, entry })
+  }
+
+  async function handleAddToDubignore() {
+    if (!contextMenu?.entry) return
+    const entry = contextMenu.entry
+    const entryType = entry.type === 'dir' ? 'dir' : 'name'
+    try {
+      await dubignoreAppend(effectiveRoot, entry.name, entryType)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+    setContextMenu(null)
+  }
+
   if (!isOpen) return null
 
   const busy = loading || reading
@@ -163,8 +182,8 @@ export function FileBrowserPanel({ isOpen, onClose, onFileSelect, rootPath, vari
   const inner = (
     <>
       <div className="border-b border-sidebar-border">
-        <div className="flex min-h-16 w-full items-center justify-between gap-2 overflow-hidden px-2 py-2">
-          <span className="fs-nav truncate text-center font-semibold uppercase tracking-wide text-muted-foreground">
+        <div className="flex min-h-12 w-full items-center justify-between gap-2 px-2 py-2">
+          <span className="fs-nav min-w-0 truncate font-semibold uppercase tracking-wide text-muted-foreground">
             Files
           </span>
           <Button
@@ -173,7 +192,7 @@ export function FileBrowserPanel({ isOpen, onClose, onFileSelect, rootPath, vari
             size="icon"
             className="h-8 w-8 shrink-0"
             onClick={onClose}
-            aria-label="Close"
+            aria-label="Close file browser"
           >
             <X className="size-4" />
           </Button>
@@ -232,37 +251,60 @@ export function FileBrowserPanel({ isOpen, onClose, onFileSelect, rootPath, vari
           ) : items.length === 0 ? (
             <p className="fs-nav px-1 text-muted-foreground">Empty folder.</p>
           ) : (
-            items.map((e) => (
+            items.map((item) => (
               <button
-                key={e.path}
+                key={item.path}
                 type="button"
                 className={cn(
                   'fs-nav flex w-full items-center gap-2 rounded-md border border-transparent px-2 py-1.5 text-left font-medium outline-none ring-sidebar-ring',
                   'hover:border-sidebar-border hover:bg-sidebar-accent/30 focus-visible:ring-2',
                 )}
-                onClick={() => void onEntryClick(e)}
+                onClick={() => void onEntryClick(item)}
+                onContextMenu={(e) => handleContextMenu(e, item)}
               >
-                {e.type === 'dir' ? (
+                {item.type === 'dir' ? (
                   <Folder className="size-4 shrink-0 text-muted-foreground" />
                 ) : (
                   <File className="size-4 shrink-0 text-muted-foreground opacity-70" />
                 )}
-                <span className="min-w-0 flex-1 truncate text-foreground">{e.name}</span>
-                {e.size != null && e.type === 'file' ? (
-                  <span className="fs-nav shrink-0 text-xs text-muted-foreground">{e.size}</span>
+                <span className="min-w-0 flex-1 truncate text-foreground">{item.name}</span>
+                {item.size != null && item.type === 'file' ? (
+                  <span className="fs-nav shrink-0 text-xs text-muted-foreground">{item.size}</span>
                 ) : null}
               </button>
             ))
           )}
         </div>
       </ScrollArea>
+
+      {contextMenu && (
+        <div
+          className="fixed inset-0 z-50"
+          onClick={() => setContextMenu(null)}
+          onContextMenu={(e) => { e.preventDefault(); setContextMenu(null) }}
+        >
+          <div
+            className="absolute rounded-md border border-sidebar-border bg-sidebar py-1 shadow-lg"
+            style={{ top: contextMenu.y, left: contextMenu.x }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground hover:bg-sidebar-accent/30"
+              onClick={handleAddToDubignore}
+            >
+              Add "{contextMenu.entry.name}" to .dubignore
+            </button>
+          </div>
+        </div>
+      )}
     </>
   )
 
   if (variant === 'dock') {
     return (
       <aside
-        className="hidden h-full min-h-0 w-[min(100%,420px)] min-w-[280px] max-w-[420px] shrink-0 flex-col border-l border-sidebar-border bg-sidebar text-sidebar-foreground md:flex"
+        className="hidden h-full min-h-0 w-[min(100%,420px)] min-w-[280px] max-w-[420px] shrink-0 flex-col border-l border-sidebar-border bg-sidebar text-sidebar-foreground md:flex z-[60]"
         aria-label="File browser"
       >
         {inner}

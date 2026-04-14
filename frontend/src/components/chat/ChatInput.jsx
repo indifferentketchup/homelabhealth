@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { FolderOpen, Plus, Search, SendHorizontal, Square, Upload } from 'lucide-react'
+import { FolderOpen, Plus, Search, SendHorizontal, Square, Upload, BookOpen } from 'lucide-react'
 
 import { dubdriveLs, dubdriveRead } from '@/api/dubdrive.js'
 import { toggleWebSearch } from '@/api/chats.js'
+import { listSkills, searchSkills, fetchSkillFromUrl } from '@/api/skills.js'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/store/index.js'
 import { cn } from '@/lib/utils'
@@ -40,6 +41,13 @@ export function ChatInput({
   const [atIndex, setAtIndex] = useState(0)
   const [fileBrowserOpen, setFileBrowserOpen] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
+  const [skillsModalOpen, setSkillsModalOpen] = useState(false)
+  const [sessionSkillIds, setSessionSkillIds] = useState([])
+  const [skillsModalData, setSkillsModalData] = useState({ sessionSkills: [], dawSkills: [], allSkills: [] })
+  const [skillsLoading, setSkillsLoading] = useState(false)
+  const [skillSearchQuery, setSkillSearchQuery] = useState(null)
+  const [skillSearchResults, setSkillSearchResults] = useState([])
+  const [skillSearchLoading, setSkillSearchLoading] = useState(false)
 
   const webSearchEnabled = useAppStore((s) => s.webSearchEnabled)
   const setWebSearchEnabled = useAppStore((s) => s.setWebSearchEnabled)
@@ -115,10 +123,10 @@ export function ChatInput({
       if (!composed.trim()) return
       setAttachedFiles([])
       onChange('')
-      onSend(composed)
+      onSend(composed, { session_skill_ids: sessionSkillIds })
     } else {
       if (!value.trim()) return
-      onSend()
+      onSend(value, { session_skill_ids: sessionSkillIds })
     }
   }
 
@@ -159,6 +167,28 @@ export function ChatInput({
       if (e.key === 'Escape') {
         setAtQuery(null)
         setAtResults([])
+        return
+      }
+    }
+    if (skillSearchQuery !== null) {
+      if (e.key === 'Escape') {
+        setSkillSearchQuery(null)
+        setSkillSearchResults([])
+        return
+      }
+      if (e.key === 'Enter' && !e.shiftKey && skillSearchResults.length > 0) {
+        e.preventDefault()
+        // Auto-save first result to library
+        const firstResult = skillSearchResults[0]
+        const skillPath = firstResult.skill_path || `${firstResult.title.replace(/\s+/g, '-').toLowerCase()}`
+        fetchSkillFromUrl(`skills.sh/${skillPath}`)
+          .then(() => {
+            setSkillSearchQuery(null)
+            setSkillSearchResults([])
+            const newVal = value.replace(/\/skill\s+.+$/, '').trim()
+            onChange(newVal)
+          })
+          .catch((err) => console.error('Failed to fetch skill:', err))
         return
       }
     }
@@ -219,6 +249,67 @@ export function ChatInput({
           </div>
         )}
         <div className="relative min-h-0">
+          {/* Skill search results popup */}
+          {skillSearchQuery !== null && (
+            <div className="absolute bottom-full left-0 z-50 mb-2 w-96 overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
+              {skillSearchLoading ? (
+                <div className="px-3 py-2 text-sm text-muted-foreground">Searching...</div>
+              ) : skillSearchResults.length === 0 ? (
+                <div className="px-3 py-2 text-sm text-muted-foreground">No skills found</div>
+              ) : (
+                <div className="max-h-96 overflow-y-auto">
+                  {skillSearchResults.map((result, idx) => {
+                    const skillPath = result.skill_path || `${result.title.replace(/\s+/g, '-').toLowerCase()}`
+                    return (
+                      <div key={idx} className="border-b border-border last:border-0">
+                        <div className="p-3">
+                          <div className="font-medium text-sm mb-1">{result.title}</div>
+                          <div className="text-xs text-muted-foreground truncate mb-1">{result.url}</div>
+                          <div className="text-xs text-muted-foreground line-clamp-2 mb-2">{result.snippet}</div>
+                          <div className="flex flex-wrap gap-1">
+                            <button
+                              type="button"
+                              className="flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-xs text-primary-foreground hover:bg-primary/90"
+                              onClick={async () => {
+                                try {
+                                  await fetchSkillFromUrl(`skills.sh/${skillPath}`)
+                                  setSkillSearchQuery(null)
+                                  setSkillSearchResults([])
+                                  // Clear the slash command from input
+                                  const newVal = value.replace(/\/skill\s+.+$/, '').trim()
+                                  onChange(newVal)
+                                } catch (err) {
+                                  console.error('Failed to fetch skill:', err)
+                                }
+                              }}
+                            >
+                              <Plus className="w-3 h-3" />
+                              Save to Library
+                            </button>
+                            <button
+                              type="button"
+                              className="flex items-center gap-1 rounded-md bg-secondary px-2 py-1 text-xs text-secondary-foreground hover:bg-secondary/90"
+                              onClick={() => {
+                                // For now, just clear the command - actual implementation would require fetching first
+                                const newVal = value.replace(/\/skill\s+.+$/, '').trim()
+                                onChange(newVal)
+                                setSkillSearchQuery(null)
+                                setSkillSearchResults([])
+                                setToastMsg('Skill added to this chat (fetch required first)')
+                              }}
+                            >
+                              Add to chat
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+          {/* @ mention popup */}
           {atQuery !== null && (
             <div className="absolute bottom-full left-0 z-50 mb-2 w-72 overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
               {atLoading && <div className="px-3 py-2 text-sm text-muted-foreground">Loading…</div>}
@@ -256,12 +347,15 @@ export function ChatInput({
             onChange={(e) => {
               const val = e.target.value
               onChange(val)
-              const match = val.match(/(?:^|\s)@(\S*)$/)
-              if (match) {
-                const qq = match[1]
+              // Handle @ mentions for file attachments
+              const atMatch = val.match(/(?:^|\s)@(\S*)$/)
+              if (atMatch) {
+                const qq = atMatch[1]
                 setAtQuery(qq)
                 setAtIndex(0)
                 setAtLoading(true)
+                setSkillSearchQuery(null)
+                setSkillSearchResults([])
                 dubdriveLs((dawSyncFolder && String(dawSyncFolder).trim()) || '/HomeLabRepos')
                   .then((data) => {
                     const files = (data?.items || []).filter(
@@ -277,6 +371,27 @@ export function ChatInput({
               } else {
                 setAtQuery(null)
                 setAtResults([])
+                // Handle /skill slash command
+                const skillMatch = val.match(/(?:^|\s)\/skill\s+(.+)$/)
+                if (skillMatch && skillMatch[1].trim().length > 0) {
+                  const query = skillMatch[1].trim()
+                  setSkillSearchQuery(query)
+                  if (!skillSearchLoading) {
+                    setSkillSearchLoading(true)
+                    searchSkills(query)
+                      .then((data) => {
+                        setSkillSearchResults(data.results || [])
+                        setSkillSearchLoading(false)
+                      })
+                      .catch(() => {
+                        setSkillSearchResults([])
+                        setSkillSearchLoading(false)
+                      })
+                  }
+                } else {
+                  setSkillSearchQuery(null)
+                  setSkillSearchResults([])
+                }
               }
             }}
             onKeyDown={onKeyDownTa}
@@ -375,7 +490,7 @@ export function ChatInput({
                 <Upload className="size-4 shrink-0 opacity-70" />
                 Upload file
               </button>
-              <button
+               <button
                 type="button"
                 role="menuitem"
                 className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-foreground outline-none hover:bg-accent hover:text-accent-foreground"
@@ -386,6 +501,18 @@ export function ChatInput({
               >
                 <FolderOpen className="size-4 text-muted-foreground" />
                 Browse files
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-foreground outline-none hover:bg-accent hover:text-accent-foreground"
+                onClick={() => {
+                  setSkillsModalOpen(true)
+                  setPlusOpen(false)
+                }}
+              >
+                <BookOpen className="size-4 text-muted-foreground" />
+                Skills
               </button>
               <div
                 className={cn(
@@ -473,6 +600,118 @@ export function ChatInput({
           setFileBrowserOpen(false)
         }}
       />
+      {skillsModalOpen &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 p-4"
+            onClick={() => setSkillsModalOpen(false)}
+          >
+            <div
+              className="w-full max-w-2xl overflow-hidden rounded-lg border border-border bg-popover shadow-lg"
+              style={{ maxHeight: '80vh' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="border-b border-border bg-muted/30 px-4 py-3">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-semibold">Skills</h2>
+                  <button
+                    type="button"
+                    onClick={() => setSkillsModalOpen(false)}
+                    className="rounded-md p-1 hover:bg-accent"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Manage AI skills for this chat session
+                </p>
+              </div>
+              <div className="flex flex-col overflow-y-auto" style={{ maxHeight: 'calc(80vh - 100px)' }}>
+                {/* Session Skills Section */}
+                <div className="border-b border-border px-4 py-3">
+                  <h3 className="text-sm font-medium text-muted-foreground">Session Skills</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Active only for this chat. These will be added to your system prompt.
+                  </p>
+                  {sessionSkillIds.length === 0 ? (
+                    <div className="mt-2 rounded-md border border-dashed border-border bg-muted/30 px-4 py-8 text-center">
+                      <p className="text-sm text-muted-foreground">No session skills active</p>
+                      <button
+                        type="button"
+                        className="mt-2 text-sm text-primary hover:underline"
+                        onClick={() => {
+                          // Navigate to skills library or open add dialog
+                          window.location.href = '/skills'
+                          setSkillsModalOpen(false)
+                        }}
+                      >
+                        Browse Skills Library
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {skillsModalData.sessionSkills.map((skill) => (
+                        <span
+                          key={skill.id}
+                          className="flex items-center gap-1 rounded-md border border-border bg-muted px-2 py-1 text-sm"
+                        >
+                          <span className="max-w-[150px] truncate">{skill.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSessionSkillIds((prev) => prev.filter((id) => id !== skill.id))
+                            }}
+                            className="hover:text-destructive"
+                          >
+                            ✕
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {/* DAW Skills Section */}
+                <div className="px-4 py-3">
+                  <h3 className="text-sm font-medium text-muted-foreground">DAW Skills</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Persistent skills attached to this DAW. Manage in DAW Settings.
+                  </p>
+                  {skillsModalData.dawSkills.length === 0 ? (
+                    <div className="mt-2 rounded-md border border-dashed border-border bg-muted/30 px-4 py-6 text-center">
+                      <p className="text-sm text-muted-foreground">No DAW skills attached</p>
+                      <p className="text-xs text-muted-foreground mt-1">(Manage in DAW Settings)</p>
+                    </div>
+                  ) : (
+                    <div className="mt-2 space-y-1">
+                      {skillsModalData.dawSkills.map((skill) => (
+                        <div
+                          key={skill.id}
+                          className="flex items-center justify-between rounded-md border border-border bg-muted/30 px-3 py-2"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className={`h-2 w-2 rounded-full ${skill.active ? 'bg-green-500' : 'bg-gray-400'}`} />
+                            <span className="text-sm truncate max-w-[200px]">{skill.name}</span>
+                          </div>
+                          <span className="text-xs text-muted-foreground">{(skill.active ? 'Active' : 'Inactive')}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="border-t border-border bg-muted/30 px-4 py-3">
+                <button
+                  type="button"
+                  className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                  onClick={() => setSkillsModalOpen(false)}
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
     </>
   )
 }

@@ -398,7 +398,7 @@ export function Notes808DawChat() {
       </div>
       <div
         className={cn(
-          'hidden h-full min-h-0 shrink-0 flex-col border-l border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width] duration-200 ease-out md:flex',
+          'hidden h-full min-h-0 shrink-0 flex-col border-l border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width] duration-200 ease-out md:flex z-[50]',
           filesRailCollapsed && 'w-14',
         )}
         style={!filesRailCollapsed ? { width: sidebarW } : undefined}
@@ -422,7 +422,7 @@ export function Notes808DawChat() {
                 size="icon"
                 className={cn(
                   'h-9 w-9 shrink-0 border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent',
-                  filesRailCollapsed ? 'mx-auto' : 'self-end',
+                  filesRailCollapsed ? 'mx-auto' : 'self-end mt-12',
                 )}
                 onClick={() => setFilesPanelExpanded((v) => !v)}
                 aria-label={filesRailCollapsed ? 'Expand workspace panel' : 'Collapse workspace panel'}

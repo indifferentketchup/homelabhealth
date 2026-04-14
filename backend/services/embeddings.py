@@ -26,15 +26,8 @@ async def embed_text(text: str) -> list[float]:
 
 
 async def embed_batch(texts: list[str]) -> list[list[float]]:
-    texts = [t.replace('\x00', '') for t in texts]
-    try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            r = await client.post(
-                f"{EMBEDDING_URL}/embeddings",
-                json={"model": EMBEDDING_MODEL, "input": texts},
-            )
-            r.raise_for_status()
-            return [d["embedding"] for d in r.json()["data"]]
-    except Exception as e:
-        logger.error("embed_batch failed: %s", e)
-        return []
+    """Embed a batch of texts. Sends one-by-one to avoid timeout on large batches."""
+    results = []
+    for text in texts:
+        results.append(await embed_text(text))
+    return results

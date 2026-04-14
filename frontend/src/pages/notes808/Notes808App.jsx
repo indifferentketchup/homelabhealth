@@ -9,7 +9,6 @@ import { listPersonas } from '@/api/personas.js'
 import { ModelSelectorBar } from '@/components/chat/ModelSelectorBar.jsx'
 import { DawQuerySync } from '@/components/DawQuerySync.jsx'
 import { Sidebar } from '@/components/layout/Sidebar.jsx'
-import { UserProfileMenu } from '@/components/layout/UserProfileMenu.jsx'
 import { Button } from '@/components/ui/button'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { apply808notesLayoutToDom, clear808notesLayoutLiveDraft } from '@/lib/notes808Layout.js'
@@ -56,12 +55,11 @@ export default function Notes808App() {
   const setDefaultModel = useAppStore((s) => s.setDefaultModel)
   const hydrateUserProfile = useAppStore((s) => s.hydrateUserProfile)
 
-  const { aiPath, settingsPath, profilePath } = useMemo(() => {
+  const { aiPath, settingsPath } = useMemo(() => {
     const b = PATH_808NOTES.replace(/\/$/, '')
     return {
       aiPath: b ? `${b}/ai` : '/ai',
       settingsPath: b ? `${b}/settings` : '/settings',
-      profilePath: b ? `${b}/profile` : '/profile',
     }
   }, [])
 
@@ -77,8 +75,7 @@ export default function Notes808App() {
 
   const isAuxRoute = Boolean(
     matchPath({ path: aiPath, end: true }, location.pathname) ||
-      matchPath({ path: settingsPath, end: true }, location.pathname) ||
-      matchPath({ path: profilePath, end: true }, location.pathname),
+      matchPath({ path: settingsPath, end: true }, location.pathname),
   )
   const onDawSourcesPage = /\/sources\/?$/.test(location.pathname)
   const showDawSourcesShortcut =
@@ -177,12 +174,6 @@ export default function Notes808App() {
               <Menu className="size-5" />
             </Button>
             {!isLanding ? <ModelSelectorBar className="min-w-0 flex-1" /> : <div className="min-w-0 flex-1" />}
-            <UserProfileMenu
-              profilePath={profilePath}
-              homePath={PATH_808NOTES_HOME}
-              placement="header"
-              onAfterNavigate={() => setMobileSidebar(false)}
-            />
             {isAuxRoute ? (
               <Button
                 type="button"
@@ -215,7 +206,6 @@ export default function Notes808App() {
               </Button>
             ) : null}
           </header>
-          <UserProfileMenu profilePath={profilePath} homePath={PATH_808NOTES_HOME} placement="fixed" />
           <main className="main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             <Outlet />
           </main>

@@ -8,9 +8,7 @@ import { ChatView } from '@/components/chat/ChatView.jsx'
 import { ModelSelectorBar } from '@/components/chat/ModelSelectorBar.jsx'
 import { FileViewerPanel } from '@/components/chat/FileViewerPanel.jsx'
 import { FileBrowserPanel } from '@/components/FileBrowserPanel.jsx'
-import { UserProfileMenu } from '@/components/layout/UserProfileMenu.jsx'
 import { Button } from '@/components/ui/button'
-import { PATH_BOOOPS, PATH_BOOOPS_HOME } from '@/routes/paths.js'
 import { useAppStore } from '@/store/index.js'
 
 export function BooOpsDawChat() {
@@ -44,11 +42,6 @@ export function BooOpsDawChat() {
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <div className="hidden shrink-0 items-center gap-2 border-b border-border bg-background px-2 py-2 md:flex">
         <ModelSelectorBar className="min-w-0 flex-1" />
-        <UserProfileMenu
-          profilePath={`${PATH_BOOOPS}/profile`}
-          homePath={PATH_BOOOPS_HOME}
-          placement="header"
-        />
       </div>
       <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <div className="flex min-h-0 min-w-0 flex-1">

@@ -27,6 +27,7 @@ from routers import (
     search,
     searxng,
     settings,
+    skills,
     users,
 )
 from routers.dubdrive import router as dubdrive_router
@@ -123,5 +124,6 @@ api.include_router(notes_router, tags=["notes"])
 api.include_router(sources_router, tags=["sources"])
 api.include_router(dubdrive_router, prefix="/dubdrive", tags=["dubdrive"])
 api.include_router(dubdrive_sync_router)
+api.include_router(skills.router, prefix="/skills", tags=["skills"])
 
 app.include_router(api)

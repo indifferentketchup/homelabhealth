@@ -8,7 +8,6 @@ import { listPersonas } from '@/api/personas.js'
 import { ModelSelectorBar } from '@/components/chat/ModelSelectorBar.jsx'
 import { Sidebar } from '@/components/layout/Sidebar.jsx'
 import { DawQuerySync } from '@/components/DawQuerySync.jsx'
-import { UserProfileMenu } from '@/components/layout/UserProfileMenu.jsx'
 import { Button } from '@/components/ui/button'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { PATH_BOOOPS, PATH_BOOOPS_HOME } from '@/routes/paths.js'
@@ -71,19 +70,7 @@ export default function BooOpsApp() {
               <Menu className="size-5" />
             </Button>
             <ModelSelectorBar className="min-w-0 flex-1" />
-            <UserProfileMenu
-              profilePath={`${PATH_BOOOPS}/profile`}
-              homePath={PATH_BOOOPS_HOME}
-              placement="header"
-            />
           </header>
-          {!onDawRoute && (
-            <UserProfileMenu
-              profilePath={`${PATH_BOOOPS}/profile`}
-              homePath={PATH_BOOOPS_HOME}
-              placement="fixed"
-            />
-          )}
           <div className="flex min-h-0 flex-1 flex-col">
             <Outlet />
           </div>

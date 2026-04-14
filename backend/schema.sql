@@ -115,9 +115,32 @@ CREATE TABLE IF NOT EXISTS sources (
 );
 
 CREATE TABLE IF NOT EXISTS chat_source_selections (
-    chat_id UUID REFERENCES chats(id) ON DELETE CASCADE,
-    source_id UUID REFERENCES sources(id) ON DELETE CASCADE,
-    PRIMARY KEY (chat_id, source_id)
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    chat_id         UUID REFERENCES chats(id) ON DELETE CASCADE NOT NULL,
+    source_id       UUID REFERENCES sources(id) ON DELETE CASCADE NOT NULL,
+    position        INTEGER NOT NULL,
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(chat_id, source_id)
+);
+
+-- Skills system
+CREATE TABLE IF NOT EXISTS skills (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name            TEXT NOT NULL,
+    description     TEXT,
+    source_url      TEXT,
+    raw_content     TEXT NOT NULL,
+    tags            TEXT[],
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS daw_skills (
+    daw_id          UUID REFERENCES daws(id) ON DELETE CASCADE NOT NULL,
+    skill_id        UUID REFERENCES skills(id) ON DELETE CASCADE NOT NULL,
+    active          BOOLEAN DEFAULT true,
+    added_at        TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (daw_id, skill_id)
 );
 
 CREATE TABLE IF NOT EXISTS notes (
