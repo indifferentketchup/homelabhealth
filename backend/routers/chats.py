@@ -1,11 +1,11 @@
 """Chat CRUD, message listing, and streaming sends (OpenAI-compatible local inference or Claude)."""
 
-from __future__ import annotations
+import uuid
 
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, AsyncIterator
 
 import asyncpg
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
