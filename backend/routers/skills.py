@@ -1,15 +1,14 @@
 """Skills API: Library, DAW attachments, URL fetching, SearXNG search."""
 
-from __future__ import annotations
-
 import re
+import uuid
 from typing import Any
 
 import asyncpg
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from auth import require_owner
+from auth_deps import get_principal, require_owner
 
 router = APIRouter()
 
@@ -44,9 +43,8 @@ class DawSkillAttach(BaseModel):
 
 
 @router.get("/", response_model=list[dict[str, Any]])
-async def list_skills():
+async def list_skills(principal: dict[str, Any] = Depends(require_owner)):
     """List all skills in the library."""
-    await require_owner()
     from db import get_pool
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -72,9 +70,8 @@ async def list_skills():
 
 
 @router.post("/", response_model=dict[str, Any])
-async def create_skill(payload: SkillCreate):
+async def create_skill(payload: SkillCreate, principal: dict[str, Any] = Depends(require_owner)):
     """Create a new skill in the library."""
-    await require_owner()
     from db import get_pool
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -101,9 +98,8 @@ async def create_skill(payload: SkillCreate):
 
 
 @router.delete("/{skill_id}")
-async def delete_skill(skill_id: str):
+async def delete_skill(skill_id: str, principal: dict[str, Any] = Depends(require_owner)):
     """Delete a skill (cascades to daw_skills)."""
-    await require_owner()
     from db import get_pool
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -117,10 +113,8 @@ async def delete_skill(skill_id: str):
 
 
 @router.post("/fetch-url")
-async def fetch_skill_from_url(payload: SkillFetch):
-    """Fetch skill content from URL, detecting skills.sh pattern."""
-    await require_owner()
-    from db import get_pool
+async def fetch_skill_from_url(payload: SkillFetch, principal: dict[str, Any] = Depends(require_owner)):
+    """Fetch skill content from URL, detecting skills.sh pattern. Returns parsed content without saving."""
     import httpx
     
     url = payload.url
@@ -155,33 +149,17 @@ async def fetch_skill_from_url(payload: SkillFetch):
             if second_line and not second_line.startswith("#"):
                 description = second_line
     
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            """
-            INSERT INTO skills (name, description, source_url, raw_content)
-            VALUES ($1, $2, $3, $4)
-            RETURNING id, name, description, source_url, created_at
-            """,
-            name,
-            description,
-            url,
-            content,
-        )
-    
     return {
-        "id": str(row["id"]),
-        "name": row["name"],
-        "description": row["description"],
-        "source_url": row["source_url"],
-        "created_at": row["created_at"].isoformat(),
+        "name": name,
+        "description": description,
+        "raw_content": content,
+        "source_url": url,
     }
 
 
 @router.post("/search")
-async def search_skills(payload: SkillSearch):
+async def search_skills(payload: SkillSearch, principal: dict[str, Any] = Depends(require_owner)):
     """Search skills.sh via SearXNG."""
-    await require_owner()
     import httpx
     
     query = f"{payload.query} site:skills.sh"
@@ -214,9 +192,8 @@ async def search_skills(payload: SkillSearch):
 
 
 @router.get("/daws/{daw_id}", response_model=list[dict[str, Any]])
-async def list_daw_skills(daw_id: str):
+async def list_daw_skills(daw_id: str, principal: dict[str, Any] = Depends(require_owner)):
     """List all skills attached to a DAW (active and inactive)."""
-    await require_owner()
     from db import get_pool
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -245,9 +222,8 @@ async def list_daw_skills(daw_id: str):
 
 
 @router.post("/daws/{daw_id}", response_model=dict[str, Any])
-async def attach_skill_to_daw(daw_id: str, payload: DawSkillAttach):
+async def attach_skill_to_daw(daw_id: str, payload: DawSkillAttach, principal: dict[str, Any] = Depends(require_owner)):
     """Attach a skill to a DAW."""
-    await require_owner()
     from db import get_pool
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -288,9 +264,8 @@ async def attach_skill_to_daw(daw_id: str, payload: DawSkillAttach):
 
 
 @router.delete("/daws/{daw_id}/{skill_id}")
-async def detach_skill_from_daw(daw_id: str, skill_id: str):
+async def detach_skill_from_daw(daw_id: str, skill_id: str, principal: dict[str, Any] = Depends(require_owner)):
     """Remove a skill from a DAW."""
-    await require_owner()
     from db import get_pool
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -309,9 +284,8 @@ async def detach_skill_from_daw(daw_id: str, skill_id: str):
 
 
 @router.patch("/daws/{daw_id}/{skill_id}", response_model=dict[str, Any])
-async def toggle_daw_skill(daw_id: str, skill_id: str, active: bool | None = None):
+async def toggle_daw_skill(daw_id: str, skill_id: str, active: bool | None = None, principal: dict[str, Any] = Depends(require_owner)):
     """Toggle active status of a skill on a DAW."""
-    await require_owner()
     from db import get_pool
     pool = await get_pool()
     async with pool.acquire() as conn:

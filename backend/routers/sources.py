@@ -279,26 +279,32 @@ async def delete_source(
     return {"deleted": str(source_id)}
 
 
-@router.post("/daw/{daw_id}/clear-embeddings")
-async def clear_daw_embeddings(daw_id: str, admin: dict = Depends(require_admin)) -> dict[str, Any]:
-    """Delete all chunks and reset embedding status for all sources in a DAW."""
+@router.delete("/{daw_id}/chunks")
+async def clear_daw_chunks(
+    daw_id: uuid.UUID,
+    principal: dict = Depends(get_principal),
+) -> dict[str, Any]:
+    """Delete all chunks and reset embedding status for all sources in a DAW (owner-only)."""
     pool = await get_pool()
     async with pool.acquire() as conn:
-        # Delete chunks for all sources in this DAW
-        await conn.execute(
+        await assert_daw_mutable(conn, principal, daw_id)
+        result = await conn.fetchval(
             """
             DELETE FROM source_chunks
             WHERE source_id IN (SELECT id FROM sources WHERE daw_id = $1::uuid)
+            RETURNING id
             """,
-            uuid.UUID(daw_id),
+            daw_id,
         )
-        # Reset all sources to pending
-        await conn.execute(
+        deleted_count = int(result or 0)
+        result = await conn.fetchval(
             """
             UPDATE sources
             SET embedding_status = 'pending', chunk_count = 0, error_message = NULL, updated_at = NOW()
             WHERE daw_id = $1::uuid
+            RETURNING id
             """,
-            uuid.UUID(daw_id),
+            daw_id,
         )
-    return {"ok": True, "daw_id": daw_id}
+        reset_count = int(result or 0)
+    return {"deleted_chunks": deleted_count, "reset_sources": reset_count}

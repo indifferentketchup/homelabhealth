@@ -124,8 +124,8 @@ export async function deleteDawMemory(dawId, entryId) {
 }
 
 export async function clearDawEmbeddings(dawId) {
-  return apiFetch(`/api/sources/daw/${encodeURIComponent(dawId)}/clear-embeddings`, {
-    method: 'POST',
+  return apiFetch(`/api/sources/${encodeURIComponent(dawId)}/chunks`, {
+    method: 'DELETE',
   })
 }
 

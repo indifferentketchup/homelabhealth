@@ -30,6 +30,8 @@ export function SkillsLibraryPage() {
   const [searchResults, setSearchResults] = useState([])
   const [isSearching, setIsSearching] = useState(false)
   const [fetchingUrl, setFetchingUrl] = useState(false)
+  const [activeTab, setActiveTab] = useState('url')
+  const [fetchError, setFetchError] = useState(null)
 
   const { data: skills, isLoading } = useQuery({
     queryKey: ['skills'],
@@ -54,10 +56,16 @@ export function SkillsLibraryPage() {
 
   const fetchUrlMutation = useMutation({
     mutationFn: fetchSkillFromUrl,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['skills'] })
-      setAddDialogOpen(false)
+    onSuccess: (data) => {
+      setNameInput(data.name || '')
+      setDescriptionInput(data.description || '')
+      setRawContentInput(data.raw_content || '')
       setUrlInput('')
+      setFetchError(null)
+      setActiveTab('raw')
+    },
+    onError: (err) => {
+      setFetchError(err.message || 'Failed to fetch skill from URL')
     },
   })
 
@@ -140,15 +148,15 @@ export function SkillsLibraryPage() {
               Add Skill
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto p-6">
             <DialogHeader>
               <DialogTitle>Add New Skill</DialogTitle>
               <DialogDescription>
                 Add a skill to your library. Skills are AI instructions that can be attached to DAWs or individual chats.
               </DialogDescription>
             </DialogHeader>
-            <Tabs defaultValue="url" className="w-full">
-              <TabsList className="grid w-full grid-cols-3">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-4">
+                <TabsList className="!grid !w-full grid-cols-3">
                 <TabsTrigger value="url">
                   <LinkIcon className="w-4 h-4 mr-2" />
                   From URL
@@ -164,6 +172,11 @@ export function SkillsLibraryPage() {
               </TabsList>
 
               <TabsContent value="url" className="space-y-4">
+                {fetchError && (
+                  <Alert variant="destructive">
+                    <AlertDescription>{fetchError}</AlertDescription>
+                  </Alert>
+                )}
                 <div className="space-y-2">
                   <Label htmlFor="url">URL (skills.sh or raw GitHub)</Label>
                   <div className="flex gap-2">
@@ -215,52 +228,49 @@ export function SkillsLibraryPage() {
               </TabsContent>
 
               <TabsContent value="raw" className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Name</Label>
-                  <Input
-                    id="name"
-                    value={nameInput}
-                    onChange={(e) => setNameInput(e.target.value)}
-                    placeholder="Skill Name"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="description">Description (optional)</Label>
-                  <Input
-                    id="description"
-                    value={descriptionInput}
-                    onChange={(e) => setDescriptionInput(e.target.value)}
-                    placeholder="Brief description..."
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="tags">Tags (comma-separated, optional)</Label>
-                  <Input
-                    id="tags"
-                    value={tagsInput}
-                    onChange={(e) => setTagsInput(e.target.value)}
-                    placeholder="coding, python, debugging"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="content">Markdown Content</Label>
-                  <Textarea
-                    id="content"
-                    value={rawContentInput}
-                    onChange={(e) => setRawContentInput(e.target.value)}
-                    placeholder="# Skill Name\nDescription...\n\nInstructions for the AI..."
-                    rows={10}
-                    className="font-mono text-sm"
-                  />
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Name</Label>
+                    <Input
+                      id="name"
+                      value={nameInput}
+                      onChange={(e) => setNameInput(e.target.value)}
+                      placeholder="Skill Name"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="description">Description (optional)</Label>
+                    <Input
+                      id="description"
+                      value={descriptionInput}
+                      onChange={(e) => setDescriptionInput(e.target.value)}
+                      placeholder="Brief description..."
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="tags">Tags (comma-separated, optional)</Label>
+                    <Input
+                      id="tags"
+                      value={tagsInput}
+                      onChange={(e) => setTagsInput(e.target.value)}
+                      placeholder="coding, python, debugging"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="content">Markdown Content</Label>
+                    <Textarea
+                      id="content"
+                      value={rawContentInput}
+                      onChange={(e) => setRawContentInput(e.target.value)}
+                      placeholder="# Skill Name\nDescription...\n\nInstructions for the AI..."
+                      rows={10}
+                      className="font-mono text-sm w-full"
+                    />
+                  </div>
                 </div>
               </TabsContent>
             </Tabs>
-            <DialogFooter>
-              {urlInput && (
-                <Button variant="ghost" size="sm" onClick={() => setUrlInput('')}>
-                  <X className="w-4 h-4" />
-                </Button>
-              )}
+            <DialogFooter className="flex justify-end gap-2">
               {rawContentInput && (
                 <Button onClick={handleCreate} disabled={!nameInput.trim() || !rawContentInput.trim() || createMutation.isPending}>
                   {createMutation.isPending ? 'Creating...' : 'Create Skill'}

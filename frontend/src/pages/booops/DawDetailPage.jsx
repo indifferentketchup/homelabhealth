@@ -28,6 +28,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { PATH_808NOTES, PATH_BOOOPS, is808notesRouteContext } from '@/routes/paths.js'
 import { useAppStore } from '@/store/index.js'
 import { cn } from '@/lib/utils'
+import { Plus, X } from 'lucide-react'
 
 const FALLBACK_CHAT_MODELS = [
   'llama-gpu/qwen3.5-9b-exl3',
