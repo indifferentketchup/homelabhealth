@@ -425,10 +425,7 @@ export function Notes808DawChat() {
                 type="button"
                 variant="outline"
                 size="icon"
-                className={cn(
-                  'h-9 w-9 shrink-0 border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent',
-                  filesRailCollapsed ? 'mx-auto' : 'self-end mt-12',
-                )}
+                className="h-9 w-9 shrink-0 self-end border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent"
                 onClick={() => setFilesPanelExpanded((v) => !v)}
                 aria-label={filesRailCollapsed ? 'Expand workspace panel' : 'Collapse workspace panel'}
               >

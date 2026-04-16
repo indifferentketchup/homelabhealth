@@ -991,6 +991,27 @@ async def append_message(
             session_skill_ids=body.session_skill_ids,
         )
 
+        user_profile_block = ""
+        try:
+            uid = principal.get("user_id")
+            if uid:
+                prof = await conn.fetchrow(
+                    "SELECT display_name, username, bio FROM users WHERE id = $1::uuid",
+                    uid,
+                )
+                if prof:
+                    name = (prof["display_name"] or prof["username"] or "").strip()
+                    bio = (prof["bio"] or "").strip()
+                    if name or bio:
+                        lines = ["## About the user you are talking to"]
+                        if name:
+                            lines.append(f"Name: {name}")
+                        if bio:
+                            lines.append(f"About: {bio}")
+                        user_profile_block = "\n".join(lines)
+        except Exception:
+            user_profile_block = ""
+
     summary = chat["pruning_summary"]
     user_message_text = body.content.strip()
 
@@ -1019,6 +1040,8 @@ async def append_message(
         system_blocks: list[str] = []
         if assembled:
             system_blocks.append(assembled)
+        if user_profile_block:
+            system_blocks.append(user_profile_block)
         if summary:
             system_blocks.append("Compressed prior conversation summary:\n" + summary)
         if extra_search:

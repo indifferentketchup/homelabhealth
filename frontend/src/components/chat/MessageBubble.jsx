@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { Children, useEffect, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { BookmarkPlus, Copy, GitFork, Loader2, Pencil, RefreshCw } from 'lucide-react'
+import { BookmarkPlus, Check, Copy, GitFork, Loader2, Pencil, RefreshCw } from 'lucide-react'
 
 import { forkChat } from '@/api/chats.js'
 import { Button } from '@/components/ui/button'
@@ -13,6 +13,46 @@ import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/index.js'
 
 import { PersonaGlyph } from './PersonaGlyph.jsx'
+
+function CodeBlockShell({ language, rawText, children }) {
+  const [copied, setCopied] = useState(false)
+  async function copyCode() {
+    try {
+      await navigator.clipboard.writeText(rawText || '')
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      /* ignore */
+    }
+  }
+  return (
+    <div className="group/code mb-2 last:mb-0 overflow-hidden rounded-md border border-border bg-muted">
+      <div className="flex items-center justify-between gap-2 border-b border-border bg-background/30 px-3 py-1">
+        <span className="fs-code font-mono text-[0.7rem] uppercase tracking-wide text-muted-foreground">
+          {language || 'code'}
+        </span>
+        <button
+          type="button"
+          onClick={copyCode}
+          aria-label={copied ? 'Copied' : 'Copy code'}
+          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+          <span>{copied ? 'Copied' : 'Copy'}</span>
+        </button>
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function extractCodeText(node) {
+  if (node == null) return ''
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(extractCodeText).join('')
+  if (node.props?.children != null) return extractCodeText(node.props.children)
+  return ''
+}
 
 const mdComponents = {
   p: ({ children }) => <p className="mb-2 last:mb-0 text-foreground">{children}</p>,
@@ -45,7 +85,7 @@ const mdComponents = {
     return (
       <code
         className={cn(
-          'fs-code block w-full min-w-0 max-w-full [overflow-wrap:anywhere] whitespace-pre-wrap break-words rounded-md border border-border bg-muted p-3',
+          'fs-code block w-full min-w-0 max-w-full [overflow-wrap:anywhere] whitespace-pre-wrap break-words bg-transparent p-3',
           mobileCodeSize,
           className,
         )}
@@ -56,16 +96,24 @@ const mdComponents = {
       </code>
     )
   },
-  pre: ({ children }) => (
-    <pre
-      className={cn(
-        'mb-2 last:mb-0 block w-full min-w-0 max-w-full overflow-x-auto whitespace-pre-wrap break-words [overflow-wrap:anywhere]',
-        'max-[600px]:max-h-[300px] max-[600px]:overflow-auto max-[600px]:!text-[0.85rem]',
-      )}
-    >
-      {children}
-    </pre>
-  ),
+  pre: ({ children }) => {
+    const first = Children.toArray(children)[0]
+    const cls = first?.props?.className || ''
+    const lang = cls.match(/language-([\w-]+)/)?.[1] || null
+    const rawText = extractCodeText(first).replace(/\n$/, '')
+    return (
+      <CodeBlockShell language={lang} rawText={rawText}>
+        <pre
+          className={cn(
+            'm-0 block w-full min-w-0 max-w-full overflow-x-auto whitespace-pre-wrap break-words [overflow-wrap:anywhere]',
+            'max-[600px]:max-h-[300px] max-[600px]:overflow-auto max-[600px]:!text-[0.85rem]',
+          )}
+        >
+          {children}
+        </pre>
+      </CodeBlockShell>
+    )
+  },
   h1: ({ children }) => <h1 className="mb-2 text-lg font-semibold">{children}</h1>,
   h2: ({ children }) => <h2 className="mb-2 text-base font-semibold">{children}</h2>,
   h3: ({ children }) => <h3 className="mb-1 text-sm font-semibold">{children}</h3>,
@@ -115,6 +163,7 @@ export function MessageBubble({
   const [forkError, setForkError] = useState(null)
   const [editing, setEditing] = useState(false)
   const [editDraft, setEditDraft] = useState('')
+  const [copied, setCopied] = useState(false)
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const setActiveChatId = useAppStore((s) => s.setActiveChatId)
@@ -156,6 +205,8 @@ export function MessageBubble({
   async function copyText() {
     try {
       await navigator.clipboard.writeText(message.content || '')
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
     } catch {
       /* ignore */
     }
@@ -271,6 +322,12 @@ export function MessageBubble({
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
                 {message.content || (streaming ? '' : '')}
               </ReactMarkdown>
+              {streaming && message.content ? (
+                <div className="mt-1 inline-flex items-center gap-1.5 rounded-full border border-border bg-background/40 px-2 py-0.5 text-[0.7rem] text-muted-foreground">
+                  <TypingDots />
+                  <span>streaming</span>
+                </div>
+              ) : null}
             </div>
           )}
         </div>
@@ -317,11 +374,21 @@ export function MessageBubble({
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button type="button" variant="ghost" size="icon-xs" onClick={copyText} aria-label="Copy">
-                      <Copy className="size-3.5" />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={copyText}
+                      aria-label={copied ? 'Copied' : 'Copy'}
+                    >
+                      {copied ? (
+                        <Check className="size-3.5 text-primary" />
+                      ) : (
+                        <Copy className="size-3.5" />
+                      )}
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Copy</TooltipContent>
+                  <TooltipContent>{copied ? 'Copied' : 'Copy'}</TooltipContent>
                 </Tooltip>
                 {canFork ? (
                   <Tooltip>

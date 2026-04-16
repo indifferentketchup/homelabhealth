@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { FolderOpen, Plus, Search, SendHorizontal, Square, Upload, BookOpen } from 'lucide-react'
+import { FolderOpen, Plus, Search, SendHorizontal, Square, Upload, X, BookOpen } from 'lucide-react'
 
 import { dubdriveLs, dubdriveRead } from '@/api/dubdrive.js'
 import { toggleWebSearch } from '@/api/chats.js'
@@ -220,7 +220,7 @@ export function ChatInput({
         </div>
       )}
       <div
-        className="relative mx-auto w-full max-h-[40vh] min-h-0 flex-shrink-0 flex flex-col overflow-hidden rounded-2xl border border-border bg-card px-4 pb-1.5 pt-3"
+        className="relative mx-auto w-full max-h-[40vh] min-h-0 flex-shrink-0 flex flex-col overflow-hidden rounded-2xl border border-border bg-card px-4 pb-1.5 pt-3 transition-colors focus-within:border-ring/60 focus-within:ring-2 focus-within:ring-ring/30"
         style={{ maxWidth: chatMaxW ?? '100%' }}
         onDragOver={(e) => {
           e.preventDefault()
@@ -412,10 +412,10 @@ export function ChatInput({
                 <button
                   type="button"
                   aria-label={`Remove ${f.filename}`}
-                  className="ml-0.5 hover:text-foreground"
+                  className="ml-0.5 inline-flex size-4 items-center justify-center rounded text-muted-foreground outline-none transition-colors hover:bg-destructive/15 hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring"
                   onClick={() => setAttachedFiles((prev) => prev.filter((x) => x.path !== f.path))}
                 >
-                  ✕
+                  <X className="size-3" aria-hidden />
                 </button>
               </span>
             ))}
@@ -527,17 +527,16 @@ export function ChatInput({
                   role="switch"
                   aria-checked={webSearchEnabled}
                   onClick={() => applyWebSearch(!webSearchEnabled)}
-                  className="relative inline-flex h-6 w-10 shrink-0 rounded-full border border-border transition-colors"
-                  style={{
-                    backgroundColor: webSearchEnabled ? 'var(--primary)' : 'var(--muted)',
-                  }}
+                  className={cn(
+                    'relative inline-flex h-6 w-10 shrink-0 rounded-full border border-border transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    webSearchEnabled ? 'bg-primary' : 'bg-muted',
+                  )}
                 >
                   <span
                     className={cn(
-                      'pointer-events-none block size-5 translate-x-0.5 rounded-full shadow transition-transform',
+                      'pointer-events-none block size-5 translate-x-0.5 rounded-full bg-background shadow transition-transform',
                       webSearchEnabled && 'translate-x-[1.15rem]',
                     )}
-                    style={{ backgroundColor: 'var(--background)' }}
                   />
                 </button>
               </div>
@@ -610,9 +609,10 @@ export function ChatInput({
                   <button
                     type="button"
                     onClick={() => setSkillsModalOpen(false)}
-                    className="rounded-md p-1 hover:bg-accent"
+                    aria-label="Close"
+                    className="rounded-md p-1 outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
                   >
-                    ✕
+                    <X className="size-4" aria-hidden />
                   </button>
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground">
@@ -654,9 +654,10 @@ export function ChatInput({
                             onClick={() => {
                               setSessionSkillIds((prev) => prev.filter((id) => id !== skill.id))
                             }}
-                            className="hover:text-destructive"
+                            aria-label={`Remove ${skill.name}`}
+                            className="inline-flex size-4 items-center justify-center rounded outline-none transition-colors hover:bg-destructive/15 hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring"
                           >
-                            ✕
+                            <X className="size-3" aria-hidden />
                           </button>
                         </span>
                       ))}

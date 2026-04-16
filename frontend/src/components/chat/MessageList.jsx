@@ -6,25 +6,17 @@ import { MessageBubble } from './MessageBubble.jsx'
 function WebSourcesRow({ sources }) {
   const [open, setOpen] = useState(false)
   return (
-    <div
-      className="fs-chat rounded-md border"
-      style={{
-        borderColor: 'var(--border)',
-        backgroundColor: 'var(--bg-card)',
-        color: 'var(--text-dim)',
-      }}
-    >
+    <div className="fs-chat rounded-md border border-border bg-card text-muted-foreground">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="fs-chat flex w-full items-center gap-1 px-2 py-1.5 text-left"
-        style={{ color: 'var(--text-dim)' }}
+        className="fs-chat flex w-full items-center gap-1 px-2 py-1.5 text-left text-muted-foreground"
         aria-expanded={open}
       >
         <span aria-hidden>🌐</span> Web Sources {open ? '▴' : '▾'}
       </button>
       {open && (
-        <ul className="space-y-1 border-t px-2 py-2" style={{ borderColor: 'var(--border)' }}>
+        <ul className="space-y-1 border-t border-border px-2 py-2">
           {sources.map((s, j) => (
             <li key={`${s.url}-${j}`} className="break-words">
               <a
@@ -93,14 +85,7 @@ export function MessageList({
               <div className="flex w-full min-w-0 gap-2 flex-row">
                 <div className="mt-0.5 size-8 shrink-0" aria-hidden />
                 <div className="min-w-0 max-w-[80%]">
-                  <div
-                    className="fs-chat rounded-md border px-2 py-1.5 text-xs"
-                    style={{
-                      borderColor: 'var(--border)',
-                      backgroundColor: 'var(--bg-card)',
-                      color: 'var(--text-dim)',
-                    }}
-                  >
+                  <div className="fs-chat rounded-md border border-border bg-card px-2 py-1.5 text-xs text-muted-foreground">
                     RAG: {streamingRagContext.count} chunks
                   </div>
                 </div>

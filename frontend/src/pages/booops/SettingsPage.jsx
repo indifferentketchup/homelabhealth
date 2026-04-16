@@ -28,6 +28,7 @@ import {
   uploadBrandingAsset808notes,
 } from '@/api/branding.js'
 import SearchSettingsTab from '@/components/settings/SearchSettingsTab.jsx'
+import { SkillsLibraryPage } from '@/pages/SkillsLibraryPage.jsx'
 import { Button } from '@/components/ui/button'
 import { clear808notesLayoutLiveDraft, set808notesLayoutLiveDraft } from '@/lib/notes808Layout.js'
 import { cn } from '@/lib/utils'
@@ -53,6 +54,7 @@ const TABS = [
   { id: 'typography', label: 'Typography' },
   { id: 'layout', label: 'Layout' },
   { id: 'search', label: 'Search' },
+  { id: 'skills', label: 'Skills' },
 ]
 
 /** Lucide export names — right-click branding cards to pick. Invalid names fall back per mode. */
@@ -903,6 +905,8 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
           )}
 
           {tab === 'search' && <SearchSettingsTab mode={selectedMode} />}
+
+          {tab === 'skills' && <SkillsLibraryPage />}
         </div>
       </div>
     </div>

@@ -23,6 +23,7 @@ import AllChats from '@/pages/booops/AllChats.jsx'
 import { BooOpsDawChat } from '@/pages/booops/BooOpsDawChat.jsx'
 import DawDetailPage from '@/pages/booops/DawDetailPage.jsx'
 import DawsPage from '@/pages/booops/DawsPage.jsx'
+import ProfilePage from '@/pages/booops/ProfilePage.jsx'
 import SettingsPage from '@/pages/booops/SettingsPage.jsx'
 import BoolabLanding from '@/pages/BoolabLanding.jsx'
 import BoolabBranding from '@/pages/BoolabBranding.jsx'
@@ -48,6 +49,7 @@ export function ModeRouter() {
           <Route path="daws/:id" element={<DawDetailPage />} />
           <Route path="ai" element={<AISettings />} />
           <Route path="settings" element={<BooOpsSettingsRoute />} />
+          <Route path="profile" element={<ProfilePage />} />
           <Route path="skills" element={<SkillsLibraryPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
@@ -69,6 +71,7 @@ export function ModeRouter() {
           <Route element={<Notes808AuxShell />}>
             <Route path="ai" element={<AISettings />} />
             <Route path="settings" element={<Notes808SettingsRoute />} />
+            <Route path="profile" element={<ProfilePage />} />
             <Route path="skills" element={<SkillsLibraryPage />} />
           </Route>
           <Route path="*" element={<Navigate to={PATH_808NOTES_HOME} replace />} />

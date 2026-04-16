@@ -1,6 +1,8 @@
 # BooLab (boolab)
 
-Self-hosted AI chat platform with **Digital AI Workspaces (DAWs)**: scoped chats, personas, optional RAG over your sources, memory facts, branding, and multiple front-door SPAs from one codebase.
+Self-hosted AI chat platform with **Digital AI Workspaces (DAWs)**: scoped chats, personas, optional RAG over your sources, memory facts, a reusable skills library, branding, and multiple front-door SPAs from one codebase.
+
+See [`CHANGELOG.md`](CHANGELOG.md) for recent changes.
 
 ## What’s in the repo
 
@@ -8,9 +10,8 @@ Self-hosted AI chat platform with **Digital AI Workspaces (DAWs)**: scoped chats
 |------|--------|
 | **API** | Python [FastAPI](https://fastapi.tiangolo.com/), async PostgreSQL ([asyncpg](https://magicstack.github.io/asyncpg/)), schema applied on startup |
 | **Database** | PostgreSQL 16 + [pgvector](https://github.com/pgvector/pgvector) for embeddings and retrieval |
-| **Vector store (aux)** | [ChromaDB](https://www.trychroma.com/) (used alongside/along DB per app design) |
-| **Web UI** | React 18, Vite 8, Tailwind, TanStack Query — one `frontend/` tree, **three build modes** |
-| **Inference** | Primarily [Ollama](https://ollama.com/) (models + embeddings configurable); optional Anthropic Claude routes |
+| **Web UI** | React 18, Vite, Tailwind, shadcn/ui, Zustand, TanStack Query — one `frontend/` tree, **three build modes** |
+| **Inference** | Bifrost gateway → llama-swap → llama.cpp for local models; embeddings via infinity-emb + BAAI/bge-m3 (1024 dims); rerank via infinity-rerank with flashrank fallback; optional Anthropic Claude routes |
 
 Three Docker images are built from the same frontend with different `VITE_APP_MODE`:
 

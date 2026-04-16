@@ -214,16 +214,16 @@ export function SkillsLibraryPage() {
               Add Skill
             </Button>
           </DialogTrigger>
-          <DialogContent className="w-[95vw] max-w-3xl min-h-[70vh] max-h-[90vh] p-0 overflow-hidden flex flex-col">
-            <DialogHeader className="px-6 pt-6 pb-4 border-b border-border">
-              <DialogTitle>Add a Skill</DialogTitle>
+          <DialogContent className="w-[95vw] max-w-5xl min-h-[70vh] max-h-[90vh] p-0 overflow-hidden flex flex-col sm:max-w-5xl">
+            <DialogHeader className="px-8 pt-6 pb-4 border-b border-border">
+              <DialogTitle className="text-lg">Add a Skill</DialogTitle>
               <DialogDescription>
                 Pull from a URL, search the skills.sh index, or paste markdown directly.
               </DialogDescription>
             </DialogHeader>
 
             <div className="flex flex-col md:flex-row flex-1 min-h-0">
-              <nav className="md:w-52 shrink-0 border-b md:border-b-0 md:border-r border-border p-3 flex md:flex-col gap-1 overflow-x-auto">
+              <nav className="md:w-48 shrink-0 border-b md:border-b-0 md:border-r border-border p-3 flex md:flex-col gap-1 overflow-x-auto">
                 {TABS.map((tab) => {
                   const Icon = tab.icon
                   const active = activeTab === tab.id
@@ -241,7 +241,7 @@ export function SkillsLibraryPage() {
                 })}
               </nav>
 
-              <div className="flex-1 overflow-y-auto p-6 space-y-4 min-w-0">
+              <div className="flex-1 overflow-y-auto p-8 space-y-5 min-w-0">
                 {activeTab === 'url' && (
                   <div className="space-y-4">
                     {fetchError && (
@@ -250,7 +250,7 @@ export function SkillsLibraryPage() {
                       </Alert>
                     )}
                     <div className="space-y-2">
-                      <Label htmlFor="url">Skill URL</Label>
+                      <Label htmlFor="url" className="text-sm">Skill URL</Label>
                       <div className="flex gap-2">
                         <Input
                           id="url"
@@ -258,11 +258,12 @@ export function SkillsLibraryPage() {
                           onChange={(e) => setUrlInput(e.target.value)}
                           onKeyDown={(e) => e.key === 'Enter' && handleFetchUrl()}
                           placeholder="skills.sh/owner/repo/skill   or   https://raw.githubusercontent.com/…"
-                          className="flex-1"
+                          className="flex-1 h-10 text-sm px-3"
                         />
                         <Button
                           onClick={handleFetchUrl}
                           disabled={fetchUrlMutation.isPending || !urlInput.trim()}
+                          className="h-10 px-5"
                         >
                           {fetchUrlMutation.isPending ? (
                             <>
@@ -299,7 +300,7 @@ export function SkillsLibraryPage() {
                       </Alert>
                     )}
                     <div className="space-y-2">
-                      <Label htmlFor="search">Search skills.sh</Label>
+                      <Label htmlFor="search" className="text-sm">Search skills.sh</Label>
                       <div className="flex gap-2">
                         <Input
                           id="search"
@@ -307,11 +308,12 @@ export function SkillsLibraryPage() {
                           onChange={(e) => setSearchQuery(e.target.value)}
                           onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                           placeholder="e.g. python debugging, react testing…"
-                          className="flex-1"
+                          className="flex-1 h-10 text-sm px-3"
                         />
                         <Button
                           onClick={handleSearch}
                           disabled={searchMutation.isPending || !searchQuery.trim()}
+                          className="h-10 px-5"
                         >
                           {searchMutation.isPending ? (
                             <>
@@ -326,7 +328,7 @@ export function SkillsLibraryPage() {
                     </div>
 
                     {searchResults.length > 0 && (
-                      <ScrollArea className="h-64 pr-3">
+                      <ScrollArea className="h-80 pr-3">
                         <div className="space-y-2">
                           {searchResults.map((result, idx) => (
                             <Card
@@ -365,42 +367,47 @@ export function SkillsLibraryPage() {
                 )}
 
                 {activeTab === 'manual' && (
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="name">Name</Label>
-                      <Input
-                        id="name"
-                        value={nameInput}
-                        onChange={(e) => setNameInput(e.target.value)}
-                        placeholder="Skill name"
-                      />
+                  <div className="space-y-5">
+                    <div className="grid gap-5 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="name" className="text-sm">Name</Label>
+                        <Input
+                          id="name"
+                          value={nameInput}
+                          onChange={(e) => setNameInput(e.target.value)}
+                          placeholder="Skill name"
+                          className="h-10 text-sm px-3"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="tags" className="text-sm">Tags (comma-separated)</Label>
+                        <Input
+                          id="tags"
+                          value={tagsInput}
+                          onChange={(e) => setTagsInput(e.target.value)}
+                          placeholder="coding, python, debugging"
+                          className="h-10 text-sm px-3"
+                        />
+                      </div>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="description">Description (optional)</Label>
+                      <Label htmlFor="description" className="text-sm">Description (optional)</Label>
                       <Input
                         id="description"
                         value={descriptionInput}
                         onChange={(e) => setDescriptionInput(e.target.value)}
                         placeholder="Brief description…"
+                        className="h-10 text-sm px-3"
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="tags">Tags (comma-separated, optional)</Label>
-                      <Input
-                        id="tags"
-                        value={tagsInput}
-                        onChange={(e) => setTagsInput(e.target.value)}
-                        placeholder="coding, python, debugging"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="content">Markdown content</Label>
+                      <Label htmlFor="content" className="text-sm">Markdown content</Label>
                       <Textarea
                         id="content"
                         value={rawContentInput}
                         onChange={(e) => setRawContentInput(e.target.value)}
                         placeholder={'# Skill Name\nDescription…\n\nInstructions for the AI…'}
-                        rows={20}
+                        rows={18}
                         className="font-mono text-sm w-full resize-none"
                       />
                     </div>
@@ -411,7 +418,7 @@ export function SkillsLibraryPage() {
                         !nameInput.trim() ||
                         !rawContentInput.trim()
                       }
-                      className="w-full"
+                      className="w-full h-10"
                     >
                       {createMutation.isPending ? (
                         <>

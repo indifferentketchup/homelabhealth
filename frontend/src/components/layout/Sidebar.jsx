@@ -14,6 +14,7 @@ import {
   PanelLeft,
   Search,
   Settings,
+  User,
 } from 'lucide-react'
 
 import { apiFetch } from '@/api/index.js'
@@ -21,6 +22,14 @@ import { applyBrandingCss, fetchBranding } from '@/api/branding.js'
 import { deleteChat, listChats, patchChat, patchRecentChatsListCache } from '@/api/chats.js'
 import { listDaws } from '@/api/daws.js'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   PATH_808NOTES,
@@ -49,6 +58,8 @@ export function Sidebar({
   const [ctx, setCtx] = useState(null)
   const [editingId, setEditingId] = useState(null)
   const [editTitle, setEditTitle] = useState('')
+  const [pendingDelete, setPendingDelete] = useState(null)
+  const [deleting, setDeleting] = useState(false)
   const editInputRef = useRef(null)
 
   useEffect(() => {
@@ -256,18 +267,28 @@ export function Sidebar({
     }
   }
 
-  async function onDeleteChat(chatId) {
+  function requestDeleteChat(chat) {
     closeCtx()
+    setPendingDelete(chat)
+  }
+
+  async function confirmDeleteChat() {
+    const chat = pendingDelete
+    if (!chat) return
+    setDeleting(true)
     try {
-      await deleteChat(chatId)
-      setChats(chats.filter((c) => c.id !== chatId))
+      await deleteChat(chat.id)
+      setChats(chats.filter((c) => c.id !== chat.id))
       await queryClient.invalidateQueries({ queryKey: ['chats'] })
-      if (activeChatId === chatId) {
+      if (activeChatId === chat.id) {
         setActiveChatId(null)
         navigate(notes808WorkspaceChatPath())
       }
     } catch {
       await queryClient.invalidateQueries({ queryKey: ['chats'] })
+    } finally {
+      setDeleting(false)
+      setPendingDelete(null)
     }
   }
 
@@ -723,30 +744,7 @@ export function Sidebar({
         </ScrollArea>
 
         <div className="mt-auto flex flex-col gap-1 border-t border-sidebar-border p-2">
-          {(appMode === 'booops' || appMode === '808notes') &&
-            currentUser?.role === 'owner' && (
-            <Button
-              type="button"
-              variant="outline"
-              className={cn(
-                'w-full border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent',
-                desktopCollapsed && 'px-0',
-              )}
-              asChild
-            >
-              <Link to={`${routeBase}/ai`} onClick={() => isMobile && onMobileOpenChange(false)} title="AI settings">
-                {!desktopCollapsed ? (
-                  <span className="fs-nav flex items-center justify-center gap-2">
-                    <Brain className="size-4 shrink-0" />
-                    AI
-                  </span>
-                ) : (
-                  <Brain className="size-4" />
-                )}
-              </Link>
-            </Button>
-          )}
-          {adminUi && (
+          {(appMode === 'booops' || appMode === '808notes') && currentUser && (
             <Button
               type="button"
               variant="outline"
@@ -757,22 +755,89 @@ export function Sidebar({
               asChild
             >
               <Link
-                to={`${routeBase}/settings`}
+                to={`${routeBase}/profile`}
                 onClick={() => isMobile && onMobileOpenChange(false)}
-                title="Settings"
-                aria-label="Settings"
+                title="Profile"
+                aria-label="Profile"
               >
                 {!desktopCollapsed ? (
                   <span className="fs-nav flex items-center justify-center gap-2">
-                    <Settings className="size-4 shrink-0" />
-                    Settings
+                    <User className="size-4 shrink-0" />
+                    Profile
                   </span>
                 ) : (
-                  <Settings className="size-4" />
+                  <User className="size-4" />
                 )}
               </Link>
             </Button>
           )}
+          {(appMode === 'booops' || appMode === '808notes') && (() => {
+            const showAi = currentUser?.role === 'owner'
+            const showSettings = adminUi
+            if (!showAi && !showSettings) return null
+            const aiBtn = showAi ? (
+              <Button
+                key="ai"
+                type="button"
+                variant="outline"
+                className={cn(
+                  'border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent',
+                  desktopCollapsed ? 'w-full px-0' : 'min-w-0 flex-1',
+                )}
+                asChild
+              >
+                <Link to={`${routeBase}/ai`} onClick={() => isMobile && onMobileOpenChange(false)} title="AI settings">
+                  {!desktopCollapsed ? (
+                    <span className="fs-nav flex items-center justify-center gap-2">
+                      <Brain className="size-4 shrink-0" />
+                      AI
+                    </span>
+                  ) : (
+                    <Brain className="size-4" />
+                  )}
+                </Link>
+              </Button>
+            ) : null
+            const settingsBtn = showSettings ? (
+              <Button
+                key="settings"
+                type="button"
+                variant="outline"
+                className={cn(
+                  'border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent',
+                  desktopCollapsed ? 'w-full px-0' : 'min-w-0 flex-1',
+                )}
+                asChild
+              >
+                <Link
+                  to={`${routeBase}/settings`}
+                  onClick={() => isMobile && onMobileOpenChange(false)}
+                  title="Settings"
+                  aria-label="Settings"
+                >
+                  {!desktopCollapsed ? (
+                    <span className="fs-nav flex items-center justify-center gap-2">
+                      <Settings className="size-4 shrink-0" />
+                      Settings
+                    </span>
+                  ) : (
+                    <Settings className="size-4" />
+                  )}
+                </Link>
+              </Button>
+            ) : null
+            return desktopCollapsed ? (
+              <>
+                {aiBtn}
+                {settingsBtn}
+              </>
+            ) : (
+              <div className="flex gap-1">
+                {aiBtn}
+                {settingsBtn}
+              </div>
+            )
+          })()}
           <Button
             type="button"
             variant="outline"
@@ -824,7 +889,7 @@ export function Sidebar({
             type="button"
             role="menuitem"
             className="fs-nav flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-left text-destructive outline-none hover:bg-destructive/10"
-            onClick={() => onDeleteChat(ctx.chat.id)}
+            onClick={() => requestDeleteChat(ctx.chat)}
           >
             Delete
           </button>
@@ -839,6 +904,42 @@ export function Sidebar({
           onClick={() => onMobileOpenChange(false)}
         />
       )}
+
+      <Dialog
+        open={Boolean(pendingDelete)}
+        onOpenChange={(open) => {
+          if (!open && !deleting) setPendingDelete(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete chat?</DialogTitle>
+            <DialogDescription>
+              {pendingDelete
+                ? `“${pendingDelete.title || 'Untitled chat'}” will be permanently deleted. This cannot be undone.`
+                : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={deleting}
+              onClick={() => setPendingDelete(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={deleting}
+              onClick={confirmDeleteChat}
+            >
+              {deleting ? 'Deleting…' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </>
   )

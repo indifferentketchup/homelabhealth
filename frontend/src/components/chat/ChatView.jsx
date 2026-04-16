@@ -21,6 +21,44 @@ function sameUserBubbleContent(serverText, optimisticText) {
 
 const DAW_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
+function MessageListSkeleton() {
+  const rows = [
+    { role: 'assistant', w: ['w-5/6', 'w-3/4', 'w-2/3'] },
+    { role: 'user', w: ['w-2/5'] },
+    { role: 'assistant', w: ['w-4/5', 'w-3/5'] },
+    { role: 'user', w: ['w-1/3'] },
+    { role: 'assistant', w: ['w-5/6', 'w-2/3', 'w-1/2'] },
+  ]
+  return (
+    <div
+      className="flex h-full flex-col gap-4 overflow-hidden px-4 py-4"
+      role="status"
+      aria-label="Loading messages"
+    >
+      {rows.map((r, i) => {
+        const isUser = r.role === 'user'
+        return (
+          <div
+            key={i}
+            className={cn('flex w-full gap-2 animate-pulse', isUser ? 'flex-row-reverse' : 'flex-row')}
+            style={{ animationDelay: `${i * 80}ms` }}
+          >
+            <div className="mt-0.5 size-8 shrink-0 rounded-full bg-muted" aria-hidden />
+            <div className={cn('flex min-w-0 max-w-[80%] flex-col gap-1.5', isUser ? 'items-end' : 'items-start')}>
+              <div className="flex flex-col gap-1.5 rounded-xl border border-border bg-secondary/40 px-3 py-2">
+                {r.w.map((w, j) => (
+                  <div key={j} className={cn('h-3 rounded bg-muted', w)} />
+                ))}
+              </div>
+              <div className="h-2 w-10 rounded bg-muted/70" />
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function friendlyStreamError(msg) {
   if (!msg) return 'Something went wrong.'
   const s = String(msg)
@@ -396,7 +434,7 @@ export function ChatView({
       <div className="mx-auto flex min-h-0 w-full flex-1 flex-col" style={{ maxWidth: chatMaxW }}>
         <div className="min-h-0 flex-1">
           {isLoading && !busy ? (
-            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading messages…</div>
+            <MessageListSkeleton />
           ) : (
             <MessageList
               chatId={activeChatId}
