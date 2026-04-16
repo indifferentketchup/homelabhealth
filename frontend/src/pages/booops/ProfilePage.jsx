@@ -3,12 +3,10 @@ import { Link } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 
 import { fetchMe, patchProfile, uploadProfileIcon } from '@/api/auth.js'
-import { changeMyPassword } from '@/api/users.js'
 import { Button } from '@/components/ui/button'
 import { PATH_808NOTES_HOME, PATH_BOOOPS_HOME } from '@/routes/paths.js'
 import { useAppStore } from '@/store/index.js'
 import { cn } from '@/lib/utils'
-import { fileToProfileAvatarDataUrl } from '@/lib/profileAvatarImage.js'
 
 function ProfilePreviewGlyph({ displayName, emoji }) {
   const initial = (displayName && displayName.trim().slice(0, 1).toUpperCase()) || 'U'
@@ -32,17 +30,8 @@ export default function ProfilePage() {
   const currentUser = useAppStore((s) => s.currentUser)
   const userProfile = useAppStore((s) => s.userProfile)
   const profileIconObjectUrl = useAppStore((s) => s.profileIconObjectUrl)
-  const avatarDataUrl = useAppStore((s) => s.userProfile.avatarDataUrl)
-  const setUserProfile = useAppStore((s) => s.setUserProfile)
   const setCurrentUser = useAppStore((s) => s.setCurrentUser)
   const syncUserProfileFromServer = useAppStore((s) => s.syncUserProfileFromServer)
-
-  const isDbAccount = Boolean(currentUser?.user_id)
-  const isEnvOwner = currentUser?.role === 'owner' && !currentUser?.user_id
-  const canChangePassword =
-    isDbAccount &&
-    currentUser?.role !== 'owner' &&
-    (currentUser?.role === 'member' || currentUser?.role === 'super_admin')
 
   const [displayName, setDisplayName] = useState(userProfile.displayName)
   const [emoji, setEmoji] = useState(userProfile.emoji)
@@ -52,13 +41,6 @@ export default function ProfilePage() {
   const [avatarErr, setAvatarErr] = useState(null)
   const [avatarBusy, setAvatarBusy] = useState(false)
   const avatarInputRef = useRef(null)
-
-  const [curPassword, setCurPassword] = useState('')
-  const [newPassword, setNewPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [pwBusy, setPwBusy] = useState(false)
-  const [pwMsg, setPwMsg] = useState(null)
-  const [pwErr, setPwErr] = useState(null)
 
   useEffect(() => {
     if (!saved) return
@@ -73,19 +55,12 @@ export default function ProfilePage() {
   }, [avatarErr])
 
   useEffect(() => {
-    if (!isDbAccount) return
     setDisplayName(userProfile.displayName)
     setEmoji(userProfile.emoji)
     setBio(userProfile.bio)
-  }, [
-    isDbAccount,
-    currentUser?.user_id,
-    userProfile.displayName,
-    userProfile.emoji,
-    userProfile.bio,
-  ])
+  }, [userProfile.displayName, userProfile.emoji, userProfile.bio])
 
-  const previewImg = isDbAccount ? profileIconObjectUrl || avatarDataUrl : avatarDataUrl
+  const previewImg = profileIconObjectUrl || ''
 
   async function onAvatarFile(e) {
     const f = e.target.files?.[0]
@@ -94,15 +69,10 @@ export default function ProfilePage() {
     setAvatarErr(null)
     setAvatarBusy(true)
     try {
-      if (isDbAccount) {
-        await uploadProfileIcon(f)
-        const me = await fetchMe()
-        setCurrentUser(me)
-        await syncUserProfileFromServer(me)
-      } else {
-        const dataUrl = await fileToProfileAvatarDataUrl(f)
-        setUserProfile({ avatarDataUrl: dataUrl })
-      }
+      await uploadProfileIcon(f)
+      const me = await fetchMe()
+      setCurrentUser(me)
+      await syncUserProfileFromServer(me)
     } catch (err) {
       setAvatarErr(err instanceof Error ? err.message : 'Could not use that image.')
     } finally {
@@ -112,74 +82,34 @@ export default function ProfilePage() {
 
   async function clearAvatar() {
     setAvatarErr(null)
-    if (isDbAccount) {
-      setAvatarBusy(true)
-      try {
-        await patchProfile({ clear_icon: true })
-        const me = await fetchMe()
-        setCurrentUser(me)
-        await syncUserProfileFromServer(me)
-      } catch (err) {
-        setAvatarErr(err instanceof Error ? err.message : 'Could not remove photo.')
-      } finally {
-        setAvatarBusy(false)
-      }
-    } else {
-      setUserProfile({ avatarDataUrl: '' })
+    setAvatarBusy(true)
+    try {
+      await patchProfile({ clear_icon: true })
+      const me = await fetchMe()
+      setCurrentUser(me)
+      await syncUserProfileFromServer(me)
+    } catch (err) {
+      setAvatarErr(err instanceof Error ? err.message : 'Could not remove photo.')
+    } finally {
+      setAvatarBusy(false)
     }
   }
 
   async function onSubmit(e) {
     e.preventDefault()
     setSaveErr(null)
-    if (isDbAccount) {
-      setAvatarBusy(false)
-      try {
-        await patchProfile({
-          display_name: displayName.trim() || 'You',
-          bio,
-          avatar_emoji: emoji.trim(),
-        })
-        const me = await fetchMe()
-        setCurrentUser(me)
-        await syncUserProfileFromServer(me)
-        setSaved(true)
-      } catch (err) {
-        setSaveErr(err instanceof Error ? err.message : 'Could not save profile.')
-      }
-      return
-    }
-    setUserProfile({
-      displayName: displayName.trim() || 'You',
-      emoji: emoji.trim(),
-      bio,
-    })
-    setSaved(true)
-  }
-
-  async function onPasswordSubmit(e) {
-    e.preventDefault()
-    setPwErr(null)
-    setPwMsg(null)
-    if (newPassword.length < 8) {
-      setPwErr('New password must be at least 8 characters.')
-      return
-    }
-    if (newPassword !== confirmPassword) {
-      setPwErr('New passwords do not match.')
-      return
-    }
-    setPwBusy(true)
     try {
-      await changeMyPassword(curPassword, newPassword)
-      setPwMsg('Password updated.')
-      setCurPassword('')
-      setNewPassword('')
-      setConfirmPassword('')
+      await patchProfile({
+        display_name: displayName.trim() || 'You',
+        bio,
+        avatar_emoji: emoji.trim(),
+      })
+      const me = await fetchMe()
+      setCurrentUser(me)
+      await syncUserProfileFromServer(me)
+      setSaved(true)
     } catch (err) {
-      setPwErr(err instanceof Error ? err.message : 'Could not change password.')
-    } finally {
-      setPwBusy(false)
+      setSaveErr(err instanceof Error ? err.message : 'Could not save profile.')
     }
   }
 
@@ -194,16 +124,14 @@ export default function ProfilePage() {
         <h1 className="text-sm font-semibold text-foreground">Your profile</h1>
       </div>
       <div className="mx-auto w-full max-w-lg p-4 md:p-8">
-        {isDbAccount ? (
+        {currentUser ? (
           <div className="mb-6 border-b border-border pb-4">
             <p className="text-base font-semibold text-foreground">{currentUser.display_name}</p>
             <p className="text-sm text-muted-foreground">@{currentUser.username}</p>
           </div>
         ) : null}
         <p className="mb-6 text-sm text-muted-foreground">
-          {isDbAccount
-            ? 'Name, bio, photo, and password are saved to your account (shared between BooOps and 808notes when you use the same login).'
-            : 'This is how you show up in BooOps and 808notes. As the site owner, display preferences here stay in this browser only; your sign-in password is set in server environment variables.'}
+          Name, bio, and photo are saved to your account.
         </p>
         <form onSubmit={onSubmit} className="flex flex-col gap-6">
           <div className="flex flex-col items-center gap-3">
@@ -295,68 +223,6 @@ export default function ProfilePage() {
             {saveErr ? <span className="text-sm text-destructive">{saveErr}</span> : null}
           </div>
         </form>
-
-        {canChangePassword ? (
-          <form onSubmit={(e) => void onPasswordSubmit(e)} className="mt-10 flex flex-col gap-4 border-t border-border pt-8">
-            <h2 className="text-sm font-semibold text-foreground">Change password</h2>
-            <div className="space-y-2">
-              <label htmlFor="profile-cur-pw" className="text-sm font-medium text-foreground">
-                Current password
-              </label>
-              <input
-                id="profile-cur-pw"
-                type="password"
-                autoComplete="current-password"
-                value={curPassword}
-                onChange={(e) => setCurPassword(e.target.value)}
-                className="fs-input w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <label htmlFor="profile-new-pw" className="text-sm font-medium text-foreground">
-                New password
-              </label>
-              <input
-                id="profile-new-pw"
-                type="password"
-                autoComplete="new-password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                className="fs-input w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                minLength={8}
-                required
-              />
-              <p className="text-xs text-muted-foreground">At least 8 characters.</p>
-            </div>
-            <div className="space-y-2">
-              <label htmlFor="profile-confirm-pw" className="text-sm font-medium text-foreground">
-                Confirm new password
-              </label>
-              <input
-                id="profile-confirm-pw"
-                type="password"
-                autoComplete="new-password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className="fs-input w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                minLength={8}
-                required
-              />
-            </div>
-            {pwErr ? <p className="text-sm text-destructive">{pwErr}</p> : null}
-            {pwMsg ? <p className="text-sm text-muted-foreground">{pwMsg}</p> : null}
-            <Button type="submit" variant="secondary" disabled={pwBusy}>
-              {pwBusy ? 'Updating…' : 'Update password'}
-            </Button>
-          </form>
-        ) : null}
-
-        {isEnvOwner ? (
-          <p className="mt-8 text-xs text-muted-foreground">
-            To change the owner password, update the server configuration (for example the password value used for the &quot;owner&quot; account), not this page.
-          </p>
-        ) : null}
       </div>
     </div>
   )

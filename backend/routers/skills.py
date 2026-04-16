@@ -1,14 +1,33 @@
 """Skills API: Library, DAW attachments, URL fetching, SearXNG search."""
 
+import ipaddress
+import os
 import re
-import uuid
+import socket
 from typing import Any
+from urllib.parse import urlparse
 
-import asyncpg
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from auth_deps import get_principal, require_owner
+from auth_deps import require_owner
+
+_BLOCKED_HOSTS = {"localhost", "boolab_db", "boolab_api", "boolab_ui", "booops_ui", "notes808_ui"}
+
+
+def _assert_safe_url(url: str) -> None:
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(status_code=400, detail="URL must use http or https")
+    host = (parsed.hostname or "").lower()
+    if not host or host in _BLOCKED_HOSTS:
+        raise HTTPException(status_code=400, detail="URL host is not allowed")
+    try:
+        addr = ipaddress.ip_address(socket.gethostbyname(host))
+    except (socket.gaierror, ValueError):
+        raise HTTPException(status_code=400, detail="URL host could not be resolved")
+    if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
+        raise HTTPException(status_code=400, detail="URL host resolves to a non-public address")
 
 router = APIRouter()
 
@@ -42,7 +61,7 @@ class DawSkillAttach(BaseModel):
     active: bool | None = True
 
 
-@router.get("/", response_model=list[dict[str, Any]])
+@router.get("", response_model=list[dict[str, Any]])
 async def list_skills(principal: dict[str, Any] = Depends(require_owner)):
     """List all skills in the library."""
     from db import get_pool
@@ -69,7 +88,7 @@ async def list_skills(principal: dict[str, Any] = Depends(require_owner)):
     ]
 
 
-@router.post("/", response_model=dict[str, Any])
+@router.post("", response_model=dict[str, Any])
 async def create_skill(payload: SkillCreate, principal: dict[str, Any] = Depends(require_owner)):
     """Create a new skill in the library."""
     from db import get_pool
@@ -104,7 +123,7 @@ async def delete_skill(skill_id: str, principal: dict[str, Any] = Depends(requir
     pool = await get_pool()
     async with pool.acquire() as conn:
         result = await conn.fetchval(
-            "DELETE FROM skills WHERE id = $1 RETURNING id",
+            "DELETE FROM skills WHERE id = $1::uuid RETURNING id",
             skill_id,
         )
         if result is None:
@@ -117,16 +136,19 @@ async def fetch_skill_from_url(payload: SkillFetch, principal: dict[str, Any] = 
     """Fetch skill content from URL, detecting skills.sh pattern. Returns parsed content without saving."""
     import httpx
     
-    url = payload.url
-    
-    # Detect skills.sh pattern: skills.sh/<owner>/<repo>/<skill>
-    match = re.match(r"skills\.sh/([^/]+)/([^/]+)/(.+)", url)
+    url = payload.url.strip()
+    if not re.match(r"^https?://", url):
+        url = f"https://{url}"
+
+    # Detect skills.sh pattern: https://skills.sh/<owner>/<repo>/<skill>
+    match = re.match(r"^https?://skills\.sh/([^/]+)/([^/]+)/(.+)$", url)
     if match:
         owner, repo, skill_path = match.groups()
-        # Convert to raw GitHub URL: raw.githubusercontent.com/<owner>/<repo>/main/<skill_path>/SKILL.md
         url = f"https://raw.githubusercontent.com/{owner}/{repo}/main/{skill_path}/SKILL.md"
-    
-    async with httpx.AsyncClient(timeout=30.0) as client:
+
+    _assert_safe_url(url)
+
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
         try:
             resp = await client.get(url)
             resp.raise_for_status()
@@ -161,13 +183,13 @@ async def fetch_skill_from_url(payload: SkillFetch, principal: dict[str, Any] = 
 async def search_skills(payload: SkillSearch, principal: dict[str, Any] = Depends(require_owner)):
     """Search skills.sh via SearXNG."""
     import httpx
-    
-    query = f"{payload.query} site:skills.sh"
-    searxng_url = f"http://100.114.205.53:8888/search?q={query}&format=json"
-    
+
+    base = os.environ.get("SEARXNG_URL", "http://searxng:8080").rstrip("/")
+    params = {"q": f"{payload.query} site:skills.sh", "format": "json"}
+
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
-            resp = await client.get(searxng_url)
+            resp = await client.get(f"{base}/search", params=params)
             resp.raise_for_status()
             data = resp.json()
         except httpx.HTTPError as e:
@@ -202,7 +224,7 @@ async def list_daw_skills(daw_id: str, principal: dict[str, Any] = Depends(requi
             SELECT s.id, s.name, s.description, s.source_url, s.tags, ds.active, ds.added_at
             FROM daw_skills ds
             JOIN skills s ON s.id = ds.skill_id
-            WHERE ds.daw_id = $1
+            WHERE ds.daw_id = $1::uuid
             ORDER BY ds.added_at DESC
             """,
             daw_id,
@@ -226,33 +248,42 @@ async def attach_skill_to_daw(daw_id: str, payload: DawSkillAttach, principal: d
     """Attach a skill to a DAW."""
     from db import get_pool
     pool = await get_pool()
+    active = payload.active if payload.active is not None else True
     async with pool.acquire() as conn:
-        # Check skill exists
-        skill_exists = await conn.fetchval("SELECT id FROM skills WHERE id = $1", payload.skill_id)
+        skill_exists = await conn.fetchval(
+            "SELECT id FROM skills WHERE id = $1::uuid", payload.skill_id
+        )
         if not skill_exists:
             raise HTTPException(status_code=404, detail="Skill not found")
-        
-        # Check DAW exists
-        daw_exists = await conn.fetchval("SELECT id FROM daws WHERE id = $1", daw_id)
+
+        daw_exists = await conn.fetchval(
+            "SELECT id FROM daws WHERE id = $1::uuid", daw_id
+        )
         if not daw_exists:
             raise HTTPException(status_code=404, detail="DAW not found")
-        
-        try:
-            row = await conn.fetchrow(
-                """
-                INSERT INTO daw_skills (daw_id, skill_id, active)
-                VALUES ($1, $2, $3)
-                ON CONFLICT (daw_id, skill_id) DO UPDATE SET active = $3, added_at = NOW()
-                RETURNING ds.id, s.name, s.description, s.source_url, s.tags, ds.active
-                FROM skills s
-                """,
-                daw_id,
-                payload.skill_id,
-                payload.active if payload.active is not None else True,
-            )
-        except asyncpg.exceptions.UniqueViolation:
-            raise HTTPException(status_code=409, detail="Skill already attached to DAW")
-    
+
+        await conn.execute(
+            """
+            INSERT INTO daw_skills (daw_id, skill_id, active)
+            VALUES ($1::uuid, $2::uuid, $3)
+            ON CONFLICT (daw_id, skill_id) DO UPDATE SET active = EXCLUDED.active, added_at = NOW()
+            """,
+            daw_id,
+            payload.skill_id,
+            active,
+        )
+
+        row = await conn.fetchrow(
+            """
+            SELECT s.id, s.name, s.description, s.source_url, s.tags, ds.active
+            FROM daw_skills ds
+            JOIN skills s ON s.id = ds.skill_id
+            WHERE ds.daw_id = $1::uuid AND ds.skill_id = $2::uuid
+            """,
+            daw_id,
+            payload.skill_id,
+        )
+
     return {
         "id": str(row["id"]),
         "name": row["name"],
@@ -271,8 +302,8 @@ async def detach_skill_from_daw(daw_id: str, skill_id: str, principal: dict[str,
     async with pool.acquire() as conn:
         result = await conn.fetchval(
             """
-            DELETE FROM daw_skills 
-            WHERE daw_id = $1 AND skill_id = $2 
+            DELETE FROM daw_skills
+            WHERE daw_id = $1::uuid AND skill_id = $2::uuid
             RETURNING skill_id
             """,
             daw_id,
@@ -289,21 +320,31 @@ async def toggle_daw_skill(daw_id: str, skill_id: str, active: bool | None = Non
     from db import get_pool
     pool = await get_pool()
     async with pool.acquire() as conn:
-        row = await conn.fetchrow(
+        updated = await conn.fetchval(
             """
-            UPDATE daw_skills 
+            UPDATE daw_skills
             SET active = COALESCE($3, NOT active)
-            WHERE daw_id = $1 AND skill_id = $2
-            RETURNING ds.id, s.name, s.description, s.source_url, s.tags, ds.active
-            FROM skills s WHERE s.id = ds.skill_id
+            WHERE daw_id = $1::uuid AND skill_id = $2::uuid
+            RETURNING active
             """,
             daw_id,
             skill_id,
             active,
         )
-        if row is None:
+        if updated is None:
             raise HTTPException(status_code=404, detail="Skill not attached to this DAW")
-    
+
+        row = await conn.fetchrow(
+            """
+            SELECT s.id, s.name, s.description, s.source_url, s.tags, ds.active
+            FROM daw_skills ds
+            JOIN skills s ON s.id = ds.skill_id
+            WHERE ds.daw_id = $1::uuid AND ds.skill_id = $2::uuid
+            """,
+            daw_id,
+            skill_id,
+        )
+
     return {
         "id": str(row["id"]),
         "name": row["name"],

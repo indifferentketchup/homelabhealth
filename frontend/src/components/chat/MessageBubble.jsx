@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { BookmarkPlus, Copy, GitFork, Loader2 } from 'lucide-react'
+import { BookmarkPlus, Copy, GitFork, Loader2, Pencil, RefreshCw } from 'lucide-react'
 
 import { forkChat } from '@/api/chats.js'
 import { Button } from '@/components/ui/button'
@@ -93,9 +93,28 @@ function formatTimestamp(isoString) {
   )
 }
 
-export function MessageBubble({ chatId, message, streaming = false, onSaveMessageAsNote }) {
+function TypingDots() {
+  return (
+    <span className="inline-flex items-center gap-1 py-1" aria-label="Assistant is typing">
+      <span className="size-1.5 animate-pulse rounded-full bg-muted-foreground" />
+      <span className="size-1.5 animate-pulse rounded-full bg-muted-foreground [animation-delay:150ms]" />
+      <span className="size-1.5 animate-pulse rounded-full bg-muted-foreground [animation-delay:300ms]" />
+    </span>
+  )
+}
+
+export function MessageBubble({
+  chatId,
+  message,
+  streaming = false,
+  onSaveMessageAsNote,
+  onEditUser,
+  onRegenerate,
+}) {
   const [hover, setHover] = useState(false)
   const [forkError, setForkError] = useState(null)
+  const [editing, setEditing] = useState(false)
+  const [editDraft, setEditDraft] = useState('')
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const setActiveChatId = useAppStore((s) => s.setActiveChatId)
@@ -142,15 +161,36 @@ export function MessageBubble({ chatId, message, streaming = false, onSaveMessag
     }
   }
 
-  const canFork =
-    !isUser &&
+  const isPersistedMessage =
     chatId &&
     message.id &&
     message.id !== '__stream__' &&
-    message.id !== '__optimistic_user__'
-
+    message.id !== '__optimistic_user__' &&
+    message.id !== '__pending__'
+  const isPendingTyping = message.id === '__pending__'
+  const canFork = !isUser && isPersistedMessage
+  const canRegenerate = Boolean(onRegenerate && canFork && !streaming)
+  const canEditUser = Boolean(onEditUser && isUser && isPersistedMessage)
   const canSaveAsNote = Boolean(onSaveMessageAsNote && canFork && !streaming)
   const tsLabel = formatTimestamp(message.created_at)
+
+  function startEdit() {
+    setEditDraft(message.content || '')
+    setEditing(true)
+  }
+  function cancelEdit() {
+    setEditing(false)
+    setEditDraft('')
+  }
+  async function commitEdit() {
+    const next = editDraft.trim()
+    if (!next || !onEditUser) {
+      cancelEdit()
+      return
+    }
+    setEditing(false)
+    await onEditUser(message, next)
+  }
 
   return (
     <div
@@ -193,23 +233,80 @@ export function MessageBubble({ chatId, message, streaming = false, onSaveMessag
           )}
         >
           {isUser ? (
-            <p className="fs-chat whitespace-pre-wrap break-words leading-relaxed text-foreground">{message.content}</p>
+            editing ? (
+              <div className="flex flex-col gap-2">
+                <textarea
+                  value={editDraft}
+                  onChange={(e) => setEditDraft(e.target.value)}
+                  rows={Math.min(10, Math.max(2, editDraft.split('\n').length + 1))}
+                  className="fs-chat w-full resize-y rounded-md border border-border bg-background px-2 py-1.5 text-foreground outline-none ring-ring focus-visible:ring-2"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault()
+                      void commitEdit()
+                    }
+                    if (e.key === 'Escape') {
+                      e.preventDefault()
+                      cancelEdit()
+                    }
+                  }}
+                />
+                <div className="flex justify-end gap-2">
+                  <Button type="button" size="sm" variant="ghost" onClick={cancelEdit}>
+                    Cancel
+                  </Button>
+                  <Button type="button" size="sm" onClick={() => void commitEdit()}>
+                    Save & resend
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <p className="fs-chat whitespace-pre-wrap break-words leading-relaxed text-foreground">{message.content}</p>
+            )
+          ) : isPendingTyping ? (
+            <TypingDots />
           ) : (
             <div className="prose-chat w-full max-w-full overflow-x-hidden break-words leading-relaxed">
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-                {message.content || (streaming ? '…' : '')}
+                {message.content || (streaming ? '' : '')}
               </ReactMarkdown>
             </div>
           )}
         </div>
         {tsLabel ? (
           <p
-            className={`mt-0.5 text-xs text-white/40 ${message.role === 'user' ? 'text-right' : 'text-left'}`}
+            className={`mt-0.5 text-xs text-muted-foreground/70 ${message.role === 'user' ? 'text-right' : 'text-left'}`}
           >
             {tsLabel}
           </p>
         ) : null}
-        {!isUser && (
+        {isUser && canEditUser && !editing ? (
+          <div
+            className={cn(
+              'mt-1 flex justify-end opacity-0 transition-opacity',
+              hover && 'opacity-100',
+            )}
+          >
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={startEdit}
+                    aria-label="Edit and resend"
+                  >
+                    <Pencil className="size-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Edit & resend</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+        ) : null}
+        {!isUser && !isPendingTyping && (
           <div
             className={cn(
               'mt-1 flex flex-col gap-1 opacity-0 transition-opacity',
@@ -253,14 +350,30 @@ export function MessageBubble({ chatId, message, streaming = false, onSaveMessag
                       <Button
                         type="button"
                         variant="ghost"
-                        size="icon"
+                        size="icon-xs"
                         onClick={() => onSaveMessageAsNote?.(message.content)}
                         aria-label="Save as note"
                       >
-                        <BookmarkPlus className="size-4" />
+                        <BookmarkPlus className="size-3.5" />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>Save as note</TooltipContent>
+                  </Tooltip>
+                ) : null}
+                {canRegenerate ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={() => onRegenerate?.(message)}
+                        aria-label="Regenerate response"
+                      >
+                        <RefreshCw className="size-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Regenerate</TooltipContent>
                   </Tooltip>
                 ) : null}
               </TooltipProvider>

@@ -1,11 +1,6 @@
 import { create } from 'zustand'
 
 import { fetchMe } from '@/api/auth.js'
-import {
-  clearBoolabTokenCookie,
-  getStoredBoolabToken,
-  setBoolabTokenCookie,
-} from '@/api/index.js'
 import { APP_MODE } from '../mode.js'
 
 const USER_PROFILE_STORAGE_KEY = 'boolab-user-profile-v1'
@@ -79,45 +74,17 @@ export const useAppStore = create((set, get) => ({
   /** Resolved from URL path / query / host (see `mode.js`, `ModeSync`). */
   mode: APP_MODE,
 
-  token: typeof window !== 'undefined' ? getStoredBoolabToken() : null,
   currentUser: null,
-  /** Authenticated fetch of `/api/auth/profile/icon-asset` as blob URL (DB accounts only). */
+  /** `/api/auth/profile/icon-asset` cached as blob URL. */
   profileIconObjectUrl: null,
-  setToken: (token) => {
-    try {
-      if (token) setBoolabTokenCookie(token)
-      else clearBoolabTokenCookie()
-    } catch {
-      /* ignore */
-    }
-    set({ token: token || null })
-  },
-  clearToken: () => {
-    try {
-      clearBoolabTokenCookie()
-    } catch {
-      /* ignore */
-    }
-    revokeProfileIconObjectUrl(get().profileIconObjectUrl)
-    set({ token: null, currentUser: null, profileIconObjectUrl: null })
-  },
   setCurrentUser: (user) => set({ currentUser: user }),
   syncUserProfileFromServer: async (me) => {
     if (!me) return
-    const isEnvOwner = me.role === 'owner' && !me.user_id
-    if (isEnvOwner) {
-      revokeProfileIconObjectUrl(get().profileIconObjectUrl)
-      set({ profileIconObjectUrl: null })
-      return
-    }
     revokeProfileIconObjectUrl(get().profileIconObjectUrl)
     let profileIconObjectUrl = null
-    const token = getStoredBoolabToken()
-    if (me.icon_url && token) {
+    if (me.icon_url) {
       try {
-        const res = await fetch('/api/auth/profile/icon-asset', {
-          headers: { Authorization: `Bearer ${token}` },
-        })
+        const res = await fetch('/api/auth/profile/icon-asset')
         if (res.ok) {
           const blob = await res.blob()
           profileIconObjectUrl = URL.createObjectURL(blob)
@@ -141,22 +108,13 @@ export const useAppStore = create((set, get) => ({
     set({ userProfile, profileIconObjectUrl })
   },
   bootstrapAuth: async () => {
-    const t = get().token
-    if (!t) {
-      set({ currentUser: null })
-      return
-    }
     try {
       const me = await fetchMe()
       set({ currentUser: me })
-      if (me.role === 'owner' && !me.user_id) {
-        revokeProfileIconObjectUrl(get().profileIconObjectUrl)
-        set({ profileIconObjectUrl: null })
-      } else {
-        await get().syncUserProfileFromServer(me)
-      }
+      await get().syncUserProfileFromServer(me)
     } catch {
-      get().clearToken()
+      revokeProfileIconObjectUrl(get().profileIconObjectUrl)
+      set({ currentUser: null, profileIconObjectUrl: null })
     }
   },
   setMode: (mode) =>

@@ -280,11 +280,8 @@ async def _ingest_dubdrive_file(
 @router.post("/{daw_id}/sync")
 async def dubdrive_sync_run(
     daw_id: uuid.UUID,
-    principal: dict = Depends(get_principal),
+    _: dict = Depends(get_principal),
 ) -> dict[str, int]:
-    if principal["kind"] != "owner":
-        raise HTTPException(status_code=403, detail="owner_only")
-
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -377,11 +374,8 @@ async def dubdrive_sync_run(
 @router.get("/{daw_id}/status")
 async def dubdrive_sync_status(
     daw_id: uuid.UUID,
-    principal: dict = Depends(get_principal),
+    _: dict = Depends(get_principal),
 ) -> dict[str, Any]:
-    if principal["kind"] != "owner":
-        raise HTTPException(status_code=403, detail="owner_only")
-
     pool = await get_pool()
     async with pool.acquire() as conn:
         daw = await conn.fetchrow(

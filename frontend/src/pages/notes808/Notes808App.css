@@ -248,6 +248,12 @@
   justify-content: center;
 }
 
+@media (max-width: 640px) {
+  .notes808-landing__cards {
+    grid-template-columns: 1fr;
+  }
+}
+
 .notes808-landing-card {
   display: flex;
   width: 100%;

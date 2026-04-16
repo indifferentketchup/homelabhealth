@@ -9,7 +9,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from auth_deps import assert_daw_mutable, fetch_daw_if_visible, get_principal
+from auth_deps import get_principal
 from db import get_pool
 
 router = APIRouter(prefix="/notes", tags=["notes"])
@@ -62,13 +62,13 @@ class NoteUpdate(BaseModel):
 @router.get("/{daw_id}")
 async def list_notes(
     daw_id: uuid.UUID,
-    principal: dict = Depends(get_principal),
+    _: dict = Depends(get_principal),
 ) -> list[dict[str, Any]]:
-    if principal["kind"] == "guest":
-        raise HTTPException(403, "Forbidden")
     pool = await get_pool()
     async with pool.acquire() as conn:
-        await fetch_daw_if_visible(conn, principal, daw_id)
+        daw_exists = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", daw_id)
+        if not daw_exists:
+            raise HTTPException(404, "DAW not found")
         rows = await conn.fetch(
             """
             SELECT id, title, content, source_type, created_at, updated_at
@@ -97,10 +97,8 @@ async def list_notes(
 async def create_note(
     daw_id: uuid.UUID,
     body: NoteCreate,
-    principal: dict = Depends(get_principal),
+    _: dict = Depends(get_principal),
 ) -> dict[str, Any]:
-    if principal["kind"] == "guest":
-        raise HTTPException(403, "Forbidden")
     st = (body.source_type or "manual").strip()
     if st not in _ALLOWED_SOURCE_TYPES:
         raise HTTPException(400, "Invalid source_type")
@@ -109,7 +107,9 @@ async def create_note(
         title = _default_title_from_content(body.content)
     pool = await get_pool()
     async with pool.acquire() as conn:
-        await assert_daw_mutable(conn, principal, daw_id)
+        daw_exists = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", daw_id)
+        if not daw_exists:
+            raise HTTPException(404, "DAW not found")
         row = await conn.fetchrow(
             """
             INSERT INTO notes (daw_id, title, content, source_type, message_id)
@@ -130,10 +130,8 @@ async def create_note(
 async def update_note(
     note_id: uuid.UUID,
     body: NoteUpdate,
-    principal: dict = Depends(get_principal),
+    _: dict = Depends(get_principal),
 ) -> dict[str, Any]:
-    if principal["kind"] == "guest":
-        raise HTTPException(403, "Forbidden")
     if body.title is None and body.content is None:
         raise HTTPException(400, "No fields to update")
     pool = await get_pool()
@@ -144,7 +142,6 @@ async def update_note(
         )
         if row is None:
             raise HTTPException(404, "Note not found")
-        await assert_daw_mutable(conn, principal, row["daw_id"])
         new_title = body.title if body.title is not None else row["title"]
         new_content = body.content if body.content is not None else row["content"]
         updated = await conn.fetchrow(
@@ -165,15 +162,12 @@ async def update_note(
 @router.delete("/{note_id}")
 async def delete_note(
     note_id: uuid.UUID,
-    principal: dict = Depends(get_principal),
+    _: dict = Depends(get_principal),
 ) -> dict[str, str]:
-    if principal["kind"] == "guest":
-        raise HTTPException(403, "Forbidden")
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow("SELECT id, daw_id FROM notes WHERE id = $1::uuid", note_id)
         if row is None:
             raise HTTPException(404, "Note not found")
-        await assert_daw_mutable(conn, principal, row["daw_id"])
         await conn.execute("DELETE FROM notes WHERE id = $1::uuid", note_id)
     return {"deleted": str(note_id)}

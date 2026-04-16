@@ -322,7 +322,7 @@ export function ChatInput({
                     key={item.path}
                     type="button"
                     className={cn(
-                      'flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent',
+                      'flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-accent',
                       i === atIndex && 'bg-accent text-accent-foreground',
                     )}
                     onMouseDown={(e) => {
@@ -462,17 +462,10 @@ export function ChatInput({
         createPortal(
           <div
             ref={plusMenuRef}
-            className="w-64 p-2 text-popover-foreground outline-none"
+            className="fixed z-[9999] w-64 min-w-[16rem] rounded-lg border border-border bg-popover p-2 text-popover-foreground shadow-xl outline-none"
             style={{
-              position: 'fixed',
               bottom: menuPos.bottom,
               left: menuPos.left,
-              zIndex: 9999,
-              minWidth: 256,
-              background: 'var(--popover)',
-              border: '1px solid var(--border)',
-              borderRadius: 8,
-              boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
             }}
             role="menu"
             aria-label="More actions"
@@ -689,8 +682,8 @@ export function ChatInput({
                           className="flex items-center justify-between rounded-md border border-border bg-muted/30 px-3 py-2"
                         >
                           <div className="flex items-center gap-2">
-                            <span className={`h-2 w-2 rounded-full ${skill.active ? 'bg-green-500' : 'bg-gray-400'}`} />
-                            <span className="text-sm truncate max-w-[200px]">{skill.name}</span>
+                            <span className={`h-2 w-2 rounded-full ${skill.active ? 'bg-primary' : 'bg-muted-foreground/40'}`} />
+                            <span className="min-w-0 flex-1 truncate text-sm">{skill.name}</span>
                           </div>
                           <span className="text-xs text-muted-foreground">{(skill.active ? 'Active' : 'Inactive')}</span>
                         </div>

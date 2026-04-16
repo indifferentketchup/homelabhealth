@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, Outlet, matchPath, useLocation, useNavigate } from 'react-router-dom'
-import { FileStack, Menu } from 'lucide-react'
+import { FileStack, Loader2, Menu } from 'lucide-react'
 
 import { fetchBranding } from '@/api/branding.js'
 import { getOllamaSettings } from '@/api/ollama.js'
@@ -140,7 +140,8 @@ export default function Notes808App() {
 
   if (brandingPending) {
     return (
-      <div className="flex min-h-[100dvh] items-center justify-center bg-background text-muted-foreground">
+      <div className="flex min-h-[100dvh] items-center justify-center gap-2 bg-background text-muted-foreground">
+        <Loader2 className="size-4 animate-spin" />
         Loading…
       </div>
     )

@@ -9,7 +9,6 @@ import {
   FileStack,
   LayoutGrid,
   List,
-  Lock,
   MessageSquarePlus,
   MessagesSquare,
   PanelLeft,
@@ -17,7 +16,6 @@ import {
   Settings,
 } from 'lucide-react'
 
-import { login } from '@/api/auth.js'
 import { apiFetch } from '@/api/index.js'
 import { applyBrandingCss, fetchBranding } from '@/api/branding.js'
 import { deleteChat, listChats, patchChat, patchRecentChatsListCache } from '@/api/chats.js'
@@ -95,14 +93,7 @@ export function Sidebar({
   }, [ctx, closeCtx])
 
   const currentUser = useAppStore((s) => s.currentUser)
-  const setToken = useAppStore((s) => s.setToken)
-  const bootstrapAuth = useAppStore((s) => s.bootstrapAuth)
-  const adminUi =
-    currentUser?.role === 'owner' || currentUser?.role === 'super_admin'
-  const [loginOpen, setLoginOpen] = useState(false)
-  const [loginUser, setLoginUser] = useState('')
-  const [loginPass, setLoginPass] = useState('')
-  const [loginErr, setLoginErr] = useState('')
+  const adminUi = true
 
   const sidebarOpen = useAppStore((s) => s.sidebarOpen)
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen)
@@ -323,7 +314,7 @@ export function Sidebar({
                 >
                   <img
                     src={branding.bannerUrl}
-                    alt=""
+                    alt={brandTitle}
                     className="h-full w-full object-fill"
                   />
                 </div>
@@ -669,7 +660,7 @@ export function Sidebar({
                       e.preventDefault()
                       navigate(`${PATH_BOOOPS}/daws/${d.id}`)
                     }}
-                    className="flex h-9 w-full items-center justify-center rounded-md hover:bg-sidebar-accent/50"
+                    className="flex h-9 w-full items-center justify-center rounded-md transition-colors hover:bg-sidebar-accent/50"
                   >
                     <span
                       className="size-2.5 shrink-0 rounded-full"
@@ -782,30 +773,6 @@ export function Sidebar({
               </Link>
             </Button>
           )}
-          {!currentUser && (
-            <Button
-              type="button"
-              variant="outline"
-              className={cn(
-                'w-full border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent',
-                desktopCollapsed && 'px-0',
-              )}
-              title="Sign in"
-              onClick={() => {
-                setLoginErr('')
-                setLoginOpen(true)
-              }}
-            >
-              {!desktopCollapsed ? (
-                <span className="fs-nav flex items-center justify-center gap-2">
-                  <Lock className="size-4 shrink-0" />
-                  Sign in
-                </span>
-              ) : (
-                <Lock className="size-4" />
-              )}
-            </Button>
-          )}
           <Button
             type="button"
             variant="outline"
@@ -873,73 +840,6 @@ export function Sidebar({
         />
       )}
 
-      {loginOpen && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-background/80 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="boolab-login-title"
-          onClick={() => setLoginOpen(false)}
-        >
-          <form
-            className="w-full max-w-sm rounded-lg border border-border bg-card p-4 shadow-lg"
-            onClick={(e) => e.stopPropagation()}
-            onSubmit={async (e) => {
-              e.preventDefault()
-              setLoginErr('')
-              try {
-                const r = await login(loginUser, loginPass)
-                setToken(r.access_token)
-                await bootstrapAuth()
-                setLoginOpen(false)
-                setLoginUser('')
-                setLoginPass('')
-                void queryClient.invalidateQueries()
-              } catch (err) {
-                setLoginErr(err instanceof Error ? err.message : 'Login failed')
-              }
-            }}
-          >
-            <h2 id="boolab-login-title" className="mb-3 text-sm font-semibold text-foreground">
-              Sign in
-            </h2>
-            <label className="mb-2 block text-xs text-muted-foreground">
-              Username
-              <input
-                className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground"
-                value={loginUser}
-                onChange={(e) => setLoginUser(e.target.value)}
-                autoComplete="username"
-                required
-              />
-            </label>
-            <label className="mb-3 block text-xs text-muted-foreground">
-              Password
-              <input
-                type="password"
-                className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground"
-                value={loginPass}
-                onChange={(e) => setLoginPass(e.target.value)}
-                autoComplete="current-password"
-                required
-              />
-            </label>
-            {loginErr ? (
-              <p className="mb-2 text-xs text-destructive" role="alert">
-                {loginErr}
-              </p>
-            ) : null}
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="ghost" size="sm" onClick={() => setLoginOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" size="sm">
-                Sign in
-              </Button>
-            </div>
-          </form>
-        </div>
-      )}
     </>
   )
 }

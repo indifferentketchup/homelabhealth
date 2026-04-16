@@ -1,4 +1,4 @@
-"""Personas CRUD: global list; defaults per app via `is_default_booops` / `is_default_808notes`."""
+"""Personas CRUD: single-user; defaults per app via `is_default_booops` / `is_default_808notes`."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from auth_deps import assert_persona_mutable, get_principal, persona_row_visible, require_admin
+from auth_deps import get_principal, require_admin
 from db import get_pool
 
 router = APIRouter()
@@ -60,57 +60,24 @@ def _delete_stored_persona_icon(persona_id: uuid.UUID) -> None:
 
 
 @router.get("/")
-async def list_personas(principal: dict[str, Any] = Depends(get_principal)):
+async def list_personas(_: dict[str, Any] = Depends(get_principal)):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        if principal["kind"] == "owner":
-            rows = await conn.fetch(
-                """
-                SELECT id, name, icon_url, system_prompt, avatar_emoji,
-                       is_default_booops, is_default_808notes, created_at, owner_id
-                FROM personas
-                ORDER BY is_default_booops DESC, is_default_808notes DESC, created_at ASC NULLS LAST
-                """,
-            )
-        elif principal["kind"] == "member":
-            rows = await conn.fetch(
-                """
-                SELECT id, name, icon_url, system_prompt, avatar_emoji,
-                       is_default_booops, is_default_808notes, created_at, owner_id
-                FROM personas
-                WHERE owner_id IS NULL OR owner_id = $1::uuid
-                ORDER BY is_default_booops DESC, is_default_808notes DESC, created_at ASC NULLS LAST
-                """,
-                principal["user_id"],
-            )
-        else:
-            rows = await conn.fetch(
-                """
-                SELECT id, name, icon_url, system_prompt, avatar_emoji,
-                       is_default_booops, is_default_808notes, created_at, owner_id
-                FROM personas
-                WHERE owner_id IS NULL
-                ORDER BY is_default_booops DESC, is_default_808notes DESC, created_at ASC NULLS LAST
-                """,
-            )
+        rows = await conn.fetch(
+            """
+            SELECT id, name, icon_url, system_prompt, avatar_emoji,
+                   is_default_booops, is_default_808notes, created_at, owner_id
+            FROM personas
+            ORDER BY is_default_booops DESC, is_default_808notes DESC, created_at ASC NULLS LAST
+            """,
+        )
     return {"items": [_row(r) for r in rows]}
 
 
 @router.post("/")
 async def create_persona(body: PersonaCreate, principal: dict[str, Any] = Depends(get_principal)):
-    if principal["kind"] == "guest":
-        raise HTTPException(status_code=403, detail="forbidden")
     pool = await get_pool()
     async with pool.acquire() as conn:
-        owner_uuid = None
-        if principal["kind"] == "member":
-            n = await conn.fetchval(
-                "SELECT COUNT(*)::int FROM personas WHERE owner_id = $1::uuid",
-                principal["user_id"],
-            )
-            if int(n or 0) >= 10:
-                raise HTTPException(status_code=429, detail="persona_limit_reached")
-            owner_uuid = principal["user_id"]
         row = await conn.fetchrow(
             """
             INSERT INTO personas (
@@ -124,7 +91,7 @@ async def create_persona(body: PersonaCreate, principal: dict[str, Any] = Depend
             body.name.strip(),
             body.system_prompt or "",
             (body.avatar_emoji or "🤖").strip() or "🤖",
-            owner_uuid,
+            principal["user_id"],
         )
     return _row(row)
 
@@ -172,7 +139,7 @@ async def set_default_persona(
 
 
 @router.get("/{persona_id}")
-async def get_persona(persona_id: uuid.UUID, principal: dict[str, Any] = Depends(get_principal)):
+async def get_persona(persona_id: uuid.UUID, _: dict[str, Any] = Depends(get_principal)):
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -184,7 +151,7 @@ async def get_persona(persona_id: uuid.UUID, principal: dict[str, Any] = Depends
             """,
             persona_id,
         )
-    if row is None or not persona_row_visible(principal, row["owner_id"]):
+    if row is None:
         raise HTTPException(status_code=404, detail="Persona not found")
     return _row(row)
 
@@ -193,13 +160,13 @@ async def get_persona(persona_id: uuid.UUID, principal: dict[str, Any] = Depends
 async def upload_persona_icon(
     persona_id: uuid.UUID,
     file: UploadFile = File(...),
-    principal: dict[str, Any] = Depends(get_principal),
+    _: dict[str, Any] = Depends(get_principal),
 ):
-    if principal["kind"] == "guest":
-        raise HTTPException(status_code=403, detail="forbidden")
     pool = await get_pool()
     async with pool.acquire() as conn:
-        await assert_persona_mutable(conn, principal, persona_id)
+        exists = await conn.fetchval("SELECT 1 FROM personas WHERE id = $1::uuid", persona_id)
+    if not exists:
+        raise HTTPException(status_code=404, detail="Persona not found")
 
     orig = (file.filename or "").strip()
     ext = Path(orig).suffix.lower()
@@ -244,17 +211,11 @@ async def serve_persona_icon(persona_id: uuid.UUID):
 async def update_persona(
     persona_id: uuid.UUID,
     body: PersonaUpdate,
-    principal: dict[str, Any] = Depends(get_principal),
+    _: dict[str, Any] = Depends(get_principal),
 ):
-    if principal["kind"] == "guest":
-        raise HTTPException(status_code=403, detail="forbidden")
     pool = await get_pool()
     data = body.model_dump(exclude_unset=True)
-    if principal["kind"] != "owner":
-        data.pop("is_default_booops", None)
-        data.pop("is_default_808notes", None)
     async with pool.acquire() as conn:
-        await assert_persona_mutable(conn, principal, persona_id)
         row = await conn.fetchrow(
             """
             SELECT id, name, icon_url, system_prompt, avatar_emoji,
@@ -264,7 +225,8 @@ async def update_persona(
             """,
             persona_id,
         )
-        assert row is not None
+        if row is None:
+            raise HTTPException(status_code=404, detail="Persona not found")
         if not data:
             return _row(row)
 
@@ -318,24 +280,18 @@ async def update_persona(
 
 
 @router.delete("/{persona_id}")
-async def delete_persona(persona_id: uuid.UUID, principal: dict[str, Any] = Depends(get_principal)):
-    if principal["kind"] == "guest":
-        raise HTTPException(status_code=403, detail="forbidden")
+async def delete_persona(persona_id: uuid.UUID, _: dict[str, Any] = Depends(get_principal)):
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            SELECT id, is_default_booops, is_default_808notes, owner_id
+            SELECT id, is_default_booops, is_default_808notes
             FROM personas WHERE id = $1::uuid
             """,
             persona_id,
         )
         if row is None:
             raise HTTPException(status_code=404, detail="Persona not found")
-        if row["owner_id"] is None:
-            raise HTTPException(status_code=403, detail="cannot_delete_global_persona")
-        if principal["kind"] == "member" and row["owner_id"] != principal["user_id"]:
-            raise HTTPException(status_code=403, detail="persona_not_allowed")
         if row["is_default_booops"] or row["is_default_808notes"]:
             raise HTTPException(status_code=400, detail="Cannot delete a default persona for BooOps or 808notes")
         await conn.execute("DELETE FROM personas WHERE id = $1::uuid", persona_id)

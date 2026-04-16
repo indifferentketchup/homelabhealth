@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Outlet, useNavigate, useParams } from 'react-router-dom'
-import { Pin } from 'lucide-react'
+import { Layers, Pin } from 'lucide-react'
 import * as LucideIcons from 'lucide-react'
 
 import { fetchBranding, patch808notesBranding } from '@/api/branding.js'
@@ -193,7 +193,12 @@ export function Notes808Landing() {
           {isLoading && <p className="text-sm text-muted-foreground">Loading DAWs…</p>}
           {isError && <p className="text-sm text-destructive">Could not load DAWs.</p>}
           {!isLoading && !isError && items.length === 0 && (
-            <p className="text-sm text-muted-foreground">No DAWs yet — create one to get started.</p>
+            <div className="flex flex-col items-center gap-3 py-12 text-center">
+              <div className="flex size-12 items-center justify-center rounded-full border border-border bg-muted text-muted-foreground">
+                <Layers className="size-6" aria-hidden />
+              </div>
+              <p className="text-sm text-muted-foreground">No DAWs yet — create one to get started.</p>
+            </div>
           )}
           <div className="notes808-landing__cards">
             {items.map((d) => {

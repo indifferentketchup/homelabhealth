@@ -222,7 +222,7 @@ export function SourcesPanel({ chatId, dawId }) {
           >
             <div className="flex items-center gap-2">
               <span>Library</span>
-              {chatId && completeSourceIds.length > 0 && (
+              {completeSourceIds.length > 0 && (
                 <button
                   type="button"
                   onClick={(e) => {

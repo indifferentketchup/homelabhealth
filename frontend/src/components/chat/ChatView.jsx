@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 
 import { fetchBranding } from '@/api/branding.js'
-import { createChat, getChat, listMessages, patchChat, patchRecentChatsListCache } from '@/api/chats.js'
+import { createChat, forkChat, getChat, listMessages, patchChat, patchRecentChatsListCache } from '@/api/chats.js'
 import { getDaw } from '@/api/daws.js'
 import { createNote } from '@/api/notes.js'
 import { useStream } from '@/hooks/useStream.js'
@@ -292,6 +292,51 @@ export function ChatView({
     await runStream(activeChatId, content, messages.length + 1)
   }
 
+  // Edit + regenerate both fork the current chat at a chosen message — fork creates a new chat
+  // truncated to messages *before* the target — then we re-stream the new user content into it.
+  async function forkAndStream(targetMessageId, newContent) {
+    if (!activeChatId) return
+    try {
+      setSendError(null)
+      const newChat = await forkChat(activeChatId, targetMessageId)
+      if (!newChat?.id) throw new Error('Fork returned no chat id')
+      await queryClient.invalidateQueries({ queryKey: ['chats'] })
+      queryClient.setQueryData(['messages', newChat.id], { items: [] })
+      setActiveChatId(newChat.id)
+      hydrateFromChat(newChat)
+      setPendingSend(true)
+      setStreamText('')
+      setOptimisticUser({ id: '__optimistic_user__', role: 'user', content: newContent })
+      await runStream(newChat.id, newContent, 1)
+    } catch (e) {
+      console.error(e)
+      setSendError(friendlyStreamError(e instanceof Error ? e.message : String(e)))
+      setPendingSend(false)
+      setOptimisticUser(null)
+      setStreamText('')
+    }
+  }
+
+  async function handleEditUser(message, newContent) {
+    if (!message?.id || busy) return
+    await forkAndStream(message.id, newContent)
+  }
+
+  async function handleRegenerate(assistantMessage) {
+    if (!assistantMessage?.id || busy) return
+    const idx = messages.findIndex((m) => m.id === assistantMessage.id)
+    if (idx <= 0) return
+    let prevUser = null
+    for (let i = idx - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') {
+        prevUser = messages[i]
+        break
+      }
+    }
+    if (!prevUser?.id || !prevUser.content) return
+    await forkAndStream(prevUser.id, prevUser.content)
+  }
+
   if (!activeChatId) {
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-background">
@@ -360,6 +405,8 @@ export function ChatView({
               sourcesByMessageIndex={sourcesByMessageIndex}
               streamingRagContext={busy ? streamingRag : null}
               onSaveMessageAsNote={notesDawIdForSave ? saveMessageAsNote : undefined}
+              onEditUser={handleEditUser}
+              onRegenerate={handleRegenerate}
             />
           )}
         </div>

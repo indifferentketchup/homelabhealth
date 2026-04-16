@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Pin } from 'lucide-react'
+import { Loader2, Pin, Layers } from 'lucide-react'
 
 import { createDaw, deleteDaw, listDaws, pinDaw } from '@/api/daws.js'
 import { Button } from '@/components/ui/button'
@@ -156,11 +156,22 @@ export default function DawsPage() {
           </div>
         )}
 
-        {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+        {isLoading && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            Loading…
+          </div>
+        )}
         {isError && <p className="text-sm text-destructive">Could not load DAWs.</p>}
         {!isLoading && !isError && items.length === 0 && !showNew && (
           <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
-            <p className="text-sm text-muted-foreground">No DAWs yet</p>
+            <div className="flex size-12 items-center justify-center rounded-full border border-border bg-muted text-muted-foreground">
+              <Layers className="size-6" aria-hidden />
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-foreground">No DAWs yet</p>
+              <p className="text-xs text-muted-foreground">Create one to organize chats, sources, and memory.</p>
+            </div>
             <Button type="button" size="sm" onClick={() => setShowNew(true)}>
               New DAW
             </Button>
@@ -215,7 +226,7 @@ export default function DawsPage() {
                       }
                       onClick={() => pinMut.mutate({ id: d.id, pinned: !pinned })}
                       disabled={pinMut.isPending}
-                      className="flex items-center gap-1 rounded-md p-1.5 text-muted-foreground hover:bg-background/50 hover:text-foreground disabled:opacity-50"
+                      className="flex items-center gap-1 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-background/50 hover:text-foreground disabled:opacity-50"
                     >
                       <Pin
                         className={cn(

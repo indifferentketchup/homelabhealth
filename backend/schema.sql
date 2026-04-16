@@ -396,6 +396,13 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- pgvector migration: add embedding column to source_chunks
 ALTER TABLE source_chunks ADD COLUMN IF NOT EXISTS embedding vector(1024);
 
+-- HNSW indexes for cosine-distance ANN search (pgvector 0.5+).
+-- Without these, every retrieval does a sequential scan over source_chunks / memory_entries.
+CREATE INDEX IF NOT EXISTS source_chunks_embedding_hnsw
+    ON source_chunks USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS memory_entries_embedding_hnsw
+    ON memory_entries USING hnsw (embedding vector_cosine_ops);
+
 -- DubDrive sync folder per DAW
 ALTER TABLE daws ADD COLUMN IF NOT EXISTS dubdrive_sync_folder TEXT;
 ALTER TABLE daws ADD COLUMN IF NOT EXISTS dubdrive_sync_enabled BOOLEAN NOT NULL DEFAULT FALSE;
@@ -464,26 +471,15 @@ UPDATE users SET display_name = username WHERE display_name IS NULL OR btrim(dis
 UPDATE users SET bio = COALESCE(bio, '') WHERE bio IS NULL;
 UPDATE users SET avatar_emoji = COALESCE(NULLIF(trim(avatar_emoji), ''), '👤') WHERE avatar_emoji IS NULL;
 
-CREATE TABLE IF NOT EXISTS guest_message_counts (
-    ip TEXT PRIMARY KEY,
-    count INTEGER NOT NULL DEFAULT 0,
-    last_seen TIMESTAMPTZ DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS member_message_counts (
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    date DATE NOT NULL DEFAULT CURRENT_DATE,
-    count INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (user_id, date)
-);
+DROP TABLE IF EXISTS guest_message_counts;
+DROP TABLE IF EXISTS member_message_counts;
 
 ALTER TABLE personas ADD COLUMN IF NOT EXISTS owner_id UUID REFERENCES users(id) ON DELETE CASCADE;
 ALTER TABLE daws ADD COLUMN IF NOT EXISTS owner_id UUID REFERENCES users(id) ON DELETE CASCADE;
 ALTER TABLE chats ADD COLUMN IF NOT EXISTS owner_id UUID REFERENCES users(id) ON DELETE CASCADE;
-ALTER TABLE chats ADD COLUMN IF NOT EXISTS guest_ip TEXT;
+ALTER TABLE chats DROP COLUMN IF EXISTS guest_ip;
 
 CREATE INDEX IF NOT EXISTS chats_owner_id_idx ON chats(owner_id);
-CREATE INDEX IF NOT EXISTS chats_guest_ip_idx ON chats(guest_ip) WHERE guest_ip IS NOT NULL;
 CREATE INDEX IF NOT EXISTS personas_owner_id_idx ON personas(owner_id);
 CREATE INDEX IF NOT EXISTS daws_owner_id_idx ON daws(owner_id);
 

@@ -1,5 +1,4 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 
 import { UserProfileAvatar } from '@/components/layout/UserProfileAvatar.jsx'
@@ -46,18 +45,15 @@ function ProfileDropdownPanel({ rect, children }) {
 }
 
 /**
- * Top profile control: guests link to profile; signed-in users get a menu (fixed rect dropdown).
+ * Top profile control. Single-user: always a menu with Account Settings.
  * @param {object} props
  * @param {string} props.profilePath
- * @param {string} props.homePath
  * @param {'header' | 'fixed'} props.placement
  * @param {() => void} [props.onAfterNavigate]
  */
-export function UserProfileMenu({ profilePath, homePath, placement, onAfterNavigate }) {
+export function UserProfileMenu({ profilePath, placement, onAfterNavigate }) {
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
   const currentUser = useAppStore((s) => s.currentUser)
-  const clearToken = useAppStore((s) => s.clearToken)
 
   const [open, setOpen] = useState(false)
   const wrapRef = useRef(null)
@@ -91,13 +87,6 @@ export function UserProfileMenu({ profilePath, homePath, placement, onAfterNavig
 
   const onAccountSettings = () => {
     navigate(profilePath)
-    finishNavigate()
-  }
-
-  const onLogOut = () => {
-    clearToken()
-    void queryClient.invalidateQueries()
-    navigate(homePath, { replace: true })
     finishNavigate()
   }
 
@@ -152,14 +141,6 @@ export function UserProfileMenu({ profilePath, homePath, placement, onAfterNavig
               onClick={onAccountSettings}
             >
               Account Settings
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              className="fs-nav flex w-full cursor-default items-center rounded-sm px-2 py-2 text-left text-sm text-destructive outline-none hover:bg-destructive/10"
-              onClick={onLogOut}
-            >
-              Log Out
             </button>
           </ProfileDropdownPanel>
         )}

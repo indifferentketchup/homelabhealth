@@ -47,31 +47,24 @@ async def _proxy_get(api_path: str, params: dict, raw: bool = False):
 @router.get("/ls")
 async def dubdrive_ls(
     path: str = Query("", description="Directory path for DubDrive /api/ls"),
-    principal: dict = Depends(get_principal),
+    _: dict = Depends(get_principal),
 ) -> Response:
-    if principal["kind"] == "guest":
-        raise HTTPException(403, "Forbidden")
     return await _proxy_get("/api/ls", {"path": path})
 
 
 @router.get("/read")
 async def dubdrive_read(
     path: str = Query(..., min_length=1),
-    principal: dict = Depends(get_principal),
+    _: dict = Depends(get_principal),
 ) -> Response:
-    if principal["kind"] == "guest":
-        raise HTTPException(403, "Forbidden")
     return await _proxy_get("/api/read", {"path": path})
 
 
 @router.get("/preview")
 async def dubdrive_preview(
     path: str = Query(..., min_length=1),
-    principal: dict = Depends(get_principal),
+    _: dict = Depends(get_principal),
 ) -> Response:
-    if principal["kind"] == "guest":
-        raise HTTPException(403, "Forbidden")
-
     resp = await _proxy_get("/api/raw", {"path": path}, raw=True)
     if resp.status_code != 200:
         raise HTTPException(resp.status_code, "dubdrive_error")

@@ -3,20 +3,55 @@
 from __future__ import annotations
 
 import io
+import os
 
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_text_splitters import Language, RecursiveCharacterTextSplitter
 
-CHUNK_SIZE = 512
-CHUNK_OVERLAP = 64
+CHUNK_SIZE = int(os.environ.get("CHUNK_SIZE", "1000"))
+CHUNK_OVERLAP = int(os.environ.get("CHUNK_OVERLAP", "150"))
+
+# Extension → LangChain Language enum. Anything not listed uses the generic splitter.
+_LANGUAGE_BY_EXT: dict[str, Language] = {
+    ".py": Language.PYTHON,
+    ".js": Language.JS,
+    ".jsx": Language.JS,
+    ".ts": Language.TS,
+    ".tsx": Language.TS,
+    ".go": Language.GO,
+    ".java": Language.JAVA,
+    ".rs": Language.RUST,
+    ".rb": Language.RUBY,
+    ".php": Language.PHP,
+    ".md": Language.MARKDOWN,
+    ".markdown": Language.MARKDOWN,
+    ".html": Language.HTML,
+    ".htm": Language.HTML,
+    ".css": Language.HTML,  # not ideal but closer than generic
+}
 
 
-def chunk_text(text: str) -> list[str]:
-    splitter = RecursiveCharacterTextSplitter(
+def _splitter_for(filename: str | None) -> RecursiveCharacterTextSplitter:
+    ext = ""
+    if filename:
+        _, _, e = filename.rpartition(".")
+        if e and e != filename:
+            ext = "." + e.lower()
+    lang = _LANGUAGE_BY_EXT.get(ext)
+    if lang is not None:
+        return RecursiveCharacterTextSplitter.from_language(
+            language=lang,
+            chunk_size=CHUNK_SIZE,
+            chunk_overlap=CHUNK_OVERLAP,
+        )
+    return RecursiveCharacterTextSplitter(
         chunk_size=CHUNK_SIZE,
         chunk_overlap=CHUNK_OVERLAP,
         separators=["\n\n", "\n", " ", ""],
     )
-    return splitter.split_text(text)
+
+
+def chunk_text(text: str, filename: str | None = None) -> list[str]:
+    return _splitter_for(filename).split_text(text)
 
 
 def parse_pdf(file_bytes: bytes) -> str:

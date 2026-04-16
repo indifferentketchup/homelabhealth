@@ -1,7 +1,5 @@
 import { useCallback, useRef } from 'react'
 
-import { getStoredBoolabToken } from '@/api/index.js'
-
 /** Incremented on each `consumeStream` call so AbortError can tell "replaced by newer stream" from Stop / guard abort. */
 let consumeStreamGeneration = 0
 
@@ -68,8 +66,6 @@ export function useStream() {
       const ac = new AbortController()
       abortRef.current = ac
       const headers = new Headers(init.headers)
-      const token = getStoredBoolabToken()
-      if (token) headers.set('Authorization', `Bearer ${token}`)
       let reqBody = init.body
       if (body !== undefined) {
         headers.set('Content-Type', 'application/json')

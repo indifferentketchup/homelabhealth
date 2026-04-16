@@ -7,7 +7,6 @@ import {
   clearDawEmbeddings,
   deleteDawMemory,
   getDawMemory,
-  getStoredBoolabToken,
 } from '@/api/index.js'
 import {
   deleteContextFile,
@@ -222,7 +221,6 @@ export default function DawDetailPage() {
     try {
       const res = await fetch(`/api/dubdrive-sync/${id}/sync`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${getStoredBoolabToken()}` },
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) {
@@ -396,7 +394,7 @@ const saveInferMut = useMutation({
           <>
             <section className="rounded-lg border border-border bg-card p-4">
               <h2 className="mb-3 text-sm font-medium text-foreground">Details</h2>
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-4">
                 <label className="flex flex-col gap-1 text-sm">
                   <span className="text-muted-foreground">Name</span>
                   <input
@@ -483,7 +481,7 @@ const saveInferMut = useMutation({
               <h2 className="mb-3 text-sm font-medium text-foreground">Icon</h2>
               <div className="flex flex-col gap-3">
                 {daw.icon_url ? (
-                  <img src={daw.icon_url} alt="" className="size-16 rounded-full object-cover" />
+                  <img src={daw.icon_url} alt={`${daw.name || 'DAW'} icon`} className="size-16 rounded-full object-cover" />
                 ) : (
                   <p className="text-sm text-muted-foreground">No icon</p>
                 )}

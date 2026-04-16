@@ -11,8 +11,6 @@ import { useAppStore } from '@/store/index.js'
 function LayoutBootstrap() {
   useEffect(() => {
     void useLayoutStore.getState().loadLayout()
-    // Auth for all hubs (booops, 808notes, boolab). JWT lives in a shared cookie when
-    // VITE_AUTH_COOKIE_DOMAIN / *.boogaardmusic.com so subdomains see the same session.
     void useAppStore.getState().bootstrapAuth()
   }, [])
   return null

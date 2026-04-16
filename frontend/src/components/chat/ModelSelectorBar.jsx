@@ -57,18 +57,16 @@ function FixedDropdownPanel({ rect, children, className, minWidthPx }) {
   const w = minWidthPx != null ? Math.max(rect.width, minWidthPx) : rect.width
   return (
     <div
-      className={cn('flex min-w-0 flex-col gap-2 overflow-x-hidden p-2', className)}
+      className={cn(
+        'fixed z-[9999] flex min-w-0 flex-col gap-2 overflow-x-hidden rounded-lg border border-border p-2 shadow-xl',
+        className,
+      )}
       style={{
-        zIndex: 9999,
-        position: 'fixed',
         top: `${rect.bottom}px`,
         left: `${rect.left}px`,
         width: `${w}px`,
         maxWidth: 'calc(100vw - 1rem)',
         background: 'var(--bg-panel)',
-        border: '1px solid var(--border)',
-        borderRadius: 8,
-        boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
       }}
       role="dialog"
     >

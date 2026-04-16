@@ -10,10 +10,10 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
-from auth_deps import assert_daw_mutable, fetch_daw_if_visible, get_principal, require_admin
+from auth_deps import get_principal, require_admin
 from db import get_pool
 from services.chunking import chunk_text, parse_source_bytes
-from services.embeddings import embed_batch
+from services.embeddings import EmbeddingError, embed_batch, format_vector
 
 router = APIRouter(prefix="/sources", tags=["sources"])
 logger = logging.getLogger(__name__)
@@ -82,7 +82,7 @@ async def _ingest_source(source_id: uuid.UUID, daw_id: uuid.UUID, raw: bytes, mi
     pool = await get_pool()
     try:
         text = parse_source_bytes(raw, mime)
-        chunks = chunk_text(text)
+        chunks = chunk_text(text, filename=name)
         if not chunks:
             async with pool.acquire() as conn:
                 await conn.execute(
@@ -96,16 +96,27 @@ async def _ingest_source(source_id: uuid.UUID, daw_id: uuid.UUID, raw: bytes, mi
                 )
             return
 
-        embeddings = await embed_batch(chunks)
-        if len(embeddings) != len(chunks):
-            embeddings = [[] for _ in chunks]
+        try:
+            embeddings = await embed_batch(chunks)
+        except EmbeddingError as e:
+            logger.error("RAG ingest embedding failed source_id=%s: %s", source_id, e)
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    UPDATE sources
+                    SET embedding_status = 'error', error_message = $2, updated_at = NOW()
+                    WHERE id = $1::uuid
+                    """,
+                    source_id,
+                    f"embedding backend failed: {e}"[:900],
+                )
+            return
 
         async with pool.acquire() as conn:
             async with conn.transaction():
                 await conn.execute("DELETE FROM source_chunks WHERE source_id = $1::uuid", source_id)
                 for i, chunk in enumerate(chunks):
-                    emb = embeddings[i] if i < len(embeddings) else []
-                    emb_param = str(emb) if emb else None
+                    emb_param = format_vector(embeddings[i])
                     text = chunk.replace('\x00', '')
                     await conn.execute(
                         """
@@ -153,17 +164,12 @@ async def _ingest_source(source_id: uuid.UUID, daw_id: uuid.UUID, raw: bytes, mi
 async def upload_source(
     daw_id: uuid.UUID,
     file: UploadFile = File(...),
-    principal: dict = Depends(get_principal),
+    _: dict = Depends(get_principal),
 ) -> dict[str, Any]:
-    if principal["kind"] == "guest":
-        raise HTTPException(403, "Forbidden")
     raw = await file.read()
     if not raw:
         raise HTTPException(400, "Empty file")
-    max_b = 50 * 1024 * 1024
-    if principal["kind"] == "member":
-        max_b = 5 * 1024 * 1024
-    if len(raw) > max_b:
+    if len(raw) > 50 * 1024 * 1024:
         raise HTTPException(413, "File too large")
 
     try:
@@ -175,27 +181,9 @@ async def upload_source(
     h = _sha256(raw)
     pool = await get_pool()
     async with pool.acquire() as conn:
-        await fetch_daw_if_visible(conn, principal, daw_id)
-        if principal["kind"] == "member":
-            n = await conn.fetchval(
-                """
-                SELECT COUNT(*)::int FROM sources s
-                INNER JOIN daws d ON d.id = s.daw_id
-                WHERE d.owner_id = $1::uuid
-                """,
-                principal["user_id"],
-            )
-            cf = await conn.fetchval(
-                """
-                SELECT COUNT(*)::int FROM daw_context_files f
-                INNER JOIN daws d ON d.id = f.daw_id
-                WHERE d.owner_id = $1::uuid
-                """,
-                principal["user_id"],
-            )
-            if int(n or 0) + int(cf or 0) >= 10:
-                raise HTTPException(429, detail="upload_limit_reached")
-
+        daw_exists = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", daw_id)
+        if not daw_exists:
+            raise HTTPException(404, "DAW not found")
         existing = await conn.fetchval("SELECT id FROM sources WHERE content_hash = $1 LIMIT 1", h)
         if existing:
             return {"source_id": str(existing), "status": "already_exists"}
@@ -230,11 +218,13 @@ async def upload_source(
 @router.get("/{daw_id}")
 async def list_sources(
     daw_id: uuid.UUID,
-    principal: dict = Depends(get_principal),
+    _: dict = Depends(get_principal),
 ) -> list[dict[str, Any]]:
     pool = await get_pool()
     async with pool.acquire() as conn:
-        await fetch_daw_if_visible(conn, principal, daw_id)
+        daw_exists = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", daw_id)
+        if not daw_exists:
+            raise HTTPException(404, "DAW not found")
         rows = await conn.fetch(
             """
             SELECT id, name, chunk_count, embedding_status, created_at, source_type, mime_type
@@ -263,16 +253,13 @@ async def list_sources(
 @router.delete("/by-id/{source_id}")
 async def delete_source(
     source_id: uuid.UUID,
-    principal: dict = Depends(get_principal),
+    _: dict = Depends(get_principal),
 ) -> dict[str, str]:
-    if principal["kind"] == "guest":
-        raise HTTPException(403, "Forbidden")
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow("SELECT id, daw_id FROM sources WHERE id = $1::uuid", source_id)
         if not row:
             raise HTTPException(404, "Source not found")
-        await assert_daw_mutable(conn, principal, row["daw_id"])
     async with pool.acquire() as conn:
         await conn.execute("DELETE FROM sources WHERE id = $1::uuid", source_id)
 
@@ -282,12 +269,14 @@ async def delete_source(
 @router.delete("/{daw_id}/chunks")
 async def clear_daw_chunks(
     daw_id: uuid.UUID,
-    principal: dict = Depends(get_principal),
+    _: dict = Depends(get_principal),
 ) -> dict[str, Any]:
-    """Delete all chunks and reset embedding status for all sources in a DAW (owner-only)."""
+    """Delete all chunks and reset embedding status for all sources in a DAW."""
     pool = await get_pool()
     async with pool.acquire() as conn:
-        await assert_daw_mutable(conn, principal, daw_id)
+        daw_exists = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", daw_id)
+        if not daw_exists:
+            raise HTTPException(404, "DAW not found")
         result = await conn.fetchval(
             """
             DELETE FROM source_chunks

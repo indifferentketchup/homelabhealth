@@ -3,21 +3,20 @@
 import uuid
 
 import json
+import os
 import logging
-from pathlib import Path
 from typing import Any, AsyncIterator
 
 import asyncpg
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-import json as json_module
 
 from auth_deps import (
     assert_daw_usable,
     assert_persona_usable,
     get_principal,
-    principal_can_access_chat,
 )
 from db import get_pool
 from services.pruning import summarize_and_compress
@@ -101,42 +100,6 @@ async def _site_default_model(conn: asyncpg.Connection, mode: str) -> str:
     return (
         os.environ.get("DEFAULT_MODEL", "llama-gpu/qwen3.5-9b-exl3") or "llama-gpu/qwen3.5-9b-exl3"
     ).strip()
-
-
-async def _bump_message_cap_or_429(conn: asyncpg.Connection, principal: dict[str, Any]) -> None:
-    if principal["kind"] == "owner":
-        return
-    if principal["kind"] == "guest":
-        ip = principal["ip"]
-        row = await conn.fetchrow(
-            """
-            INSERT INTO guest_message_counts (ip, count, last_seen)
-            VALUES ($1, 1, NOW())
-            ON CONFLICT (ip) DO UPDATE SET
-                count = guest_message_counts.count + 1,
-                last_seen = EXCLUDED.last_seen
-            WHERE guest_message_counts.count < 20
-            RETURNING count
-            """,
-            ip,
-        )
-        if row is None:
-            raise HTTPException(status_code=429, detail="guest_limit_reached")
-        return
-    uid = principal["user_id"]
-    row = await conn.fetchrow(
-        """
-        INSERT INTO member_message_counts (user_id, date, count)
-        VALUES ($1::uuid, CURRENT_DATE, 1)
-        ON CONFLICT (user_id, date) DO UPDATE SET
-            count = member_message_counts.count + 1
-        WHERE member_message_counts.count < 200
-        RETURNING count
-        """,
-        uid,
-    )
-    if row is None:
-        raise HTTPException(status_code=429, detail="member_daily_limit_reached")
 
 
 async def _assembled_system_prompt(
@@ -287,13 +250,14 @@ async def _assembled_system_prompt(
     q_for_rag = str(user_query_for_rag or "").strip()
     rag_disabled = daw_rag_mode_effective == "off"
     use_intent_gate = daw_rag_mode_effective == "auto"
+    intent_allows = (await should_retrieve(q_for_rag, mode)) if (q_for_rag and use_intent_gate) else True
     if (
         daw_id is not None
         and q_for_rag
         and chat.get("rag_enabled") is not False
         and not rag_disabled
         and use_intent_gate
-        and not should_retrieve(q_for_rag, mode)
+        and not intent_allows
     ):
         logger.info(
             "RAG skipped by intent gate query_words=%d mode=%s",
@@ -306,7 +270,7 @@ async def _assembled_system_prompt(
         and bool(user_query_for_rag and str(user_query_for_rag).strip())
         and daw_id is not None
         and chat.get("rag_enabled") is not False
-        and (should_retrieve(q_for_rag, mode) if use_intent_gate else True)
+        and (intent_allows if use_intent_gate else True)
     )
     sse_rag_meta: dict[str, int] | None = None
     if rag_ok:
@@ -423,84 +387,6 @@ async def _openai_short_chat_title(model: str, user_message_text: str) -> str | 
         return None
 
 
-async def _anthropic_short_chat_title(user_message_text: str) -> str | None:
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        return None
-    excerpt = (user_message_text or "")[:300]
-    title_model = (os.environ.get("ANTHROPIC_TITLE_MODEL") or "").strip() or _resolve_claude_model(
-        "claude-haiku"
-    )
-    prompt = (
-        "Generate a short chat title (4-6 words, no punctuation, no quotes) for a conversation "
-        f"that starts with this message: {excerpt}"
-    )
-    try:
-        client = AsyncAnthropic(api_key=api_key)
-        resp = await client.messages.create(
-            model=title_model,
-            max_tokens=48,
-            messages=[{"role": "user", "content": prompt}],
-        )
-    except Exception:
-        return None
-    parts: list[str] = []
-    for block in resp.content:
-        if getattr(block, "type", None) == "text":
-            parts.append(getattr(block, "text", "") or "")
-    raw = "".join(parts).strip()
-    cleaned = _clean_auto_title(raw)
-    return cleaned or None
-
-
-async def _ai_short_chat_title(model: str, user_message_text: str) -> str | None:
-    if _is_claude_model(model):
-        return await _anthropic_short_chat_title(user_message_text)
-    return await _openai_short_chat_title(model, user_message_text)
-
-
-CLAUDE_ALIASES: dict[str, str] = {
-    "claude-sonnet": "claude-sonnet-4-20250514",
-    "claude-haiku": "claude-3-5-haiku-20241022",
-    "claude-opus": "claude-3-opus-20240229",
-}
-
-
-def _is_claude_model(model: str) -> bool:
-    m = (model or "").strip().lower()
-    if m in CLAUDE_ALIASES:
-        return True
-    if m.startswith("claude-"):
-        return True
-    return False
-
-
-def _resolve_claude_model(model: str) -> str:
-    key = (model or "").strip().lower()
-    if key in CLAUDE_ALIASES:
-        env_key = {
-            "claude-sonnet": "ANTHROPIC_MODEL_SONNET",
-            "claude-haiku": "ANTHROPIC_MODEL_HAIKU",
-            "claude-opus": "ANTHROPIC_MODEL_OPUS",
-        }[key]
-        return os.environ.get(env_key) or CLAUDE_ALIASES[key]
-    return model.strip()
-
-
-def _split_system_for_claude(
-    messages: list[dict[str, str]],
-) -> tuple[str | None, list[dict[str, str]]]:
-    system_parts: list[str] = []
-    rest: list[dict[str, str]] = []
-    for m in messages:
-        if m.get("role") == "system":
-            system_parts.append(m.get("content") or "")
-        else:
-            rest.append(m)
-    system = "\n\n".join(system_parts) if system_parts else None
-    return system, rest
-
-
 async def _stream_ollama(
     model: str,
     messages: list[dict[str, str]],
@@ -548,35 +434,6 @@ async def _stream_ollama(
                                 yield _sse(json.dumps({"content": piece}))
     except httpx.HTTPError as e:
         yield _sse(json.dumps({"error": f"Inference request failed: {e}"}))
-        return
-    yield _sse("[DONE]")
-
-
-async def _stream_claude(
-    model: str,
-    messages: list[dict[str, str]],
-) -> AsyncIterator[bytes]:
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        yield _sse(json.dumps({"error": "ANTHROPIC_API_KEY is not configured"}))
-        return
-    resolved = _resolve_claude_model(model)
-    system, api_messages = _split_system_for_claude(messages)
-    client = AsyncAnthropic(api_key=api_key)
-    try:
-        kwargs: dict[str, Any] = {
-            "model": resolved,
-            "messages": api_messages,
-        }
-        if system:
-            kwargs["system"] = system
-        logger.info("claude messages.stream model=%s", resolved)
-        async with client.messages.stream(**kwargs) as stream:
-            async for text in stream.text_stream:
-                if text:
-                    yield _sse(json.dumps({"content": text}))
-    except Exception as e:
-        yield _sse(json.dumps({"error": str(e)}))
         return
     yield _sse("[DONE]")
 
@@ -649,24 +506,15 @@ async def create_chat(body: ChatCreate, principal: dict[str, Any] = Depends(get_
     pool = await get_pool()
     mode = body.mode if body.mode in ("booops", "808notes") else "booops"
     default_model = os.environ.get("DEFAULT_MODEL", "llama-gpu/qwen3.5-9b-exl3")
-    if principal["kind"] == "owner":
-        owner_id, guest_ip = None, None
-    elif principal["kind"] == "member":
-        owner_id, guest_ip = principal["user_id"], None
-    else:
-        owner_id, guest_ip = None, principal["ip"]
     async with pool.acquire() as conn:
         await assert_persona_usable(conn, principal, body.persona_id)
         await assert_daw_usable(conn, principal, body.daw_id)
         persona_id_for_insert = body.persona_id
         if persona_id_for_insert is None:
             persona_id_for_insert = await _default_persona_id_for_mode(conn, mode)
-        model_arg = body.model
-        if principal["kind"] != "owner":
-            model_arg = await _site_default_model(conn, mode)
         row = await conn.fetchrow(
             """
-            INSERT INTO chats (title, daw_id, mode, model, web_search_enabled, rag_enabled, persona_id, owner_id, guest_ip)
+            INSERT INTO chats (title, daw_id, mode, model, web_search_enabled, rag_enabled, persona_id, owner_id)
             VALUES ($1, $2, $3,
                 COALESCE($4, (
                     SELECT value FROM global_settings WHERE key = (
@@ -674,22 +522,20 @@ async def create_chat(body: ChatCreate, principal: dict[str, Any] = Depends(get_
                     ) LIMIT 1
                 ), $6),
                 COALESCE($5, FALSE),
-                $10,
+                $9,
                 $7,
-                $8,
-                $9)
+                $8)
             RETURNING id, title, daw_id, mode, persona_id, model, web_search_enabled, rag_enabled,
                 pruning_summary, message_count, is_main_chat, created_at, updated_at
             """,
             body.title,
             body.daw_id,
             mode,
-            model_arg,
+            body.model,
             body.web_search_enabled,
             default_model,
             persona_id_for_insert,
-            owner_id,
-            guest_ip,
+            principal["user_id"],
             body.daw_id is not None,
         )
     return _chat_row(row)
@@ -703,8 +549,6 @@ async def list_chats(
     daw_id: uuid.UUID | None = Query(None, description="When set, only chats for this DAW workspace."),
     principal: dict[str, Any] = Depends(get_principal),
 ):
-    if principal["kind"] == "guest":
-        return {"items": [], "total": 0, "limit": limit, "offset": offset}
     pool = await get_pool()
     m = mode if mode in ("booops", "808notes") else "booops"
     cols = """
@@ -712,86 +556,42 @@ async def list_chats(
                 pruning_summary, message_count, is_main_chat, created_at, updated_at
     """
     async with pool.acquire() as conn:
-        if principal["kind"] == "owner":
-            scope = "owner_id IS NULL AND guest_ip IS NULL"
-            if daw_id is not None:
-                rows = await conn.fetch(
-                    f"""
-                    SELECT {cols}
-                    FROM chats
-                    WHERE mode = $3 AND daw_id = $4::uuid AND {scope}
-                    ORDER BY updated_at DESC NULLS LAST, created_at DESC
-                    LIMIT $1 OFFSET $2
-                    """,
-                    limit,
-                    offset,
-                    m,
-                    daw_id,
-                )
-                total = await conn.fetchval(
-                    f"SELECT COUNT(*)::int FROM chats WHERE mode = $1 AND daw_id = $2::uuid AND {scope}",
-                    m,
-                    daw_id,
-                )
-            else:
-                rows = await conn.fetch(
-                    f"""
-                    SELECT {cols}
-                    FROM chats
-                    WHERE mode = $3 AND {scope}
-                    ORDER BY updated_at DESC NULLS LAST, created_at DESC
-                    LIMIT $1 OFFSET $2
-                    """,
-                    limit,
-                    offset,
-                    m,
-                )
-                total = await conn.fetchval(
-                    f"SELECT COUNT(*)::int FROM chats WHERE mode = $1 AND {scope}",
-                    m,
-                )
+        if daw_id is not None:
+            rows = await conn.fetch(
+                f"""
+                SELECT {cols}
+                FROM chats
+                WHERE mode = $3 AND daw_id = $4::uuid
+                ORDER BY updated_at DESC NULLS LAST, created_at DESC
+                LIMIT $1 OFFSET $2
+                """,
+                limit,
+                offset,
+                m,
+                daw_id,
+            )
+            total = await conn.fetchval(
+                "SELECT COUNT(*)::int FROM chats WHERE mode = $1 AND daw_id = $2::uuid",
+                m,
+                daw_id,
+            )
         else:
-            uid = principal["user_id"]
-            if daw_id is not None:
-                rows = await conn.fetch(
-                    f"""
-                    SELECT {cols}
-                    FROM chats
-                    WHERE mode = $3 AND daw_id = $4::uuid AND owner_id = $5::uuid
-                    ORDER BY updated_at DESC NULLS LAST, created_at DESC
-                    LIMIT $1 OFFSET $2
-                    """,
-                    limit,
-                    offset,
-                    m,
-                    daw_id,
-                    uid,
-                )
-                total = await conn.fetchval(
-                    "SELECT COUNT(*)::int FROM chats WHERE mode = $1 AND daw_id = $2::uuid AND owner_id = $3::uuid",
-                    m,
-                    daw_id,
-                    uid,
-                )
-            else:
-                rows = await conn.fetch(
-                    f"""
-                    SELECT {cols}
-                    FROM chats
-                    WHERE mode = $3 AND owner_id = $4::uuid
-                    ORDER BY updated_at DESC NULLS LAST, created_at DESC
-                    LIMIT $1 OFFSET $2
-                    """,
-                    limit,
-                    offset,
-                    m,
-                    uid,
-                )
-                total = await conn.fetchval(
-                    "SELECT COUNT(*)::int FROM chats WHERE mode = $1 AND owner_id = $2::uuid",
-                    m,
-                    uid,
-                )
+            rows = await conn.fetch(
+                f"""
+                SELECT {cols}
+                FROM chats
+                WHERE mode = $3
+                ORDER BY updated_at DESC NULLS LAST, created_at DESC
+                LIMIT $1 OFFSET $2
+                """,
+                limit,
+                offset,
+                m,
+            )
+            total = await conn.fetchval(
+                "SELECT COUNT(*)::int FROM chats WHERE mode = $1",
+                m,
+            )
     return {"items": [_chat_row(r) for r in rows], "total": total, "limit": limit, "offset": offset}
 
 
@@ -801,36 +601,20 @@ async def delete_non_daw_chats(
     principal: dict[str, Any] = Depends(get_principal),
 ):
     """Delete all chats in the given mode that are not tied to a DAW (daw_id IS NULL)."""
-    if principal["kind"] == "guest":
-        raise HTTPException(status_code=403, detail="forbidden")
     pool = await get_pool()
     m = mode if mode in ("booops", "808notes") else "booops"
     async with pool.acquire() as conn:
-        if principal["kind"] == "owner":
-            deleted = await conn.fetchval(
-                """
-                WITH deleted AS (
-                    DELETE FROM chats
-                    WHERE mode = $1 AND daw_id IS NULL AND owner_id IS NULL AND guest_ip IS NULL
-                    RETURNING 1
-                )
-                SELECT COUNT(*)::int FROM deleted
-                """,
-                m,
+        deleted = await conn.fetchval(
+            """
+            WITH deleted AS (
+                DELETE FROM chats
+                WHERE mode = $1 AND daw_id IS NULL
+                RETURNING 1
             )
-        else:
-            deleted = await conn.fetchval(
-                """
-                WITH deleted AS (
-                    DELETE FROM chats
-                    WHERE mode = $1 AND daw_id IS NULL AND owner_id = $2::uuid
-                    RETURNING 1
-                )
-                SELECT COUNT(*)::int FROM deleted
-                """,
-                m,
-                principal["user_id"],
-            )
+            SELECT COUNT(*)::int FROM deleted
+            """,
+            m,
+        )
     return {"deleted": int(deleted or 0), "mode": m}
 
 
@@ -841,14 +625,13 @@ async def get_chat(chat_id: uuid.UUID, principal: dict[str, Any] = Depends(get_p
         row = await conn.fetchrow(
             """
             SELECT id, title, daw_id, mode, persona_id, model, web_search_enabled, rag_enabled,
-                pruning_summary, message_count, is_main_chat, created_at, updated_at,
-                owner_id, guest_ip
+                pruning_summary, message_count, is_main_chat, created_at, updated_at
             FROM chats
             WHERE id = $1::uuid
             """,
             chat_id,
         )
-    if row is None or not principal_can_access_chat(principal, row):
+    if row is None:
         raise HTTPException(status_code=404, detail="Chat not found")
     return _chat_row(row)
 
@@ -862,10 +645,10 @@ async def patch_web_search(
     pool = await get_pool()
     async with pool.acquire() as conn:
         cur = await conn.fetchrow(
-            "SELECT id, owner_id, guest_ip FROM chats WHERE id = $1::uuid",
+            "SELECT id FROM chats WHERE id = $1::uuid",
             chat_id,
         )
-        if cur is None or not principal_can_access_chat(principal, cur):
+        if cur is None:
             raise HTTPException(status_code=404, detail="Chat not found")
         row = await conn.fetchrow(
             """
@@ -890,10 +673,10 @@ async def get_source_selection(
     pool = await get_pool()
     async with pool.acquire() as conn:
         c = await conn.fetchrow(
-            "SELECT id, owner_id, guest_ip FROM chats WHERE id = $1::uuid",
+            "SELECT id FROM chats WHERE id = $1::uuid",
             chat_id,
         )
-        if c is None or not principal_can_access_chat(principal, c):
+        if c is None:
             raise HTTPException(status_code=404, detail="Chat not found")
         rows = await conn.fetch(
             "SELECT source_id FROM chat_source_selections WHERE chat_id = $1::uuid",
@@ -911,10 +694,10 @@ async def put_source_selection(
     pool = await get_pool()
     async with pool.acquire() as conn:
         c = await conn.fetchrow(
-            "SELECT id, owner_id, guest_ip FROM chats WHERE id = $1::uuid",
+            "SELECT id FROM chats WHERE id = $1::uuid",
             chat_id,
         )
-        if c is None or not principal_can_access_chat(principal, c):
+        if c is None:
             raise HTTPException(status_code=404, detail="Chat not found")
         for sid in body.source_ids:
             ok = await conn.fetchval("SELECT 1 FROM sources WHERE id = $1::uuid", sid)
@@ -942,20 +725,17 @@ async def patch_chat(
 ):
     pool = await get_pool()
     data = body.model_dump(exclude_unset=True)
-    if principal["kind"] != "owner" and "model" in data:
-        del data["model"]
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
             SELECT id, title, daw_id, mode, persona_id, model, web_search_enabled, rag_enabled,
-                pruning_summary, message_count, is_main_chat, created_at, updated_at,
-                owner_id, guest_ip
+                pruning_summary, message_count, is_main_chat, created_at, updated_at
             FROM chats
             WHERE id = $1::uuid
             """,
             chat_id,
         )
-        if row is None or not principal_can_access_chat(principal, row):
+        if row is None:
             raise HTTPException(status_code=404, detail="Chat not found")
         if not data:
             return _chat_row(row)
@@ -994,10 +774,10 @@ async def delete_chat(chat_id: uuid.UUID, principal: dict[str, Any] = Depends(ge
     pool = await get_pool()
     async with pool.acquire() as conn:
         cur = await conn.fetchrow(
-            "SELECT id, owner_id, guest_ip FROM chats WHERE id = $1::uuid",
+            "SELECT id FROM chats WHERE id = $1::uuid",
             chat_id,
         )
-        if cur is None or not principal_can_access_chat(principal, cur):
+        if cur is None:
             raise HTTPException(status_code=404, detail="Chat not found")
         result = await conn.execute("DELETE FROM chats WHERE id = $1::uuid", chat_id)
     if result == "DELETE 0":
@@ -1010,10 +790,10 @@ async def list_messages(chat_id: uuid.UUID, principal: dict[str, Any] = Depends(
     pool = await get_pool()
     async with pool.acquire() as conn:
         c = await conn.fetchrow(
-            "SELECT id, owner_id, guest_ip FROM chats WHERE id = $1::uuid",
+            "SELECT id FROM chats WHERE id = $1::uuid",
             chat_id,
         )
-        if c is None or not principal_can_access_chat(principal, c):
+        if c is None:
             raise HTTPException(status_code=404, detail="Chat not found")
         rows = await conn.fetch(
             """
@@ -1039,13 +819,13 @@ async def fork_chat_at_message(
             src = await conn.fetchrow(
                 """
                 SELECT id, title, mode, model, persona_id, daw_id,
-                    web_search_enabled, rag_enabled, owner_id, guest_ip
+                    web_search_enabled, rag_enabled
                 FROM chats
                 WHERE id = $1::uuid
                 """,
                 chat_id,
             )
-            if src is None or not principal_can_access_chat(principal, src):
+            if src is None:
                 raise HTTPException(status_code=404, detail="Chat not found")
 
             target = await conn.fetchrow(
@@ -1084,9 +864,9 @@ async def fork_chat_at_message(
                 INSERT INTO chats (
                     title, daw_id, mode, model, persona_id,
                     web_search_enabled, rag_enabled, message_count,
-                    owner_id, guest_ip
+                    owner_id
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 RETURNING id, title, daw_id, mode, persona_id, model, web_search_enabled, rag_enabled,
                     pruning_summary, message_count, is_main_chat, created_at, updated_at
                 """,
@@ -1098,8 +878,7 @@ async def fork_chat_at_message(
                 src["web_search_enabled"],
                 src["rag_enabled"],
                 len(copies),
-                src["owner_id"],
-                src["guest_ip"],
+                principal["user_id"],
             )
             assert new_chat is not None
             new_id = new_chat["id"]
@@ -1140,13 +919,13 @@ async def append_message(
         chat = await conn.fetchrow(
             """
             SELECT id, title, model, pruning_summary, mode, persona_id, web_search_enabled, daw_id,
-                message_count, rag_enabled, owner_id, guest_ip
+                message_count, rag_enabled
             FROM chats
             WHERE id = $1::uuid
             """,
             chat_id,
         )
-        if chat is None or not principal_can_access_chat(principal, chat):
+        if chat is None:
             raise HTTPException(status_code=404, detail="Chat not found")
 
         daw_row = None
@@ -1155,39 +934,25 @@ async def append_message(
                 "SELECT model FROM daws WHERE id = $1::uuid",
                 chat["daw_id"],
             )
-        cm = chat["mode"] if chat["mode"] in ("booops", "808notes") else "booops"
-        if principal["kind"] == "owner":
-            daw_pins_model = bool(
-                daw_row is not None and daw_row["model"] and str(daw_row["model"]).strip()
-            )
-            chat_model = (body.model or chat["model"] or "").strip()
-            effective_model = str(daw_row["model"]).strip() if daw_pins_model else chat_model
-        else:
-            daw_pins_model = False
-            effective_model = (await _site_default_model(conn, cm)).strip()
+        daw_pins_model = bool(
+            daw_row is not None and daw_row["model"] and str(daw_row["model"]).strip()
+        )
+        chat_model = (body.model or chat["model"] or "").strip()
+        effective_model = str(daw_row["model"]).strip() if daw_pins_model else chat_model
         if not effective_model:
             raise HTTPException(status_code=400, detail="No model set for chat")
 
-        if principal["kind"] == "owner":
-            if daw_pins_model:
-                await conn.execute(
-                    "UPDATE chats SET model = $2, updated_at = NOW() WHERE id = $1::uuid",
-                    chat_id,
-                    effective_model,
-                )
-            elif body.model is not None:
-                await conn.execute(
-                    "UPDATE chats SET model = $2, updated_at = NOW() WHERE id = $1::uuid",
-                    chat_id,
-                    effective_model,
-                )
+        if daw_pins_model or body.model is not None:
+            await conn.execute(
+                "UPDATE chats SET model = $2, updated_at = NOW() WHERE id = $1::uuid",
+                chat_id,
+                effective_model,
+            )
 
-        include_private = principal["kind"] == "owner"
         first_exchange_for_auto_title = int(chat["message_count"] or 0) == 0
 
         user_msg_id = uuid.uuid4()
         async with conn.transaction():
-            await _bump_message_cap_or_429(conn, principal)
             await conn.execute(
                 """
                 INSERT INTO messages (id, chat_id, role, content, model)
@@ -1222,7 +987,7 @@ async def append_message(
             conn,
             chat,
             user_query_for_rag=body.content.strip(),
-            include_site_private=include_private,
+            include_site_private=True,
             session_skill_ids=body.session_skill_ids,
         )
 
@@ -1270,28 +1035,16 @@ async def append_message(
 
         full: list[str] = []
         had_error = False
-        if _is_claude_model(effective_model):
-            logger.info(
-                "chat inference chat_id=%s model=%s daw_id=%s",
-                str(chat_id),
-                effective_model,
-                str(chat["daw_id"]) if chat["daw_id"] else None,
-            )
-            stream = _stream_claude(
-                effective_model,
-                api_messages,
-            )
-        else:
-            logger.info(
-                "chat inference chat_id=%s model=%s daw_id=%s",
-                str(chat_id),
-                effective_model,
-                str(chat["daw_id"]) if chat["daw_id"] else None,
-            )
-            stream = _stream_ollama(
-                effective_model,
-                api_messages,
-            )
+        logger.info(
+            "chat inference chat_id=%s model=%s daw_id=%s",
+            str(chat_id),
+            effective_model,
+            str(chat["daw_id"]) if chat["daw_id"] else None,
+        )
+        stream = _stream_ollama(
+            effective_model,
+            api_messages,
+        )
         try:
             async for chunk in stream:
                 try:
@@ -1355,7 +1108,7 @@ async def append_message(
         if first_exchange_for_auto_title and assistant_text and not has_custom_title:
             new_title: str | None = None
             try:
-                new_title = await _ai_short_chat_title(effective_model, user_message_text)
+                new_title = await _openai_short_chat_title(effective_model, user_message_text)
             except Exception:
                 new_title = None
             if not new_title:
@@ -1377,7 +1130,7 @@ async def append_message(
             yield _sse(json.dumps({"type": "title_update", "title": title_emit}))
 
         auto_mem = _first_auto_memory_sentence(assistant_text)
-        if auto_mem and principal["kind"] == "owner":
+        if auto_mem:
             chat_mode = chat["mode"] if chat["mode"] in ("booops", "808notes") else "booops"
             async with p.acquire() as conn_mem:
                 mem_row = await conn_mem.fetchrow(

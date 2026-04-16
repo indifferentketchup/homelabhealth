@@ -16,7 +16,6 @@ from routers import (
     auth,
     branding,
     chats,
-    claude,
     custom_instructions,
     daw_context_files,
     daw_memory,
@@ -28,7 +27,6 @@ from routers import (
     searxng,
     settings,
     skills,
-    users,
 )
 from routers.dubdrive import router as dubdrive_router
 from routers.dubdrive_sync import router as dubdrive_sync_router
@@ -106,9 +104,7 @@ async def api_health():
 
 
 api.include_router(auth.router, prefix="/auth", tags=["auth"])
-api.include_router(users.router, prefix="/users", tags=["users"])
 api.include_router(ollama.router, prefix="/ollama", tags=["ollama"])
-api.include_router(claude.router, prefix="/claude", tags=["claude"])
 api.include_router(chats.router, prefix="/chats", tags=["chats"])
 api.include_router(branding.router, prefix="/branding", tags=["branding"])
 api.include_router(personas.router, prefix="/personas", tags=["personas"])

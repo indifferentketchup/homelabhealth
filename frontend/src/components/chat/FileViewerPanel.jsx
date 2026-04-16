@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { createHighlighter } from 'shiki'
 import { ChevronLeft } from 'lucide-react'
 
-import { getStoredBoolabToken } from '@/api/index.js'
 import { Button } from '@/components/ui/button'
 
 const EXT_LANG = {
@@ -89,10 +88,7 @@ export function FileViewerPanel({ file, onClose, onAttachLines }) {
     async function load() {
       setLoading(true)
       try {
-        const token = getStoredBoolabToken()
-        const res = await fetch(`/api/dubdrive/preview?path=${encodeURIComponent(file.path)}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        })
+        const res = await fetch(`/api/dubdrive/preview?path=${encodeURIComponent(file.path)}`)
         if (!res.ok) throw new Error(`${res.status}`)
         const { text } = await res.json()
 
