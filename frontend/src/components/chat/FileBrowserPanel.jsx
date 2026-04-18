@@ -313,13 +313,21 @@ export function FileBrowserPanel({ isOpen, onClose, onFileSelect, rootPath, vari
   }
 
   return (
-    <div
-      className="fixed inset-y-0 right-0 z-40 flex h-full w-[min(100vw,420px)] min-w-[280px] shadow-[var(--glow)]"
-      aria-label="File browser"
-    >
-      <aside className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-sidebar-border bg-sidebar text-sidebar-foreground">
-        {inner}
-      </aside>
-    </div>
+    <>
+      <button
+        type="button"
+        aria-label="Close file browser"
+        className="fixed inset-0 z-[35] bg-background/70 md:hidden"
+        onClick={onClose}
+      />
+      <div
+        className="fixed inset-y-0 right-0 z-40 flex h-full w-[min(100vw,420px)] min-w-[280px] shadow-[var(--glow)]"
+        aria-label="File browser"
+      >
+        <aside className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-sidebar-border bg-sidebar text-sidebar-foreground">
+          {inner}
+        </aside>
+      </div>
+    </>
   )
 }

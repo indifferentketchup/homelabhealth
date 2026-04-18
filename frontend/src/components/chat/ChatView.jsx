@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 
 import { fetchBranding } from '@/api/branding.js'
-import { createChat, forkChat, getChat, listMessages, patchChat, patchRecentChatsListCache } from '@/api/chats.js'
+import { createChat, forkChat, getChat, listMessages, patchRecentChatsListCache } from '@/api/chats.js'
 import { getDaw } from '@/api/daws.js'
 import { createNote } from '@/api/notes.js'
 import { useStream } from '@/hooks/useStream.js'
@@ -175,6 +176,8 @@ export function ChatView({
   /** Chat id for the in-flight POST /messages stream (not null only while consumeStream runs). */
   const streamingChatRef = useRef(null)
   const inputRef = useRef(null)
+  /** Last outgoing user message content — used to power the Retry button on stream errors. */
+  const lastUserMessageRef = useRef(null)
 
   const busy = pendingSend
 
@@ -250,23 +253,33 @@ export function ChatView({
       },
       onDone: async () => {
         streamingChatRef.current = null
+        // Fetch new messages as a value so we can commit the data write and the stream
+        // teardown in one render. Going via refetchQueries leaves a frame where the new
+        // messages are already in RQ's store but pendingSend/streamText/optimisticUser
+        // haven't cleared yet — that frame is the double-render.
+        let nextData = null
         try {
-          await queryClient.invalidateQueries({ queryKey: ['messages', chatId] })
-          await queryClient.invalidateQueries({ queryKey: ['chats'] })
-          await queryClient.invalidateQueries({ queryKey: ['chat', chatId] })
-          setSendError(null)
-        } finally {
+          nextData = await listMessages(chatId)
+        } catch (e) {
+          console.error('onDone listMessages failed', e)
+        }
+        flushSync(() => {
+          if (nextData) queryClient.setQueryData(['messages', chatId], nextData)
           setOptimisticUser(null)
           setPendingSend(false)
-          setStreamText('')
           setStreamingRag(null)
+          setStreamText('')
+          setSendError(null)
+        })
+        if (!nextData) {
+          queryClient.invalidateQueries({ queryKey: ['messages', chatId] })
         }
+        queryClient.invalidateQueries({ queryKey: ['chats'] })
+        queryClient.invalidateQueries({ queryKey: ['chat', chatId] })
       },
       onError: async (err) => {
         streamingChatRef.current = null
-        try {
-          await queryClient.invalidateQueries({ queryKey: ['messages', chatId] })
-        } finally {
+        flushSync(() => {
           setOptimisticUser(null)
           setPendingSend(false)
           setStreamText('')
@@ -275,7 +288,8 @@ export function ChatView({
             const raw = err instanceof Error ? err.message : String(err)
             setSendError(friendlyStreamError(raw))
           }
-        }
+        })
+        queryClient.invalidateQueries({ queryKey: ['messages', chatId] })
       },
     })
   }
@@ -283,6 +297,7 @@ export function ChatView({
   async function send(contentOverride) {
     const content = (typeof contentOverride === 'string' ? contentOverride : draft).trim()
     if (!content || busy) return
+    lastUserMessageRef.current = content
     setDraft('')
     setSendError(null)
 
@@ -299,16 +314,16 @@ export function ChatView({
           ...(modelForCreate ? { model: modelForCreate } : {}),
           ...(activePersonaId ? { persona_id: activePersonaId } : {}),
           ...(dawForCreate ? { daw_id: dawForCreate } : {}),
+          ...(webSearchEnabled ? { web_search_enabled: true } : {}),
         })
         if (newChat?.id == null) {
           throw new Error('Create chat returned no id')
         }
-        await queryClient.invalidateQueries({ queryKey: ['chats'] })
         queryClient.setQueryData(['messages', newChat.id], { items: [] })
         setActiveChatId(newChat.id)
         streamingChatRef.current = newChat.id
         hydrateFromChat(newChat)
-        if (webSearchEnabled) await patchChat(newChat.id, { web_search_enabled: true })
+        queryClient.invalidateQueries({ queryKey: ['chats'] })
         await runStream(newChat.id, content, messages.length + 1)
       } catch (e) {
         console.error(e)
@@ -353,6 +368,12 @@ export function ChatView({
       setOptimisticUser(null)
       setStreamText('')
     }
+  }
+
+  function retryLastSend() {
+    const last = lastUserMessageRef.current
+    if (!last || busy) return
+    void send(last)
   }
 
   async function handleEditUser(message, newContent) {
@@ -401,9 +422,18 @@ export function ChatView({
           )}
           <div className={cn('w-full', compactEmptyState && 'mt-auto')}>
             {sendError ? (
-              <p className="mb-2 text-center text-sm text-destructive" role="alert">
-                {sendError}
-              </p>
+              <div className="mb-2 flex items-center justify-center gap-2" role="alert">
+                <p className="text-sm text-destructive">{sendError}</p>
+                {lastUserMessageRef.current ? (
+                  <button
+                    type="button"
+                    onClick={retryLastSend}
+                    className="text-sm text-primary underline underline-offset-2 hover:no-underline"
+                  >
+                    Retry
+                  </button>
+                ) : null}
+              </div>
             ) : null}
             <ChatInput
               inputRef={inputRef}
@@ -448,11 +478,20 @@ export function ChatView({
             />
           )}
         </div>
-        <div className="shrink-0 px-4 pb-4">
+        <div className="shrink-0 px-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
           {sendError ? (
-            <p className="mb-2 text-sm text-destructive" role="alert">
-              {sendError}
-            </p>
+            <div className="mb-2 flex items-center gap-2" role="alert">
+              <p className="flex-1 text-sm text-destructive">{sendError}</p>
+              {lastUserMessageRef.current ? (
+                <button
+                  type="button"
+                  onClick={retryLastSend}
+                  className="text-sm text-primary underline underline-offset-2 hover:no-underline"
+                >
+                  Retry
+                </button>
+              ) : null}
+            </div>
           ) : null}
           <ChatInput
             inputRef={inputRef}

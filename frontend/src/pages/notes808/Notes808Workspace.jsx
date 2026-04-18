@@ -37,7 +37,7 @@ function firstDisplayChar(name) {
 
 function DawLandingIcon({ daw }) {
   if (daw.icon_url) {
-    return <img src={daw.icon_url} alt="" className="notes808-landing-card__icon-img" />
+    return <img src={daw.icon_url} alt="" loading="lazy" className="notes808-landing-card__icon-img" />
   }
   const ch = firstDisplayChar(daw.name)
   return (
@@ -157,7 +157,7 @@ export function Notes808Landing() {
           <div className="notes808-landing__hero-row">
             <div className="notes808-landing__logo-box">
               {logoUrl ? (
-                <img src={logoUrl} alt="" className="notes808-landing__logo-img" />
+                <img src={logoUrl} alt="" loading="lazy" className="notes808-landing__logo-img" />
               ) : (
                 <div className="notes808-landing__logo-glyph">
                   <LandingLucide
@@ -360,15 +360,15 @@ export function Notes808DawLayout() {
   const { dawId } = useParams()
   const setActiveDawId = useAppStore((s) => s.setActiveDawId)
   const setActiveChatId = useAppStore((s) => s.setActiveChatId)
-  const prevDawIdRef = useRef(null)
+  const prevDawIdRef = useRef(dawId ?? null)
 
   useEffect(() => {
     if (!dawId) return
     setActiveDawId(dawId)
-    if (prevDawIdRef.current !== dawId) {
+    if (prevDawIdRef.current && prevDawIdRef.current !== dawId) {
       setActiveChatId(null)
-      prevDawIdRef.current = dawId
     }
+    prevDawIdRef.current = dawId
   }, [dawId, setActiveDawId, setActiveChatId])
 
   return (
@@ -616,7 +616,7 @@ export function Notes808DawSourcesPage() {
           >
             Upload
           </Button>
-          {activeChatId && completeSourceIds.length > 0 ? (
+          {completeSourceIds.length > 0 ? (
             <Button
               type="button"
               variant="ghost"

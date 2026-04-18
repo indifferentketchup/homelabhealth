@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { FolderOpen, Plus, Search, SendHorizontal, Square, Upload, X, BookOpen } from 'lucide-react'
 
@@ -99,6 +99,15 @@ export function ChatInput({
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [plusOpen])
+
+  useEffect(() => {
+    if (!skillsModalOpen) return
+    function onKeyDown(e) {
+      if (e.key === 'Escape') setSkillsModalOpen(false)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [skillsModalOpen])
 
   async function applyWebSearch(next) {
     const prev = webSearchEnabled
@@ -201,11 +210,31 @@ export function ChatInput({
   const canSend =
     (Boolean(value.trim()) || attachedFiles.length > 0) && !streaming && !disabled
 
-  function openPlus() {
-    if (plusBtnRef.current) {
-      const r = plusBtnRef.current.getBoundingClientRect()
-      setMenuPos({ bottom: window.innerHeight - r.top + 8, left: r.left })
+  const recalcMenuPos = useCallback(() => {
+    const btn = plusBtnRef.current
+    if (!btn) return
+    const r = btn.getBoundingClientRect()
+    setMenuPos({ bottom: window.innerHeight - r.top + 8, left: r.left })
+  }, [])
+
+  useEffect(() => {
+    if (!plusOpen) return
+    const onViewportChange = () => recalcMenuPos()
+    const vv = window.visualViewport
+    window.addEventListener('resize', onViewportChange)
+    window.addEventListener('scroll', onViewportChange, true)
+    vv?.addEventListener('resize', onViewportChange)
+    vv?.addEventListener('scroll', onViewportChange)
+    return () => {
+      window.removeEventListener('resize', onViewportChange)
+      window.removeEventListener('scroll', onViewportChange, true)
+      vv?.removeEventListener('resize', onViewportChange)
+      vv?.removeEventListener('scroll', onViewportChange)
     }
+  }, [plusOpen, recalcMenuPos])
+
+  function openPlus() {
+    recalcMenuPos()
     setPlusOpen((o) => !o)
   }
 
@@ -220,7 +249,7 @@ export function ChatInput({
         </div>
       )}
       <div
-        className="relative mx-auto w-full max-h-[40vh] min-h-0 flex-shrink-0 flex flex-col overflow-hidden rounded-2xl border border-border bg-card px-4 pb-1.5 pt-3 transition-colors focus-within:border-ring/60 focus-within:ring-2 focus-within:ring-ring/30"
+        className="relative mx-auto w-full max-h-[40dvh] min-h-0 flex-shrink-0 flex flex-col overflow-hidden rounded-2xl border border-border bg-card px-4 pb-1.5 pt-3 transition-colors focus-within:border-ring/60 focus-within:ring-2 focus-within:ring-ring/30"
         style={{ maxWidth: chatMaxW ?? '100%' }}
         onDragOver={(e) => {
           e.preventDefault()
@@ -397,8 +426,8 @@ export function ChatInput({
             onKeyDown={onKeyDownTa}
             placeholder="Message…"
             disabled={disabled || streaming}
-            rows={3}
-            className="fs-input max-h-[calc(40vh-2.75rem)] min-h-12 w-full resize-none overflow-y-auto border-0 bg-transparent text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
+            rows={1}
+            className="fs-input max-h-[calc(40dvh-2.75rem)] min-h-12 w-full resize-none overflow-y-auto border-0 bg-transparent text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
           />
         </div>
         {attachedFiles.length > 0 && (
@@ -440,7 +469,15 @@ export function ChatInput({
           </div>
 
           {streaming ? (
-            <Button type="button" variant="ghost" size="icon" className="shrink-0" onClick={onStop} aria-label="Stop">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="shrink-0 animate-pulse"
+              title="Stop generating"
+              onClick={onStop}
+              aria-label="Stop"
+            >
               <Square className="size-4" />
             </Button>
           ) : (
@@ -596,11 +633,14 @@ export function ChatInput({
         createPortal(
           <div
             className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Skills"
             onClick={() => setSkillsModalOpen(false)}
           >
             <div
               className="w-full max-w-2xl overflow-hidden rounded-lg border border-border bg-popover shadow-lg"
-              style={{ maxHeight: '80vh' }}
+              style={{ maxHeight: '80dvh' }}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="border-b border-border bg-muted/30 px-4 py-3">
@@ -619,7 +659,7 @@ export function ChatInput({
                   Manage AI skills for this chat session
                 </p>
               </div>
-              <div className="flex flex-col overflow-y-auto" style={{ maxHeight: 'calc(80vh - 100px)' }}>
+              <div className="flex flex-col overflow-y-auto" style={{ maxHeight: 'calc(80dvh - 100px)' }}>
                 {/* Session Skills Section */}
                 <div className="border-b border-border px-4 py-3">
                   <h3 className="text-sm font-medium text-muted-foreground">Session Skills</h3>

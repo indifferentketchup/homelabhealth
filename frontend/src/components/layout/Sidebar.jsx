@@ -873,7 +873,10 @@ export function Sidebar({
           ref={ctxMenuRef}
           role="menu"
           className="fixed z-50 min-w-[10rem] rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
-          style={{ left: ctx.x, top: ctx.y }}
+          style={{
+            left: Math.min(ctx.x, window.innerWidth - 180),
+            top: Math.min(ctx.y, window.innerHeight - 200),
+          }}
           onClick={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
         >

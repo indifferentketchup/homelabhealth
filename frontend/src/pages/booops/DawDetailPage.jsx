@@ -20,7 +20,7 @@ import {
   uploadContextFile,
   uploadDawIcon,
 } from '@/api/daws.js'
-import { fetchOllamaModels } from '@/api/ollama.js'
+import { fetchOllamaModels, getOllamaSettings } from '@/api/ollama.js'
 import { listSkills, getDawSkills, addSkillToDaw, removeSkillFromDaw, toggleDawSkill } from '@/api/skills'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -28,14 +28,6 @@ import { PATH_808NOTES, PATH_BOOOPS, is808notesRouteContext } from '@/routes/pat
 import { useAppStore } from '@/store/index.js'
 import { cn } from '@/lib/utils'
 import { Plus, X } from 'lucide-react'
-
-const FALLBACK_CHAT_MODELS = [
-  'llama-gpu/qwen3.5-9b-exl3',
-  'qwen3.5:35b',
-  'claude-sonnet',
-  'claude-haiku',
-  'claude-opus',
-]
 
 function EmbeddableSwitch({ embeddable, disabled, onToggle }) {
   return (
@@ -106,12 +98,24 @@ export default function DawDetailPage() {
     staleTime: 60_000,
   })
 
+  const { data: ollamaSettings } = useQuery({
+    queryKey: ['ollama', 'settings', 'booops'],
+    queryFn: () => getOllamaSettings('booops'),
+    staleTime: 60_000,
+  })
+
+  const hiddenNames = useMemo(
+    () => new Set(Array.isArray(ollamaSettings?.hidden_models) ? ollamaSettings.hidden_models : []),
+    [ollamaSettings],
+  )
+
   const inferModelOptions = useMemo(() => {
     const raw = Array.isArray(ollamaData?.data) ? ollamaData.data : []
-    const names = raw.map((m) => (typeof m?.id === 'string' ? m.id : '')).filter(Boolean)
-    const set = new Set([...FALLBACK_CHAT_MODELS, ...names])
-    return Array.from(set).sort((a, b) => a.localeCompare(b))
-  }, [ollamaData])
+    return raw
+      .map((m) => (typeof m?.id === 'string' ? m.id : ''))
+      .filter((id) => id && !hiddenNames.has(id))
+      .sort((a, b) => a.localeCompare(b))
+  }, [ollamaData, hiddenNames])
 
   useEffect(() => {
     if (!daw) return

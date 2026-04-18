@@ -11,6 +11,7 @@ import { PATH_BOOOPS_HOME } from '@/routes/paths.js'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/index.js'
+import { useShallow } from 'zustand/react/shallow'
 
 import { PersonaGlyph } from './PersonaGlyph.jsx'
 
@@ -166,15 +167,28 @@ export function MessageBubble({
   const [copied, setCopied] = useState(false)
   const queryClient = useQueryClient()
   const navigate = useNavigate()
-  const setActiveChatId = useAppStore((s) => s.setActiveChatId)
-  const hydrateFromChat = useAppStore((s) => s.hydrateFromChat)
-  const personaIconUrl = useAppStore((s) => s.personaIconUrl)
-  const personaEmoji = useAppStore((s) => s.personaEmoji)
-  const profileIconObjectUrl = useAppStore((s) => s.profileIconObjectUrl)
-  const userAvatarUrl = useAppStore((s) => s.userProfile.avatarDataUrl)
+  const {
+    setActiveChatId,
+    hydrateFromChat,
+    personaIconUrl,
+    personaEmoji,
+    profileIconObjectUrl,
+    userAvatarUrl,
+    userEmoji,
+    userDisplayName,
+  } = useAppStore(
+    useShallow((s) => ({
+      setActiveChatId: s.setActiveChatId,
+      hydrateFromChat: s.hydrateFromChat,
+      personaIconUrl: s.personaIconUrl,
+      personaEmoji: s.personaEmoji,
+      profileIconObjectUrl: s.profileIconObjectUrl,
+      userAvatarUrl: s.userProfile.avatarDataUrl,
+      userEmoji: s.userProfile.emoji,
+      userDisplayName: s.userProfile.displayName,
+    })),
+  )
   const userImgSrc = profileIconObjectUrl || userAvatarUrl
-  const userEmoji = useAppStore((s) => s.userProfile.emoji)
-  const userDisplayName = useAppStore((s) => s.userProfile.displayName)
   const isUser = message.role === 'user'
 
   const userGlyph = (() => {
@@ -254,6 +268,7 @@ export function MessageBubble({
           <img
             src={userImgSrc}
             alt=""
+            loading="lazy"
             className="mt-0.5 size-8 shrink-0 rounded-full border border-border object-cover"
             aria-hidden
           />
@@ -273,14 +288,16 @@ export function MessageBubble({
       )}
       <div
         className={cn(
-          'flex min-w-0 max-w-[80%] overflow-x-hidden flex-col',
+          'flex min-w-0 max-w-[80%] max-[430px]:max-w-[92%] overflow-x-hidden flex-col',
           isUser ? 'items-end' : 'items-start',
         )}
       >
         <div
           className={cn(
-            'w-full min-w-0 rounded-xl border border-border px-3 py-2',
-            isUser ? 'bg-card text-foreground' : 'bg-secondary text-secondary-foreground',
+            'w-full min-w-0',
+            isUser
+              ? 'rounded-2xl border-0 bg-secondary/60 px-4 py-2.5 text-foreground'
+              : 'border-l-2 border-accent/30 py-1 pl-3 text-foreground',
           )}
         >
           {isUser ? (
@@ -322,6 +339,9 @@ export function MessageBubble({
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
                 {message.content || (streaming ? '' : '')}
               </ReactMarkdown>
+              {streaming && (
+                <span className="inline-block w-[2px] h-[1em] bg-foreground animate-pulse align-text-bottom ml-0.5" />
+              )}
               {streaming && message.content ? (
                 <div className="mt-1 inline-flex items-center gap-1.5 rounded-full border border-border bg-background/40 px-2 py-0.5 text-[0.7rem] text-muted-foreground">
                   <TypingDots />

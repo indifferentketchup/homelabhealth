@@ -47,6 +47,8 @@ export function MessageList({
 }) {
   // Tail row while streaming: a synthetic message that either holds the in-flight tokens or, when
   // no token has arrived yet, renders a typing-dots placeholder via MessageBubble's __pending__ id.
+  // ChatView commits the real-messages write and the stream-state clear in one flushSync, so by
+  // the time `streamingAssistant` is a string, real messages are NOT yet in `messages` — no race.
   const tail =
     streamingAssistant != null
       ? streamingAssistant === ''
@@ -72,7 +74,7 @@ export function MessageList({
           streamingRagContext.count > 0
         const isLast = i === all.length - 1
         return (
-          <div className={`flex flex-col gap-1 px-4 ${isLast ? 'pb-28' : 'pb-4'}`}>
+          <div className={`flex flex-col gap-1 px-4 min-w-0 max-w-full overflow-x-hidden ${isLast ? 'pb-28' : 'pb-4'}`}>
             {rowSources?.length ? (
               <div className="flex w-full min-w-0 gap-2 flex-row">
                 <div className="mt-0.5 size-8 shrink-0" aria-hidden />

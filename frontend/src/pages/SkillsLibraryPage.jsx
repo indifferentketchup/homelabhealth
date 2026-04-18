@@ -231,7 +231,7 @@ export function SkillsLibraryPage() {
                     <Button
                       key={tab.id}
                       variant={active ? 'secondary' : 'ghost'}
-                      className="justify-start w-full shrink-0"
+                      className="justify-start flex-1 min-w-0"
                       onClick={() => setActiveTab(tab.id)}
                     >
                       <Icon className="w-4 h-4 mr-2" />
