@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS chats (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title TEXT,
     daw_id UUID REFERENCES daws(id) ON DELETE SET NULL,
-    mode TEXT NOT NULL CHECK (mode IN ('booops', '808notes')),
+    mode TEXT NOT NULL CHECK (mode IN ('booops', '808notes', 'boocode')),
     persona_id UUID REFERENCES personas(id) ON DELETE SET NULL,
     model TEXT NOT NULL DEFAULT 'qwen3.5:9b',
     web_search_enabled BOOLEAN DEFAULT FALSE,
@@ -191,9 +191,20 @@ CREATE TABLE IF NOT EXISTS custom_instructions (
 );
 
 CREATE TABLE IF NOT EXISTS branding_config (
-    mode TEXT PRIMARY KEY CHECK (mode IN ('booops', '808notes', 'boolab')),
+    mode TEXT PRIMARY KEY CHECK (mode IN ('booops', '808notes', 'boolab', 'boocode')),
     config JSONB NOT NULL DEFAULT '{}'
 );
+
+-- BooCode: add mode value to CHECK constraint (idempotent)
+DO $boocode_mode_chk$
+BEGIN
+    ALTER TABLE branding_config DROP CONSTRAINT IF EXISTS branding_config_mode_check;
+    ALTER TABLE branding_config ADD CONSTRAINT branding_config_mode_check
+        CHECK (mode IN ('booops', '808notes', 'boolab', 'boocode'));
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END
+$boocode_mode_chk$;
 
 CREATE TABLE IF NOT EXISTS global_settings (
     key TEXT PRIMARY KEY,
@@ -216,6 +227,8 @@ INSERT INTO global_settings (key, value) VALUES ('ollama_hidden_models', '[]') O
 INSERT INTO global_settings (key, value) VALUES ('default_model', 'qwen3.5:9b') ON CONFLICT (key) DO NOTHING;
 INSERT INTO global_settings (key, value) VALUES ('ollama_hidden_models_808notes', '[]') ON CONFLICT (key) DO NOTHING;
 INSERT INTO global_settings (key, value) VALUES ('default_model_808notes', 'qwen3.5:9b') ON CONFLICT (key) DO NOTHING;
+INSERT INTO global_settings (key, value) VALUES ('ollama_hidden_models_boocode', '[]') ON CONFLICT (key) DO NOTHING;
+INSERT INTO global_settings (key, value) VALUES ('default_model_boocode', 'qwen3.5:9b') ON CONFLICT (key) DO NOTHING;
 
 INSERT INTO global_settings (key, value) VALUES
   ('rag_similarity_threshold', '0.35'),
@@ -313,7 +326,7 @@ ALTER TABLE daws ADD COLUMN IF NOT EXISTS persona_id UUID REFERENCES personas(id
 
 DO $daw_mode_chk$
 BEGIN
-    ALTER TABLE daws ADD CONSTRAINT daws_mode_check CHECK (mode IN ('booops', '808notes'));
+    ALTER TABLE daws ADD CONSTRAINT daws_mode_check CHECK (mode IN ('booops', '808notes', 'boocode'));
 EXCEPTION
     WHEN duplicate_object THEN NULL;
 END
@@ -491,3 +504,56 @@ CREATE TABLE IF NOT EXISTS daw_memory (
 );
 
 CREATE INDEX IF NOT EXISTS daw_memory_daw_id_idx ON daw_memory(daw_id);
+
+-- BooCode Phase 3: repo ingest (DubDrive → tree-sitter chunks → pgvector).
+-- Idempotent: safe to re-apply after the live migration.
+ALTER TABLE chats DROP CONSTRAINT IF EXISTS chats_mode_check;
+ALTER TABLE chats ADD CONSTRAINT chats_mode_check
+    CHECK (mode IN ('booops', '808notes', 'boocode'));
+
+ALTER TABLE daws DROP CONSTRAINT IF EXISTS daws_mode_check;
+ALTER TABLE daws ADD CONSTRAINT daws_mode_check
+    CHECK (mode IN ('booops', '808notes', 'boocode'));
+
+ALTER TABLE daws ADD COLUMN IF NOT EXISTS repo_path TEXT;
+ALTER TABLE daws ADD COLUMN IF NOT EXISTS repo_branch TEXT DEFAULT 'main';
+ALTER TABLE daws ADD COLUMN IF NOT EXISTS repo_last_synced_at TIMESTAMPTZ;
+ALTER TABLE daws ADD COLUMN IF NOT EXISTS repo_sync_status TEXT;
+ALTER TABLE daws ADD COLUMN IF NOT EXISTS repo_sync_error TEXT;
+ALTER TABLE daws ADD COLUMN IF NOT EXISTS repo_auto_sync BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE daws ADD COLUMN IF NOT EXISTS repo_file_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE daws ADD COLUMN IF NOT EXISTS repo_chunk_count INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE daws DROP CONSTRAINT IF EXISTS daws_repo_sync_status_check;
+ALTER TABLE daws ADD CONSTRAINT daws_repo_sync_status_check
+    CHECK (repo_sync_status IS NULL OR repo_sync_status IN ('idle', 'syncing', 'error'));
+
+CREATE TABLE IF NOT EXISTS repo_files (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    daw_id UUID NOT NULL REFERENCES daws(id) ON DELETE CASCADE,
+    path TEXT NOT NULL,
+    language TEXT,
+    size_bytes INTEGER NOT NULL DEFAULT 0,
+    content_hash TEXT NOT NULL,
+    last_ingested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (daw_id, path)
+);
+CREATE INDEX IF NOT EXISTS repo_files_daw_idx ON repo_files(daw_id);
+
+CREATE TABLE IF NOT EXISTS repo_chunks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    file_id UUID NOT NULL REFERENCES repo_files(id) ON DELETE CASCADE,
+    daw_id UUID NOT NULL REFERENCES daws(id) ON DELETE CASCADE,
+    chunk_index INTEGER NOT NULL,
+    symbol_kind TEXT,
+    symbol_name TEXT,
+    start_line INTEGER NOT NULL,
+    end_line INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    embedding vector(1024),
+    tokens INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (file_id, chunk_index)
+);
+CREATE INDEX IF NOT EXISTS repo_chunks_daw_idx ON repo_chunks(daw_id);
+CREATE INDEX IF NOT EXISTS repo_chunks_embedding_hnsw
+    ON repo_chunks USING hnsw (embedding vector_cosine_ops);

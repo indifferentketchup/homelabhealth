@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from contextlib import asynccontextmanager
 
@@ -12,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from db import apply_schema, close_pool, get_pool, init_pool
 from seed_assets import seed_default_assets
 from seed_users import ensure_super_admin
+from services.auto_sync import auto_sync_loop
 from routers import (
     auth,
     branding,
@@ -28,6 +30,7 @@ from routers import (
     settings,
     skills,
 )
+from routers.boocode import router as boocode_router
 from routers.dubdrive import router as dubdrive_router
 from routers.dubdrive_sync import router as dubdrive_sync_router
 from routers.notes import router as notes_router
@@ -56,8 +59,16 @@ async def lifespan(_app: FastAPI):
     await apply_schema()
     await seed_default_assets()
     await ensure_super_admin()
-    yield
-    await close_pool()
+    auto_sync_task = asyncio.create_task(auto_sync_loop(), name="boocode_auto_sync")
+    try:
+        yield
+    finally:
+        auto_sync_task.cancel()
+        try:
+            await auto_sync_task
+        except (asyncio.CancelledError, Exception):
+            pass
+        await close_pool()
 
 
 app = FastAPI(title="boolab API", lifespan=lifespan)
@@ -120,6 +131,7 @@ api.include_router(notes_router, tags=["notes"])
 api.include_router(sources_router, tags=["sources"])
 api.include_router(dubdrive_router, prefix="/dubdrive", tags=["dubdrive"])
 api.include_router(dubdrive_sync_router)
+api.include_router(boocode_router)
 api.include_router(skills.router, prefix="/skills", tags=["skills"])
 
 app.include_router(api)

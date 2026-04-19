@@ -23,7 +23,7 @@ ALLOWED_ICON_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 def _norm_mode(m: str | None) -> str:
     if m is None:
         return "booops"
-    return m if m in ("booops", "808notes") else "booops"
+    return m if m in ("booops", "808notes", "boocode") else "booops"
 
 
 class DawCreate(BaseModel):
