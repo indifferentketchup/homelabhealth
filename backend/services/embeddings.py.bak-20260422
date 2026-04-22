@@ -13,10 +13,6 @@ EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "BAAI/bge-m3")
 EMBEDDING_DIM = int(os.environ.get("EMBEDDING_DIM", "1024"))
 EMBEDDING_BATCH_SIZE = int(os.environ.get("EMBEDDING_BATCH_SIZE", "32"))
 EMBEDDING_TIMEOUT = float(os.environ.get("EMBEDDING_TIMEOUT", "120"))
-EMBEDDING_QUERY_INSTRUCTION = os.environ.get(
-    "EMBEDDING_QUERY_INSTRUCTION",
-    "Given a web search query, retrieve relevant passages.",
-)
 
 
 class EmbeddingError(RuntimeError):
@@ -84,20 +80,6 @@ async def embed_batch(texts: list[str]) -> list[list[float]]:
     if len(out) != len(cleaned):
         raise EmbeddingError(f"batch size mismatch: got {len(out)} for {len(cleaned)} inputs")
     return out
-
-
-async def embed_query(text: str) -> list[float]:
-    """Embed a search query. Harrier requires an instruction prefix on queries; documents stay raw."""
-    cleaned = _clean(text)
-    prefixed = f"Instruct: {EMBEDDING_QUERY_INSTRUCTION}\nQuery: {cleaned}"
-    try:
-        async with httpx.AsyncClient(timeout=EMBEDDING_TIMEOUT) as client:
-            result = await _post(client, [prefixed])
-    except EmbeddingError:
-        raise
-    except Exception as e:
-        raise EmbeddingError(f"embed_query failed: {e}") from e
-    return result[0]
 
 
 def format_vector(emb: list[float]) -> str:

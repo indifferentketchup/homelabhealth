@@ -117,11 +117,22 @@ export function RepoFilePreview({ dawId }) {
   if (!open) return null
   const breadcrumb = path.split('/')
 
+  const onBackdropMouseDown = (e) => {
+    // Only close if the mousedown actually started on the backdrop itself —
+    // prevents drag-to-select that happens to end outside the drawer from
+    // closing the preview.
+    if (e.target === e.currentTarget) close()
+  }
+
   return (
     <div role="dialog" aria-modal="true" className="fixed inset-0 z-[400] flex">
-      <div className="absolute inset-0 bg-black/40" onClick={close} aria-hidden />
       <div
-        className="ml-auto flex h-full w-[1000px] max-w-[100vw] flex-col overflow-hidden border-l shadow-2xl"
+        className="absolute inset-0 bg-black/25"
+        onMouseDown={onBackdropMouseDown}
+        aria-hidden
+      />
+      <div
+        className="relative ml-auto flex h-full w-[1000px] max-w-[100vw] flex-col overflow-hidden border-l shadow-2xl"
         style={{ background: 'var(--bg-panel)', borderColor: 'var(--border)' }}
       >
         <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2"
