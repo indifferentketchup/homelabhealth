@@ -14,13 +14,12 @@ const FRAME_BUDGET = 1000 / TARGET_FPS
 const HEAD_COLOR = '#fbbf24'
 const SECONDARY_COLOR = '#f97316'
 const DEEP_COLOR = '#7a3d14'
-const CLEAR_BG = '#0a0604'
 
 function randChar() {
   return CHARSET.charAt((Math.random() * CHARSET.length) | 0)
 }
 
-export default function MatrixRain({ density = 0.35, speed = 0.7, enabled = true }) {
+export default function MatrixRain({ density = 0.35, speed = 0.7, enabled = true, opacity = 0.6 }) {
   const canvasRef = useRef(null)
   const [reducedMotion, setReducedMotion] = useState(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
@@ -75,13 +74,17 @@ export default function MatrixRain({ density = 0.35, speed = 0.7, enabled = true
           step: 0.5 + Math.random() * 0.8,
         }
       }
-      ctx.fillStyle = CLEAR_BG
-      ctx.fillRect(0, 0, width, height)
+      // Keep canvas transparent so it can overlay the UI without dimming it.
+      ctx.clearRect(0, 0, width, height)
     }
 
     const draw = () => {
-      ctx.fillStyle = 'rgba(10, 6, 4, 0.08)'
+      // Fade older chars toward transparent (destination-out) instead of filling
+      // with a solid trail color — keeps the canvas alpha-composited over the UI.
+      ctx.globalCompositeOperation = 'destination-out'
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.08)'
       ctx.fillRect(0, 0, width, height)
+      ctx.globalCompositeOperation = 'source-over'
 
       const effSpeed = Math.max(0.1, speed)
       const colPitch = columns > 0 ? width / columns : COL_WIDTH
@@ -170,8 +173,7 @@ export default function MatrixRain({ density = 0.35, speed = 0.7, enabled = true
         height: '100vh',
         zIndex: 50,
         pointerEvents: 'none',
-        mixBlendMode: 'screen',
-        opacity: 0.6,
+        opacity,
       }}
     />
   )

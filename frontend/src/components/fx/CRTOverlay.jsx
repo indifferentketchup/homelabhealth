@@ -1,4 +1,4 @@
-export default function CRTOverlay({ opacity = 1 }) {
+export default function CRTOverlay({ opacity = 0.7 }) {
   return (
     <div
       aria-hidden="true"
@@ -6,7 +6,7 @@ export default function CRTOverlay({ opacity = 1 }) {
         position: 'fixed',
         inset: 0,
         pointerEvents: 'none',
-        zIndex: 2,
+        zIndex: 45,
         opacity,
       }}
     >

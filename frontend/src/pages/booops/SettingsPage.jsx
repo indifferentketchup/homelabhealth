@@ -430,6 +430,8 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
     if (selectedMode === 'boocode') {
       body.matrixRainDensity = Number(localBranding.matrixRainDensity ?? 0.35)
       body.matrixRainSpeed = Number(localBranding.matrixRainSpeed ?? 0.7)
+      body.matrixRainOpacity = Number(localBranding.matrixRainOpacity ?? 0.6)
+      body.crtOverlayOpacity = Number(localBranding.crtOverlayOpacity ?? 0.7)
     }
     try {
       let out
@@ -784,6 +786,24 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
                       }
                     />
                   </label>
+                  <label className="flex flex-col gap-1 text-sm">
+                    <span className="flex items-center justify-between text-muted-foreground">
+                      <span>Matrix rain opacity</span>
+                      <span className="font-mono text-xs">
+                        {Number(localBranding.matrixRainOpacity ?? 0.6).toFixed(2)}
+                      </span>
+                    </span>
+                    <input
+                      type="range"
+                      min={0.05}
+                      max={1}
+                      step={0.05}
+                      value={Number(localBranding.matrixRainOpacity ?? 0.6)}
+                      onChange={(e) =>
+                        updateBrandingField({ matrixRainOpacity: Number(e.target.value) })
+                      }
+                    />
+                  </label>
                   <label className="flex items-center justify-between gap-3 text-sm">
                     <span>CRT overlay</span>
                     <input
@@ -792,8 +812,26 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
                       onChange={(e) => setBoocodeCrtEnabled(e.target.checked)}
                     />
                   </label>
+                  <label className="flex flex-col gap-1 text-sm">
+                    <span className="flex items-center justify-between text-muted-foreground">
+                      <span>CRT overlay opacity</span>
+                      <span className="font-mono text-xs">
+                        {Number(localBranding.crtOverlayOpacity ?? 0.7).toFixed(2)}
+                      </span>
+                    </span>
+                    <input
+                      type="range"
+                      min={0.05}
+                      max={1}
+                      step={0.05}
+                      value={Number(localBranding.crtOverlayOpacity ?? 0.7)}
+                      onChange={(e) =>
+                        updateBrandingField({ crtOverlayOpacity: Number(e.target.value) })
+                      }
+                    />
+                  </label>
                   <p className="text-[0.6875rem]" style={{ color: 'var(--text-dim)' }}>
-                    Matrix / CRT toggles are per-browser (localStorage). Density and speed are stored with BooCode branding — click Save to persist.
+                    Matrix / CRT toggles are per-browser (localStorage). Density, speed, and opacities are stored with BooCode branding — click Save to persist.
                   </p>
                 </div>
               ) : null}
