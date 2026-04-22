@@ -250,6 +250,23 @@ input, textarea, select {
               0 0 0 1px var(--bg);
 }
 
+/* Matrix rain sits at z-index 0 behind .layout (which is z-index 10).
+   For the rain to be visible *through* the UI, make html the opaque
+   fallback, strip body's background, and mark panel backgrounds as
+   slightly translucent. `!important` is required because
+   `applyBrandingCss` writes the CSS vars inline on :root, and inline
+   styles without !important lose to CSS with !important. */
+:root[data-mode='boocode'] {
+  background-color: #0a0604 !important;
+  --bg: rgba(10, 6, 4, 0.86) !important;
+  --bg-panel: rgba(18, 10, 6, 0.82) !important;
+  --bg-card: rgba(26, 14, 8, 0.82) !important;
+  --bg-hover: rgba(36, 20, 8, 0.88) !important;
+}
+:root[data-mode='boocode'] body {
+  background-color: transparent !important;
+}
+
 :root[data-mode='boolab'] {
   --font-body: 'Rajdhani', sans-serif;
   --font-mono: 'Fira Code', monospace;

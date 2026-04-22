@@ -155,7 +155,7 @@ export default function MatrixRain({ density = 0.35, speed = 0.7, enabled = true
         inset: 0,
         width: '100vw',
         height: '100vh',
-        zIndex: 50,
+        zIndex: 0,
         pointerEvents: 'none',
         opacity,
       }}
