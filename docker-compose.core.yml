@@ -28,6 +28,18 @@ services:
     networks:
       - boolab_net
 
+  boolab_agent:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.agent
+    container_name: boolab_agent
+    restart: unless-stopped
+    volumes:
+      - boolab_tmux:/shared/tmux
+      - /home/samkintop/.ssh:/home/agent/.ssh:ro
+    networks:
+      - boolab_net
+
   boolab_api:
     build:
       context: ./backend
@@ -44,11 +56,14 @@ services:
         condition: service_healthy
       boolab_chroma:
         condition: service_started
+      boolab_agent:
+        condition: service_started
     ports:
       - "${BOOLAB_PORT_API:-9300}:8000"
     volumes:
       - boolab_uploads:/data/uploads
       - boolab_branding:/data/branding
+      - boolab_tmux:/shared/tmux
     networks:
       - boolab_net
 
@@ -62,3 +77,4 @@ volumes:
   boolab_chroma_data:
   boolab_uploads:
   boolab_branding:
+  boolab_tmux:
