@@ -66,7 +66,7 @@ export function RepoFilesPanel({ dawId }) {
   const flatRows = useMemo(() => {
     const out = []
     flatten(tree, -1, expanded, out)
-    return out.filter((r) => !(r.isDir && r.depth === 0))
+    return out
   }, [tree, expanded])
 
   const fuse = useMemo(
