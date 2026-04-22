@@ -1,7 +1,7 @@
 /**
  * Mode from URL path (legacy single-host only), query, host, or baked `VITE_APP_MODE`.
  * Sets `data-mode` on `<html>`.
- * Exported `APP_MODE`: `booops` | `808notes` | `boolab`
+ * Exported `APP_MODE`: `booops` | `808notes` | `boolab` | `boocode`
  */
 import { modeFromAppPath } from './routes/paths.js'
 
@@ -19,7 +19,7 @@ function coerceAppMode(raw) {
     raw == null || String(raw).trim() === ''
       ? 'booops'
       : String(raw).trim().toLowerCase()
-  if (v === 'booops' || v === '808notes' || v === 'boolab') return v
+  if (v === 'booops' || v === '808notes' || v === 'boolab' || v === 'boocode') return v
   return 'booops'
 }
 
@@ -27,7 +27,7 @@ function parseOptionalForcedMode() {
   const raw = import.meta.env.VITE_APP_MODE
   if (raw == null || String(raw).trim() === '') return null
   const v = String(raw).trim().toLowerCase()
-  if (v === 'booops' || v === '808notes' || v === 'boolab') return v
+  if (v === 'booops' || v === '808notes' || v === 'boolab' || v === 'boocode') return v
   return null
 }
 
@@ -38,7 +38,7 @@ function parseModeQuery(search) {
     const q = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search).get('mode')
     if (q == null || String(q).trim() === '') return null
     const v = String(q).trim().toLowerCase()
-    if (v === 'booops' || v === '808notes' || v === 'boolab') return v
+    if (v === 'booops' || v === '808notes' || v === 'boolab' || v === 'boocode') return v
   } catch {
     /* ignore */
   }
@@ -64,6 +64,7 @@ export function detectMode(
       const head = hostname.split('.')[0]?.toLowerCase() ?? ''
       if (head === '808notes') return '808notes'
       if (head === 'booops') return 'booops'
+      if (head === 'boocode') return 'boocode'
       if (head === 'boolab') return 'boolab'
     }
     return 'boolab'
@@ -75,6 +76,7 @@ export function detectMode(
   const head = hostname.split('.')[0]?.toLowerCase() ?? ''
   if (head === '808notes') return '808notes'
   if (head === 'booops') return 'booops'
+  if (head === 'boocode') return 'boocode'
   if (head === 'boolab') return 'boolab'
   return 'boolab'
 }
