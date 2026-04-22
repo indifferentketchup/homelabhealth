@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, ChevronUp, Plus, TerminalSquare } from 'lucide-react'
+import { ChevronDown, ChevronUp, TerminalSquare } from 'lucide-react'
 
 import * as terminalsApi from '@/api/terminals.js'
 import { Button } from '@/components/ui/button'
 
+import NewTerminalModal from './NewTerminalModal.jsx'
 import TerminalPane from './TerminalPane.jsx'
+import TerminalTabBar from './TerminalTabBar.jsx'
 
 const DEFAULT_HEIGHT = 320
 const MIN_HEIGHT = 120
@@ -14,6 +16,17 @@ const COLLAPSED_HEIGHT = 36
 const POLL_MS = 15_000
 
 const storageKey = (dawId) => `boocode:terminal-drawer:${dawId ?? 'unscoped'}`
+
+function friendlyErr(e, fallback) {
+  const raw = e?.message || fallback
+  try {
+    const parsed = JSON.parse(raw)
+    if (parsed?.detail) return String(parsed.detail)
+  } catch {
+    /* not JSON — use raw */
+  }
+  return raw
+}
 
 function readPersisted(dawId) {
   if (typeof window === 'undefined') return { open: false, height: DEFAULT_HEIGHT }
@@ -40,10 +53,6 @@ function writePersisted(dawId, value) {
   }
 }
 
-// Commit 2 slice: drawer shell, drag-resize, per-DAW persistence, Ctrl+`
-// toggle, session list + live pane. Tab chrome, context menu, and the
-// NewTerminalModal land in commit 3 — the `+` button here just fires the
-// `boocode:new-terminal` event so the wiring is ready.
 export default function TerminalDrawer({ dawId }) {
   const qc = useQueryClient()
   const [{ open, height }, setDrawerState] = useState(() => readPersisted(dawId))
@@ -51,6 +60,7 @@ export default function TerminalDrawer({ dawId }) {
   const [toastMsg, setToastMsg] = useState(null)
   const [dragging, setDragging] = useState(false)
   const [lastDaw, setLastDaw] = useState(dawId)
+  const [showNewModal, setShowNewModal] = useState(false)
   const dragRef = useRef({ startY: 0, startHeight: 0 })
 
   // Adjust state when dawId changes — reloads persisted height/open and drops
@@ -169,7 +179,28 @@ export default function TerminalDrawer({ dawId }) {
   }, [toggle])
 
   useEffect(() => {
-    function onNew() {
+    function onNew(e) {
+      const detail = e.detail || {}
+      // Session 3 may pre-fill machineId to skip the modal; Session 2 always opens it.
+      if (detail && detail.machineId) {
+        ;(async () => {
+          try {
+            const created = await terminalsApi.create({
+              machineId: detail.machineId,
+              dawId: detail.dawId ?? dawId ?? null,
+              label: detail.label ?? null,
+              startingCmd: detail.startingCmd ?? null,
+            })
+            await invalidateSessions()
+            setActiveSessionId(created.id)
+            setOpen(true)
+          } catch (err) {
+            setToastMsg(friendlyErr(err, 'Could not create session'))
+          }
+        })()
+        return
+      }
+      setShowNewModal(true)
       setOpen(true)
     }
     function onOpen(e) {
@@ -186,7 +217,7 @@ export default function TerminalDrawer({ dawId }) {
           await terminalsApi.paste(sessionId, text, Boolean(appendNewline))
           setToastMsg('Sent to terminal')
         } catch (err) {
-          setToastMsg(err?.message || 'Paste failed')
+          setToastMsg(friendlyErr(err, 'Paste failed'))
         }
       })()
     }
@@ -198,18 +229,61 @@ export default function TerminalDrawer({ dawId }) {
       window.removeEventListener('boocode:open-terminal', onOpen)
       window.removeEventListener('boocode:send-to-terminal', onSend)
     }
-  }, [setOpen, setActiveSessionId])
+  }, [dawId, invalidateSessions, setOpen, setActiveSessionId])
 
   const handleEvicted = useCallback(async () => {
     await invalidateSessions()
   }, [invalidateSessions])
 
   const handleNewClick = useCallback(() => {
+    setShowNewModal(true)
     setOpen(true)
-    window.dispatchEvent(
-      new CustomEvent('boocode:new-terminal', { detail: { dawId } }),
-    )
-  }, [dawId, setOpen])
+  }, [setOpen])
+
+  const handleRename = useCallback(
+    async (sid, label) => {
+      try {
+        await terminalsApi.patch(sid, { label })
+        await invalidateSessions()
+      } catch (e) {
+        setToastMsg(friendlyErr(e, 'Rename failed'))
+      }
+    },
+    [invalidateSessions],
+  )
+
+  const handlePin = useCallback(
+    async (sid, pinned) => {
+      try {
+        await terminalsApi.patch(sid, { pinned })
+        await invalidateSessions()
+      } catch (e) {
+        setToastMsg(friendlyErr(e, pinned ? 'Pin failed' : 'Unpin failed'))
+      }
+    },
+    [invalidateSessions],
+  )
+
+  const handleClose = useCallback(
+    async (sid) => {
+      try {
+        await terminalsApi.del(sid)
+        await invalidateSessions()
+      } catch (e) {
+        setToastMsg(friendlyErr(e, 'Close failed'))
+      }
+    },
+    [invalidateSessions],
+  )
+
+  const handleCreated = useCallback(
+    async (session) => {
+      await invalidateSessions()
+      if (session?.id) setActiveSessionId(session.id)
+      setShowNewModal(false)
+    },
+    [invalidateSessions, setActiveSessionId],
+  )
 
   const renderHeight = open ? height : COLLAPSED_HEIGHT
 
@@ -261,52 +335,26 @@ export default function TerminalDrawer({ dawId }) {
           </button>
         ) : (
           <>
-            {/* Stub tab row — full TerminalTabBar lands in commit 3. */}
-            <div
-              className="flex min-h-0 items-center gap-1 border-b px-2 py-1 text-xs"
-              style={{
-                borderColor: 'var(--border)',
-                background: 'var(--bg-card)',
-                fontFamily: "'JetBrains Mono', monospace",
-              }}
-            >
-              <TerminalSquare className="size-3.5" style={{ color: 'var(--orange, #ff8c00)' }} />
-              <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
-                {sessions.map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => setActiveSessionId(s.id)}
-                    className="flex shrink-0 items-center gap-1 rounded border px-2 py-0.5"
-                    style={{
-                      borderColor:
-                        s.id === activeSessionId ? 'var(--orange, #ff8c00)' : 'var(--border)',
-                      color: s.id === activeSessionId ? 'var(--orange, #ff8c00)' : 'var(--text)',
-                    }}
-                  >
-                    <span className="max-w-[14ch] truncate">
-                      {s.label || s.machine_name || 'session'}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                aria-label="New terminal"
-                onClick={handleNewClick}
-              >
-                <Plus className="size-3.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                aria-label="Collapse terminal drawer"
-                onClick={() => setOpen(false)}
-              >
-                <ChevronDown className="size-3.5" />
-              </Button>
-            </div>
+            <TerminalTabBar
+              sessions={sessions}
+              activeSessionId={activeSessionId}
+              onActivate={setActiveSessionId}
+              onNew={handleNewClick}
+              onRename={handleRename}
+              onPin={handlePin}
+              onClose={handleClose}
+              trailing={
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label="Collapse terminal drawer"
+                  onClick={() => setOpen(false)}
+                  className="shrink-0"
+                >
+                  <ChevronDown className="size-3.5" />
+                </Button>
+              }
+            />
             <div className="relative flex min-h-0 flex-1 overflow-hidden">
               {sessions.length === 0 ? (
                 <div
@@ -342,6 +390,15 @@ export default function TerminalDrawer({ dawId }) {
         >
           {toastMsg}
         </div>
+      ) : null}
+
+      {showNewModal ? (
+        <NewTerminalModal
+          dawId={dawId}
+          onClose={() => setShowNewModal(false)}
+          onCreated={handleCreated}
+          onError={(msg) => setToastMsg(msg)}
+        />
       ) : null}
     </>
   )
