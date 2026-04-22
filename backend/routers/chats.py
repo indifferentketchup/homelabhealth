@@ -5,6 +5,7 @@ import uuid
 import json
 import os
 import logging
+import posixpath
 from typing import Any, AsyncIterator
 
 import asyncpg
@@ -19,6 +20,8 @@ from auth_deps import (
     get_principal,
 )
 from db import get_pool
+from routers.boocode import _dubdrive_read_bytes
+from services import code_chunker
 from services.pruning import summarize_and_compress
 from services.rag import (
     retrieve_context,
@@ -26,6 +29,7 @@ from services.rag import (
     retrieve_repo_chunks,
     should_retrieve,
 )
+from services.repo_ingest import validate_relative_file_path, validate_repo_path
 from services.searx import searx_search_sources
 
 router = APIRouter()
@@ -169,6 +173,7 @@ async def _assembled_system_prompt(
     user_query_for_rag: str | None = None,
     include_site_private: bool = True,
     session_skill_ids: list[str] | None = None,
+    boocode_files: list["BoocodeFileRef"] | None = None,
 ) -> tuple[str, dict[str, int] | None]:
     """Persona → DAW prompt + daw_instructions + semantic memory facts → context files → custom instructions → RAG → mode_memory."""
     mode = chat["mode"] if chat["mode"] in ("booops", "808notes") else "booops"
@@ -178,15 +183,17 @@ async def _assembled_system_prompt(
     daw_persona_id = None
     daw_rag_mode_effective = "auto"
     daw_table_mode = "booops"
+    daw_repo_path = ""
     if daw_id is not None:
         ws = await conn.fetchrow(
-            "SELECT system_prompt, persona_id, mode, rag_mode FROM daws WHERE id = $1::uuid",
+            "SELECT system_prompt, persona_id, mode, rag_mode, repo_path FROM daws WHERE id = $1::uuid",
             daw_id,
         )
         if ws:
             daw_prompt = (ws["system_prompt"] or "").strip()
             daw_persona_id = ws["persona_id"]
             daw_table_mode = ws["mode"] if ws["mode"] in ("booops", "808notes", "boocode") else "booops"
+            daw_repo_path = (ws["repo_path"] or "").strip() if "repo_path" in ws.keys() else ""
             if daw_table_mode == "boocode" and not daw_prompt:
                 daw_prompt = BOOCODE_ARCHITECT_PREAMBLE
             if daw_table_mode == "808notes":
@@ -230,6 +237,44 @@ async def _assembled_system_prompt(
     if daw_prompt:
         parts.append(daw_prompt)
 
+    # Force-include: user-attached boocode files (prepended before ## Repo Context so
+    # they are seen first by the model; see 2026-04-22 Phase 4 plan Task 1).
+    boocode_prepend = ""
+    refs = list(boocode_files or [])
+    if refs and daw_table_mode == "boocode":
+        repo_root = daw_repo_path
+        if repo_root:
+            try:
+                repo_root = validate_repo_path(repo_root)
+            except ValueError:
+                repo_root = ""
+        count = 0
+        for ref in refs[:4]:
+            if not repo_root:
+                break
+            try:
+                rel = validate_relative_file_path(ref.path)
+            except ValueError:
+                continue
+            raw = await _dubdrive_read_bytes(posixpath.join(repo_root, rel))
+            if raw is None or len(raw) > code_chunker.MAX_FILE_BYTES:
+                continue
+            if b"\x00" in raw[:4096]:
+                continue
+            try:
+                text = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                text = raw.decode("latin-1", errors="replace")
+            lang = code_chunker.resolve_language(rel) or ""
+            boocode_prepend += (
+                f"\n\n[attached file: {rel}"
+                f"{f' ({lang})' if lang else ''}]\n"
+                f"```{lang}\n{text}\n```\n"
+            )
+            count += 1
+        if count:
+            logger.info("chat_boocode_attached files=%s daw=%s", count, str(daw_id))
+
     if (
         daw_table_mode == "boocode"
         and daw_id is not None
@@ -243,10 +288,14 @@ async def _assembled_system_prompt(
             str(user_query_for_rag).strip(),
             top_k=20,
         )
+        repo_block = ""
         if repo_chunks:
             repo_block = _format_repo_chunks(repo_chunks)
-            if repo_block:
-                parts.append(repo_block)
+        combined = boocode_prepend + repo_block
+        if combined:
+            parts.append(combined)
+    elif boocode_prepend:
+        parts.append(boocode_prepend)
 
     if daw_id:
         daw_instructions = await conn.fetch(
@@ -538,10 +587,15 @@ class ChatPatch(BaseModel):
     daw_id: uuid.UUID | None = None
 
 
+class BoocodeFileRef(BaseModel):
+    path: str = Field(..., min_length=1)
+
+
 class MessageCreate(BaseModel):
     content: str = Field(..., min_length=1)
     model: str | None = None
     session_skill_ids: list[str] | None = None
+    boocode_files: list[BoocodeFileRef] | None = None
 
 
 class WebSearchToggleBody(BaseModel):
@@ -1083,6 +1137,7 @@ async def append_message(
             user_query_for_rag=body.content.strip(),
             include_site_private=True,
             session_skill_ids=body.session_skill_ids,
+            boocode_files=body.boocode_files,
         )
 
         user_profile_block = ""
