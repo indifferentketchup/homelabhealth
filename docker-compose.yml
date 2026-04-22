@@ -104,6 +104,28 @@ services:
     networks:
       - boolab_net
 
+  boocode_ui:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_APP_MODE: boocode
+        VITE_OG_TITLE: "BooCode"
+        VITE_OG_DESCRIPTION: "Architect at 3am. Terminal amber, code awareness."
+        VITE_HTML_OG_IMAGE: https://boocode.boogaardmusic.com/api/branding/boocode/asset/og_banner
+        VITE_PUBLIC_BOOLAB_URL: ${VITE_PUBLIC_BOOLAB_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9302}
+        VITE_PUBLIC_BOOOPS_URL: ${VITE_PUBLIC_BOOOPS_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9303}
+        VITE_PUBLIC_808NOTES_URL: ${VITE_PUBLIC_808NOTES_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9304}
+        VITE_PUBLIC_BOOCODE_URL: ${VITE_PUBLIC_BOOCODE_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9305}
+    container_name: boocode_ui
+    restart: unless-stopped
+    environment:
+      BOOLAB_API_UPSTREAM: ${BOOLAB_API_UPSTREAM:-boolab_api:8000}
+    ports:
+      - "${BOOLAB_PORT_BOOCODE:-9305}:80"
+    networks:
+      - boolab_net
+
 networks:
   boolab_net:
     name: boolab_net
