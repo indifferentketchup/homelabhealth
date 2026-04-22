@@ -14,6 +14,7 @@ from db import apply_schema, close_pool, get_pool, init_pool
 from seed_assets import seed_default_assets
 from seed_users import ensure_super_admin
 from services.auto_sync import auto_sync_loop
+from services.terminal_sweep import sweep_loop as terminal_sweep_loop
 from routers import (
     auth,
     branding,
@@ -61,14 +62,16 @@ async def lifespan(_app: FastAPI):
     await seed_default_assets()
     await ensure_super_admin()
     auto_sync_task = asyncio.create_task(auto_sync_loop(), name="boocode_auto_sync")
+    terminal_sweep_task = asyncio.create_task(terminal_sweep_loop(), name="terminal_sweep")
     try:
         yield
     finally:
-        auto_sync_task.cancel()
-        try:
-            await auto_sync_task
-        except (asyncio.CancelledError, Exception):
-            pass
+        for task in (auto_sync_task, terminal_sweep_task):
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
         await close_pool()
 
 
