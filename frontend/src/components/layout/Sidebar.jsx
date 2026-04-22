@@ -715,7 +715,7 @@ export function Sidebar({
                           }}
                           onContextMenu={(e) => {
                             e.preventDefault()
-                            navigate(`${PATH_BOOCODE}/daw/${d.id}?edit=1`)
+                            navigate(`${PATH_BOOCODE}/daws/${d.id}`)
                           }}
                         >
                           <span
@@ -857,7 +857,7 @@ export function Sidebar({
                     }}
                     onContextMenu={(e) => {
                       e.preventDefault()
-                      navigate(`${PATH_BOOCODE}/daw/${d.id}?edit=1`)
+                      navigate(`${PATH_BOOCODE}/daws/${d.id}`)
                     }}
                     className={cn(
                       'flex h-9 w-full items-center justify-center rounded-md hover:bg-sidebar-accent/50',
