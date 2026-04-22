@@ -21,6 +21,7 @@ import {
   uploadDawIcon,
 } from '@/api/daws.js'
 import { fetchOllamaModels, getOllamaSettings } from '@/api/ollama.js'
+import { syncRepo, updateRepoConfig } from '@/api/boocode.js'
 import { listSkills, getDawSkills, addSkillToDaw, removeSkillFromDaw, toggleDawSkill } from '@/api/skills'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -77,6 +78,14 @@ export default function DawDetailPage() {
   const [pinned808notes, setPinned808notes] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState(null)
+  // Boocode repo fields (only used when daw.mode === 'boocode'):
+  const [repoPath, setRepoPath] = useState('')
+  const [repoBranch, setRepoBranch] = useState('main')
+  const [repoAutoSync, setRepoAutoSync] = useState(false)
+  const [repoSaving, setRepoSaving] = useState(false)
+  const [repoSaveErr, setRepoSaveErr] = useState(null)
+  const [boocodeSyncing, setBoocodeSyncing] = useState(false)
+  const [boocodeSyncMsg, setBoocodeSyncMsg] = useState(null)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [clearing, setClearing] = useState(false)
   const [skillsAddDialogOpen, setSkillsAddDialogOpen] = useState(false)
@@ -129,6 +138,9 @@ export default function DawDetailPage() {
     setSyncFolder(daw.dubdrive_sync_folder || '')
     setSyncEnabled(Boolean(daw.dubdrive_sync_enabled))
     setPinned808notes(Boolean(daw.pinned_808notes))
+    setRepoPath(daw.repo_path || '')
+    setRepoBranch(daw.repo_branch || 'main')
+    setRepoAutoSync(Boolean(daw.repo_auto_sync))
   }, [daw])
 
   useEffect(() => {
@@ -198,6 +210,45 @@ export default function DawDetailPage() {
 
   const attachedSkillIds = new Set(dawSkillsList.map(s => s.id))
   const unattachedSkills = allSkills.filter(s => !attachedSkillIds.has(s.id))
+  const isBoocode = daw?.mode === 'boocode'
+
+  async function saveRepoConfig() {
+    if (!id) return
+    setRepoSaving(true)
+    setRepoSaveErr(null)
+    try {
+      const path = repoPath.trim()
+      if (path && !path.startsWith('/HomeLabRepos/')) {
+        setRepoSaveErr('Repo path must start with /HomeLabRepos/.')
+        setRepoSaving(false)
+        return
+      }
+      await updateRepoConfig(id, {
+        repo_path: path || null,
+        repo_branch: repoBranch.trim() || 'main',
+        repo_auto_sync: repoAutoSync,
+      })
+      invalidateDaw()
+    } catch (e) {
+      setRepoSaveErr(e?.message || 'Could not save repo config.')
+    } finally {
+      setRepoSaving(false)
+    }
+  }
+
+  async function triggerBoocodeSync() {
+    if (!id) return
+    setBoocodeSyncing(true)
+    setBoocodeSyncMsg(null)
+    try {
+      await syncRepo(id)
+      setBoocodeSyncMsg('Sync queued.')
+    } catch (e) {
+      setBoocodeSyncMsg(e?.message || 'Could not start sync.')
+    } finally {
+      setBoocodeSyncing(false)
+    }
+  }
 
   function formatMemoryDate(iso) {
     if (!iso) return ''
@@ -761,42 +812,102 @@ const saveInferMut = useMutation({
               </Dialog>
             </section>
 
-            <section className="rounded-lg border border-border bg-card p-4">
-              <h2 className="mb-3 text-sm font-medium text-foreground">DubDrive Sync</h2>
-              <p className="mb-3 text-xs text-muted-foreground">
-                Folder on DubDrive to scan for files. When auto-sync is on and you run sync, new files are ingested into
-                this DAW&apos;s sources.
-              </p>
-              <div className="flex flex-col gap-3 text-sm">
-                <label className="flex flex-col gap-1">
-                  <span className="text-muted-foreground">Sync folder path</span>
-                  <input
-                    type="text"
-                    value={syncFolder}
-                    onChange={(e) => setSyncFolder(e.target.value)}
-                    placeholder="/HomeLabRepos/boolab"
-                    className="h-9 rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2"
-                  />
-                </label>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-foreground">Auto-sync enabled</span>
-                  <EmbeddableSwitch embeddable={syncEnabled} disabled={false} onToggle={setSyncEnabled} />
-                </div>
-                <Button type="button" size="sm" onClick={triggerSync} disabled={syncing || !syncFolder.trim()}>
-                  {syncing ? 'Syncing…' : 'Sync now'}
-                </Button>
-                {syncResult ? (
-                  <p className="text-sm text-muted-foreground" role="status">
-                    {syncResult.error != null
-                      ? String(syncResult.error)
-                      : `Queued ${syncResult.queued}, skipped ${syncResult.skipped} of ${syncResult.total_found}`}
-                  </p>
-                ) : null}
-                <p className="text-xs text-muted-foreground">
-                  Persist folder path and auto-sync with <span className="text-foreground">Save</span> in Details above.
+            {isBoocode ? (
+              <section className="rounded-lg border border-border bg-card p-4">
+                <h2 className="mb-3 text-sm font-medium text-foreground">Repo (BooCode)</h2>
+                <p className="mb-3 text-xs text-muted-foreground">
+                  Path under <span className="font-mono">/HomeLabRepos/</span>. BooCode ingests files here via DubDrive →
+                  tree-sitter AST chunks → pgvector for chat RAG. Auto-sync re-ingests on DubDrive changes.
                 </p>
-              </div>
-            </section>
+                <div className="flex flex-col gap-3 text-sm">
+                  <label className="flex flex-col gap-1">
+                    <span className="text-muted-foreground">Repo path</span>
+                    <input
+                      type="text"
+                      value={repoPath}
+                      onChange={(e) => setRepoPath(e.target.value)}
+                      placeholder="/HomeLabRepos/boolab"
+                      className="h-9 rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-muted-foreground">Branch</span>
+                    <input
+                      type="text"
+                      value={repoBranch}
+                      onChange={(e) => setRepoBranch(e.target.value)}
+                      placeholder="main"
+                      className="h-9 rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2"
+                    />
+                  </label>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-foreground">Auto-sync on changes</span>
+                    <EmbeddableSwitch embeddable={repoAutoSync} disabled={false} onToggle={setRepoAutoSync} />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button type="button" size="sm" onClick={() => void saveRepoConfig()} disabled={repoSaving}>
+                      {repoSaving ? 'Saving…' : 'Save repo config'}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void triggerBoocodeSync()}
+                      disabled={boocodeSyncing || !repoPath.trim()}
+                    >
+                      {boocodeSyncing ? 'Queuing…' : 'Sync now'}
+                    </Button>
+                  </div>
+                  {repoSaveErr ? (
+                    <p className="text-sm text-destructive" role="alert">{repoSaveErr}</p>
+                  ) : null}
+                  {boocodeSyncMsg ? (
+                    <p className="text-sm text-muted-foreground" role="status">{boocodeSyncMsg}</p>
+                  ) : null}
+                  <p className="text-xs text-muted-foreground">
+                    Files: {daw?.repo_file_count ?? 0} · Chunks: {daw?.repo_chunk_count ?? 0} · Status:{' '}
+                    <span className="font-mono">{daw?.repo_sync_status || 'idle'}</span>
+                  </p>
+                </div>
+              </section>
+            ) : (
+              <section className="rounded-lg border border-border bg-card p-4">
+                <h2 className="mb-3 text-sm font-medium text-foreground">DubDrive Sync</h2>
+                <p className="mb-3 text-xs text-muted-foreground">
+                  Folder on DubDrive to scan for files. When auto-sync is on and you run sync, new files are ingested into
+                  this DAW&apos;s sources.
+                </p>
+                <div className="flex flex-col gap-3 text-sm">
+                  <label className="flex flex-col gap-1">
+                    <span className="text-muted-foreground">Sync folder path</span>
+                    <input
+                      type="text"
+                      value={syncFolder}
+                      onChange={(e) => setSyncFolder(e.target.value)}
+                      placeholder="/HomeLabRepos/boolab"
+                      className="h-9 rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2"
+                    />
+                  </label>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-foreground">Auto-sync enabled</span>
+                    <EmbeddableSwitch embeddable={syncEnabled} disabled={false} onToggle={setSyncEnabled} />
+                  </div>
+                  <Button type="button" size="sm" onClick={triggerSync} disabled={syncing || !syncFolder.trim()}>
+                    {syncing ? 'Syncing…' : 'Sync now'}
+                  </Button>
+                  {syncResult ? (
+                    <p className="text-sm text-muted-foreground" role="status">
+                      {syncResult.error != null
+                        ? String(syncResult.error)
+                        : `Queued ${syncResult.queued}, skipped ${syncResult.skipped} of ${syncResult.total_found}`}
+                    </p>
+                  ) : null}
+                  <p className="text-xs text-muted-foreground">
+                    Persist folder path and auto-sync with <span className="text-foreground">Save</span> in Details above.
+                  </p>
+                </div>
+              </section>
+            )}
 
             <section className="rounded-lg border border-border bg-card p-4">
               <h2 className="mb-3 text-sm font-medium text-foreground">Pin settings</h2>
