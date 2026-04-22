@@ -570,3 +570,61 @@ CREATE TABLE IF NOT EXISTS repo_chunks (
 CREATE INDEX IF NOT EXISTS repo_chunks_daw_idx ON repo_chunks(daw_id);
 CREATE INDEX IF NOT EXISTS repo_chunks_embedding_hnsw
     ON repo_chunks USING hnsw (embedding vector_cosine_ops);
+
+-- BooCode Phase 5: terminals (tmux-backed, multi-device attach).
+CREATE TABLE IF NOT EXISTS terminal_machines (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL UNIQUE,
+    host TEXT NOT NULL,
+    ssh_user TEXT,
+    default_cwd TEXT,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS terminal_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    daw_id UUID REFERENCES daws(id) ON DELETE SET NULL,
+    machine_id UUID NOT NULL REFERENCES terminal_machines(id),
+    tmux_name TEXT NOT NULL UNIQUE,
+    label TEXT,
+    starting_cmd TEXT,
+    pinned BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_detached_at TIMESTAMPTZ,
+    closed_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_term_daw
+    ON terminal_sessions(daw_id)
+    WHERE closed_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_term_lru
+    ON terminal_sessions(last_detached_at)
+    WHERE closed_at IS NULL AND pinned = FALSE;
+
+-- Idempotent seed; embedding is disabled in Phase 5 (password auth pending
+-- key setup — flip enabled + ssh_user once keys land).
+INSERT INTO terminal_machines (name, host, ssh_user, default_cwd, enabled) VALUES
+    ('local',          'localhost',      NULL,         '/opt',   TRUE),
+    ('ubuntu-homelab', '100.114.205.53', 'samkintop',  '/opt',   TRUE),
+    ('sam-desktop',    '100.101.41.16',  'samki',      NULL,     TRUE),
+    ('embedding',      '100.93.187.4',   NULL,         NULL,     FALSE)
+ON CONFLICT (name) DO NOTHING;
+
+-- Audit log — events: open, close, paste, pin, rename, device_connect,
+-- device_disconnect. Paste entries store sha256(text) + len, not plaintext.
+CREATE TABLE IF NOT EXISTS terminal_audit (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id UUID REFERENCES terminal_sessions(id) ON DELETE SET NULL,
+    event TEXT NOT NULL,
+    client_ip TEXT,
+    ua TEXT,
+    extra JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS terminal_audit_session_idx
+    ON terminal_audit(session_id);
+CREATE INDEX IF NOT EXISTS terminal_audit_created_idx
+    ON terminal_audit(created_at DESC);
