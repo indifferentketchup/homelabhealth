@@ -29,6 +29,7 @@ from routers import (
     searxng,
     settings,
     skills,
+    terminals,
 )
 from routers.boocode import router as boocode_router
 from routers.dubdrive import router as dubdrive_router
@@ -133,5 +134,8 @@ api.include_router(dubdrive_router, prefix="/dubdrive", tags=["dubdrive"])
 api.include_router(dubdrive_sync_router)
 api.include_router(boocode_router)
 api.include_router(skills.router, prefix="/skills", tags=["skills"])
+api.include_router(terminals.router, prefix="/terminals", tags=["terminals"])
 
 app.include_router(api)
+# WS endpoint lives outside /api (spec: /ws/terminals/:id).
+app.include_router(terminals.ws_router)
