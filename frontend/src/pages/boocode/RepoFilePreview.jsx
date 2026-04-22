@@ -120,8 +120,10 @@ export function RepoFilePreview({ dawId }) {
   return (
     <div role="dialog" aria-modal="true" className="fixed inset-0 z-[400] flex">
       <div className="absolute inset-0 bg-black/40" onClick={close} aria-hidden />
-      <div className="ml-auto flex h-full w-full max-w-5xl flex-col overflow-hidden border-l shadow-2xl"
-           style={{ background: 'var(--bg-panel)', borderColor: 'var(--border)' }}>
+      <div
+        className="ml-auto flex h-full w-[1000px] max-w-[100vw] flex-col overflow-hidden border-l shadow-2xl"
+        style={{ background: 'var(--bg-panel)', borderColor: 'var(--border)' }}
+      >
         <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2"
              style={{ borderColor: 'var(--border)' }}>
           <nav className="flex min-w-0 items-center gap-1 truncate font-mono text-xs"
@@ -162,10 +164,23 @@ export function RepoFilePreview({ dawId }) {
                  style={{ borderColor: 'var(--border)' }}>
             <SymbolRail symbols={symData?.symbols || []} onJump={jump} />
           </aside>
-          <div ref={containerRef}
-               className={cn('min-h-0 flex-1 overflow-auto font-mono text-xs',
-                             wrap && '[&_pre]:whitespace-pre-wrap')}
-               style={{ background: 'var(--bg)' }}>
+          <div
+            ref={containerRef}
+            className={cn(
+              'min-h-0 flex-1 overflow-auto font-mono text-xs',
+              wrap && '[&_pre]:whitespace-pre-wrap',
+              // Strip Shiki's theme background so the container's bg paints
+              // uniformly top-to-bottom regardless of file length. Pad the code
+              // and force it to fill the container vertically so the drawer
+              // never shows a half-filled look on short files.
+              '[&_pre]:!bg-transparent [&_pre]:m-0 [&_pre]:p-3 [&_pre]:min-h-full',
+            )}
+            style={{
+              background: 'var(--bg)',
+              userSelect: 'text',
+              WebkitUserSelect: 'text',
+            }}
+          >
             {isLoading && <div className="p-3" style={{ color: 'var(--text-dim)' }}>loading…</div>}
             {isError && (
               <div className="p-3 text-xs" style={{ color: '#ff6b6b' }}>
