@@ -220,11 +220,16 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
         useAppStore.getState().branding ?? queryClient.getQueryData(['branding', appBrandingMode])
       if (!row || typeof row !== 'object') return
       const patch =
-        appBrandingMode === '808notes'
+        appBrandingMode === '808notes' || appBrandingMode === 'boocode'
           ? layoutApiToBrandingPatchSansTheme(draft)
           : layoutApiToBrandingPatch(draft)
-      const merged = appBrandingMode === '808notes' ? patch808notesBranding(row, patch) : patchBranding(row, patch)
-      applyBrandingCss(merged, appBrandingMode === '808notes' ? '808notes' : 'booops')
+      const merged =
+        appBrandingMode === '808notes'
+          ? patch808notesBranding(row, patch)
+          : appBrandingMode === 'boocode'
+          ? patchBoocodeBranding(row, patch)
+          : patchBranding(row, patch)
+      applyBrandingCss(merged, appBrandingMode)
       if (appBrandingMode === '808notes') {
         set808notesLayoutLiveDraft({
           sidebarWidth: draft.sidebarWidth,
@@ -350,24 +355,32 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
         let out
         if (targetMode === '808notes') {
           out = await patchBranding808notes({ appGlyphIcon: lucideName })
+        } else if (targetMode === 'boocode') {
+          out = await patchBrandingBoocode({ appGlyphIcon: lucideName })
         } else {
           out = await updateBranding({ appGlyphIcon: lucideName })
         }
         const merged =
-          targetMode === '808notes' ? patch808notesBranding(null, out) : patchBranding(null, out)
+          targetMode === '808notes'
+            ? patch808notesBranding(null, out)
+            : targetMode === 'boocode'
+            ? patchBoocodeBranding(null, out)
+            : patchBranding(null, out)
         queryClient.setQueryData(['branding', 'config', targetMode], merged)
 
         let appliedToCache = merged
         if (appBrandingMode === targetMode) {
           const layoutPayload = layoutDraftToApiPayload({ ...useLayoutStore.getState() })
           const withLayout = mergeBrandingWithGlobalLayout(merged, layoutPayload, {
-            stripTheme: targetMode === '808notes',
+            stripTheme: targetMode === '808notes' || targetMode === 'boocode',
           })
           const finalized =
             targetMode === '808notes'
               ? patch808notesBranding(null, withLayout)
+              : targetMode === 'boocode'
+              ? patchBoocodeBranding(null, withLayout)
               : patchBranding(null, withLayout)
-          applyBrandingCss(finalized, targetMode === '808notes' ? '808notes' : 'booops')
+          applyBrandingCss(finalized, targetMode)
           useAppStore.getState().setBranding(finalized)
           appliedToCache = finalized
         }
