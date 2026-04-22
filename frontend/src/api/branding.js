@@ -274,6 +274,48 @@ export function patch808notesBranding(base, partial) {
   return finalizeBranding(merged, DEFAULT_808NOTES_BRANDING)
 }
 
+/** Default BooCode branding (aligned with API `/api/branding/boocode`). */
+export const DEFAULT_BOOCODE_BRANDING = {
+  accentColor: '#f97316',
+  accentCyan: '#fbbf24',
+  accentPurple: '#c2410c',
+  bgColor: '#0a0604',
+  bgPanel: '#120a06',
+  bgCard: '#1a0e08',
+  textColor: '#f5e6d3',
+  textDim: '#9a7a5a',
+  borderColor: '#3a1f0c',
+  fontFamily: 'JetBrains Mono, monospace',
+  fontSizeBase: 15,
+  baseFontSize: 15,
+  fsNav: 13,
+  fsChat: 15,
+  fsInput: 14,
+  fsHeading: 18,
+  fsCode: 13,
+  chatMaxWidth: 1200,
+  sidebarWidth: 260,
+  title: 'BooCode',
+  subtitle: '// architect at 3am. terminal amber, code awareness.',
+  bannerUrl: '',
+  logoUrl: '',
+  faviconUrl: '',
+  ogBannerUrl: '',
+  appGlyphIcon: 'Terminal',
+}
+
+/** Like `patchBranding` but for BooCode defaults. */
+export function patchBoocodeBranding(base, partial) {
+  const merged = {
+    ...DEFAULT_BOOCODE_BRANDING,
+    ...(base && typeof base === 'object' ? base : {}),
+    ...(partial && typeof partial === 'object' ? partial : {}),
+  }
+  if (merged.title == null) merged.title = DEFAULT_BOOCODE_BRANDING.title
+  if (merged.subtitle == null) merged.subtitle = DEFAULT_BOOCODE_BRANDING.subtitle
+  return finalizeBranding(merged, DEFAULT_BOOCODE_BRANDING)
+}
+
 function clampFs(n, lo = 10, hi = 24) {
   if (!Number.isFinite(n)) return null
   return Math.min(hi, Math.max(lo, Math.round(n)))
@@ -288,18 +330,25 @@ function fsToPx(v, fallback) {
 /**
  * Apply branding tokens to the document root (live preview).
  * @param {object} config Merged branding (+ layout) fields.
- * @param {'booops' | '808notes' | null} brandingMode When set, drives default palette and syncs `<html data-mode>` so a cold load or cache clear cannot leave `boolab` and skip 808 styling. When null, uses current `document.documentElement.dataset.mode`.
+ * @param {'booops' | '808notes' | 'boocode' | null} brandingMode When set, drives default palette and syncs `<html data-mode>` so a cold load or cache clear cannot leave `boolab` and skip mode styling. When null, uses current `document.documentElement.dataset.mode`.
  */
 export function applyBrandingCss(config, brandingMode = null) {
   const root = document.documentElement
-  if (brandingMode === 'booops' || brandingMode === '808notes') {
+  if (brandingMode === 'booops' || brandingMode === '808notes' || brandingMode === 'boocode') {
     applyMode(brandingMode)
   }
   const mode =
-    brandingMode === 'booops' || brandingMode === '808notes' ? brandingMode : root.dataset.mode
-  if (mode !== 'booops' && mode !== '808notes') return
+    brandingMode === 'booops' || brandingMode === '808notes' || brandingMode === 'boocode'
+      ? brandingMode
+      : root.dataset.mode
+  if (mode !== 'booops' && mode !== '808notes' && mode !== 'boocode') return
 
-  const defaults = mode === '808notes' ? DEFAULT_808NOTES_BRANDING : DEFAULT_BOOOPS_BRANDING
+  const defaults =
+    mode === '808notes'
+      ? DEFAULT_808NOTES_BRANDING
+      : mode === 'boocode'
+      ? DEFAULT_BOOCODE_BRANDING
+      : DEFAULT_BOOOPS_BRANDING
   const merged = mergeBrandingDefaults(defaults, config, null)
 
   const px = (n) => (typeof n === 'number' && Number.isFinite(n) ? `${Math.round(n)}px` : null)
@@ -407,6 +456,20 @@ export async function deleteBrandingAsset808notes(slot) {
   return apiFetch(`/api/branding/808notes/asset/${slot}`, { method: 'DELETE' })
 }
 
+export async function patchBrandingBoocode(patch) {
+  return apiFetch('/api/branding/boocode', { method: 'PATCH', json: patch })
+}
+
+export async function uploadBrandingAssetBoocode(slot, file) {
+  const fd = new FormData()
+  fd.append('file', file)
+  return apiFetch(`/api/branding/boocode/upload/${slot}`, { method: 'POST', body: fd })
+}
+
+export async function deleteBrandingAssetBoocode(slot) {
+  return apiFetch(`/api/branding/boocode/asset/${slot}`, { method: 'DELETE' })
+}
+
 /** Map `GET /api/settings/layout` onto branding fields used by `applyBrandingCss`. */
 export function layoutApiToBrandingPatch(layout) {
   if (!layout || typeof layout !== 'object') return {}
@@ -452,22 +515,14 @@ export function mergeBrandingWithGlobalLayout(brandingRow, layoutApi, options = 
 
 /** Fetch branding for a mode and apply CSS + store (see `applyBrandingCss`). */
 export async function fetchBranding(mode) {
-  // BooCode is styled entirely by the `:root[data-mode='boocode']` CSS block in
-  // globals.css. No branding row exists for it, and calling applyBrandingCss
-  // would reset data-mode back to booops (destroying the theme). So for boocode
-  // we hydrate layout only and exit.
-  if (mode === 'boocode') {
-    let layout = {}
-    try {
-      layout = await apiFetch('/api/settings/layout')
-    } catch {
-      layout = {}
-    }
-    useLayoutStore.getState().hydrateFromServer(layout && typeof layout === 'object' ? layout : {})
-    return useAppStore.getState().branding
-  }
-  const m = mode === '808notes' ? '808notes' : 'booops'
-  const defaults = m === '808notes' ? DEFAULT_808NOTES_BRANDING : DEFAULT_BOOOPS_BRANDING
+  const m =
+    mode === '808notes' ? '808notes' : mode === 'boocode' ? 'boocode' : 'booops'
+  const defaults =
+    m === '808notes'
+      ? DEFAULT_808NOTES_BRANDING
+      : m === 'boocode'
+      ? DEFAULT_BOOCODE_BRANDING
+      : DEFAULT_BOOOPS_BRANDING
   let row = defaults
   try {
     row = await apiFetch(`/api/branding/${m}`)
@@ -482,7 +537,12 @@ export async function fetchBranding(mode) {
   }
   useLayoutStore.getState().hydrateFromServer(layout && typeof layout === 'object' ? layout : {})
   const merged = mergeBrandingWithGlobalLayout(row, layout, { stripTheme: m === '808notes' })
-  const finalized = m === '808notes' ? patch808notesBranding(null, merged) : patchBranding(null, merged)
+  const finalized =
+    m === '808notes'
+      ? patch808notesBranding(null, merged)
+      : m === 'boocode'
+      ? patchBoocodeBranding(null, merged)
+      : patchBranding(null, merged)
   applyBrandingCss(finalized, m)
   return useAppStore.getState().branding
 }

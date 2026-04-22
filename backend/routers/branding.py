@@ -79,6 +79,35 @@ DEFAULT_808NOTES_BRANDING: dict[str, Any] = {
     "appGlyphIcon": "Music2",
 }
 
+DEFAULT_BOOCODE_BRANDING: dict[str, Any] = {
+    "accentColor": "#f97316",
+    "accentCyan": "#fbbf24",
+    "accentPurple": "#c2410c",
+    "bgColor": "#0a0604",
+    "bgPanel": "#120a06",
+    "bgCard": "#1a0e08",
+    "textColor": "#f5e6d3",
+    "textDim": "#9a7a5a",
+    "borderColor": "#3a1f0c",
+    "fontFamily": "JetBrains Mono, monospace",
+    "fontSizeBase": 15,
+    "baseFontSize": 15,
+    "fsNav": 13,
+    "fsChat": 15,
+    "fsInput": 14,
+    "fsHeading": 18,
+    "fsCode": 13,
+    "chatMaxWidth": 1200,
+    "sidebarWidth": 260,
+    "title": "BooCode",
+    "subtitle": "// architect at 3am. terminal amber, code awareness.",
+    "bannerUrl": "",
+    "logoUrl": "",
+    "faviconUrl": "",
+    "ogBannerUrl": "",
+    "appGlyphIcon": "Terminal",
+}
+
 DEFAULT_BOOLAB_BRANDING: dict[str, Any] = {
     "title": "BooLab",
     "tagline": "// pick your lab bench.",
@@ -151,6 +180,7 @@ def _main_branding_flat_key_for_slot(slot: str) -> str:
 _PREFIX_BOOOPS = "booops"
 _PREFIX_808NOTES = "808notes"
 _PREFIX_BOOLAB = "boolab"
+_PREFIX_BOOCODE = "boocode"
 
 
 def _asset_path_pattern(prefix: str, slot: str) -> str:
@@ -203,6 +233,22 @@ async def _persist_808notes_patch(patch: dict[str, Any]) -> dict[str, Any]:
         merged_stored = {**DEFAULT_808NOTES_BRANDING, **current, **patch}
         await conn.execute(
             """INSERT INTO branding_config (mode, config) VALUES ('808notes', $1::jsonb)
+               ON CONFLICT (mode) DO UPDATE SET config = EXCLUDED.config""",
+            json.dumps(merged_stored),
+        )
+    return merged_stored
+
+
+async def _persist_boocode_patch(patch: dict[str, Any]) -> dict[str, Any]:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT config FROM branding_config WHERE mode = 'boocode'",
+        )
+        current = _config_as_dict(row["config"]) if row else {}
+        merged_stored = {**DEFAULT_BOOCODE_BRANDING, **current, **patch}
+        await conn.execute(
+            """INSERT INTO branding_config (mode, config) VALUES ('boocode', $1::jsonb)
                ON CONFLICT (mode) DO UPDATE SET config = EXCLUDED.config""",
             json.dumps(merged_stored),
         )
@@ -467,6 +513,75 @@ async def delete_branding_asset_808notes(slot: str, _owner: dict = Depends(requi
     _delete_existing_asset_files(_PREFIX_808NOTES, slot)
     key = _main_branding_flat_key_for_slot(slot)
     await _persist_808notes_patch({key: ""})
+    return {"ok": True}
+
+
+@router.get("/boocode")
+async def get_branding_boocode():
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT config FROM branding_config WHERE mode = 'boocode'",
+        )
+    current = _config_as_dict(row["config"]) if row else {}
+    return {**DEFAULT_BOOCODE_BRANDING, **current}
+
+
+@router.put("/boocode")
+@router.patch("/boocode")
+async def patch_branding_boocode(
+    patch: dict[str, Any] = Body(default_factory=dict),
+    _owner: dict = Depends(require_admin),
+):
+    return await _persist_boocode_patch(patch)
+
+
+@router.post("/boocode/upload/{slot}")
+async def upload_branding_asset_boocode(
+    slot: str,
+    file: UploadFile = File(...),
+    _owner: dict = Depends(require_admin),
+):
+    if slot not in ASSET_SLOTS:
+        raise HTTPException(status_code=400, detail="invalid slot")
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in ALLOWED_IMG_EXT:
+        raise HTTPException(status_code=400, detail="invalid image type")
+
+    _ensure_assets_dir()
+    _delete_existing_asset_files(_PREFIX_BOOCODE, slot)
+
+    dest = BRANDING_ASSETS_DIR / f"{_PREFIX_BOOCODE}_{slot}{suffix}"
+    content = await file.read()
+    dest.write_bytes(content)
+
+    public_url = f"/api/branding/boocode/asset/{slot}"
+    key = _main_branding_flat_key_for_slot(slot)
+    await _persist_boocode_patch({key: public_url})
+    return {key: public_url}
+
+
+@router.api_route("/boocode/asset/{slot}", methods=["GET", "HEAD"])
+async def get_branding_asset_boocode(slot: str):
+    if slot not in ASSET_SLOTS:
+        raise HTTPException(status_code=400, detail="invalid slot")
+    path = _find_asset_file(_PREFIX_BOOCODE, slot)
+    if path is None or not path.is_file():
+        raise HTTPException(status_code=404, detail="not found")
+    media_type, _ = mimetypes.guess_type(str(path))
+    if not media_type:
+        media_type = "application/octet-stream"
+    return FileResponse(path, media_type=media_type, headers={"Accept-Ranges": "none"})
+
+
+@router.delete("/boocode/asset/{slot}")
+async def delete_branding_asset_boocode(slot: str, _owner: dict = Depends(require_admin)):
+    if slot not in ASSET_SLOTS:
+        raise HTTPException(status_code=400, detail="invalid slot")
+    _ensure_assets_dir()
+    _delete_existing_asset_files(_PREFIX_BOOCODE, slot)
+    key = _main_branding_flat_key_for_slot(slot)
+    await _persist_boocode_patch({key: ""})
     return {"ok": True}
 
 
