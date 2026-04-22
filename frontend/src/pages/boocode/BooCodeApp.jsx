@@ -20,6 +20,7 @@ import {
   useFxSuppressState,
 } from '@/hooks/useBoocodeFx.jsx'
 import SettingsPage from '@/pages/booops/SettingsPage.jsx'
+import BooCodeCommandPalette from '@/pages/boocode/BooCodeCommandPalette.jsx'
 import { PATH_BOOCODE, PATH_BOOCODE_HOME } from '@/routes/paths.js'
 import { useAppStore } from '@/store/index.js'
 
@@ -144,6 +145,7 @@ export default function BooCodeApp() {
     <FxSuppressProvider>
       <TooltipProvider>
         <DawQuerySync />
+        <BooCodeCommandPalette />
         <BooCodeShell mobileSidebar={mobileSidebar} setMobileSidebar={setMobileSidebar} />
       </TooltipProvider>
     </FxSuppressProvider>
