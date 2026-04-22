@@ -737,10 +737,10 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
           {tab === 'colors' && (
             <section className="mx-auto w-full max-w-2xl space-y-3">
               <h2 className="fs-heading font-semibold uppercase tracking-wide text-muted-foreground">
-                Colors ({selectedMode === '808notes' ? '808notes' : 'BooOps'})
+                Colors ({selectedMode === '808notes' ? '808notes' : selectedMode === 'boocode' ? 'BooCode' : 'BooOps'})
               </h2>
               <p className="text-sm text-muted-foreground">
-                These tokens apply to the {selectedMode === '808notes' ? '808notes' : 'BooOps'} app only.
+                These tokens apply to the {selectedMode === '808notes' ? '808notes' : selectedMode === 'boocode' ? 'BooCode' : 'BooOps'} app only.
                 Typography and layout below stay shared.
               </p>
               <div className="flex flex-col gap-3">
@@ -874,7 +874,7 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
               <div className="mt-10 space-y-3 border-t border-border pt-6">
                 <h2 className="fs-heading font-semibold uppercase tracking-wide text-muted-foreground">Chats</h2>
                 <p className="text-sm text-muted-foreground">
-                  Delete every {selectedMode === '808notes' ? '808notes' : 'BooOps'} chat that is{' '}
+                  Delete every {selectedMode === '808notes' ? '808notes' : selectedMode === 'boocode' ? 'BooCode' : 'BooOps'} chat that is{' '}
                   <span className="font-medium text-foreground">not</span> linked to a DAW. This cannot be undone.
                 </p>
                 {purgeMsg ? <p className="text-sm text-foreground">{purgeMsg}</p> : null}
