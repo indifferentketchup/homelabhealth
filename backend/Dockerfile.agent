@@ -1,0 +1,15 @@
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tmux openssh-client bash ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd -m -u 1000 -s /bin/bash agent
+
+COPY tmux.conf /home/agent/.tmux.conf
+RUN chown agent:agent /home/agent/.tmux.conf
+
+COPY tmux-agent-entrypoint.sh /usr/local/bin/tmux-agent-entrypoint.sh
+RUN chmod +x /usr/local/bin/tmux-agent-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/tmux-agent-entrypoint.sh"]

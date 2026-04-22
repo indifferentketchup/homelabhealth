@@ -24,3 +24,12 @@ services:
     container_name: notes808_staging_ui
     ports:
       - "100.114.205.53:9314:80"
+
+  boolab_agent:
+    container_name: boolab_agent_staging
+    volumes:
+      - boolab_tmux_staging:/shared/tmux
+      - /home/samkintop/.ssh:/home/agent/.ssh:ro
+
+volumes:
+  boolab_tmux_staging:
