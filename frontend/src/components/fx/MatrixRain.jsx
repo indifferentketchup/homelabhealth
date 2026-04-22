@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 
 const CHARSET = (() => {
   let s = ''
@@ -21,25 +21,9 @@ function randChar() {
 
 export default function MatrixRain({ density = 0.35, speed = 0.7, enabled = true, opacity = 0.6 }) {
   const canvasRef = useRef(null)
-  const [reducedMotion, setReducedMotion] = useState(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
-    return window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  })
 
   useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined
-    const mql = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const onChange = (e) => setReducedMotion(e.matches)
-    if (typeof mql.addEventListener === 'function') mql.addEventListener('change', onChange)
-    else if (typeof mql.addListener === 'function') mql.addListener(onChange)
-    return () => {
-      if (typeof mql.removeEventListener === 'function') mql.removeEventListener('change', onChange)
-      else if (typeof mql.removeListener === 'function') mql.removeListener(onChange)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!enabled || reducedMotion) return undefined
+    if (!enabled) return undefined
     const canvas = canvasRef.current
     if (!canvas) return undefined
     const ctx = canvas.getContext('2d', { alpha: true })
@@ -158,9 +142,9 @@ export default function MatrixRain({ density = 0.35, speed = 0.7, enabled = true
       document.removeEventListener('visibilitychange', onVisibility)
       window.removeEventListener('resize', onResize)
     }
-  }, [enabled, reducedMotion, density, speed])
+  }, [enabled, density, speed])
 
-  if (!enabled || reducedMotion) return null
+  if (!enabled) return null
 
   return (
     <canvas
