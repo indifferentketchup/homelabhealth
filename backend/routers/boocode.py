@@ -498,3 +498,49 @@ async def repo_branches(
 
     _branches_cache[repo_root] = (now, names)
     return {"branches": names}
+
+
+@router.get("/daws/{daw_id}/chunks")
+async def repo_chunks_for_file(
+    daw_id: uuid.UUID,
+    path: str = Query(..., min_length=1),
+    line: int | None = Query(None, ge=1),
+    _: dict = Depends(get_principal),
+) -> dict[str, Any]:
+    try:
+        rel = validate_relative_file_path(path)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        if not await _daw_exists(conn, daw_id):
+            raise HTTPException(status_code=404, detail="daw_not_found")
+        rows = await conn.fetch(
+            """
+            SELECT rc.symbol_name, rc.symbol_kind,
+                   rc.start_line AS line_start, rc.end_line AS line_end,
+                   rc.tokens
+            FROM repo_chunks rc
+            JOIN repo_files rf ON rf.id = rc.file_id
+            WHERE rc.daw_id = $1::uuid AND rf.path = $2
+            ORDER BY rc.start_line ASC NULLS LAST, rc.id ASC
+            """,
+            daw_id,
+            rel,
+        )
+
+    symbols = [
+        {
+            "name": r["symbol_name"],
+            "kind": r["symbol_kind"] or "unknown",
+            "line_start": int(r["line_start"] or 0),
+            "line_end": int(r["line_end"] or 0),
+            "tokens": int(r["tokens"] or 0),
+        }
+        for r in rows
+        if r["line_start"] is not None
+    ]
+    if line is not None:
+        symbols = [s for s in symbols if s["line_start"] <= line <= (s["line_end"] or s["line_start"])]
+    return {"daw_id": str(daw_id), "path": rel, "symbols": symbols}
