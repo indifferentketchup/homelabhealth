@@ -528,6 +528,15 @@ ALTER TABLE daws DROP CONSTRAINT IF EXISTS daws_repo_sync_status_check;
 ALTER TABLE daws ADD CONSTRAINT daws_repo_sync_status_check
     CHECK (repo_sync_status IS NULL OR repo_sync_status IN ('idle', 'syncing', 'error'));
 
+-- BooCode Phase 4: widen searxng_config.mode to include boocode, and seed a row.
+ALTER TABLE searxng_config DROP CONSTRAINT IF EXISTS searxng_config_mode_check;
+ALTER TABLE searxng_config ADD CONSTRAINT searxng_config_mode_check
+    CHECK (mode IN ('booops', '808notes', 'boocode'));
+
+INSERT INTO searxng_config (mode, safe_search, image_proxy, enabled_engines, autocomplete)
+VALUES ('boocode', 0, FALSE, '', '')
+ON CONFLICT (mode) DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS repo_files (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     daw_id UUID NOT NULL REFERENCES daws(id) ON DELETE CASCADE,

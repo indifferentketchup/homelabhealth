@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-_VALID_MODES = frozenset({"booops", "808notes"})
+_VALID_MODES = frozenset({"booops", "808notes", "boocode"})
 
 
 class SearxngConfigUpdate(BaseModel):
