@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Edit3, RefreshCw, Check, X } from 'lucide-react'
 import { useRepoSyncStatus } from '@/hooks/useRepoSyncStatus.js'
 import { cn } from '@/lib/utils.js'
@@ -20,12 +21,25 @@ export function RepoStatusBar({ dawId }) {
   const [draft, setDraft] = useState(null)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState(null)
+  const [searchParams, setSearchParams] = useSearchParams()
 
   useEffect(() => {
     const handler = () => setEditing(true)
     window.addEventListener('boocode:edit-repo-settings', handler)
     return () => window.removeEventListener('boocode:edit-repo-settings', handler)
   }, [])
+
+  // Sidebar right-click → /boocode/daw/:id?edit=1. Open the inline editor on
+  // mount and clear the param so a refresh doesn't re-open it.
+  useEffect(() => {
+    if (searchParams.get('edit') === '1') {
+      setEditing(true)
+      const next = new URLSearchParams(searchParams)
+      next.delete('edit')
+      setSearchParams(next, { replace: true })
+    }
+    // Only on mount/param change.
+  }, [searchParams, setSearchParams])
 
   useEffect(() => {
     if (editing && data && !draft) {

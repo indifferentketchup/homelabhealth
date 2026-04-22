@@ -713,6 +713,10 @@ export function Sidebar({
                           onClick={() => {
                             if (isMobile) onMobileOpenChange(false)
                           }}
+                          onContextMenu={(e) => {
+                            e.preventDefault()
+                            navigate(`${PATH_BOOCODE}/daw/${d.id}?edit=1`)
+                          }}
                         >
                           <span
                             className="size-2.5 shrink-0 rounded-full"
@@ -850,6 +854,10 @@ export function Sidebar({
                     title={d.name}
                     onClick={() => {
                       if (isMobile) onMobileOpenChange(false)
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      navigate(`${PATH_BOOCODE}/daw/${d.id}?edit=1`)
                     }}
                     className={cn(
                       'flex h-9 w-full items-center justify-center rounded-md hover:bg-sidebar-accent/50',

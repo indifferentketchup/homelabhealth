@@ -255,10 +255,24 @@ async def sync_daw_repo(daw_id: uuid.UUID) -> dict[str, Any]:
     files_done = 0
     files_total = 0
     chunks_total = 0
+    # Normalize repo_path for prefix stripping so stored paths are relative
+    # (frontend builds the tree from relative paths; /file endpoint joins
+    # relative + repo_path back up).
+    repo_root_for_strip = str(repo_path).strip().rstrip("/")
+
+    def _rel(abs_path: str) -> str:
+        p = str(abs_path)
+        if repo_root_for_strip and p.startswith(repo_root_for_strip):
+            p = p[len(repo_root_for_strip):]
+        return p.lstrip("/")
+
     try:
         files = await list_repo_files(str(repo_path).strip())
-        remote_paths = {f["path"] for f in files}
-        files_total = len(files)
+        # Map absolute DubDrive path → relative-to-repo for both storage and
+        # comparison against existing rows.
+        files_rel = [{**f, "abs_path": f["path"], "rel_path": _rel(f["path"])} for f in files]
+        remote_paths = {f["rel_path"] for f in files_rel}
+        files_total = len(files_rel)
 
         async with pool.acquire() as conn:
             existing_rows = await conn.fetch(
@@ -279,10 +293,11 @@ async def sync_daw_repo(daw_id: uuid.UUID) -> dict[str, Any]:
         updated = 0
         skipped = 0
 
-        for f in files:
-            path = f["path"]
+        for f in files_rel:
+            abs_path = f["abs_path"]
+            rel_path = f["rel_path"]
             size = int(f.get("size") or 0)
-            content = await fetch_file_content(path)
+            content = await fetch_file_content(abs_path)
             if content is None:
                 files_done += 1
                 _emit_progress(daw_id, {
@@ -290,13 +305,13 @@ async def sync_daw_repo(daw_id: uuid.UUID) -> dict[str, Any]:
                     "files_done": files_done,
                     "files_total": files_total,
                     "chunks_total": chunks_total,
-                    "current_file": path,
+                    "current_file": rel_path,
                 })
                 continue
             try:
                 async with pool.acquire() as conn:
                     async with conn.transaction():
-                        status, file_cc = await ingest_file(conn, daw_id, path, content, size)
+                        status, file_cc = await ingest_file(conn, daw_id, rel_path, content, size)
                 if status == "added":
                     added += 1
                 elif status == "updated":
@@ -305,9 +320,9 @@ async def sync_daw_repo(daw_id: uuid.UUID) -> dict[str, Any]:
                     skipped += 1
                 chunks_total += int(file_cc or 0)
             except EmbeddingError as e:
-                logger.warning("skipping %s due to embedding failure: %s", path, e)
+                logger.warning("skipping %s due to embedding failure: %s", rel_path, e)
             except Exception as e:
-                logger.exception("ingest_file failed for %s: %s", path, e)
+                logger.exception("ingest_file failed for %s: %s", rel_path, e)
             finally:
                 files_done += 1
                 _emit_progress(daw_id, {
@@ -315,7 +330,7 @@ async def sync_daw_repo(daw_id: uuid.UUID) -> dict[str, Any]:
                     "files_done": files_done,
                     "files_total": files_total,
                     "chunks_total": chunks_total,
-                    "current_file": path,
+                    "current_file": rel_path,
                 })
 
         async with pool.acquire() as conn:
