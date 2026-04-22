@@ -20,7 +20,7 @@ from auth_deps import (
     get_principal,
 )
 from db import get_pool
-from routers.boocode import _dubdrive_read_bytes
+from routers.dubdrive_sync import _dubdrive_read_bytes
 from services import code_chunker
 from services.pruning import summarize_and_compress
 from services.rag import (
@@ -36,6 +36,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 BOOCODE_CONTEXT_CHAR_BUDGET = int(os.environ.get("BOOCODE_CONTEXT_CHAR_BUDGET", "40000"))
+BOOCODE_ATTACH_CHAR_BUDGET = int(os.environ.get("BOOCODE_ATTACH_CHAR_BUDGET", "20000"))
 
 BOOCODE_ARCHITECT_PREAMBLE = """\
 You are a read-only code architect. You review codebases and draft precise prompts
@@ -89,6 +90,62 @@ def _format_repo_chunks(chunks: list[dict[str, Any]]) -> str:
     if not rendered:
         return ""
     return header + "".join(rendered)
+
+
+async def _render_boocode_attachments(
+    refs: list["BoocodeFileRef"],
+    repo_root_raw: str,
+    char_budget: int,
+) -> str:
+    """Render attached repo files as fenced code blocks, capped by count and chars.
+
+    Returns "" if no files rendered. Safe to call with any input —
+    invalid paths / binary / oversize files are skipped, not raised.
+    """
+    if not refs or not repo_root_raw:
+        return ""
+    try:
+        repo_root = validate_repo_path(repo_root_raw)
+    except ValueError:
+        return ""
+    if not repo_root:
+        return ""
+
+    rendered: list[str] = []
+    total = 0
+    for ref in refs[:4]:
+        try:
+            rel = validate_relative_file_path(ref.path)
+        except ValueError:
+            continue
+        raw = await _dubdrive_read_bytes(posixpath.join(repo_root, rel))
+        if raw is None or len(raw) > code_chunker.MAX_FILE_BYTES:
+            continue
+        if b"\x00" in raw[:4096]:
+            continue
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            text = raw.decode("latin-1", errors="replace")
+        lang = code_chunker.resolve_language(rel) or ""
+        header = f"\n\n[attached file: {rel}{f' ({lang})' if lang else ''}]\n"
+        fence_open = f"```{lang}\n"
+        fence_close = "\n```\n"
+        framing_len = len(header) + len(fence_open) + len(fence_close)
+        remaining = char_budget - total - framing_len
+        if remaining <= 0:
+            break
+        if len(text) > remaining:
+            trunc_marker = "\n[truncated]"
+            keep = max(0, remaining - len(trunc_marker))
+            text = text[:keep] + trunc_marker
+        piece = header + fence_open + text + fence_close
+        rendered.append(piece)
+        total += len(piece)
+        if total >= char_budget:
+            break
+
+    return "".join(rendered)
 
 
 async def _default_persona_id_for_mode(conn: asyncpg.Connection, mode: str) -> uuid.UUID | None:
@@ -242,38 +299,13 @@ async def _assembled_system_prompt(
     boocode_prepend = ""
     refs = list(boocode_files or [])
     if refs and daw_table_mode == "boocode":
-        repo_root = daw_repo_path
-        if repo_root:
-            try:
-                repo_root = validate_repo_path(repo_root)
-            except ValueError:
-                repo_root = ""
-        count = 0
-        for ref in refs[:4]:
-            if not repo_root:
-                break
-            try:
-                rel = validate_relative_file_path(ref.path)
-            except ValueError:
-                continue
-            raw = await _dubdrive_read_bytes(posixpath.join(repo_root, rel))
-            if raw is None or len(raw) > code_chunker.MAX_FILE_BYTES:
-                continue
-            if b"\x00" in raw[:4096]:
-                continue
-            try:
-                text = raw.decode("utf-8")
-            except UnicodeDecodeError:
-                text = raw.decode("latin-1", errors="replace")
-            lang = code_chunker.resolve_language(rel) or ""
-            boocode_prepend += (
-                f"\n\n[attached file: {rel}"
-                f"{f' ({lang})' if lang else ''}]\n"
-                f"```{lang}\n{text}\n```\n"
-            )
-            count += 1
-        if count:
-            logger.info("chat_boocode_attached files=%s daw=%s", count, str(daw_id))
+        boocode_prepend = await _render_boocode_attachments(
+            refs,
+            daw_repo_path,
+            BOOCODE_ATTACH_CHAR_BUDGET,
+        )
+        if boocode_prepend:
+            logger.info("chat_boocode_attached chars=%s daw=%s", len(boocode_prepend), str(daw_id))
 
     if (
         daw_table_mode == "boocode"
@@ -588,7 +620,7 @@ class ChatPatch(BaseModel):
 
 
 class BoocodeFileRef(BaseModel):
-    path: str = Field(..., min_length=1)
+    path: str = Field(..., min_length=1, max_length=4096)
 
 
 class MessageCreate(BaseModel):
