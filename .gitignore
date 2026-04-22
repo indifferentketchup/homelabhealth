@@ -7,5 +7,5 @@ frontend/node_modules/
 frontend/dist/
 *.log
 Docs/
-.worktrees/*.bak-*
-__pycache__/
+.worktrees/
+*.bak-*
