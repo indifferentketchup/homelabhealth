@@ -462,7 +462,10 @@ export function Sidebar({
                 )}
                 asChild
               >
-                <Link to={`${routeBase}/daws`} onClick={() => isMobile && onMobileOpenChange(false)}>
+                <Link
+                  to={appMode === 'boocode' ? (routeBase || '/') : `${routeBase}/daws`}
+                  onClick={() => isMobile && onMobileOpenChange(false)}
+                >
                   {!desktopCollapsed ? (
                     <span className="fs-nav flex items-center gap-2">
                       <LayoutGrid className="size-4 shrink-0 opacity-70" />
@@ -710,10 +713,6 @@ export function Sidebar({
                           onClick={() => {
                             if (isMobile) onMobileOpenChange(false)
                           }}
-                          onContextMenu={(e) => {
-                            e.preventDefault()
-                            navigate(`${PATH_BOOCODE}/daws/${d.id}`)
-                          }}
                         >
                           <span
                             className="size-2.5 shrink-0 rounded-full"
@@ -851,10 +850,6 @@ export function Sidebar({
                     title={d.name}
                     onClick={() => {
                       if (isMobile) onMobileOpenChange(false)
-                    }}
-                    onContextMenu={(e) => {
-                      e.preventDefault()
-                      navigate(`${PATH_BOOCODE}/daws/${d.id}`)
                     }}
                     className={cn(
                       'flex h-9 w-full items-center justify-center rounded-md hover:bg-sidebar-accent/50',
