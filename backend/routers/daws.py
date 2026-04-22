@@ -96,6 +96,15 @@ def _row(r: Any) -> dict[str, Any]:
         "dubdrive_last_synced_at": r["dubdrive_last_synced_at"].isoformat()
         if r.get("dubdrive_last_synced_at")
         else None,
+        "repo_path": r.get("repo_path"),
+        "repo_branch": r.get("repo_branch") or "main",
+        "repo_auto_sync": bool(r.get("repo_auto_sync")),
+        "repo_sync_status": r.get("repo_sync_status") or "idle",
+        "repo_last_synced_at": r["repo_last_synced_at"].isoformat()
+        if r.get("repo_last_synced_at")
+        else None,
+        "repo_file_count": int(r.get("repo_file_count") or 0),
+        "repo_chunk_count": int(r.get("repo_chunk_count") or 0),
         "rag_mode": cast(
             Literal["auto", "always", "off"],
             (
@@ -145,6 +154,8 @@ async def list_daws(
                     d.pinned_booops, d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
                     d.model, d.rag_mode,
                     d.dubdrive_sync_folder, d.dubdrive_sync_enabled, d.dubdrive_last_synced_at,
+                    d.repo_path, d.repo_branch, d.repo_auto_sync, d.repo_sync_status,
+                    d.repo_last_synced_at, d.repo_file_count, d.repo_chunk_count,
                     d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
                 FROM daws d
                 LEFT JOIN personas p ON p.id = d.persona_id
@@ -185,6 +196,8 @@ async def create_daw(body: DawCreate, principal: dict[str, Any] = Depends(get_pr
                 pinned_booops, pinned_808notes, system_prompt, persona_id, mode,
                 model, rag_mode,
                 dubdrive_sync_folder, dubdrive_sync_enabled, dubdrive_last_synced_at,
+                repo_path, repo_branch, repo_auto_sync, repo_sync_status,
+                repo_last_synced_at, repo_file_count, repo_chunk_count,
                 created_at, updated_at, owner_id
             """,
             body.name.strip(),
