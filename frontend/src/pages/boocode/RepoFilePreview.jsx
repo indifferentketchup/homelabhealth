@@ -30,12 +30,22 @@ function SymbolRail({ symbols, onJump }) {
 
 export function RepoFilePreview({ dawId }) {
   const [params, setParams] = useSearchParams()
+  const [, setPopTick] = useState(0)
   const path = params.get('file')
   const line = params.get('line')
   const open = Boolean(path)
   const [wrap, setWrap] = useState(false)
   const [shikiHtml, setShikiHtml] = useState('')
   const containerRef = useRef(null)
+
+  // Palette updates URL via history.replaceState + dispatchEvent(PopStateEvent).
+  // React Router reads location, but without this listener the preview wouldn't
+  // react to palette-driven navigation. Cheap defensive re-render.
+  useEffect(() => {
+    const h = () => setPopTick((n) => n + 1)
+    window.addEventListener('popstate', h)
+    return () => window.removeEventListener('popstate', h)
+  }, [])
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['repo-file', dawId, path],
