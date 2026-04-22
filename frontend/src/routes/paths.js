@@ -17,11 +17,13 @@ export const USE_LEGACY_PATH_PREFIX = !isBakedMode
 export const PATH_BOOLAB = USE_LEGACY_PATH_PREFIX ? '/boolab' : ''
 export const PATH_BOOOPS = USE_LEGACY_PATH_PREFIX ? '/booops' : ''
 export const PATH_808NOTES = USE_LEGACY_PATH_PREFIX ? '/808notes' : ''
+export const PATH_BOOCODE = USE_LEGACY_PATH_PREFIX ? '/boocode' : ''
 
 /** Safe home paths for `Link` / `navigate` (`''` would be invalid). */
 export const PATH_BOOLAB_HOME = PATH_BOOLAB || '/'
 export const PATH_BOOOPS_HOME = PATH_BOOOPS || '/'
 export const PATH_808NOTES_HOME = PATH_808NOTES || '/'
+export const PATH_BOOCODE_HOME = PATH_BOOCODE || '/'
 
 /**
  * Hub link from BooOps / 808notes: full URL when split deploy, else path.
