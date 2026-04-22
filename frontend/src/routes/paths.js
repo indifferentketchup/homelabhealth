@@ -6,7 +6,7 @@ const bakedMode =
     ? String(rawMode).trim().toLowerCase()
     : null
 const isBakedMode =
-  bakedMode === 'booops' || bakedMode === '808notes' || bakedMode === 'boolab'
+  bakedMode === 'booops' || bakedMode === '808notes' || bakedMode === 'boolab' || bakedMode === 'boocode'
 
 /**
  * Legacy: one UI on one port with `/booops`, `/808notes`, `/boolab`.
@@ -17,11 +17,13 @@ export const USE_LEGACY_PATH_PREFIX = !isBakedMode
 export const PATH_BOOLAB = USE_LEGACY_PATH_PREFIX ? '/boolab' : ''
 export const PATH_BOOOPS = USE_LEGACY_PATH_PREFIX ? '/booops' : ''
 export const PATH_808NOTES = USE_LEGACY_PATH_PREFIX ? '/808notes' : ''
+export const PATH_BOOCODE = USE_LEGACY_PATH_PREFIX ? '/boocode' : ''
 
 /** Safe home paths for `Link` / `navigate` (`''` would be invalid). */
 export const PATH_BOOLAB_HOME = PATH_BOOLAB || '/'
 export const PATH_BOOOPS_HOME = PATH_BOOOPS || '/'
 export const PATH_808NOTES_HOME = PATH_808NOTES || '/'
+export const PATH_BOOCODE_HOME = PATH_BOOCODE || '/'
 
 /**
  * Hub link from BooOps / 808notes: full URL when split deploy, else path.
@@ -47,6 +49,13 @@ export function get808notesPublicHref() {
   return null
 }
 
+/** @returns {string | null} full URL when set (production / split) */
+export function getBoocodePublicHref() {
+  const u = import.meta.env.VITE_PUBLIC_BOOCODE_URL
+  if (typeof u === 'string' && u.trim()) return u.trim().replace(/\/$/, '')
+  return null
+}
+
 export function isHttpUrl(s) {
   return typeof s === 'string' && /^https?:\/\//i.test(s)
 }
@@ -66,9 +75,9 @@ export function notes808DawPath(dawId, suffix = '') {
 }
 
 /**
- * Mode from path prefix only (`/booops/...`, `/808notes/...`, `/boolab/...`).
+ * Mode from path prefix only (`/booops/...`, `/808notes/...`, `/boolab/...`, `/boocode/...`).
  * Does not treat `/` — use full `detectMode` for that.
- * @returns {'booops' | '808notes' | 'boolab' | null}
+ * @returns {'booops' | '808notes' | 'boolab' | 'boocode' | null}
  */
 export function modeFromAppPath(pathname) {
   if (!USE_LEGACY_PATH_PREFIX) return null
@@ -76,6 +85,7 @@ export function modeFromAppPath(pathname) {
   const p = pathname.startsWith('/') ? pathname : `/${pathname}`
   if (p === PATH_BOOOPS || p.startsWith(`${PATH_BOOOPS}/`)) return 'booops'
   if (p === PATH_808NOTES || p.startsWith(`${PATH_808NOTES}/`)) return '808notes'
+  if (p === PATH_BOOCODE || p.startsWith(`${PATH_BOOCODE}/`)) return 'boocode'
   if (p === PATH_BOOLAB || p.startsWith(`${PATH_BOOLAB}/`)) return 'boolab'
   return null
 }

@@ -12,7 +12,7 @@ function coerceAppMode(raw) {
     raw == null || String(raw).trim() === ''
       ? 'booops'
       : String(raw).trim().toLowerCase()
-  if (v === 'booops' || v === '808notes' || v === 'boolab') return v
+  if (v === 'booops' || v === '808notes' || v === 'boolab' || v === 'boocode') return v
   return 'booops'
 }
 
@@ -25,6 +25,8 @@ function displayNameFromAppMode(raw) {
       return 'BooLab'
     case '808notes':
       return '808notes'
+    case 'boocode':
+      return 'BooCode'
     default:
       return 'BooOps'
   }

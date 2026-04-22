@@ -18,6 +18,9 @@ import {
   Notes808DawSourcesPage,
   Notes808AuxShell,
 } from '@/pages/notes808/Notes808Workspace.jsx'
+import BooCodeApp, { BooCodeSettingsRoute } from '@/pages/boocode/BooCodeApp.jsx'
+import BooCodeLanding from '@/pages/boocode/BooCodeLanding.jsx'
+import BooCodeDawWorkspace from '@/pages/boocode/BooCodeDawWorkspace.jsx'
 import AISettings from '@/pages/booops/AISettings.jsx'
 import AllChats from '@/pages/booops/AllChats.jsx'
 import { BooOpsDawChat } from '@/pages/booops/BooOpsDawChat.jsx'
@@ -79,7 +82,25 @@ export function ModeRouter() {
       </Routes>
     )
   }
-  
+
+  if (mode === 'boocode') {
+    return (
+      <Routes>
+        <Route path="/" element={<BooCodeApp />}>
+          <Route index element={<BooCodeLanding />} />
+          <Route path="daw/:dawId" element={<BooCodeDawWorkspace />} />
+          <Route path="daws" element={<DawsPage />} />
+          <Route path="daws/:id" element={<DawDetailPage />} />
+          <Route path="ai" element={<AISettings />} />
+          <Route path="settings" element={<BooCodeSettingsRoute />} />
+          <Route path="profile" element={<ProfilePage />} />
+          <Route path="skills" element={<SkillsLibraryPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+      </Routes>
+    )
+  }
+
   if (USE_LEGACY_PATH_PREFIX) {
     return (
       <Routes>
