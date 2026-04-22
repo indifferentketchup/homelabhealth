@@ -9,6 +9,7 @@ import { apiFetch } from '@/api/index.js'
 import { deleteNonDawChats } from '@/api/chats.js'
 import {
   DEFAULT_808NOTES_BRANDING,
+  DEFAULT_BOOCODE_BRANDING,
   DEFAULT_BOOOPS_BRANDING,
   FONT_BODY_OPTIONS,
   FONT_BODY_STACKS,
@@ -16,15 +17,19 @@ import {
   applyBrandingCss,
   deleteBrandingAsset,
   deleteBrandingAsset808notes,
+  deleteBrandingAssetBoocode,
   fetchBranding,
   layoutApiToBrandingPatch,
   layoutApiToBrandingPatchSansTheme,
   mergeBrandingWithGlobalLayout,
   patch808notesBranding,
+  patchBoocodeBranding,
   patchBranding,
   patchBranding808notes,
+  patchBrandingBoocode,
   updateBranding,
   uploadBrandingAsset,
+  uploadBrandingAssetBoocode,
   uploadBrandingAsset808notes,
 } from '@/api/branding.js'
 import SearchSettingsTab from '@/components/settings/SearchSettingsTab.jsx'
@@ -151,26 +156,28 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
    *  to `initialMode` (the mode the settings route was opened from). BooCode
    *  has no stored branding row, so we hide the branding tab entirely. */
   const selectedMode = initialMode === '808notes' ? '808notes' : initialMode === 'boocode' ? 'boocode' : 'booops'
-  const settingsTabs = useMemo(
-    () => (selectedMode === 'boocode' ? TABS.filter((t) => t.id !== 'branding') : [...TABS]),
-    [selectedMode],
-  )
+  const settingsTabs = useMemo(() => [...TABS], [])
   const storeBrandingMode = useAppBrandingMode()
-  /** Host shell for this settings surface — matches `selectedMode` for booops/808notes. */
+  /** Host shell for this settings surface — always matches `selectedMode` now. */
   const appBrandingMode =
-    selectedMode === '808notes' ? '808notes' : selectedMode === 'booops' ? 'booops' : storeBrandingMode
+    selectedMode === '808notes'
+      ? '808notes'
+      : selectedMode === 'boocode'
+      ? 'boocode'
+      : selectedMode === 'booops'
+      ? 'booops'
+      : storeBrandingMode
   const [brandingSaveError, setBrandingSaveError] = useState(null)
   const [glyphMenu, setGlyphMenu] = useState(null)
   const glyphMenuRef = useRef(null)
   const [tab, setTabState] = useState(() => {
-    const fallback = selectedMode === 'boocode' ? 'colors' : 'branding'
     try {
       const v = localStorage.getItem('boolab-settings-tab')
       if (v && settingsTabs.some((t) => t.id === v)) return v
     } catch {
       /* ignore */
     }
-    return fallback
+    return 'branding'
   })
 
   const setTab = useCallback((id) => {
@@ -186,14 +193,6 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
     if (onClose) onClose()
     else navigate(PATH_BOOOPS_HOME)
   }, [onClose, navigate])
-
-  useEffect(() => {
-    // If the current tab was hidden by a selectedMode change (e.g. 'branding' on
-    // boocode), fall back to a visible one.
-    if (!settingsTabs.some((t) => t.id === tab)) {
-      setTabState(settingsTabs[0]?.id || 'colors')
-    }
-  }, [settingsTabs, tab])
 
   useEffect(() => {
     if (!onClose) return
@@ -251,23 +250,45 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
     queryKey: ['branding', 'config', 'booops'],
     queryFn: () => apiFetch('/api/branding/booops'),
     staleTime: 60_000,
+    enabled: selectedMode === 'booops',
   })
   const { data: notes808ConfigRow } = useQuery({
     queryKey: ['branding', 'config', '808notes'],
     queryFn: () => apiFetch('/api/branding/808notes'),
     staleTime: 60_000,
+    enabled: selectedMode === '808notes',
   })
-  const brandingConfigRow = selectedMode === '808notes' ? notes808ConfigRow : booopsConfigRow
+  const { data: boocodeConfigRow } = useQuery({
+    queryKey: ['branding', 'config', 'boocode'],
+    queryFn: () => apiFetch('/api/branding/boocode'),
+    staleTime: 60_000,
+    enabled: selectedMode === 'boocode',
+  })
+  const brandingConfigRow =
+    selectedMode === '808notes'
+      ? notes808ConfigRow
+      : selectedMode === 'boocode'
+      ? boocodeConfigRow
+      : booopsConfigRow
 
   const brandingDefaults = useMemo(
-    () => (selectedMode === '808notes' ? DEFAULT_808NOTES_BRANDING : DEFAULT_BOOOPS_BRANDING),
+    () =>
+      selectedMode === '808notes'
+        ? DEFAULT_808NOTES_BRANDING
+        : selectedMode === 'boocode'
+        ? DEFAULT_BOOCODE_BRANDING
+        : DEFAULT_BOOOPS_BRANDING,
     [selectedMode],
   )
 
   const [localBranding, setLocalBranding] = useState(() => ({ ...DEFAULT_BOOOPS_BRANDING }))
   useEffect(() => {
     setLocalBranding(
-      selectedMode === '808notes' ? { ...DEFAULT_808NOTES_BRANDING } : { ...DEFAULT_BOOOPS_BRANDING },
+      selectedMode === '808notes'
+        ? { ...DEFAULT_808NOTES_BRANDING }
+        : selectedMode === 'boocode'
+        ? { ...DEFAULT_BOOCODE_BRANDING }
+        : { ...DEFAULT_BOOOPS_BRANDING },
     )
   }, [selectedMode])
 
@@ -276,6 +297,8 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
       setLocalBranding(
         selectedMode === '808notes'
           ? patch808notesBranding(null, brandingConfigRow)
+          : selectedMode === 'boocode'
+          ? patchBoocodeBranding(null, brandingConfigRow)
           : patchBranding(null, brandingConfigRow),
       )
     }
@@ -284,7 +307,11 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
   const pushBrandingPreview = useCallback(
     (next) => {
       const merged =
-        selectedMode === '808notes' ? patch808notesBranding(null, next) : patchBranding(null, next)
+        selectedMode === '808notes'
+          ? patch808notesBranding(null, next)
+          : selectedMode === 'boocode'
+          ? patchBoocodeBranding(null, next)
+          : patchBranding(null, next)
       let appliedToCache = merged
       if (appBrandingMode === selectedMode) {
         const layoutPayload = layoutDraftToApiPayload({ ...useLayoutStore.getState() })
@@ -294,11 +321,10 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
         const finalized =
           appBrandingMode === '808notes'
             ? patch808notesBranding(null, withLayout)
+            : appBrandingMode === 'boocode'
+            ? patchBoocodeBranding(null, withLayout)
             : patchBranding(null, withLayout)
-        applyBrandingCss(
-          finalized,
-          selectedMode === '808notes' ? '808notes' : 'booops',
-        )
+        applyBrandingCss(finalized, appBrandingMode)
         appliedToCache = finalized
       }
       queryClient.setQueryData(['branding', selectedMode], appliedToCache)
@@ -384,11 +410,17 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
       let out
       if (selectedMode === '808notes') {
         out = await patchBranding808notes(body)
+      } else if (selectedMode === 'boocode') {
+        out = await patchBrandingBoocode(body)
       } else {
         out = await updateBranding(body)
       }
       const merged =
-        selectedMode === '808notes' ? patch808notesBranding(null, out) : patchBranding(null, out)
+        selectedMode === '808notes'
+          ? patch808notesBranding(null, out)
+          : selectedMode === 'boocode'
+          ? patchBoocodeBranding(null, out)
+          : patchBranding(null, out)
       setLocalBranding(merged)
       pushBrandingPreview(merged)
       await queryClient.invalidateQueries({ queryKey: ['branding', 'config', selectedMode] })
@@ -418,15 +450,16 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
     e.target.value = ''
     if (!file || !file.type.startsWith('image/')) return
     try {
+      let result
       if (selectedMode === '808notes') {
-        const result = await uploadBrandingAsset808notes(slot, file)
-        const key = `${slot}Url`
-        if (result && typeof result[key] === 'string') updateBrandingField({ [key]: result[key] })
+        result = await uploadBrandingAsset808notes(slot, file)
+      } else if (selectedMode === 'boocode') {
+        result = await uploadBrandingAssetBoocode(slot, file)
       } else {
-        const result = await uploadBrandingAsset(slot, file)
-        const key = `${slot}Url`
-        if (result && typeof result[key] === 'string') updateBrandingField({ [key]: result[key] })
+        result = await uploadBrandingAsset(slot, file)
       }
+      const key = `${slot}Url`
+      if (result && typeof result[key] === 'string') updateBrandingField({ [key]: result[key] })
     } catch {
       /* silent */
     }
@@ -436,6 +469,8 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
     try {
       if (selectedMode === '808notes') {
         await deleteBrandingAsset808notes(slot)
+      } else if (selectedMode === 'boocode') {
+        await deleteBrandingAssetBoocode(slot)
       } else {
         await deleteBrandingAsset(slot)
       }
@@ -455,6 +490,7 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
     clear808notesLayoutLiveDraft()
     await queryClient.invalidateQueries({ queryKey: ['branding', 'booops'] })
     await queryClient.invalidateQueries({ queryKey: ['branding', '808notes'] })
+    await queryClient.invalidateQueries({ queryKey: ['branding', 'boocode'] })
     await fetchBranding(appBrandingMode)
   }
 
@@ -465,11 +501,17 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
     let out
     if (selectedMode === '808notes') {
       out = await patchBranding808notes(body)
+    } else if (selectedMode === 'boocode') {
+      out = await patchBrandingBoocode(body)
     } else {
       out = await updateBranding(body)
     }
     const merged =
-      selectedMode === '808notes' ? patch808notesBranding(null, out) : patchBranding(null, out)
+      selectedMode === '808notes'
+        ? patch808notesBranding(null, out)
+        : selectedMode === 'boocode'
+        ? patchBoocodeBranding(null, out)
+        : patchBranding(null, out)
     setLocalBranding(merged)
     pushBrandingPreview(merged)
     await queryClient.invalidateQueries({ queryKey: ['branding', 'config', selectedMode] })
