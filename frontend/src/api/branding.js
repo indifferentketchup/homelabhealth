@@ -452,7 +452,21 @@ export function mergeBrandingWithGlobalLayout(brandingRow, layoutApi, options = 
 
 /** Fetch branding for a mode and apply CSS + store (see `applyBrandingCss`). */
 export async function fetchBranding(mode) {
-  const m = mode === '808notes' ? '808notes' : mode === 'booops' ? 'booops' : 'booops'
+  // BooCode is styled entirely by the `:root[data-mode='boocode']` CSS block in
+  // globals.css. No branding row exists for it, and calling applyBrandingCss
+  // would reset data-mode back to booops (destroying the theme). So for boocode
+  // we hydrate layout only and exit.
+  if (mode === 'boocode') {
+    let layout = {}
+    try {
+      layout = await apiFetch('/api/settings/layout')
+    } catch {
+      layout = {}
+    }
+    useLayoutStore.getState().hydrateFromServer(layout && typeof layout === 'object' ? layout : {})
+    return useAppStore.getState().branding
+  }
+  const m = mode === '808notes' ? '808notes' : 'booops'
   const defaults = m === '808notes' ? DEFAULT_808NOTES_BRANDING : DEFAULT_BOOOPS_BRANDING
   let row = defaults
   try {
