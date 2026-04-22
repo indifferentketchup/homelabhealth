@@ -34,6 +34,8 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   PATH_808NOTES,
   PATH_808NOTES_HOME,
+  PATH_BOOCODE,
+  PATH_BOOCODE_HOME,
   PATH_BOOOPS,
   PATH_BOOOPS_HOME,
   getBoolabHubHref,
@@ -118,7 +120,8 @@ export function Sidebar({
   const branding = useAppStore((s) => s.branding)
   const sidebarW = branding?.sidebarWidth ?? 260
 
-  const recentChatMode = appMode === '808notes' ? '808notes' : 'booops'
+  const recentChatMode =
+    appMode === '808notes' ? '808notes' : appMode === 'boocode' ? 'boocode' : 'booops'
   const { data } = useQuery({
     queryKey: ['chats', 'recent', recentChatMode, activeDawId ?? 'all'],
     queryFn: () =>
@@ -128,26 +131,28 @@ export function Sidebar({
         ...(activeDawId ? { dawId: activeDawId } : {}),
       }),
     staleTime: 15_000,
-    enabled: appMode === 'booops' || appMode === '808notes',
+    enabled: appMode === 'booops' || appMode === '808notes' || appMode === 'boocode',
   })
 
   const { data: brandingRow } = useQuery({
     queryKey: ['branding', appMode],
     queryFn: () => fetchBranding(appMode),
     staleTime: 60_000,
-    enabled: appMode === 'booops' || appMode === '808notes',
+    enabled: appMode === 'booops' || appMode === '808notes' || appMode === 'boocode',
   })
 
-  const pinnedDawMode = appMode === '808notes' ? '808notes' : 'booops'
+  const pinnedDawMode =
+    appMode === '808notes' ? '808notes' : appMode === 'boocode' ? 'boocode' : 'booops'
   const { data: dawsListPack, isError: dawsListError } = useQuery({
     queryKey: ['daws', `pinned-sidebar-${pinnedDawMode}`],
     queryFn: () => listDaws(pinnedDawMode),
     staleTime: 30_000,
-    enabled: appMode === 'booops' || appMode === '808notes',
+    enabled: appMode === 'booops' || appMode === '808notes' || appMode === 'boocode',
   })
 
   const pinnedDaws = useMemo(() => {
     const list = Array.isArray(dawsListPack?.items) ? dawsListPack.items : []
+    if (appMode === 'boocode') return list
     if (appMode === '808notes') return list.filter((d) => d.pinned_808notes === true)
     return list.filter((d) => d.pinned_booops === true)
   }, [dawsListPack, appMode])
@@ -190,7 +195,11 @@ export function Sidebar({
   }
 
   useEffect(() => {
-    if (!brandingRow || (appMode !== 'booops' && appMode !== '808notes')) return
+    if (
+      !brandingRow ||
+      (appMode !== 'booops' && appMode !== '808notes' && appMode !== 'boocode')
+    )
+      return
     applyBrandingCss(brandingRow, appMode)
   }, [brandingRow, appMode])
 
@@ -201,17 +210,24 @@ export function Sidebar({
   const desktopCollapsed = !isMobile && !sidebarOpen
 
   function notes808WorkspaceChatPath() {
+    if (appMode === 'boocode') return PATH_BOOCODE_HOME
     if (appMode !== '808notes') return PATH_BOOOPS_HOME
     if (activeDawId) return notes808DawPath(activeDawId)
     return PATH_808NOTES_HOME
   }
 
   function goHome() {
-    if (appMode === 'booops' || appMode === '808notes') {
+    if (appMode === 'booops' || appMode === '808notes' || appMode === 'boocode') {
       setActiveChatId(null)
       setActiveDawId(null)
     }
-    navigate(appMode === '808notes' ? PATH_808NOTES_HOME : PATH_BOOOPS_HOME)
+    navigate(
+      appMode === '808notes'
+        ? PATH_808NOTES_HOME
+        : appMode === 'boocode'
+          ? PATH_BOOCODE_HOME
+          : PATH_BOOOPS_HOME,
+    )
     if (isMobile) onMobileOpenChange(false)
   }
 
@@ -222,7 +238,12 @@ export function Sidebar({
   }
 
   const brandTitle =
-    branding?.title || (appMode === '808notes' ? '808notes' : 'BooOps')
+    branding?.title ||
+    (appMode === '808notes'
+      ? '808notes'
+      : appMode === 'boocode'
+        ? 'BooCode'
+        : 'BooOps')
 
   function selectChat(id) {
     setActiveChatId(id)
@@ -319,7 +340,13 @@ export function Sidebar({
         <div className="border-b border-sidebar-border">
           {!desktopCollapsed ? (
             <Link
-              to={appMode === '808notes' ? PATH_808NOTES_HOME : PATH_BOOOPS_HOME}
+              to={
+                appMode === '808notes'
+                  ? PATH_808NOTES_HOME
+                  : appMode === 'boocode'
+                    ? PATH_BOOCODE_HOME
+                    : PATH_BOOOPS_HOME
+              }
               onClick={(e) => {
                 e.preventDefault()
                 goHome()
@@ -353,7 +380,7 @@ export function Sidebar({
         </div>
 
         <div className="flex flex-col gap-2 p-2">
-          {(appMode === 'booops' || appMode === '808notes') && (
+          {(appMode === 'booops' || appMode === '808notes' || appMode === 'boocode') && (
             <>
               <div className="flex gap-1">
                 <Button
@@ -432,6 +459,37 @@ export function Sidebar({
                     <span className="fs-nav flex items-center gap-2">
                       <LayoutGrid className="size-4 shrink-0 opacity-70" />
                       DAWs
+                    </span>
+                  ) : (
+                    <LayoutGrid className="size-4" aria-hidden />
+                  )}
+                </Link>
+              </Button>
+            </div>
+
+            <div className="mx-2 border-t border-sidebar-border" />
+          </>
+        ) : appMode === 'boocode' ? (
+          <>
+            <div className="flex flex-col gap-1 px-2 py-2">
+              <Button
+                type="button"
+                variant="ghost"
+                className={cn(
+                  'fs-nav h-9 w-full justify-start font-normal',
+                  desktopCollapsed && 'justify-center px-0',
+                )}
+                asChild
+              >
+                <Link
+                  to={PATH_BOOCODE_HOME}
+                  onClick={() => isMobile && onMobileOpenChange(false)}
+                  aria-label="All DAWs"
+                >
+                  {!desktopCollapsed ? (
+                    <span className="fs-nav flex items-center gap-2">
+                      <LayoutGrid className="size-4 shrink-0 opacity-70" />
+                      All DAWs
                     </span>
                   ) : (
                     <LayoutGrid className="size-4" aria-hidden />
@@ -611,7 +669,61 @@ export function Sidebar({
               </>
             )}
 
-            {(appMode === 'booops' || appMode === '808notes') && !desktopCollapsed && (
+            {appMode === 'boocode' && !desktopCollapsed && (
+              <>
+                <button
+                  type="button"
+                  onClick={togglePinnedOpen}
+                  className="fs-nav flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left font-medium uppercase tracking-wide text-muted-foreground outline-none ring-sidebar-ring hover:bg-sidebar-accent/50 focus-visible:ring-2"
+                >
+                  <span>DAWs</span>
+                  <ChevronDown
+                    className={cn(
+                      'size-4 shrink-0 transition-transform duration-150',
+                      !pinnedOpen && 'rotate-180',
+                    )}
+                    aria-hidden
+                  />
+                </button>
+                <div className={cn(!pinnedOpen && 'h-0 overflow-hidden')}>
+                  {dawsListError || pinnedDaws.length === 0 ? (
+                    <span className="fs-nav block px-2 text-muted-foreground">No DAWs</span>
+                  ) : (
+                    pinnedDaws.map((d) => (
+                      <Button
+                        key={d.id}
+                        type="button"
+                        variant={String(d.id) === String(activeDawId) ? 'secondary' : 'ghost'}
+                        className="h-auto min-h-9 w-full justify-start gap-2 py-2 text-left font-normal"
+                        asChild
+                      >
+                        <Link
+                          to={`${PATH_BOOCODE}/daw/${d.id}`}
+                          onClick={() => {
+                            if (isMobile) onMobileOpenChange(false)
+                          }}
+                          onContextMenu={(e) => {
+                            e.preventDefault()
+                            navigate(`${PATH_BOOCODE}/daws/${d.id}`)
+                          }}
+                        >
+                          <span
+                            className="size-2.5 shrink-0 rounded-full"
+                            style={{ background: d.color || '#7c3aed' }}
+                            aria-hidden
+                          />
+                          <span className="fs-nav line-clamp-2">{d.name}</span>
+                        </Link>
+                      </Button>
+                    ))
+                  )}
+                </div>
+
+                <div className="mx-0 my-1 border-t border-sidebar-border" />
+              </>
+            )}
+
+            {(appMode === 'booops' || appMode === '808notes' || appMode === 'boocode') && !desktopCollapsed && (
               <>
                 <button
                   type="button"
@@ -722,7 +834,36 @@ export function Sidebar({
               </div>
             )}
 
-            {(appMode === 'booops' || appMode === '808notes') && desktopCollapsed && (
+            {appMode === 'boocode' && desktopCollapsed && (
+              <div className="flex flex-col items-center gap-1 pt-1">
+                {pinnedDaws.map((d) => (
+                  <Link
+                    key={d.id}
+                    to={`${PATH_BOOCODE}/daw/${d.id}`}
+                    title={d.name}
+                    onClick={() => {
+                      if (isMobile) onMobileOpenChange(false)
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      navigate(`${PATH_BOOCODE}/daws/${d.id}`)
+                    }}
+                    className={cn(
+                      'flex h-9 w-full items-center justify-center rounded-md hover:bg-sidebar-accent/50',
+                      String(d.id) === String(activeDawId) && 'bg-sidebar-accent/60',
+                    )}
+                  >
+                    <span
+                      className="size-2.5 shrink-0 rounded-full"
+                      style={{ background: d.color || '#7c3aed' }}
+                      aria-hidden
+                    />
+                  </Link>
+                ))}
+              </div>
+            )}
+
+            {(appMode === 'booops' || appMode === '808notes' || appMode === 'boocode') && desktopCollapsed && (
               <div className="flex flex-col gap-1">
                 {chats.map((c) => (
                   <Button
@@ -744,7 +885,7 @@ export function Sidebar({
         </ScrollArea>
 
         <div className="mt-auto flex flex-col gap-1 border-t border-sidebar-border p-2">
-          {(appMode === 'booops' || appMode === '808notes') && currentUser && (
+          {(appMode === 'booops' || appMode === '808notes' || appMode === 'boocode') && currentUser && (
             <Button
               type="button"
               variant="outline"
@@ -771,7 +912,7 @@ export function Sidebar({
               </Link>
             </Button>
           )}
-          {(appMode === 'booops' || appMode === '808notes') && (() => {
+          {(appMode === 'booops' || appMode === '808notes' || appMode === 'boocode') && (() => {
             const showAi = currentUser?.role === 'owner'
             const showSettings = adminUi
             if (!showAi && !showSettings) return null
