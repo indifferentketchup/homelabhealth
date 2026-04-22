@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import posixpath
-import subprocess
 import time
 import uuid
 from typing import Any
@@ -322,26 +321,107 @@ _branches_cache: dict[str, tuple[float, list[str]]] = {}
 _BRANCHES_TTL = 60.0
 
 
-def _git_list_branches_blocking(path: str, timeout: float = 10.0) -> list[str] | None:
-    try:
-        r = subprocess.run(
-            ["git", "ls-remote", "--heads", path],
-            capture_output=True, text=True,
-            timeout=timeout, check=False,
-        )
-    except FileNotFoundError:
+def _item_name(item: dict[str, Any]) -> str:
+    """Extract a file/dir name from a DubDrive /api/ls item, matching the key
+    variance documented in routers.dubdrive_sync._collect_files."""
+    name = (
+        item.get("name")
+        or item.get("filename")
+        or item.get("FileName")
+        or item.get("Name")
+        or ""
+    )
+    if not name:
+        path = item.get("path") or item.get("Path") or ""
+        if path:
+            name = str(path).rsplit("/", 1)[-1]
+    return str(name or "")
+
+
+def _item_is_dir(item: dict[str, Any]) -> bool:
+    return bool(
+        item.get("is_dir")
+        or item.get("isDir")
+        or item.get("directory")
+        or item.get("type") == "dir"
+        or item.get("Type") == "directory"
+    )
+
+
+async def _dubdrive_list_branches(repo_root: str) -> list[str] | None:
+    """List branch names for a DubDrive-hosted git repo via the DubDrive
+    /api/ls + /api/read HTTP surface.
+
+    Probes both working-clone (``<repo>/.git/``) and bare-clone (``<repo>/``)
+    layouts. For each layout, reads loose refs from ``refs/heads`` (recursing
+    one level for names like ``release/1.0``) and packed refs from
+    ``packed-refs``.
+
+    Returns a sorted unique list of branch names, or ``None`` if the repo
+    appears not to be a git directory accessible via DubDrive (caller should
+    use a fallback).
+    """
+    from routers.dubdrive_sync import _dubdrive_ls, _dubdrive_read
+
+    names: set[str] = set()
+    found_any_git_layout = False
+
+    # Try both working-clone (.git/) and bare-clone (root) layouts.
+    candidates = [f"{repo_root.rstrip('/')}/.git", repo_root.rstrip("/")]
+
+    for git_root in candidates:
+        layout_names: set[str] = set()
+        layout_found = False
+
+        # Loose refs: <git_root>/refs/heads/<branch>
+        items = await _dubdrive_ls(f"{git_root}/refs/heads")
+        if items:
+            layout_found = True
+            for it in items:
+                if not isinstance(it, dict):
+                    continue
+                name = _item_name(it)
+                if not name:
+                    continue
+                if _item_is_dir(it):
+                    # Recurse one level for `release/1.0` style names.
+                    sub = await _dubdrive_ls(f"{git_root}/refs/heads/{name}")
+                    for s in sub or []:
+                        if not isinstance(s, dict):
+                            continue
+                        sname = _item_name(s)
+                        # Only include files one level down; deeper nesting is
+                        # rare and can be added later if needed.
+                        if sname and not _item_is_dir(s):
+                            layout_names.add(f"{name}/{sname}")
+                    continue
+                layout_names.add(name)
+
+        # Packed refs: single file with `<sha> refs/heads/<branch>` lines.
+        packed = await _dubdrive_read(f"{git_root}/packed-refs")
+        if packed is not None:
+            layout_found = True
+            for line in packed.splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or line.startswith("^"):
+                    continue
+                parts = line.split(None, 1)
+                if len(parts) != 2:
+                    continue
+                _, ref = parts
+                if ref.startswith("refs/heads/"):
+                    layout_names.add(ref[len("refs/heads/"):].strip())
+
+        if layout_found:
+            # Prefer the first layout that returned anything — don't merge
+            # working-clone refs with bare-clone refs.
+            names = layout_names
+            found_any_git_layout = True
+            break
+
+    if not found_any_git_layout:
         return None
-    except subprocess.TimeoutExpired:
-        return []
-    if r.returncode != 0:
-        return []
-    names: list[str] = []
-    for line in (r.stdout or "").splitlines():
-        _, _, ref = line.partition("\t")
-        if ref.startswith("refs/heads/"):
-            names.append(ref[len("refs/heads/"):].strip())
-    names.sort()
-    return names
+    return sorted(names)
 
 
 @router.get("/daws/{daw_id}/branches")
@@ -369,12 +449,16 @@ async def repo_branches(
     if cached and (now - cached[0] < _BRANCHES_TTL):
         return {"branches": cached[1], "cached": True}
 
-    loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(None, _git_list_branches_blocking, repo_root, 10.0)
+    try:
+        names = await _dubdrive_list_branches(repo_root)
+    except Exception:
+        logger.exception("branch listing failed repo=%s", repo_root)
+        names = None
 
-    if result is None:
+    if not names:
+        # Cache the fallback too, so repeated failures don't hammer DubDrive.
+        _branches_cache[repo_root] = (now, ["main"])
         return {"branches": ["main"], "fallback": True}
-    if not result:
-        return {"branches": ["main"], "fallback": True}
-    _branches_cache[repo_root] = (now, result)
-    return {"branches": result}
+
+    _branches_cache[repo_root] = (now, names)
+    return {"branches": names}
