@@ -5,6 +5,7 @@ import uuid
 import json
 import os
 import logging
+import posixpath
 from typing import Any, AsyncIterator
 
 import asyncpg
@@ -19,12 +20,132 @@ from auth_deps import (
     get_principal,
 )
 from db import get_pool
+from routers.dubdrive_sync import _dubdrive_read_bytes
+from services import code_chunker
 from services.pruning import summarize_and_compress
-from services.rag import retrieve_context, retrieve_memory_facts, should_retrieve
+from services.rag import (
+    retrieve_context,
+    retrieve_memory_facts,
+    retrieve_repo_chunks,
+    should_retrieve,
+)
+from services.repo_ingest import validate_relative_file_path, validate_repo_path
 from services.searx import searx_search_sources
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+BOOCODE_CONTEXT_CHAR_BUDGET = int(os.environ.get("BOOCODE_CONTEXT_CHAR_BUDGET", "40000"))
+BOOCODE_ATTACH_CHAR_BUDGET = int(os.environ.get("BOOCODE_ATTACH_CHAR_BUDGET", "20000"))
+
+BOOCODE_ARCHITECT_PREAMBLE = """\
+You are a read-only code architect. You review codebases and draft precise prompts
+for a separate coding agent (OpenCode) to execute. You do NOT edit files.
+
+When the user asks for a change:
+1. One-paragraph plan
+2. OpenCode-ready prompt inside a fenced ```prompt code block
+3. List of files to be touched (paths only, one per line)
+
+When citing code, reference file path + symbol name. Do not invent file contents
+not present in Repo Context.
+"""
+
+
+def _format_repo_chunks(chunks: list[dict[str, Any]]) -> str:
+    """Format repo chunks into the ## Repo Context block, capped at BOOCODE_CONTEXT_CHAR_BUDGET.
+
+    Drops the lowest-similarity chunks first if the formatted block would overflow.
+    """
+    if not chunks:
+        return ""
+
+    header = (
+        "## Repo Context\n"
+        "The following code fragments were retrieved from the repo bound to this DAW.\n"
+        "Cite chunks by file path. If a question cannot be answered from these fragments,\n"
+        "say so — do not fabricate file contents.\n"
+    )
+
+    ordered = sorted(chunks, key=lambda c: float(c.get("similarity") or 0.0), reverse=True)
+
+    rendered: list[str] = []
+    total = len(header)
+    for c in ordered:
+        path = c.get("path") or "?"
+        sym_name = c.get("symbol_name") or ""
+        lang = c.get("language") or ""
+        head_bits = [path]
+        if sym_name:
+            head_bits.append(sym_name)
+        head = ":".join(head_bits)
+        marker = f"[{head}" + (f" ({lang})" if lang else "") + "]"
+        body = c.get("content") or ""
+        piece = f"\n{marker}\n{body}\n"
+        if total + len(piece) > BOOCODE_CONTEXT_CHAR_BUDGET:
+            break
+        rendered.append(piece)
+        total += len(piece)
+
+    if not rendered:
+        return ""
+    return header + "".join(rendered)
+
+
+async def _render_boocode_attachments(
+    refs: list["BoocodeFileRef"],
+    repo_root_raw: str,
+    char_budget: int,
+) -> str:
+    """Render attached repo files as fenced code blocks, capped by count and chars.
+
+    Returns "" if no files rendered. Safe to call with any input —
+    invalid paths / binary / oversize files are skipped, not raised.
+    """
+    if not refs or not repo_root_raw:
+        return ""
+    try:
+        repo_root = validate_repo_path(repo_root_raw)
+    except ValueError:
+        return ""
+    if not repo_root:
+        return ""
+
+    rendered: list[str] = []
+    total = 0
+    for ref in refs[:4]:
+        try:
+            rel = validate_relative_file_path(ref.path)
+        except ValueError:
+            continue
+        raw = await _dubdrive_read_bytes(posixpath.join(repo_root, rel))
+        if raw is None or len(raw) > code_chunker.MAX_FILE_BYTES:
+            continue
+        if b"\x00" in raw[:4096]:
+            continue
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            text = raw.decode("latin-1", errors="replace")
+        lang = code_chunker.resolve_language(rel) or ""
+        header = f"\n\n[attached file: {rel}{f' ({lang})' if lang else ''}]\n"
+        fence_open = f"```{lang}\n"
+        fence_close = "\n```\n"
+        framing_len = len(header) + len(fence_open) + len(fence_close)
+        remaining = char_budget - total - framing_len
+        if remaining <= 0:
+            break
+        if len(text) > remaining:
+            trunc_marker = "\n[truncated]"
+            keep = max(0, remaining - len(trunc_marker))
+            text = text[:keep] + trunc_marker
+        piece = header + fence_open + text + fence_close
+        rendered.append(piece)
+        total += len(piece)
+        if total >= char_budget:
+            break
+
+    return "".join(rendered)
 
 
 async def _default_persona_id_for_mode(conn: asyncpg.Connection, mode: str) -> uuid.UUID | None:
@@ -109,6 +230,7 @@ async def _assembled_system_prompt(
     user_query_for_rag: str | None = None,
     include_site_private: bool = True,
     session_skill_ids: list[str] | None = None,
+    boocode_files: list["BoocodeFileRef"] | None = None,
 ) -> tuple[str, dict[str, int] | None]:
     """Persona → DAW prompt + daw_instructions + semantic memory facts → context files → custom instructions → RAG → mode_memory."""
     mode = chat["mode"] if chat["mode"] in ("booops", "808notes") else "booops"
@@ -117,16 +239,23 @@ async def _assembled_system_prompt(
     daw_prompt = ""
     daw_persona_id = None
     daw_rag_mode_effective = "auto"
+    daw_table_mode = "booops"
+    daw_repo_path = ""
     if daw_id is not None:
         ws = await conn.fetchrow(
-            "SELECT system_prompt, persona_id, mode, rag_mode FROM daws WHERE id = $1::uuid",
+            "SELECT system_prompt, persona_id, mode, rag_mode, repo_path FROM daws WHERE id = $1::uuid",
             daw_id,
         )
         if ws:
             daw_prompt = (ws["system_prompt"] or "").strip()
             daw_persona_id = ws["persona_id"]
-            daw_table_mode = ws["mode"] if ws["mode"] in ("booops", "808notes") else "booops"
+            daw_table_mode = ws["mode"] if ws["mode"] in ("booops", "808notes", "boocode") else "booops"
+            daw_repo_path = (ws["repo_path"] or "").strip() if "repo_path" in ws.keys() else ""
+            if daw_table_mode == "boocode" and not daw_prompt:
+                daw_prompt = BOOCODE_ARCHITECT_PREAMBLE
             if daw_table_mode == "808notes":
+                daw_rag_mode_effective = "always"
+            elif daw_table_mode == "boocode":
                 daw_rag_mode_effective = "always"
             else:
                 rm = ws.get("rag_mode")
@@ -164,6 +293,41 @@ async def _assembled_system_prompt(
         parts.append(persona_prompt)
     if daw_prompt:
         parts.append(daw_prompt)
+
+    # Force-include: user-attached boocode files (prepended before ## Repo Context so
+    # they are seen first by the model; see 2026-04-22 Phase 4 plan Task 1).
+    boocode_prepend = ""
+    refs = list(boocode_files or [])
+    if refs and daw_table_mode == "boocode":
+        boocode_prepend = await _render_boocode_attachments(
+            refs,
+            daw_repo_path,
+            BOOCODE_ATTACH_CHAR_BUDGET,
+        )
+        if boocode_prepend:
+            logger.info("chat_boocode_attached chars=%s daw=%s", len(boocode_prepend), str(daw_id))
+
+    if (
+        daw_table_mode == "boocode"
+        and daw_id is not None
+        and user_query_for_rag
+        and str(user_query_for_rag).strip()
+        and chat.get("rag_enabled") is not False
+    ):
+        repo_chunks = await retrieve_repo_chunks(
+            conn,
+            str(daw_id),
+            str(user_query_for_rag).strip(),
+            top_k=20,
+        )
+        repo_block = ""
+        if repo_chunks:
+            repo_block = _format_repo_chunks(repo_chunks)
+        combined = boocode_prepend + repo_block
+        if combined:
+            parts.append(combined)
+    elif boocode_prepend:
+        parts.append(boocode_prepend)
 
     if daw_id:
         daw_instructions = await conn.fetch(
@@ -455,10 +619,15 @@ class ChatPatch(BaseModel):
     daw_id: uuid.UUID | None = None
 
 
+class BoocodeFileRef(BaseModel):
+    path: str = Field(..., min_length=1, max_length=4096)
+
+
 class MessageCreate(BaseModel):
     content: str = Field(..., min_length=1)
     model: str | None = None
     session_skill_ids: list[str] | None = None
+    boocode_files: list[BoocodeFileRef] | None = None
 
 
 class WebSearchToggleBody(BaseModel):
@@ -504,11 +673,18 @@ def _message_row(r: asyncpg.Record) -> dict[str, Any]:
 @router.post("/")
 async def create_chat(body: ChatCreate, principal: dict[str, Any] = Depends(get_principal)):
     pool = await get_pool()
-    mode = body.mode if body.mode in ("booops", "808notes") else "booops"
+    allowed_modes = ("booops", "808notes", "boocode")
+    mode = body.mode if body.mode in allowed_modes else "booops"
     default_model = os.environ.get("DEFAULT_MODEL", "llama-gpu/qwen3.5-9b-exl3")
     async with pool.acquire() as conn:
         await assert_persona_usable(conn, principal, body.persona_id)
         await assert_daw_usable(conn, principal, body.daw_id)
+        if body.daw_id is not None:
+            daw_mode = await conn.fetchval(
+                "SELECT mode FROM daws WHERE id = $1::uuid", body.daw_id
+            )
+            if daw_mode in allowed_modes:
+                mode = daw_mode
         persona_id_for_insert = body.persona_id
         if persona_id_for_insert is None:
             persona_id_for_insert = await _default_persona_id_for_mode(conn, mode)
@@ -518,7 +694,11 @@ async def create_chat(body: ChatCreate, principal: dict[str, Any] = Depends(get_
             VALUES ($1, $2, $3,
                 COALESCE($4, (
                     SELECT value FROM global_settings WHERE key = (
-                        CASE WHEN $3::text = '808notes' THEN 'default_model_808notes' ELSE 'default_model' END
+                        CASE
+                            WHEN $3::text = '808notes' THEN 'default_model_808notes'
+                            WHEN $3::text = 'boocode' THEN 'default_model_boocode'
+                            ELSE 'default_model'
+                        END
                     ) LIMIT 1
                 ), $6),
                 COALESCE($5, FALSE),
@@ -989,6 +1169,7 @@ async def append_message(
             user_query_for_rag=body.content.strip(),
             include_site_private=True,
             session_skill_ids=body.session_skill_ids,
+            boocode_files=body.boocode_files,
         )
 
         user_profile_block = ""

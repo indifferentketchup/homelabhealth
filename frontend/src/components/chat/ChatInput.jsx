@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { FolderOpen, Plus, Search, SendHorizontal, Square, Upload, X, BookOpen } from 'lucide-react'
+import { Edit3, FolderOpen, Plus, RefreshCw, Search, SendHorizontal, Square, Upload, X, BookOpen } from 'lucide-react'
 
 import { dubdriveLs, dubdriveRead } from '@/api/dubdrive.js'
 import { toggleWebSearch } from '@/api/chats.js'
@@ -24,7 +24,11 @@ export function ChatInput({
   chatMaxW,
   hidePersonaInMenu = false,
   dawSyncFolder,
+  chatMode = 'booops',
+  boocodeFiles = [],
+  onRemoveBoocodeFile,
 }) {
+  const activeDawId = useAppStore((s) => s.activeDawId)
   const taRef = useRef(null)
   const uploadInputRef = useRef(null)
   const plusWrapRef = useRef(null)
@@ -261,6 +265,16 @@ export function ChatInput({
         onDrop={async (e) => {
           e.preventDefault()
           setIsDragOver(false)
+          const bcData = e.dataTransfer.getData('application/x-boocode-file')
+          if (bcData) {
+            try {
+              const d = JSON.parse(bcData)
+              window.dispatchEvent(new CustomEvent('boocode:attach-file', { detail: d }))
+              return
+            } catch {
+              /* fall through to regular file drop */
+            }
+          }
           const files = Array.from(e.dataTransfer.files)
           for (const file of files) {
             const text = await file.text().catch(() => null)
@@ -430,6 +444,27 @@ export function ChatInput({
             className="fs-input max-h-[calc(40dvh-2.75rem)] min-h-12 w-full resize-none overflow-y-auto border-0 bg-transparent text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
           />
         </div>
+        {boocodeFiles.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 pb-1.5 pt-0.5">
+            {boocodeFiles.map((f) => (
+              <span
+                key={`${f.dawId}:${f.path}`}
+                className="flex items-center gap-1 rounded-md border px-2 py-0.5 font-mono text-xs"
+                style={{ borderColor: 'var(--orange)', color: 'var(--orange)', background: 'var(--bg-card)' }}
+              >
+                <span className="max-w-[220px] truncate">{f.path}</span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${f.path}`}
+                  className="ml-0.5 inline-flex size-4 items-center justify-center rounded opacity-70 outline-none transition-opacity hover:opacity-100"
+                  onClick={() => onRemoveBoocodeFile?.(f.path, f.dawId)}
+                >
+                  <X className="size-3" aria-hidden />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         {attachedFiles.length > 0 && (
           <div className="flex flex-wrap gap-1.5 pb-1.5 pt-0.5">
             {attachedFiles.map((f) => (
@@ -532,6 +567,40 @@ export function ChatInput({
                 <FolderOpen className="size-4 text-muted-foreground" />
                 Browse files
               </button>
+              {chatMode === 'boocode' && activeDawId && (
+                <>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-foreground outline-none hover:bg-accent hover:text-accent-foreground"
+                    onClick={async () => {
+                      setPlusOpen(false)
+                      try {
+                        const { syncRepo } = await import('@/api/boocode.js')
+                        await syncRepo(activeDawId)
+                        setToastMsg('Sync started.')
+                      } catch (e) {
+                        setToastMsg(e?.message || 'Could not start sync.')
+                      }
+                    }}
+                  >
+                    <RefreshCw className="size-4 shrink-0 opacity-70" />
+                    Sync repo now
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-foreground outline-none hover:bg-accent hover:text-accent-foreground"
+                    onClick={() => {
+                      setPlusOpen(false)
+                      window.dispatchEvent(new CustomEvent('boocode:edit-repo-settings'))
+                    }}
+                  >
+                    <Edit3 className="size-4 shrink-0 opacity-70" />
+                    Edit repo settings
+                  </button>
+                </>
+              )}
               <button
                 type="button"
                 role="menuitem"

@@ -155,6 +155,7 @@ export function ChatView({
   const [draft, setDraft] = useState('')
   const [streamText, setStreamText] = useState('')
   const [sendError, setSendError] = useState(null)
+  const [boocodeFiles, setBoocodeFiles] = useState([])
 
   useEffect(() => {
     function onAttachChatFile(e) {
@@ -167,6 +168,25 @@ export function ChatView({
     window.addEventListener('boolab:attach-chat-file', onAttachChatFile)
     return () => window.removeEventListener('boolab:attach-chat-file', onAttachChatFile)
   }, [])
+
+  useEffect(() => {
+    if (chatMode !== 'boocode') return
+    function onAttachBoocodeFile(e) {
+      const d = e.detail || {}
+      if (!d?.path || !d?.dawId) return
+      setBoocodeFiles((prev) => {
+        if (prev.some((x) => x.path === d.path && x.dawId === d.dawId)) return prev
+        if (prev.length >= 4) return prev
+        return [...prev, { dawId: d.dawId, path: d.path, language: d.language }]
+      })
+    }
+    window.addEventListener('boocode:attach-file', onAttachBoocodeFile)
+    return () => window.removeEventListener('boocode:attach-file', onAttachBoocodeFile)
+  }, [chatMode])
+
+  const removeBoocodeFile = (path, dawId) => {
+    setBoocodeFiles((prev) => prev.filter((x) => !(x.path === path && x.dawId === dawId)))
+  }
   const { consumeStream, abort } = useStream()
   const [pendingSend, setPendingSend] = useState(false)
   const [optimisticUser, setOptimisticUser] = useState(null)
@@ -230,11 +250,15 @@ export function ChatView({
     streamingChatRef.current = chatId
     streamAssistantIndexRef.current = assistantMessageIndex
     const model = selectedModel || undefined
+    const bcFiles = chatMode === 'boocode' && boocodeFiles.length > 0
+      ? boocodeFiles.map((f) => ({ path: f.path }))
+      : null
     await consumeStream({
       url: `/api/chats/${chatId}/messages`,
       body: {
         content,
         ...(model ? { model } : {}),
+        ...(bcFiles ? { boocode_files: bcFiles } : {}),
       },
       onToken: (t) => setStreamText((x) => x + t),
       onSearchSources: (sources) => {
@@ -270,6 +294,7 @@ export function ChatView({
           setStreamingRag(null)
           setStreamText('')
           setSendError(null)
+          setBoocodeFiles([])
         })
         if (!nextData) {
           queryClient.invalidateQueries({ queryKey: ['messages', chatId] })
@@ -447,6 +472,9 @@ export function ChatView({
               chatMaxW={chatMaxW}
               hidePersonaInMenu={hidePersonaInChatInput}
               dawSyncFolder={dawSyncFolder}
+              chatMode={chatMode}
+              boocodeFiles={boocodeFiles}
+              onRemoveBoocodeFile={removeBoocodeFile}
             />
           </div>
         </div>

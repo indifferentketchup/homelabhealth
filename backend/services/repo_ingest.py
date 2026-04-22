@@ -7,10 +7,14 @@ into `repo_files`/`repo_chunks`, update sync status on `daws`.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
+import os
+import posixpath
 import time
 import uuid
+from collections import defaultdict
 from typing import Any
 
 import asyncpg
@@ -23,6 +27,75 @@ from services.embeddings import EmbeddingError, embed_batch, format_vector
 logger = logging.getLogger(__name__)
 
 MAX_FILES_PER_SYNC = 1000
+
+ALLOWED_REPO_PREFIX = os.environ.get("BOOCODE_ALLOWED_REPO_PREFIX", "/HomeLabRepos/")
+MAX_REPO_PATH_LEN = 512
+MAX_REL_PATH_LEN = 1024
+
+
+_progress_subscribers: dict[str, set[asyncio.Queue]] = defaultdict(set)
+
+
+def _emit_progress(daw_id, payload: dict) -> None:
+    key = str(daw_id)
+    dead: list[asyncio.Queue] = []
+    for q in list(_progress_subscribers.get(key, set())):
+        try:
+            q.put_nowait(payload)
+        except Exception:
+            dead.append(q)
+    for q in dead:
+        _progress_subscribers[key].discard(q)
+
+
+def subscribe_progress(daw_id) -> asyncio.Queue:
+    q: asyncio.Queue = asyncio.Queue(maxsize=128)
+    _progress_subscribers[str(daw_id)].add(q)
+    return q
+
+
+def unsubscribe_progress(daw_id, q: asyncio.Queue) -> None:
+    _progress_subscribers[str(daw_id)].discard(q)
+
+
+def validate_repo_path(path: str) -> str:
+    """Validate a DubDrive repo root path. Returns normalized path or raises ValueError."""
+    if not isinstance(path, str):
+        raise ValueError("repo_path must be a string")
+    p = path.strip()
+    if not p:
+        raise ValueError("repo_path is required")
+    if len(p) > MAX_REPO_PATH_LEN:
+        raise ValueError(f"repo_path exceeds {MAX_REPO_PATH_LEN} chars")
+    if "\x00" in p:
+        raise ValueError("repo_path contains null byte")
+    if not p.startswith(ALLOWED_REPO_PREFIX):
+        raise ValueError(f"repo_path must start with {ALLOWED_REPO_PREFIX}")
+    if ".." in p.split("/"):
+        raise ValueError("repo_path contains '..'")
+    if len(p) > len(ALLOWED_REPO_PREFIX) and p.endswith("/"):
+        p = p.rstrip("/")
+    return p
+
+
+def validate_relative_file_path(rel: str) -> str:
+    """Validate a relative path inside a repo. Returns normalized rel path or raises ValueError."""
+    if not isinstance(rel, str):
+        raise ValueError("path must be a string")
+    if not rel:
+        raise ValueError("path is required")
+    if len(rel) > MAX_REL_PATH_LEN:
+        raise ValueError(f"path exceeds {MAX_REL_PATH_LEN} chars")
+    if "\x00" in rel:
+        raise ValueError("path contains null byte")
+    if rel.startswith("/"):
+        raise ValueError("path must be relative (no leading '/')")
+    norm = posixpath.normpath(rel)
+    if norm.startswith("/") or norm.startswith("../") or norm in ("..", ".", "/"):
+        raise ValueError("path traversal detected")
+    if any(part == ".." for part in norm.split("/")):
+        raise ValueError("path contains '..'")
+    return norm
 
 
 async def list_repo_files(repo_path: str) -> list[dict[str, Any]]:
@@ -154,7 +227,7 @@ async def sync_daw_repo(daw_id: uuid.UUID) -> dict[str, Any]:
 
     async with pool.acquire() as conn:
         daw_row = await conn.fetchrow(
-            "SELECT repo_path, repo_sync_status FROM daws WHERE id = $1::uuid",
+            "SELECT repo_path, repo_branch, repo_sync_status FROM daws WHERE id = $1::uuid",
             daw_id,
         )
         if daw_row is None:
@@ -162,6 +235,7 @@ async def sync_daw_repo(daw_id: uuid.UUID) -> dict[str, Any]:
         repo_path = daw_row["repo_path"]
         if not repo_path or not str(repo_path).strip():
             return {"status": "error", "error": "no_repo_path"}
+        branch = daw_row["repo_branch"] or "main"
 
         # Atomic claim: only set to syncing if not already syncing.
         claim = await conn.execute(
@@ -175,10 +249,16 @@ async def sync_daw_repo(daw_id: uuid.UUID) -> dict[str, Any]:
         if claim.split()[-1] == "0":
             return {"status": "error", "error": "already_syncing"}
 
+    _emit_progress(daw_id, {"event": "start", "repo_path": repo_path, "branch": branch})
+
     deleted_count = 0
+    files_done = 0
+    files_total = 0
+    chunks_total = 0
     try:
         files = await list_repo_files(str(repo_path).strip())
         remote_paths = {f["path"] for f in files}
+        files_total = len(files)
 
         async with pool.acquire() as conn:
             existing_rows = await conn.fetch(
@@ -204,23 +284,39 @@ async def sync_daw_repo(daw_id: uuid.UUID) -> dict[str, Any]:
             size = int(f.get("size") or 0)
             content = await fetch_file_content(path)
             if content is None:
+                files_done += 1
+                _emit_progress(daw_id, {
+                    "event": "progress",
+                    "files_done": files_done,
+                    "files_total": files_total,
+                    "chunks_total": chunks_total,
+                    "current_file": path,
+                })
                 continue
             try:
                 async with pool.acquire() as conn:
                     async with conn.transaction():
-                        status, _cc = await ingest_file(conn, daw_id, path, content, size)
+                        status, file_cc = await ingest_file(conn, daw_id, path, content, size)
                 if status == "added":
                     added += 1
                 elif status == "updated":
                     updated += 1
                 elif status == "skipped":
                     skipped += 1
+                chunks_total += int(file_cc or 0)
             except EmbeddingError as e:
                 logger.warning("skipping %s due to embedding failure: %s", path, e)
-                continue
             except Exception as e:
                 logger.exception("ingest_file failed for %s: %s", path, e)
-                continue
+            finally:
+                files_done += 1
+                _emit_progress(daw_id, {
+                    "event": "progress",
+                    "files_done": files_done,
+                    "files_total": files_total,
+                    "chunks_total": chunks_total,
+                    "current_file": path,
+                })
 
         async with pool.acquire() as conn:
             agg = await conn.fetchrow(
@@ -246,6 +342,12 @@ async def sync_daw_repo(daw_id: uuid.UUID) -> dict[str, Any]:
                 cc,
             )
 
+        _emit_progress(daw_id, {
+            "event": "done",
+            "files_total": fc,
+            "chunks_total": cc,
+        })
+
         return {
             "status": "ok",
             "files_added": added,
@@ -269,4 +371,5 @@ async def sync_daw_repo(daw_id: uuid.UUID) -> dict[str, Any]:
                 daw_id,
                 str(e)[:500],
             )
+        _emit_progress(daw_id, {"event": "error", "detail": str(e)[:500]})
         return {"status": "error", "error": str(e)[:500]}
