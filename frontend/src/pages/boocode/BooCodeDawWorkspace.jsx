@@ -24,13 +24,28 @@ export default function BooCodeDawWorkspace() {
   }, [dawId, setActiveDawId, setActiveChatId])
 
   // The base boocode bg (#0a0604) mixed with N% opacity — higher alpha → more
-  // solid panel, lower alpha → more matrix rain bleeding through.
+  // solid panel, lower alpha → more matrix rain bleeding through. Exposed as
+  // --bg/--background via inline CSS vars on the workspace div so Tailwind
+  // `bg-background` / `bg-card` on descendants (ChatView, MessageBubble, etc.)
+  // inherit the rgba and don't stay opaque from applyBrandingCss's root-inline.
   const chatBg = `color-mix(in srgb, #0a0604 ${Math.round(chatBgOpacity * 100)}%, transparent)`
   const panelBg = `color-mix(in srgb, #120a06 ${Math.round(chatBgOpacity * 100)}%, transparent)`
+  const cardBg = `color-mix(in srgb, #1a0e08 ${Math.round(chatBgOpacity * 100)}%, transparent)`
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden"
-         style={{ color: 'var(--text)' }}>
+    <div
+      className="flex h-full min-h-0 flex-1 flex-col overflow-hidden"
+      style={{
+        color: 'var(--text)',
+        '--bg': chatBg,
+        '--background': chatBg,
+        '--bg-panel': panelBg,
+        '--popover': panelBg,
+        '--muted': panelBg,
+        '--bg-card': cardBg,
+        '--card': cardBg,
+      }}
+    >
       <RepoStatusBar dawId={dawId} />
       <div className="flex min-h-0 flex-1 flex-row overflow-hidden">
         <section className="boocode-terminal-frame flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
