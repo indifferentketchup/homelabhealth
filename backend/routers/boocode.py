@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import posixpath
 import time
@@ -10,6 +11,7 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from auth_deps import get_principal
@@ -17,7 +19,9 @@ from db import get_pool
 from routers.dubdrive_sync import _dubdrive_read_bytes
 from services import code_chunker
 from services.repo_ingest import (
+    subscribe_progress,
     sync_daw_repo,
+    unsubscribe_progress,
     validate_relative_file_path,
     validate_repo_path,
 )
@@ -544,3 +548,50 @@ async def repo_chunks_for_file(
     if line is not None:
         symbols = [s for s in symbols if s["line_start"] <= line <= (s["line_end"] or s["line_start"])]
     return {"daw_id": str(daw_id), "path": rel, "symbols": symbols}
+
+
+@router.get("/daws/{daw_id}/sync/stream")
+async def repo_sync_stream(
+    daw_id: uuid.UUID,
+    _: dict = Depends(get_principal),
+) -> StreamingResponse:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        if not await _daw_exists(conn, daw_id):
+            raise HTTPException(status_code=404, detail="daw_not_found")
+
+    q = subscribe_progress(daw_id)
+
+    async def gen():
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT repo_sync_status, repo_file_count, repo_chunk_count "
+                "FROM daws WHERE id = $1::uuid",
+                daw_id,
+            )
+        if row:
+            snap = {
+                "event": "snapshot",
+                "status": row["repo_sync_status"] or "idle",
+                "files_total": int(row["repo_file_count"] or 0),
+                "chunks_total": int(row["repo_chunk_count"] or 0),
+            }
+            yield f"data: {json.dumps(snap)}\n\n"
+        try:
+            deadline = asyncio.get_event_loop().time() + 600
+            while asyncio.get_event_loop().time() < deadline:
+                try:
+                    payload = await asyncio.wait_for(q.get(), timeout=15.0)
+                    yield f"data: {json.dumps(payload)}\n\n"
+                    if payload.get("event") in ("done", "error"):
+                        break
+                except asyncio.TimeoutError:
+                    yield ": keep-alive\n\n"
+        finally:
+            unsubscribe_progress(daw_id, q)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
