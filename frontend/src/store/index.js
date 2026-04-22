@@ -121,7 +121,9 @@ export const useAppStore = create((set, get) => ({
   setMode: (mode) =>
     set({
       mode:
-        mode === 'booops' || mode === '808notes' || mode === 'boolab' ? mode : 'boolab',
+        mode === 'booops' || mode === '808notes' || mode === 'boolab' || mode === 'boocode'
+          ? mode
+          : 'boolab',
     }),
 
   chats: [],
