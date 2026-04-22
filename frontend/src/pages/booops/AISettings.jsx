@@ -348,6 +348,19 @@ export default function AISettings() {
   const queryClient = useQueryClient()
   const setPersonas = useAppStore((s) => s.setPersonas)
   const setActivePersonaId = useAppStore((s) => s.setActivePersonaId)
+  const storeMode = useAppStore((s) => s.mode)
+  const currentMode =
+    storeMode === '808notes' ? '808notes'
+    : storeMode === 'boocode' ? 'boocode'
+    : 'booops'
+  const currentModeLabel =
+    currentMode === '808notes' ? '808notes'
+    : currentMode === 'boocode' ? 'BooCode'
+    : 'BooOps'
+  const currentDefaultKey =
+    currentMode === '808notes' ? 'is_default_808notes'
+    : currentMode === 'boocode' ? 'is_default_boocode'
+    : 'is_default_booops'
   const [tab, setTab] = useState('personas')
   /** BooOps vs 808notes for memory blob + semantic facts on the Memory tab */
   const [memoryTabMode, setMemoryTabMode] = useState('booops')
@@ -554,10 +567,10 @@ export default function AISettings() {
   })
 
   const setDefaultPersona = useMutation({
-    mutationFn: (id) => updatePersona(id, { is_default_booops: true }),
+    mutationFn: (id) => updatePersona(id, { [currentDefaultKey]: true }),
     onSuccess: async () => {
       await invalidatePersonas()
-      const def = useAppStore.getState().personas.find((p) => p.is_default_booops)
+      const def = useAppStore.getState().personas.find((p) => p[currentDefaultKey])
       if (def) setActivePersonaId(def.id)
     },
   })
@@ -815,6 +828,11 @@ export default function AISettings() {
                             Default (808notes)
                           </span>
                         )}
+                        {p.is_default_boocode && (
+                          <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
+                            Default (BooCode)
+                          </span>
+                        )}
                       </div>
                       <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">{p.system_prompt || '—'}</p>
                     </div>
@@ -822,7 +840,7 @@ export default function AISettings() {
                       <Button type="button" size="sm" variant="secondary" onClick={() => openEditPersona(p)}>
                         Edit
                       </Button>
-                      {!p.is_default_booops && (
+                      {!p[currentDefaultKey] && (
                         <Button
                           type="button"
                           size="sm"
@@ -830,14 +848,14 @@ export default function AISettings() {
                           onClick={() => setDefaultPersona.mutate(p.id)}
                           disabled={setDefaultPersona.isPending}
                         >
-                          Set BooOps default
+                          Set {currentModeLabel} default
                         </Button>
                       )}
                       <Button
                         type="button"
                         size="sm"
                         variant="destructive"
-                        disabled={p.is_default_booops || p.is_default_808notes}
+                        disabled={p.is_default_booops || p.is_default_808notes || p.is_default_boocode}
                         onClick={() => delPersona.mutate(p.id)}
                       >
                         Delete

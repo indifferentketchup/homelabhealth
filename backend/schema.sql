@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS personas (
     avatar_emoji TEXT DEFAULT '🤖',
     is_default_booops BOOLEAN DEFAULT FALSE,
     is_default_808notes BOOLEAN DEFAULT FALSE,
+    is_default_boocode BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -246,6 +247,7 @@ BEGIN
   UPDATE personas SET avatar_emoji = COALESCE(NULLIF(trim(avatar_emoji), ''), '🤖') WHERE avatar_emoji IS NULL;
   ALTER TABLE personas ADD COLUMN IF NOT EXISTS is_default_booops BOOLEAN DEFAULT FALSE;
   ALTER TABLE personas ADD COLUMN IF NOT EXISTS is_default_808notes BOOLEAN DEFAULT FALSE;
+  ALTER TABLE personas ADD COLUMN IF NOT EXISTS is_default_boocode BOOLEAN DEFAULT FALSE;
   ALTER TABLE personas ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
   IF EXISTS (
@@ -265,6 +267,7 @@ BEGIN
 
   DROP INDEX IF EXISTS personas_one_default_booops_idx;
   DROP INDEX IF EXISTS personas_one_default_808notes_idx;
+  DROP INDEX IF EXISTS personas_one_default_boocode_idx;
 
   IF NOT EXISTS (SELECT 1 FROM personas WHERE name = 'BooOps') THEN
     INSERT INTO personas (name, system_prompt, avatar_emoji, is_default_booops, is_default_808notes)
@@ -298,6 +301,7 @@ BEGIN
   UPDATE personas SET is_default_808notes = TRUE WHERE name = '808notes';
   CREATE UNIQUE INDEX IF NOT EXISTS personas_one_default_booops_idx ON personas ((1)) WHERE is_default_booops = TRUE;
   CREATE UNIQUE INDEX IF NOT EXISTS personas_one_default_808notes_idx ON personas ((1)) WHERE is_default_808notes = TRUE;
+  CREATE UNIQUE INDEX IF NOT EXISTS personas_one_default_boocode_idx ON personas ((1)) WHERE is_default_boocode = TRUE;
 END
 $personas_global$;
 

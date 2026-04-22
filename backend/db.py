@@ -26,6 +26,7 @@ BEGIN
   ) THEN
     ALTER TABLE personas ADD COLUMN IF NOT EXISTS is_default_booops BOOLEAN DEFAULT FALSE;
     ALTER TABLE personas ADD COLUMN IF NOT EXISTS is_default_808notes BOOLEAN DEFAULT FALSE;
+    ALTER TABLE personas ADD COLUMN IF NOT EXISTS is_default_boocode BOOLEAN DEFAULT FALSE;
     IF EXISTS (
       SELECT 1 FROM information_schema.columns
       WHERE table_schema = 'public' AND table_name = 'personas' AND column_name = 'is_default'

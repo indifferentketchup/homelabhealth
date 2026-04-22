@@ -37,6 +37,7 @@ function loadUserProfileFromStorage() {
 export function defaultPersonaForAppMode(personas, appMode) {
   const list = Array.isArray(personas) ? personas : []
   if (appMode === '808notes') return list.find((x) => x.is_default_808notes) ?? null
+  if (appMode === 'boocode') return list.find((x) => x.is_default_boocode) ?? null
   return list.find((x) => x.is_default_booops) ?? null
 }
 
