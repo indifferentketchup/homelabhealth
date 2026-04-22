@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import posixpath
 import uuid
 from typing import Any
 
@@ -14,7 +15,11 @@ from auth_deps import get_principal
 from db import get_pool
 from routers.dubdrive_sync import _dubdrive_read_bytes
 from services import code_chunker
-from services.repo_ingest import sync_daw_repo
+from services.repo_ingest import (
+    sync_daw_repo,
+    validate_relative_file_path,
+    validate_repo_path,
+)
 
 router = APIRouter(prefix="/boocode", tags=["boocode"])
 logger = logging.getLogger(__name__)
@@ -212,12 +217,29 @@ async def repo_file(
     path: str = Query(..., min_length=1),
     _: dict = Depends(get_principal),
 ) -> dict[str, Any]:
+    try:
+        rel = validate_relative_file_path(path)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     pool = await get_pool()
     async with pool.acquire() as conn:
-        if not await _daw_exists(conn, daw_id):
+        daw_row = await conn.fetchrow(
+            "SELECT repo_path FROM daws WHERE id = $1::uuid", daw_id
+        )
+        if daw_row is None:
             raise HTTPException(status_code=404, detail="daw_not_found")
+        repo_root = (daw_row["repo_path"] or "").strip()
+        if not repo_root:
+            raise HTTPException(status_code=400, detail="no_repo_path")
 
-    raw = await _dubdrive_read_bytes(path)
+    try:
+        repo_root = validate_repo_path(repo_root)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"invalid repo_path: {e}")
+
+    full_path = posixpath.join(repo_root, rel)
+    raw = await _dubdrive_read_bytes(full_path)
     if raw is None:
         raise HTTPException(status_code=404, detail="file_not_found")
     if len(raw) > code_chunker.MAX_FILE_BYTES:
@@ -229,8 +251,8 @@ async def repo_file(
     except UnicodeDecodeError:
         content = raw.decode("latin-1", errors="replace")
     return {
-        "path": path,
-        "language": code_chunker.resolve_language(path),
+        "path": rel,
+        "language": code_chunker.resolve_language(rel),
         "size": len(raw),
         "content": content,
     }
@@ -258,7 +280,13 @@ async def repo_update(
         new_path = row["repo_path"]
         if "repo_path" in data:
             v = data["repo_path"]
-            new_path = (str(v).strip() or None) if v is not None else None
+            if v is None or not str(v).strip():
+                new_path = None
+            else:
+                try:
+                    new_path = validate_repo_path(str(v))
+                except ValueError as e:
+                    raise HTTPException(status_code=400, detail=str(e))
 
         new_branch = row["repo_branch"] or "main"
         if "repo_branch" in data:

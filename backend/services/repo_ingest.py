@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
+import posixpath
 import time
 import uuid
 from typing import Any
@@ -23,6 +25,50 @@ from services.embeddings import EmbeddingError, embed_batch, format_vector
 logger = logging.getLogger(__name__)
 
 MAX_FILES_PER_SYNC = 1000
+
+ALLOWED_REPO_PREFIX = os.environ.get("BOOCODE_ALLOWED_REPO_PREFIX", "/HomeLabRepos/")
+MAX_REPO_PATH_LEN = 512
+MAX_REL_PATH_LEN = 1024
+
+
+def validate_repo_path(path: str) -> str:
+    """Validate a DubDrive repo root path. Returns normalized path or raises ValueError."""
+    if not isinstance(path, str):
+        raise ValueError("repo_path must be a string")
+    p = path.strip()
+    if not p:
+        raise ValueError("repo_path is required")
+    if len(p) > MAX_REPO_PATH_LEN:
+        raise ValueError(f"repo_path exceeds {MAX_REPO_PATH_LEN} chars")
+    if "\x00" in p:
+        raise ValueError("repo_path contains null byte")
+    if not p.startswith(ALLOWED_REPO_PREFIX):
+        raise ValueError(f"repo_path must start with {ALLOWED_REPO_PREFIX}")
+    if ".." in p.split("/"):
+        raise ValueError("repo_path contains '..'")
+    if len(p) > len(ALLOWED_REPO_PREFIX) and p.endswith("/"):
+        p = p.rstrip("/")
+    return p
+
+
+def validate_relative_file_path(rel: str) -> str:
+    """Validate a relative path inside a repo. Returns normalized rel path or raises ValueError."""
+    if not isinstance(rel, str):
+        raise ValueError("path must be a string")
+    if not rel:
+        raise ValueError("path is required")
+    if len(rel) > MAX_REL_PATH_LEN:
+        raise ValueError(f"path exceeds {MAX_REL_PATH_LEN} chars")
+    if "\x00" in rel:
+        raise ValueError("path contains null byte")
+    if rel.startswith("/"):
+        raise ValueError("path must be relative (no leading '/')")
+    norm = posixpath.normpath(rel)
+    if norm.startswith("/") or norm.startswith("../") or norm in ("..", ".", "/"):
+        raise ValueError("path traversal detected")
+    if any(part == ".." for part in norm.split("/")):
+        raise ValueError("path contains '..'")
+    return norm
 
 
 async def list_repo_files(repo_path: str) -> list[dict[str, Any]]:
