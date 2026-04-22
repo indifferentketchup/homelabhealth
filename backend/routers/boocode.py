@@ -348,6 +348,32 @@ def _item_is_dir(item: dict[str, Any]) -> bool:
     )
 
 
+def _branch_name_safe(n: str | None) -> bool:
+    """Guard a single-segment loose-ref branch name coming from a
+    (potentially hostile) DubDrive /api/ls response. Rejects slashes, null
+    bytes, empty strings, and the traversal tokens ``.`` / ``..``."""
+    if not n or not isinstance(n, str):
+        return False
+    if "/" in n or "\x00" in n:
+        return False
+    if n in (".", "..", ""):
+        return False
+    return True
+
+
+def _packed_ref_name_safe(n: str) -> bool:
+    """Relaxed guard for branch names parsed out of ``packed-refs``. Slashes
+    are permitted (e.g. ``release/1.0``), but null bytes and any ``.`` / ``..``
+    segment are not."""
+    if not n or not isinstance(n, str):
+        return False
+    if "\x00" in n:
+        return False
+    if any(part in ("", ".", "..") for part in n.split("/")):
+        return False
+    return True
+
+
 async def _dubdrive_list_branches(repo_root: str) -> list[str] | None:
     """List branch names for a DubDrive-hosted git repo via the DubDrive
     /api/ls + /api/read HTTP surface.
@@ -381,7 +407,9 @@ async def _dubdrive_list_branches(repo_root: str) -> list[str] | None:
                 if not isinstance(it, dict):
                     continue
                 name = _item_name(it)
-                if not name:
+                # Reject hostile/broken names before using them in a
+                # DubDrive path or as a branch segment.
+                if not _branch_name_safe(name):
                     continue
                 if _item_is_dir(it):
                     # Recurse one level for `release/1.0` style names.
@@ -392,7 +420,9 @@ async def _dubdrive_list_branches(repo_root: str) -> list[str] | None:
                         sname = _item_name(s)
                         # Only include files one level down; deeper nesting is
                         # rare and can be added later if needed.
-                        if sname and not _item_is_dir(s):
+                        if not _branch_name_safe(sname):
+                            continue
+                        if not _item_is_dir(s):
                             layout_names.add(f"{name}/{sname}")
                     continue
                 layout_names.add(name)
@@ -410,7 +440,13 @@ async def _dubdrive_list_branches(repo_root: str) -> list[str] | None:
                     continue
                 _, ref = parts
                 if ref.startswith("refs/heads/"):
-                    layout_names.add(ref[len("refs/heads/"):].strip())
+                    branch = ref[len("refs/heads/"):].strip()
+                    # packed-refs legitimately contains slashes (e.g.
+                    # ``release/1.0``) but null bytes and ``..`` segments are
+                    # never valid here.
+                    if not _packed_ref_name_safe(branch):
+                        continue
+                    layout_names.add(branch)
 
         if layout_found:
             # Prefer the first layout that returned anything — don't merge
