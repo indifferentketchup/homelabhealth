@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import posixpath
+import subprocess
+import time
 import uuid
 from typing import Any
 
@@ -314,3 +316,65 @@ async def repo_update(
         "repo_branch": new_branch,
         "repo_auto_sync": new_auto,
     }
+
+
+_branches_cache: dict[str, tuple[float, list[str]]] = {}
+_BRANCHES_TTL = 60.0
+
+
+def _git_list_branches_blocking(path: str, timeout: float = 10.0) -> list[str] | None:
+    try:
+        r = subprocess.run(
+            ["git", "ls-remote", "--heads", path],
+            capture_output=True, text=True,
+            timeout=timeout, check=False,
+        )
+    except FileNotFoundError:
+        return None
+    except subprocess.TimeoutExpired:
+        return []
+    if r.returncode != 0:
+        return []
+    names: list[str] = []
+    for line in (r.stdout or "").splitlines():
+        _, _, ref = line.partition("\t")
+        if ref.startswith("refs/heads/"):
+            names.append(ref[len("refs/heads/"):].strip())
+    names.sort()
+    return names
+
+
+@router.get("/daws/{daw_id}/branches")
+async def repo_branches(
+    daw_id: uuid.UUID,
+    _: dict = Depends(get_principal),
+) -> dict[str, Any]:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT repo_path FROM daws WHERE id = $1::uuid", daw_id
+        )
+        if row is None:
+            raise HTTPException(status_code=404, detail="daw_not_found")
+        repo_root = (row["repo_path"] or "").strip()
+        if not repo_root:
+            raise HTTPException(status_code=400, detail="no_repo_path")
+    try:
+        repo_root = validate_repo_path(repo_root)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"invalid repo_path: {e}")
+
+    cached = _branches_cache.get(repo_root)
+    now = time.time()
+    if cached and (now - cached[0] < _BRANCHES_TTL):
+        return {"branches": cached[1], "cached": True}
+
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, _git_list_branches_blocking, repo_root, 10.0)
+
+    if result is None:
+        return {"branches": ["main"], "fallback": True}
+    if not result:
+        return {"branches": ["main"], "fallback": True}
+    _branches_cache[repo_root] = (now, result)
+    return {"branches": result}
