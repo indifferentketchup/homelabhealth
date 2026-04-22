@@ -75,6 +75,28 @@ export function notes808DawPath(dawId, suffix = '') {
 }
 
 /**
+ * BooCode DAW workspace path (baked root `/daw/:id` or legacy `/boocode/daw/:id`).
+ * @param {string} dawId
+ */
+export function boocodeDawPath(dawId) {
+  const id = String(dawId ?? '').replace(/^\/+|\/+$/g, '')
+  if (!id) return PATH_BOOCODE_HOME
+  const base = PATH_BOOCODE.replace(/\/$/, '')
+  return base ? `${base}/daw/${id}` : `/daw/${id}`
+}
+
+/**
+ * BooOps DAW chat path (baked root `/daw/:id` or legacy `/booops/daw/:id`).
+ * @param {string} dawId
+ */
+export function booopsDawPath(dawId) {
+  const id = String(dawId ?? '').replace(/^\/+|\/+$/g, '')
+  if (!id) return PATH_BOOOPS_HOME
+  const base = PATH_BOOOPS.replace(/\/$/, '')
+  return base ? `${base}/daw/${id}` : `/daw/${id}`
+}
+
+/**
  * Mode from path prefix only (`/booops/...`, `/808notes/...`, `/boolab/...`, `/boocode/...`).
  * Does not treat `/` — use full `detectMode` for that.
  * @returns {'booops' | '808notes' | 'boolab' | 'boocode' | null}

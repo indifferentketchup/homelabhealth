@@ -37,6 +37,8 @@ import {
   PATH_BOOCODE_HOME,
   PATH_BOOOPS,
   PATH_BOOOPS_HOME,
+  boocodeDawPath,
+  booopsDawPath,
   getBoolabHubHref,
   isHttpUrl,
   notes808DawPath,
@@ -209,10 +211,17 @@ export function Sidebar({
   const desktopCollapsed = !isMobile && !sidebarOpen
 
   function notes808WorkspaceChatPath() {
-    if (appMode === 'boocode') return PATH_BOOCODE_HOME
-    if (appMode !== '808notes') return PATH_BOOOPS_HOME
-    if (activeDawId) return notes808DawPath(activeDawId)
-    return PATH_808NOTES_HOME
+    if (appMode === 'boocode') {
+      if (activeDawId) return boocodeDawPath(activeDawId)
+      return PATH_BOOCODE_HOME
+    }
+    if (appMode === '808notes') {
+      if (activeDawId) return notes808DawPath(activeDawId)
+      return PATH_808NOTES_HOME
+    }
+    // booops
+    if (activeDawId) return booopsDawPath(activeDawId)
+    return PATH_BOOOPS_HOME
   }
 
   function goHome() {
