@@ -692,15 +692,18 @@ async def create_chat(body: ChatCreate, principal: dict[str, Any] = Depends(get_
             """
             INSERT INTO chats (title, daw_id, mode, model, web_search_enabled, rag_enabled, persona_id, owner_id)
             VALUES ($1, $2, $3,
-                COALESCE($4, (
-                    SELECT value FROM global_settings WHERE key = (
+                COALESCE(
+                    $4,
+                    (SELECT NULLIF(TRIM(model), '') FROM daws WHERE id = $2::uuid),
+                    (SELECT value FROM global_settings WHERE key = (
                         CASE
                             WHEN $3::text = '808notes' THEN 'default_model_808notes'
                             WHEN $3::text = 'boocode' THEN 'default_model_boocode'
                             ELSE 'default_model'
                         END
-                    ) LIMIT 1
-                ), $6),
+                    ) LIMIT 1),
+                    $6
+                ),
                 COALESCE($5, FALSE),
                 $9,
                 $7,
