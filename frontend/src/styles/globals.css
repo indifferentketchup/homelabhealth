@@ -163,6 +163,93 @@ input, textarea, select {
   border-color: var(--accent);
 }
 
+:root[data-mode='boocode'] {
+  --font-body: 'JetBrains Mono', monospace;
+  --font-mono: 'JetBrains Mono', monospace;
+  --font-display: 'Orbitron', sans-serif;
+  --font-size-base: 15px;
+  --fs-nav: 13px;
+  --fs-chat: 15px;
+  --fs-input: 14px;
+  --fs-heading: 18px;
+  --fs-code: 13px;
+  --sidebar-width: 260px;
+  --chat-max-w: 1200px;
+  --chat-max-width: 1200px;
+  font-size: var(--font-size-base);
+
+  --orange: #f97316;
+  --amber: #fbbf24;
+  --rust: #c2410c;
+  --accent: var(--orange);
+  --accent-bright: var(--amber);
+  --accent-dim: #7c2d12;
+  --accent-2: var(--amber);
+  --accent-3: var(--rust);
+  --bg: #0a0604;
+  --bg-panel: #120a06;
+  --bg-card: #1a0e08;
+  --bg-hover: #241408;
+  --text: #f5e6d3;
+  --text-dim: #9a7a5a;
+  --text-muted: #5a4530;
+  --border: #3a1f0c;
+  --border-bright: #4a2d14;
+  --line: var(--border);
+  --line-hi: var(--border-bright);
+  --glow-orange: 0 0 24px color-mix(in srgb, var(--orange) 32%, transparent);
+  --glow-soft: 0 0 40px color-mix(in srgb, var(--orange) 14%, transparent);
+  --glow: var(--glow-orange);
+
+  --background: var(--bg);
+  --foreground: var(--text);
+  --card: var(--bg-card);
+  --card-foreground: var(--text);
+  --popover: var(--bg-panel);
+  --popover-foreground: var(--text);
+  --primary: var(--accent);
+  --primary-foreground: #0a0604;
+  --secondary: var(--bg-hover);
+  --secondary-foreground: var(--text);
+  --muted: var(--bg-panel);
+  --muted-foreground: var(--text-dim);
+  --accent-foreground: #0a0604;
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: #f5e6d3;
+  --input: var(--border-bright);
+  --ring: var(--accent);
+  --sidebar: var(--bg-panel);
+  --sidebar-foreground: var(--text);
+  --sidebar-primary: var(--accent);
+  --sidebar-primary-foreground: #0a0604;
+  --sidebar-accent: var(--bg-hover);
+  --sidebar-accent-foreground: var(--text);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--accent);
+  --success: #34d399;
+}
+
+:root[data-mode='boocode'] .boocode-display {
+  font-family: var(--font-display), sans-serif;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+:root[data-mode='boocode'] .boocode-breadcrumb {
+  font-family: var(--font-display), sans-serif;
+  font-size: 0.6875rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--orange);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--orange) 40%, transparent);
+}
+
+:root[data-mode='boocode'] .boocode-terminal-frame {
+  border: 1px solid var(--line);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--orange) 5%, transparent),
+              0 0 0 1px var(--bg);
+}
+
 :root[data-mode='boolab'] {
   --font-body: 'Rajdhani', sans-serif;
   --font-mono: 'Fira Code', monospace;
