@@ -145,22 +145,32 @@ function useAppBrandingMode() {
 export default function SettingsPage({ mode: initialMode = 'booops', onClose }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const settingsTabs = useMemo(() => [...TABS], [])
+  /** Branding on this page ALWAYS targets the current site. Editing BooOps from
+   *  the 808notes URL (or vice-versa) used to leak the booops palette into
+   *  808notes' live DOM via `applyBrandingCss(..., 'booops')`. Lock the target
+   *  to `initialMode` (the mode the settings route was opened from). BooCode
+   *  has no stored branding row, so we hide the branding tab entirely. */
+  const selectedMode = initialMode === '808notes' ? '808notes' : initialMode === 'boocode' ? 'boocode' : 'booops'
+  const settingsTabs = useMemo(
+    () => (selectedMode === 'boocode' ? TABS.filter((t) => t.id !== 'branding') : [...TABS]),
+    [selectedMode],
+  )
   const storeBrandingMode = useAppBrandingMode()
-  /** Host shell for this settings surface (Notes808 passes `808notes`); avoids live layout preview using a stale Zustand `mode`. */
-  const appBrandingMode = initialMode === '808notes' ? '808notes' : storeBrandingMode
-  const [selectedMode, setSelectedMode] = useState(initialMode === '808notes' ? '808notes' : 'booops')
+  /** Host shell for this settings surface — matches `selectedMode` for booops/808notes. */
+  const appBrandingMode =
+    selectedMode === '808notes' ? '808notes' : selectedMode === 'booops' ? 'booops' : storeBrandingMode
   const [brandingSaveError, setBrandingSaveError] = useState(null)
   const [glyphMenu, setGlyphMenu] = useState(null)
   const glyphMenuRef = useRef(null)
   const [tab, setTabState] = useState(() => {
+    const fallback = selectedMode === 'boocode' ? 'colors' : 'branding'
     try {
       const v = localStorage.getItem('boolab-settings-tab')
-      if (v && TABS.some((t) => t.id === v)) return v
+      if (v && settingsTabs.some((t) => t.id === v)) return v
     } catch {
       /* ignore */
     }
-    return 'branding'
+    return fallback
   })
 
   const setTab = useCallback((id) => {
@@ -178,8 +188,12 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
   }, [onClose, navigate])
 
   useEffect(() => {
-    if (initialMode === '808notes') setSelectedMode('808notes')
-  }, [initialMode])
+    // If the current tab was hidden by a selectedMode change (e.g. 'branding' on
+    // boocode), fall back to a visible one.
+    if (!settingsTabs.some((t) => t.id === tab)) {
+      setTabState(settingsTabs[0]?.id || 'colors')
+    }
+  }, [settingsTabs, tab])
 
   useEffect(() => {
     if (!onClose) return
@@ -248,27 +262,6 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
   const brandingDefaults = useMemo(
     () => (selectedMode === '808notes' ? DEFAULT_808NOTES_BRANDING : DEFAULT_BOOOPS_BRANDING),
     [selectedMode],
-  )
-
-  const booopsCardGlyphName = useMemo(() => {
-    const row = booopsConfigRow && typeof booopsConfigRow === 'object' ? booopsConfigRow : null
-    const name = row ? patchBranding(null, row).appGlyphIcon : null
-    return typeof name === 'string' && name.trim() ? name.trim() : DEFAULT_BOOOPS_BRANDING.appGlyphIcon
-  }, [booopsConfigRow])
-
-  const notes808CardGlyphName = useMemo(() => {
-    const row = notes808ConfigRow && typeof notes808ConfigRow === 'object' ? notes808ConfigRow : null
-    const name = row ? patch808notesBranding(null, row).appGlyphIcon : null
-    return typeof name === 'string' && name.trim() ? name.trim() : DEFAULT_808NOTES_BRANDING.appGlyphIcon
-  }, [notes808ConfigRow])
-
-  const BooopsCardGlyph = useMemo(
-    () => lucideGlyphComponent(booopsCardGlyphName, DEFAULT_BOOOPS_BRANDING.appGlyphIcon),
-    [booopsCardGlyphName],
-  )
-  const Notes808CardGlyph = useMemo(
-    () => lucideGlyphComponent(notes808CardGlyphName, DEFAULT_808NOTES_BRANDING.appGlyphIcon),
-    [notes808CardGlyphName],
   )
 
   const [localBranding, setLocalBranding] = useState(() => ({ ...DEFAULT_BOOOPS_BRANDING }))
@@ -556,84 +549,35 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
         ) : null}
       </div>
 
-      <div className="shrink-0 border-b border-border px-4 pb-4 pt-2">
-        <p className="mb-2 text-xs text-muted-foreground">Branding target</p>
-        <div className="flex flex-wrap gap-3">
-          <button
-            type="button"
-            disabled={initialMode === '808notes'}
-            onClick={() => setSelectedMode('booops')}
-            onContextMenu={(e) => {
-              if (initialMode === '808notes') return
-              e.preventDefault()
-              setGlyphMenu({ mode: 'booops', x: e.clientX, y: e.clientY })
-            }}
-            title={
-              initialMode === '808notes'
-                ? 'Open Settings from BooOps to edit BooOps title and slogan.'
-                : undefined
-            }
-            className={cn(
-              'flex min-w-[12rem] flex-row items-center gap-3 rounded-lg border px-4 py-2.5 text-left transition-colors',
-              selectedMode === 'booops' ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted/40',
-              initialMode === '808notes' && 'cursor-not-allowed opacity-50 hover:bg-transparent',
-            )}
-            aria-label="BooOps branding — right-click to change icon"
-          >
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-md border border-border bg-card text-primary">
-              <BooopsCardGlyph className="size-5" aria-hidden />
-            </span>
-            <span className="text-sm font-semibold">BooOps</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelectedMode('808notes')}
-            onContextMenu={(e) => {
-              e.preventDefault()
-              setGlyphMenu({ mode: '808notes', x: e.clientX, y: e.clientY })
-            }}
-            className={cn(
-              'flex min-w-[12rem] flex-row items-center gap-3 rounded-lg border px-4 py-2.5 text-left transition-colors',
-              selectedMode === '808notes' ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted/40',
-            )}
-            aria-label="808notes branding — right-click to change icon"
-          >
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-md border border-border bg-card text-primary">
-              <Notes808CardGlyph className="size-5" aria-hidden />
-            </span>
-            <span className="text-sm font-semibold">808notes</span>
-          </button>
-        </div>
-        {glyphMenu
-          ? createPortal(
-              <div
-                ref={glyphMenuRef}
-                className="fixed z-[200] max-h-[min(70vh,22rem)] min-w-44 overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
-                style={{ left: glyphMenu.x, top: glyphMenu.y }}
-                role="menu"
-                aria-label="Choose app icon"
-              >
-                <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">App icon</div>
-                {GLYPH_PICKER_ICONS.map((name) => {
-                  const G = lucideGlyphComponent(name, 'Circle')
-                  return (
-                    <button
-                      key={name}
-                      type="button"
-                      role="menuitem"
-                      className="relative flex w-full cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
-                      onClick={() => void persistAppGlyphIcon(glyphMenu.mode, name)}
-                    >
-                      <G className="size-4 shrink-0" aria-hidden />
-                      <span>{name}</span>
-                    </button>
-                  )
-                })}
-              </div>,
-              document.body,
-            )
-          : null}
-      </div>
+      {glyphMenu
+        ? createPortal(
+            <div
+              ref={glyphMenuRef}
+              className="fixed z-[200] max-h-[min(70vh,22rem)] min-w-44 overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
+              style={{ left: glyphMenu.x, top: glyphMenu.y }}
+              role="menu"
+              aria-label="Choose app icon"
+            >
+              <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">App icon</div>
+              {GLYPH_PICKER_ICONS.map((name) => {
+                const G = lucideGlyphComponent(name, 'Circle')
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    role="menuitem"
+                    className="relative flex w-full cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
+                    onClick={() => void persistAppGlyphIcon(glyphMenu.mode, name)}
+                  >
+                    <G className="size-4 shrink-0" aria-hidden />
+                    <span>{name}</span>
+                  </button>
+                )
+              })}
+            </div>,
+            document.body,
+          )
+        : null}
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="shrink-0 overflow-x-auto border-b border-border" role="tablist" aria-label="Settings sections">
