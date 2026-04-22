@@ -20,7 +20,7 @@ import {
 } from '@/pages/notes808/Notes808Workspace.jsx'
 import BooCodeApp, { BooCodeSettingsRoute } from '@/pages/boocode/BooCodeApp.jsx'
 import BooCodeLanding from '@/pages/boocode/BooCodeLanding.jsx'
-import BooCodeDawPlaceholder from '@/pages/boocode/BooCodeDawPlaceholder.jsx'
+import BooCodeDawWorkspace from '@/pages/boocode/BooCodeDawWorkspace.jsx'
 import AISettings from '@/pages/booops/AISettings.jsx'
 import AllChats from '@/pages/booops/AllChats.jsx'
 import { BooOpsDawChat } from '@/pages/booops/BooOpsDawChat.jsx'
@@ -88,7 +88,7 @@ export function ModeRouter() {
       <Routes>
         <Route path="/" element={<BooCodeApp />}>
           <Route index element={<BooCodeLanding />} />
-          <Route path="daw/:dawId" element={<BooCodeDawPlaceholder />} />
+          <Route path="daw/:dawId" element={<BooCodeDawWorkspace />} />
           <Route path="daws" element={<DawsPage />} />
           <Route path="daws/:id" element={<DawDetailPage />} />
           <Route path="ai" element={<AISettings />} />
