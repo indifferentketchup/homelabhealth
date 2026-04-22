@@ -44,21 +44,16 @@ export function BooCodeSettingsRoute() {
 }
 
 function BooCodeShell({ mobileSidebar, setMobileSidebar }) {
-  const { matrixEnabled, crtEnabled, density, speed } = useBoocodeFx()
+  const { matrixEnabled, crtEnabled, density, speed, matrixOpacity, crtOpacity } = useBoocodeFx()
   const { suppressMatrix, suppressCrt } = useFxSuppressState()
 
   const showMatrix = matrixEnabled && !suppressMatrix
   const showCrt = crtEnabled && !suppressCrt
 
-  console.log('[BooCodeShell]', {
-    matrixEnabled, crtEnabled, suppressMatrix, suppressCrt,
-    showMatrix, showCrt, density, speed
-  })
-
   return (
     <>
-      {showMatrix ? <MatrixRain density={density} speed={speed} /> : null}
-      {showCrt ? <CRTOverlay /> : null}
+      {showMatrix ? <MatrixRain density={density} speed={speed} opacity={matrixOpacity} /> : null}
+      {showCrt ? <CRTOverlay opacity={crtOpacity} /> : null}
       <div
         className="layout flex h-[100dvh] w-full overflow-clip text-foreground md:flex-row"
         data-mode="boocode"

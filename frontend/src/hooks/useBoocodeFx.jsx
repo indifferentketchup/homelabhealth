@@ -16,6 +16,8 @@ const CRT_KEY = 'boocode:fx:crt'
 
 const DEFAULT_DENSITY = 0.35
 const DEFAULT_SPEED = 0.7
+const DEFAULT_MATRIX_OPACITY = 0.6
+const DEFAULT_CRT_OPACITY = 0.7
 
 let cachedIsMobile = null
 function isMobileViewport() {
@@ -83,10 +85,17 @@ export function useBoocodeFx() {
 
   const rawDensity = Number(branding?.matrixRainDensity)
   const rawSpeed = Number(branding?.matrixRainSpeed)
+  const rawMatrixOpacity = Number(branding?.matrixRainOpacity)
+  const rawCrtOpacity = Number(branding?.crtOverlayOpacity)
   const density = Number.isFinite(rawDensity) ? rawDensity : DEFAULT_DENSITY
   const speed = Number.isFinite(rawSpeed) ? rawSpeed : DEFAULT_SPEED
+  const matrixOpacity = Number.isFinite(rawMatrixOpacity) ? rawMatrixOpacity : DEFAULT_MATRIX_OPACITY
+  const crtOpacity = Number.isFinite(rawCrtOpacity) ? rawCrtOpacity : DEFAULT_CRT_OPACITY
 
-  return { matrixEnabled, crtEnabled, setMatrixEnabled, setCrtEnabled, density, speed }
+  return {
+    matrixEnabled, crtEnabled, setMatrixEnabled, setCrtEnabled,
+    density, speed, matrixOpacity, crtOpacity,
+  }
 }
 
 const FxSuppressStateContext = createContext({ suppressMatrix: false, suppressCrt: false })

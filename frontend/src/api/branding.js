@@ -302,6 +302,10 @@ export const DEFAULT_BOOCODE_BRANDING = {
   faviconUrl: '',
   ogBannerUrl: '',
   appGlyphIcon: 'Terminal',
+  matrixRainDensity: 0.35,
+  matrixRainSpeed: 0.7,
+  matrixRainOpacity: 0.6,
+  crtOverlayOpacity: 0.7,
 }
 
 /** Like `patchBranding` but for BooCode defaults. */

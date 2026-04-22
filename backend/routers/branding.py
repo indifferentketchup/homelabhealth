@@ -106,6 +106,10 @@ DEFAULT_BOOCODE_BRANDING: dict[str, Any] = {
     "faviconUrl": "",
     "ogBannerUrl": "",
     "appGlyphIcon": "Terminal",
+    "matrixRainDensity": 0.35,
+    "matrixRainSpeed": 0.7,
+    "matrixRainOpacity": 0.6,
+    "crtOverlayOpacity": 0.7,
 }
 
 DEFAULT_BOOLAB_BRANDING: dict[str, Any] = {
