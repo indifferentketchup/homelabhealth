@@ -6,6 +6,7 @@ import { useAppStore } from '@/store/index.js'
 import { RepoStatusBar } from './RepoStatusBar.jsx'
 import { RepoFilesPanel } from './RepoFilesPanel.jsx'
 import { RepoFilePreview } from './RepoFilePreview.jsx'
+import TerminalDrawer from './TerminalDrawer.jsx'
 
 export default function BooCodeDawWorkspace() {
   const { dawId } = useParams()
@@ -57,6 +58,7 @@ export default function BooCodeDawWorkspace() {
           <RepoFilesPanel dawId={dawId} />
         </aside>
       </div>
+      <TerminalDrawer dawId={dawId} />
       <RepoFilePreview dawId={dawId} />
     </div>
   )
