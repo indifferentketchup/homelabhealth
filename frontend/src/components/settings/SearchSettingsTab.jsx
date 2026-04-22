@@ -34,7 +34,7 @@ const selectClass =
   'h-9 w-full max-w-md rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2'
 
 /**
- * @param {{ mode: 'booops' | '808notes' }} props
+ * @param {{ mode: 'booops' | '808notes' | 'boocode' }} props
  */
 export default function SearchSettingsTab({ mode }) {
   const [config, setConfig] = useState(null)
@@ -120,7 +120,7 @@ export default function SearchSettingsTab({ mode }) {
       <div>
         <h2 className="fs-heading font-semibold uppercase tracking-wide text-muted-foreground">Search (SearXNG)</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Applies to web search in <span className="text-foreground">{mode === '808notes' ? '808notes' : 'BooOps'}</span>
+          Applies to web search in <span className="text-foreground">{mode === '808notes' ? '808notes' : mode === 'boocode' ? 'BooCode' : 'BooOps'}</span>
           . BooLab sends safe search, engines, and related flags on each request. Optionally set{' '}
           <span className="font-mono text-xs text-foreground">SEARXNG_SETTINGS_YML</span> on the API to mirror toggles into
           SearXNG&apos;s config file.

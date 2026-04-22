@@ -33,6 +33,7 @@ import {
   uploadBrandingAsset808notes,
 } from '@/api/branding.js'
 import SearchSettingsTab from '@/components/settings/SearchSettingsTab.jsx'
+import { useBoocodeFx } from '@/hooks/useBoocodeFx.jsx'
 import { SkillsLibraryPage } from '@/pages/SkillsLibraryPage.jsx'
 import { Button } from '@/components/ui/button'
 import { clear808notesLayoutLiveDraft, set808notesLayoutLiveDraft } from '@/lib/notes808Layout.js'
@@ -286,6 +287,13 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
     [selectedMode],
   )
 
+  const {
+    matrixEnabled: boocodeMatrixEnabled,
+    setMatrixEnabled: setBoocodeMatrixEnabled,
+    crtEnabled: boocodeCrtEnabled,
+    setCrtEnabled: setBoocodeCrtEnabled,
+  } = useBoocodeFx()
+
   const [localBranding, setLocalBranding] = useState(() => ({ ...DEFAULT_BOOOPS_BRANDING }))
   useEffect(() => {
     setLocalBranding(
@@ -418,6 +426,10 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
     const body = {
       title: localBranding.title ?? '',
       subtitle: localBranding.subtitle ?? '',
+    }
+    if (selectedMode === 'boocode') {
+      body.matrixRainDensity = Number(localBranding.matrixRainDensity ?? 0.35)
+      body.matrixRainSpeed = Number(localBranding.matrixRainSpeed ?? 0.7)
     }
     try {
       let out
@@ -723,6 +735,68 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
                   </div>
                 ) : null}
               </div>
+              {selectedMode === 'boocode' ? (
+                <div className="mt-4 flex flex-col gap-3 rounded-md border border-border bg-muted/30 p-3">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    BooCode FX
+                  </div>
+                  <label className="flex items-center justify-between gap-3 text-sm">
+                    <span>Matrix rain background</span>
+                    <input
+                      type="checkbox"
+                      checked={boocodeMatrixEnabled}
+                      onChange={(e) => setBoocodeMatrixEnabled(e.target.checked)}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-sm">
+                    <span className="flex items-center justify-between text-muted-foreground">
+                      <span>Matrix rain density</span>
+                      <span className="font-mono text-xs">
+                        {Number(localBranding.matrixRainDensity ?? 0.35).toFixed(2)}
+                      </span>
+                    </span>
+                    <input
+                      type="range"
+                      min={0.1}
+                      max={1}
+                      step={0.05}
+                      value={Number(localBranding.matrixRainDensity ?? 0.35)}
+                      onChange={(e) =>
+                        updateBrandingField({ matrixRainDensity: Number(e.target.value) })
+                      }
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-sm">
+                    <span className="flex items-center justify-between text-muted-foreground">
+                      <span>Matrix rain speed</span>
+                      <span className="font-mono text-xs">
+                        {Number(localBranding.matrixRainSpeed ?? 0.7).toFixed(1)}
+                      </span>
+                    </span>
+                    <input
+                      type="range"
+                      min={0.1}
+                      max={2}
+                      step={0.1}
+                      value={Number(localBranding.matrixRainSpeed ?? 0.7)}
+                      onChange={(e) =>
+                        updateBrandingField({ matrixRainSpeed: Number(e.target.value) })
+                      }
+                    />
+                  </label>
+                  <label className="flex items-center justify-between gap-3 text-sm">
+                    <span>CRT overlay</span>
+                    <input
+                      type="checkbox"
+                      checked={boocodeCrtEnabled}
+                      onChange={(e) => setBoocodeCrtEnabled(e.target.checked)}
+                    />
+                  </label>
+                  <p className="text-[0.6875rem]" style={{ color: 'var(--text-dim)' }}>
+                    Matrix / CRT toggles are per-browser (localStorage). Density and speed are stored with BooCode branding — click Save to persist.
+                  </p>
+                </div>
+              ) : null}
               <Button type="button" size="sm" onClick={() => void saveBrandingMeta()}>
                 Save branding
               </Button>
