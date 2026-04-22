@@ -38,6 +38,7 @@ from starlette.websockets import WebSocketState
 
 from db import get_pool
 from services import tmux_session
+from services.terminal_sweep import lru_evict_if_needed
 
 
 logger = logging.getLogger(__name__)
@@ -275,19 +276,16 @@ async def create_session(body: CreateSessionBody, request: Request) -> SessionOu
         if not machine["enabled"]:
             raise HTTPException(status_code=400, detail="machine is disabled")
 
-        # Cap enforcement — LRU eviction is added in commit 5 (terminal_sweep).
-        # Today: reject with 409 when caps are hit; no eviction yet.
+        # Cap enforcement: LRU-evict the oldest detached unpinned session if
+        # we're at the unpinned cap; 409 if nothing is evictable (everything
+        # is pinned or still has attached clients).
+        if not await lru_evict_if_needed(conn):
+            raise HTTPException(status_code=409, detail="unpinned cap reached")
         active_pinned = await conn.fetchval(
             "SELECT COUNT(*) FROM terminal_sessions WHERE closed_at IS NULL AND pinned = TRUE",
         )
-        active_unpinned = await conn.fetchval(
-            "SELECT COUNT(*) FROM terminal_sessions WHERE closed_at IS NULL AND pinned = FALSE",
-        )
-        if active_unpinned and active_unpinned >= MAX_UNPINNED_ACTIVE:
-            # TODO(phase-5-c5): replace with lru_evict_if_needed().
-            raise HTTPException(status_code=409, detail="unpinned cap reached")
         if active_pinned and active_pinned > MAX_PINNED_ACTIVE:
-            # Defensive; should never exceed since PATCH enforces the same cap.
+            # Defensive; PATCH enforces the same cap on pin transitions.
             raise HTTPException(status_code=409, detail="pinned cap reached")
 
         sid = uuid.uuid4()
