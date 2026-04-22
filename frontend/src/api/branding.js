@@ -536,7 +536,12 @@ export async function fetchBranding(mode) {
     layout = {}
   }
   useLayoutStore.getState().hydrateFromServer(layout && typeof layout === 'object' ? layout : {})
-  const merged = mergeBrandingWithGlobalLayout(row, layout, { stripTheme: m === '808notes' })
+  // `ui_layout` stores a booops-default palette. Strip it when merging for any
+  // mode that has its own palette (808notes, boocode) so the global layout
+  // doesn't stomp the per-mode branding colors.
+  const merged = mergeBrandingWithGlobalLayout(row, layout, {
+    stripTheme: m === '808notes' || m === 'boocode',
+  })
   const finalized =
     m === '808notes'
       ? patch808notesBranding(null, merged)

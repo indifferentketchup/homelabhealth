@@ -321,7 +321,7 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
       if (appBrandingMode === selectedMode) {
         const layoutPayload = layoutDraftToApiPayload({ ...useLayoutStore.getState() })
         const withLayout = mergeBrandingWithGlobalLayout(merged, layoutPayload, {
-          stripTheme: selectedMode === '808notes',
+          stripTheme: selectedMode === '808notes' || selectedMode === 'boocode',
         })
         const finalized =
           appBrandingMode === '808notes'
