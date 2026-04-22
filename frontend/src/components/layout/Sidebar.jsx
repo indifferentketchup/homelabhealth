@@ -17,7 +17,6 @@ import {
   User,
 } from 'lucide-react'
 
-import { apiFetch } from '@/api/index.js'
 import { applyBrandingCss, fetchBranding } from '@/api/branding.js'
 import { deleteChat, listChats, patchChat, patchRecentChatsListCache } from '@/api/chats.js'
 import { listDaws } from '@/api/daws.js'
