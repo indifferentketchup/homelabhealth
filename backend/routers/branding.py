@@ -110,6 +110,7 @@ DEFAULT_BOOCODE_BRANDING: dict[str, Any] = {
     "matrixRainSpeed": 0.7,
     "matrixRainOpacity": 0.6,
     "crtOverlayOpacity": 0.7,
+    "chatBgOpacity": 0.86,
 }
 
 DEFAULT_BOOLAB_BRANDING: dict[str, Any] = {

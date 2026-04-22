@@ -67,6 +67,8 @@ def _parse_hidden_models(raw: str | None) -> list[str]:
 def _ollama_settings_keys(mode: str) -> tuple[str, str]:
     if mode == "808notes":
         return "default_model_808notes", "ollama_hidden_models_808notes"
+    if mode == "boocode":
+        return "default_model_boocode", "ollama_hidden_models_boocode"
     return "default_model", "ollama_hidden_models"
 
 
@@ -105,7 +107,7 @@ async def list_models():
 
 @router.get("/settings")
 async def get_ollama_settings(mode: str = Query("booops")):
-    m = mode if mode in ("booops", "808notes") else "booops"
+    m = mode if mode in ("booops", "808notes", "boocode") else "booops"
     pool = await get_pool()
     async with pool.acquire() as conn:
         return await _ollama_settings_payload(conn, m)
@@ -117,7 +119,7 @@ async def patch_ollama_settings(
     mode: str = Query("booops"),
     _owner: dict = Depends(require_admin),
 ):
-    m = mode if mode in ("booops", "808notes") else "booops"
+    m = mode if mode in ("booops", "808notes", "boocode") else "booops"
     dk, hk = _ollama_settings_keys(m)
     pool = await get_pool()
     async with pool.acquire() as conn:

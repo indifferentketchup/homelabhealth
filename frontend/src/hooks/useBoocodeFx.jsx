@@ -18,6 +18,7 @@ const DEFAULT_DENSITY = 0.35
 const DEFAULT_SPEED = 0.7
 const DEFAULT_MATRIX_OPACITY = 0.6
 const DEFAULT_CRT_OPACITY = 0.7
+const DEFAULT_CHAT_BG_OPACITY = 0.86
 
 let cachedIsMobile = null
 function isMobileViewport() {
@@ -87,14 +88,16 @@ export function useBoocodeFx() {
   const rawSpeed = Number(branding?.matrixRainSpeed)
   const rawMatrixOpacity = Number(branding?.matrixRainOpacity)
   const rawCrtOpacity = Number(branding?.crtOverlayOpacity)
+  const rawChatBgOpacity = Number(branding?.chatBgOpacity)
   const density = Number.isFinite(rawDensity) ? rawDensity : DEFAULT_DENSITY
   const speed = Number.isFinite(rawSpeed) ? rawSpeed : DEFAULT_SPEED
   const matrixOpacity = Number.isFinite(rawMatrixOpacity) ? rawMatrixOpacity : DEFAULT_MATRIX_OPACITY
   const crtOpacity = Number.isFinite(rawCrtOpacity) ? rawCrtOpacity : DEFAULT_CRT_OPACITY
+  const chatBgOpacity = Number.isFinite(rawChatBgOpacity) ? rawChatBgOpacity : DEFAULT_CHAT_BG_OPACITY
 
   return {
     matrixEnabled, crtEnabled, setMatrixEnabled, setCrtEnabled,
-    density, speed, matrixOpacity, crtOpacity,
+    density, speed, matrixOpacity, crtOpacity, chatBgOpacity,
   }
 }
 

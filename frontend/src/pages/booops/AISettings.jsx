@@ -194,15 +194,15 @@ function OllamaDawModelsSection({ queryClient, selectClass, mode }) {
     return modelEntries[0]?.id ?? prefer
   }, [ollamaSettings?.default_model, modelEntries])
 
-  const dawAppLabel = mode === '808notes' ? '808notes' : 'BooOps'
+  const dawAppLabel =
+    mode === '808notes' ? '808notes' : mode === 'boocode' ? 'BooCode' : 'BooOps'
 
   return (
     <section className="space-y-6">
       <div>
         <h2 className="text-sm font-medium text-foreground">Models ({dawAppLabel})</h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          Shared OpenAI-compatible inference (Bifrost). Switch BooOps or 808notes to set that app&apos;s default model
-          and which models appear in the picker.
+          Shared OpenAI-compatible inference (Bifrost). Applies to {dawAppLabel}; open Settings from another site to configure its default model.
         </p>
       </div>
 
@@ -1062,6 +1062,11 @@ export default function AISettings() {
 
        {tab === 'ollama' && (
           <div className="flex flex-col gap-6">
+            <OllamaDawModelsSection
+              queryClient={queryClient}
+              selectClass="h-9 w-full max-w-md rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2"
+              mode={currentMode}
+            />
             <div className="rounded-lg border border-border bg-card p-4">
               <h2 className="mb-2 text-sm font-medium text-foreground">Ollama Configuration</h2>
               <p className="mb-3 text-xs text-muted-foreground">

@@ -432,6 +432,7 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
       body.matrixRainSpeed = Number(localBranding.matrixRainSpeed ?? 0.7)
       body.matrixRainOpacity = Number(localBranding.matrixRainOpacity ?? 0.6)
       body.crtOverlayOpacity = Number(localBranding.crtOverlayOpacity ?? 0.7)
+      body.chatBgOpacity = Number(localBranding.chatBgOpacity ?? 0.86)
     }
     try {
       let out
@@ -830,8 +831,29 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
                       }
                     />
                   </label>
+                  <label className="flex flex-col gap-1 text-sm">
+                    <span className="flex items-center justify-between text-muted-foreground">
+                      <span>Chat background opacity</span>
+                      <span className="font-mono text-xs">
+                        {Number(localBranding.chatBgOpacity ?? 0.86).toFixed(2)}
+                      </span>
+                    </span>
+                    <input
+                      type="range"
+                      min={0.05}
+                      max={1}
+                      step={0.02}
+                      value={Number(localBranding.chatBgOpacity ?? 0.86)}
+                      onChange={(e) =>
+                        updateBrandingField({ chatBgOpacity: Number(e.target.value) })
+                      }
+                    />
+                    <span className="text-[0.6875rem]" style={{ color: 'var(--text-dim)' }}>
+                      Lower = more matrix rain bleeds through the chat panel.
+                    </span>
+                  </label>
                   <p className="text-[0.6875rem]" style={{ color: 'var(--text-dim)' }}>
-                    Matrix / CRT toggles are per-browser (localStorage). Density, speed, and opacities are stored with BooCode branding — click Save to persist.
+                    Matrix / CRT toggles are per-browser (localStorage). Density, speed, opacities, and chat-bg opacity are stored with BooCode branding — click Save to persist.
                   </p>
                 </div>
               ) : null}
