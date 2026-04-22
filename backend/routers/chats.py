@@ -20,11 +20,71 @@ from auth_deps import (
 )
 from db import get_pool
 from services.pruning import summarize_and_compress
-from services.rag import retrieve_context, retrieve_memory_facts, should_retrieve
+from services.rag import (
+    retrieve_context,
+    retrieve_memory_facts,
+    retrieve_repo_chunks,
+    should_retrieve,
+)
 from services.searx import searx_search_sources
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+BOOCODE_CONTEXT_CHAR_BUDGET = int(os.environ.get("BOOCODE_CONTEXT_CHAR_BUDGET", "40000"))
+
+BOOCODE_ARCHITECT_PREAMBLE = """\
+You are a read-only code architect. You review codebases and draft precise prompts
+for a separate coding agent (OpenCode) to execute. You do NOT edit files.
+
+When the user asks for a change:
+1. One-paragraph plan
+2. OpenCode-ready prompt inside a fenced ```prompt code block
+3. List of files to be touched (paths only, one per line)
+
+When citing code, reference file path + symbol name. Do not invent file contents
+not present in Repo Context.
+"""
+
+
+def _format_repo_chunks(chunks: list[dict[str, Any]]) -> str:
+    """Format repo chunks into the ## Repo Context block, capped at BOOCODE_CONTEXT_CHAR_BUDGET.
+
+    Drops the lowest-similarity chunks first if the formatted block would overflow.
+    """
+    if not chunks:
+        return ""
+
+    header = (
+        "## Repo Context\n"
+        "The following code fragments were retrieved from the repo bound to this DAW.\n"
+        "Cite chunks by file path. If a question cannot be answered from these fragments,\n"
+        "say so — do not fabricate file contents.\n"
+    )
+
+    ordered = sorted(chunks, key=lambda c: float(c.get("similarity") or 0.0), reverse=True)
+
+    rendered: list[str] = []
+    total = len(header)
+    for c in ordered:
+        path = c.get("path") or "?"
+        sym_name = c.get("symbol_name") or ""
+        lang = c.get("language") or ""
+        head_bits = [path]
+        if sym_name:
+            head_bits.append(sym_name)
+        head = ":".join(head_bits)
+        marker = f"[{head}" + (f" ({lang})" if lang else "") + "]"
+        body = c.get("content") or ""
+        piece = f"\n{marker}\n{body}\n"
+        if total + len(piece) > BOOCODE_CONTEXT_CHAR_BUDGET:
+            break
+        rendered.append(piece)
+        total += len(piece)
+
+    if not rendered:
+        return ""
+    return header + "".join(rendered)
 
 
 async def _default_persona_id_for_mode(conn: asyncpg.Connection, mode: str) -> uuid.UUID | None:
@@ -117,6 +177,7 @@ async def _assembled_system_prompt(
     daw_prompt = ""
     daw_persona_id = None
     daw_rag_mode_effective = "auto"
+    daw_table_mode = "booops"
     if daw_id is not None:
         ws = await conn.fetchrow(
             "SELECT system_prompt, persona_id, mode, rag_mode FROM daws WHERE id = $1::uuid",
@@ -125,8 +186,12 @@ async def _assembled_system_prompt(
         if ws:
             daw_prompt = (ws["system_prompt"] or "").strip()
             daw_persona_id = ws["persona_id"]
-            daw_table_mode = ws["mode"] if ws["mode"] in ("booops", "808notes") else "booops"
+            daw_table_mode = ws["mode"] if ws["mode"] in ("booops", "808notes", "boocode") else "booops"
+            if daw_table_mode == "boocode" and not daw_prompt:
+                daw_prompt = BOOCODE_ARCHITECT_PREAMBLE
             if daw_table_mode == "808notes":
+                daw_rag_mode_effective = "always"
+            elif daw_table_mode == "boocode":
                 daw_rag_mode_effective = "always"
             else:
                 rm = ws.get("rag_mode")
@@ -164,6 +229,24 @@ async def _assembled_system_prompt(
         parts.append(persona_prompt)
     if daw_prompt:
         parts.append(daw_prompt)
+
+    if (
+        daw_table_mode == "boocode"
+        and daw_id is not None
+        and user_query_for_rag
+        and str(user_query_for_rag).strip()
+        and chat.get("rag_enabled") is not False
+    ):
+        repo_chunks = await retrieve_repo_chunks(
+            conn,
+            str(daw_id),
+            str(user_query_for_rag).strip(),
+            top_k=20,
+        )
+        if repo_chunks:
+            repo_block = _format_repo_chunks(repo_chunks)
+            if repo_block:
+                parts.append(repo_block)
 
     if daw_id:
         daw_instructions = await conn.fetch(
@@ -504,11 +587,18 @@ def _message_row(r: asyncpg.Record) -> dict[str, Any]:
 @router.post("/")
 async def create_chat(body: ChatCreate, principal: dict[str, Any] = Depends(get_principal)):
     pool = await get_pool()
-    mode = body.mode if body.mode in ("booops", "808notes") else "booops"
+    allowed_modes = ("booops", "808notes", "boocode")
+    mode = body.mode if body.mode in allowed_modes else "booops"
     default_model = os.environ.get("DEFAULT_MODEL", "llama-gpu/qwen3.5-9b-exl3")
     async with pool.acquire() as conn:
         await assert_persona_usable(conn, principal, body.persona_id)
         await assert_daw_usable(conn, principal, body.daw_id)
+        if body.daw_id is not None:
+            daw_mode = await conn.fetchval(
+                "SELECT mode FROM daws WHERE id = $1::uuid", body.daw_id
+            )
+            if daw_mode in allowed_modes:
+                mode = daw_mode
         persona_id_for_insert = body.persona_id
         if persona_id_for_insert is None:
             persona_id_for_insert = await _default_persona_id_for_mode(conn, mode)
@@ -518,7 +608,11 @@ async def create_chat(body: ChatCreate, principal: dict[str, Any] = Depends(get_
             VALUES ($1, $2, $3,
                 COALESCE($4, (
                     SELECT value FROM global_settings WHERE key = (
-                        CASE WHEN $3::text = '808notes' THEN 'default_model_808notes' ELSE 'default_model' END
+                        CASE
+                            WHEN $3::text = '808notes' THEN 'default_model_808notes'
+                            WHEN $3::text = 'boocode' THEN 'default_model_boocode'
+                            ELSE 'default_model'
+                        END
                     ) LIMIT 1
                 ), $6),
                 COALESCE($5, FALSE),

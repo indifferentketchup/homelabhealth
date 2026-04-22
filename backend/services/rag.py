@@ -32,6 +32,9 @@ MEMORY_TOP_K = 3
 TOP_K_RETRIEVE = 40
 TOP_AFTER_RERANK = 10
 
+REPO_TOP_K_DEFAULT = 20
+REPO_SIMILARITY_THRESHOLD_FALLBACK = 0.3
+
 _SETTINGS_TTL_SECONDS = 30.0
 _settings_cache: dict[str, Any] = {}
 _settings_cache_at: float = 0.0
@@ -155,6 +158,87 @@ async def should_retrieve(query: str, mode: str) -> bool:
         return True
     words = query.strip().split()
     return len(words) >= int(settings["rag_min_words_for_intent"])
+
+
+async def retrieve_repo_chunks(
+    conn: Any,
+    daw_id: str,
+    query: str,
+    top_k: int = REPO_TOP_K_DEFAULT,
+    similarity_threshold: float | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Retrieve repo_chunks for a BooCode DAW via pgvector cosine distance.
+
+    Returns a list of dicts:
+        {path, language, symbol_kind, symbol_name, content, similarity}
+
+    Returns [] on empty query or embedding failure (logs a warning, does not raise).
+    """
+    q = (query or "").strip()
+    if not q or not daw_id:
+        return []
+
+    if similarity_threshold is None:
+        settings = await _load_rag_settings()
+        try:
+            similarity_threshold = float(settings.get(
+                "rag_similarity_threshold",
+                REPO_SIMILARITY_THRESHOLD_FALLBACK,
+            ))
+        except (TypeError, ValueError):
+            similarity_threshold = REPO_SIMILARITY_THRESHOLD_FALLBACK
+
+    try:
+        emb = await embed_text(q)
+    except EmbeddingError as e:
+        logger.warning("repo_rag embed failed: %s", e)
+        return []
+    if not emb:
+        logger.warning("repo_rag embed returned empty vector")
+        return []
+
+    q_vec = format_vector(emb)
+    try:
+        rows = await conn.fetch(
+            """
+            SELECT rf.path, rf.language, rc.symbol_kind, rc.symbol_name, rc.content,
+                   1 - (rc.embedding <=> $1::vector) AS similarity
+            FROM repo_chunks rc
+            JOIN repo_files rf ON rf.id = rc.file_id
+            WHERE rc.daw_id = $2::uuid
+              AND rc.embedding IS NOT NULL
+            ORDER BY rc.embedding <=> $1::vector
+            LIMIT $3
+            """,
+            q_vec,
+            uuid.UUID(daw_id) if not isinstance(daw_id, uuid.UUID) else daw_id,
+            int(top_k),
+        )
+    except Exception as e:
+        logger.warning("repo_rag vector query failed: %s", e)
+        return []
+
+    results: list[dict[str, Any]] = []
+    for r in rows:
+        sim = float(r["similarity"]) if r["similarity"] is not None else 0.0
+        if sim < float(similarity_threshold):
+            continue
+        results.append({
+            "path": r["path"],
+            "language": r["language"],
+            "symbol_kind": r["symbol_kind"],
+            "symbol_name": r["symbol_name"],
+            "content": r["content"],
+            "similarity": sim,
+        })
+
+    top1 = results[0]["similarity"] if results else 0.0
+    logger.info(
+        "repo_rag retrieved daw_id=%s top_k=%d threshold=%.2f kept=%d top1=%.3f",
+        daw_id, top_k, float(similarity_threshold), len(results), top1,
+    )
+    return results
 
 
 async def retrieve_memory_facts(query: str, mode: str, conn: Any) -> list[str]:
