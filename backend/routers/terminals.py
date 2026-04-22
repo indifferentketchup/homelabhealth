@@ -18,7 +18,6 @@ import hashlib
 import json
 import logging
 import os
-import pty
 import signal
 import struct
 import termios
@@ -484,21 +483,44 @@ async def paste(sid: uuid.UUID, body: PasteBody, request: Request) -> dict[str, 
 # ── WebSocket ────────────────────────────────────────────────────────────────
 
 
-def _spawn_pty_tmux_client(tmux_name: str) -> tuple[int, int]:
-    """pty.fork() + os.execvp tmux attach in the child. Returns (pid, master_fd).
+def _spawn_pty_tmux_client(
+    tmux_name: str,
+    cols: int = DEFAULT_COLS,
+    rows: int = DEFAULT_ROWS,
+) -> tuple[int, int]:
+    """openpty + fork + exec tmux attach. Returns (pid, master_fd).
 
-    Raises OSError if fork fails. The child path never returns — either
-    execvp succeeds and we become tmux, or os._exit(127) on failure.
+    Why not ``pty.fork()``: pty.fork() returns with the slave already
+    wired to the child but the winsize is kernel-default (0x0 on Linux).
+    The parent can't ``TIOCSWINSZ`` in time — tmux attach reads winsize
+    before the ioctl lands and exits with EIO. Doing the openpty +
+    ioctl on the slave *before* fork avoids the race entirely.
+
+    TERM must be set in the child: tmux refuses to attach on a `dumb`
+    or unset TERM. Inherited env from boolab_api has no TERM.
     """
-    pid, master_fd = pty.fork()
+    master_fd, slave_fd = os.openpty()
+    _set_winsize(slave_fd, cols, rows)
+
+    pid = os.fork()
     if pid == 0:
         try:
+            os.setsid()
+            fcntl.ioctl(slave_fd, termios.TIOCSCTTY, 0)
+            os.dup2(slave_fd, 0)
+            os.dup2(slave_fd, 1)
+            os.dup2(slave_fd, 2)
+            if slave_fd > 2:
+                os.close(slave_fd)
+            os.close(master_fd)
+            os.environ["TERM"] = "xterm-256color"
             os.execvp("tmux", [
                 "tmux", "-S", tmux_session.SHARED_TMUX_SOCKET,
                 "attach", "-t", tmux_name,
             ])
         except OSError:
             os._exit(127)
+    os.close(slave_fd)
     return pid, master_fd
 
 
