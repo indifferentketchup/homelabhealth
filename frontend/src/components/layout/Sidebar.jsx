@@ -14,6 +14,7 @@ import {
   PanelLeft,
   Pin,
   Plus,
+  RotateCcw,
   Search,
   Settings,
   TerminalSquare,
@@ -21,6 +22,7 @@ import {
 } from 'lucide-react'
 
 import { applyBrandingCss, fetchBranding } from '@/api/branding.js'
+import { friendlyErr } from '@/lib/friendlyErr.js'
 import { deleteChat, listChats, patchChat, patchRecentChatsListCache } from '@/api/chats.js'
 import { listDaws } from '@/api/daws.js'
 import * as terminalsApi from '@/api/terminals.js'
@@ -67,6 +69,8 @@ function BoocodeDawRow({
   setActiveChatId,
   hydrateFromChat,
 }) {
+  const queryClient = useQueryClient()
+
   const { data: terminalsData } = useQuery({
     queryKey: ['sidebar-terminals', daw.id],
     queryFn: () => terminalsApi.list({ dawId: daw.id }),
@@ -91,6 +95,16 @@ function BoocodeDawRow({
     })
   }, [terminalsData])
 
+  const closedSessions = useMemo(() => {
+    const raw = Array.isArray(terminalsData?.recent) ? terminalsData.recent : []
+    // Most-recently-closed first (API already does this; guard anyway)
+    return [...raw].sort((a, b) => {
+      const ac = a.closed_at ?? ''
+      const bc = b.closed_at ?? ''
+      return ac < bc ? 1 : ac > bc ? -1 : 0
+    })
+  }, [terminalsData])
+
   const chatList = useMemo(() => {
     return Array.isArray(chatsData?.items) ? chatsData.items : []
   }, [chatsData])
@@ -101,6 +115,26 @@ function BoocodeDawRow({
 
   function newTerminal() {
     window.dispatchEvent(new CustomEvent('boocode:new-terminal', { detail: { dawId: daw.id } }))
+  }
+
+  async function recreateClosed(s) {
+    try {
+      const created = await terminalsApi.create({
+        machineId: s.machine_id,
+        dawId: daw.id,
+        label: s.label ?? null,
+        startingCmd: s.starting_cmd ?? null,
+      })
+      await queryClient.invalidateQueries({ queryKey: ['sidebar-terminals', daw.id] })
+      await queryClient.invalidateQueries({ queryKey: ['terminals', daw.id] })
+      if (created?.id) {
+        window.dispatchEvent(new CustomEvent('boocode:open-terminal', { detail: { sessionId: created.id } }))
+      }
+      if (isMobile) onMobileClose()
+    } catch (e) {
+      // No toast surface inside the sidebar; log to console for now (matches existing posture).
+      console.warn('recreate closed terminal failed', friendlyErr(e, 'Re-create failed'))
+    }
   }
 
   function selectDawChat(c) {
@@ -203,6 +237,30 @@ function BoocodeDawRow({
               <Plus className="size-3 shrink-0 opacity-60" aria-hidden />
               <span>new terminal</span>
             </button>
+            {closedSessions.length > 0 && (
+              <div className="mt-1">
+                <span className="fs-nav block px-1 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Recently Closed ({closedSessions.length})
+                </span>
+                {closedSessions.slice(0, 5).map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => recreateClosed(s)}
+                    className="flex w-full items-center gap-2 rounded-sm px-1 py-0.5 text-left text-[11px] opacity-60 outline-none ring-sidebar-ring hover:opacity-100 hover:bg-sidebar-accent/40 focus-visible:ring-2"
+                    title="Re-create a fresh session with the same label + target"
+                  >
+                    <RotateCcw className="size-3 shrink-0" aria-hidden />
+                    <span className="truncate" style={{ color: 'var(--text-dim)' }}>
+                      {s.label || s.machine_name || 'session'}
+                    </span>
+                    <span className="ml-auto shrink-0 text-[9px]" style={{ color: 'var(--text-dim)' }}>
+                      {s.machine_name}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* CHATS subsection */}
