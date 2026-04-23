@@ -172,20 +172,28 @@ export function ChatView({
   useEffect(() => {
     if (chatMode !== 'boocode') return
     function onAttachBoocodeFile(e) {
-      const d = e.detail || {}
-      if (!d?.path || !d?.dawId) return
+      const d = e?.detail
+      if (!d || !d.path || !d.dawId) return
+      const lineStart = Number.isInteger(d.lineStart) ? d.lineStart : null
+      const lineEnd = Number.isInteger(d.lineEnd) ? d.lineEnd : null
+      // both-or-neither
+      const hasRange = lineStart != null && lineEnd != null && lineEnd >= lineStart
+      const nextStart = hasRange ? lineStart : null
+      const nextEnd = hasRange ? lineEnd : null
+      const dedupeKey = (x) => `${x.path}#${x.lineStart ?? ''}-${x.lineEnd ?? ''}`
+      const incomingKey = `${d.path}#${nextStart ?? ''}-${nextEnd ?? ''}`
       setBoocodeFiles((prev) => {
-        if (prev.some((x) => x.path === d.path && x.dawId === d.dawId)) return prev
+        if (prev.some((x) => x.dawId === d.dawId && dedupeKey(x) === incomingKey)) return prev
         if (prev.length >= 4) return prev
-        return [...prev, { dawId: d.dawId, path: d.path, language: d.language }]
+        return [...prev, { dawId: d.dawId, path: d.path, language: d.language, lineStart: nextStart, lineEnd: nextEnd }]
       })
     }
     window.addEventListener('boocode:attach-file', onAttachBoocodeFile)
     return () => window.removeEventListener('boocode:attach-file', onAttachBoocodeFile)
   }, [chatMode])
 
-  const removeBoocodeFile = (path, dawId) => {
-    setBoocodeFiles((prev) => prev.filter((x) => !(x.path === path && x.dawId === dawId)))
+  const removeBoocodeFile = (chip) => {
+    setBoocodeFiles((prev) => prev.filter((x) => x !== chip))
   }
   const { consumeStream, abort } = useStream()
   const [pendingSend, setPendingSend] = useState(false)
@@ -251,7 +259,14 @@ export function ChatView({
     streamAssistantIndexRef.current = assistantMessageIndex
     const model = selectedModel || undefined
     const bcFiles = chatMode === 'boocode' && boocodeFiles.length > 0
-      ? boocodeFiles.map((f) => ({ path: f.path }))
+      ? boocodeFiles.map((f) => {
+          const out = { path: f.path }
+          if (f.lineStart != null && f.lineEnd != null) {
+            out.line_start = f.lineStart
+            out.line_end = f.lineEnd
+          }
+          return out
+        })
       : null
     await consumeStream({
       url: `/api/chats/${chatId}/messages`,
@@ -534,6 +549,9 @@ export function ChatView({
             chatMaxW={chatMaxW}
             hidePersonaInMenu={hidePersonaInChatInput}
             dawSyncFolder={dawSyncFolder}
+            chatMode={chatMode}
+            boocodeFiles={boocodeFiles}
+            onRemoveBoocodeFile={removeBoocodeFile}
           />
         </div>
       </div>
