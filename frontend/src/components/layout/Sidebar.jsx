@@ -97,9 +97,11 @@ function TerminalRow({ session, daw, onActivate, onContextMenu }) {
 }
 
 /** Single recent-chat row — extracts useLongPress out of .map() */
-function ChatRow({ chat, activeChatId, onSelect, onContextMenu, collapsed }) {
+function ChatRow({ chat, activeChatId, activeDawId, onSelect, onContextMenu, collapsed }) {
   const lp = useLongPress((e) => onContextMenu(e, chat))
-  const isActive = chat.id === activeChatId
+  const isActive =
+    chat.id === activeChatId &&
+    (activeDawId === undefined || String(activeDawId) === String(chat.daw_id))
   return (
     <Button
       type="button"
@@ -139,11 +141,11 @@ function BoocodeDawRow({
   onMobileClose,
   navigate,
   activeChatId,
-  activeDawId,
   setActiveDawId,
   setActiveChatId,
   hydrateFromChat,
   onTerminalContextMenu,
+  onChatContextMenu,
 }) {
   const queryClient = useQueryClient()
   const pendingRecreateRef = useRef(new Set())
@@ -335,18 +337,15 @@ function BoocodeDawRow({
               </span>
             ) : (
               chatList.map((c) => (
-                <button
+                <ChatRow
                   key={c.id}
-                  type="button"
-                  className={cn(
-                    'fs-nav flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-sm outline-none ring-sidebar-ring hover:bg-sidebar-accent/50 focus-visible:ring-2',
-                    c.id === activeChatId && String(activeDawId) === String(daw.id) && 'bg-sidebar-accent/60 font-medium',
-                  )}
-                  onClick={() => selectDawChat(c)}
-                >
-                  <MessagesSquare className="size-3.5 shrink-0 opacity-60" aria-hidden />
-                  <span className="min-w-0 flex-1 truncate">{c.title || 'Untitled chat'}</span>
-                </button>
+                  chat={c}
+                  activeChatId={activeChatId}
+                  activeDawId={daw.id}
+                  onSelect={() => selectDawChat(c)}
+                  onContextMenu={onChatContextMenu}
+                  collapsed={false}
+                />
               ))
             )}
           </div>
@@ -1091,11 +1090,11 @@ export function Sidebar({
                         onMobileClose={() => onMobileOpenChange(false)}
                         navigate={navigate}
                         activeChatId={activeChatId}
-                        activeDawId={activeDawId}
                         setActiveDawId={setActiveDawId}
                         setActiveChatId={setActiveChatId}
                         hydrateFromChat={hydrateFromChat}
                         onTerminalContextMenu={onTerminalContextMenu}
+                        onChatContextMenu={onChatContextMenu}
                       />
                     ))
                   )}
