@@ -15,9 +15,12 @@ import os
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
+from auth_deps import get_principal
 from db import get_pool
 from services.history import (
     VALID_KINDS,
@@ -66,6 +69,7 @@ def _ensure_kind(kind: str) -> None:
 async def list_history(
     kind: str,
     daw_id: uuid.UUID = Query(...),
+    principal: dict[str, Any] = Depends(get_principal),
 ) -> dict:
     _ensure_kind(kind)
     name = await _daw_name(daw_id)
@@ -94,6 +98,7 @@ async def read_history(
     kind: str,
     daw_id: uuid.UUID = Query(...),
     file: str = Query(..., min_length=1),
+    principal: dict[str, Any] = Depends(get_principal),
 ) -> dict:
     _ensure_kind(kind)
     name = await _daw_name(daw_id)
@@ -122,7 +127,7 @@ async def read_history(
 
 
 @router.post("/{kind}/rename")
-async def rename_history(kind: str, body: RenameBody, request: Request) -> dict:
+async def rename_history(kind: str, body: RenameBody, request: Request, principal: dict[str, Any] = Depends(get_principal)) -> dict:
     _ensure_kind(kind)
     name = await _daw_name(body.daw_id)
     try:
@@ -145,7 +150,8 @@ async def rename_history(kind: str, body: RenameBody, request: Request) -> dict:
             try:
                 text = old_path.read_text(encoding="utf-8", errors="replace")
                 sample = text[:4000]
-                proposed = await _openai_short_chat_title(model="", user_message_text=sample)
+                default_model = os.environ.get("DEFAULT_MODEL", "llama-gpu/qwen3.5-9b-exl3")
+                proposed = await _openai_short_chat_title(model=default_model, user_message_text=sample)
             except Exception as e:
                 logger.warning("ai rename failed kind=%s file=%s err=%s", kind, body.old, e)
         if not proposed:
@@ -197,7 +203,7 @@ async def rename_history(kind: str, body: RenameBody, request: Request) -> dict:
 
 
 @router.delete("/{kind}")
-async def delete_history(kind: str, body: DeleteBody, request: Request) -> dict:
+async def delete_history(kind: str, body: DeleteBody, request: Request, principal: dict[str, Any] = Depends(get_principal)) -> dict:
     _ensure_kind(kind)
     name = await _daw_name(body.daw_id)
     try:
