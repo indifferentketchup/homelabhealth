@@ -75,18 +75,15 @@ function BoocodeDawRow({
   })
 
   const { data: chatsData } = useQuery({
-    queryKey: ['sidebar-chats-daw', daw.id],
+    queryKey: ['chats', 'sidebar-daw', daw.id],
     queryFn: () => listChats({ limit: 5, mode: 'boocode', dawId: daw.id }),
     enabled: isExpanded,
     staleTime: 15_000,
+    refetchInterval: 30_000,
   })
 
   const sessions = useMemo(() => {
-    const raw = Array.isArray(terminalsData?.items)
-      ? terminalsData.items
-      : Array.isArray(terminalsData)
-        ? terminalsData
-        : []
+    const raw = Array.isArray(terminalsData?.active) ? terminalsData.active : []
     return [...raw].sort((a, b) => {
       if (a.pinned && !b.pinned) return -1
       if (!a.pinned && b.pinned) return 1
@@ -107,9 +104,9 @@ function BoocodeDawRow({
   }
 
   function selectDawChat(c) {
-    setActiveDawId(daw.id)
     setActiveChatId(c.id)
     hydrateFromChat(c)
+    setActiveDawId(daw.id)
     navigate(boocodeDawPath(daw.id))
     if (isMobile) onMobileClose()
   }
@@ -393,6 +390,11 @@ export function Sidebar({
   // Per-DAW expand state (BooCode only)
   const [dawExpandedMap, setDawExpandedMap] = useState(() => readDawExpandedMap())
 
+  // Persist DAW-expanded map to localStorage whenever it changes
+  useEffect(() => {
+    writeDawExpandedMap(dawExpandedMap)
+  }, [dawExpandedMap])
+
   // Auto-expand active DAW on navigation — "adjust during render" pattern
   const [lastActiveDaw, setLastActiveDaw] = useState(activeDawId ?? null)
   if ((activeDawId ?? null) !== lastActiveDaw) {
@@ -400,19 +402,13 @@ export function Sidebar({
     if (appMode === 'boocode' && activeDawId) {
       setDawExpandedMap((prev) => {
         if (prev[activeDawId]) return prev
-        const next = { ...prev, [activeDawId]: true }
-        writeDawExpandedMap(next)
-        return next
+        return { ...prev, [activeDawId]: true }
       })
     }
   }
 
   const toggleDawExpanded = useCallback((dawId) => {
-    setDawExpandedMap((prev) => {
-      const next = { ...prev, [dawId]: !prev[dawId] }
-      writeDawExpandedMap(next)
-      return next
-    })
+    setDawExpandedMap((prev) => ({ ...prev, [dawId]: !prev[dawId] }))
   }, [])
 
   function togglePinnedOpen() {
