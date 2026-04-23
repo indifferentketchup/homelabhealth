@@ -11,3 +11,5 @@ Docs/
 *.bak-*
 
 .superpowers/
+
+/history/
