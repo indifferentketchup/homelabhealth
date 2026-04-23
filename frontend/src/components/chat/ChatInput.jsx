@@ -4,7 +4,7 @@ import { Edit3, FolderOpen, Plus, RefreshCw, Search, SendHorizontal, Square, Upl
 
 import { dubdriveLs, dubdriveRead } from '@/api/dubdrive.js'
 import { toggleWebSearch } from '@/api/chats.js'
-import { listSkills, searchSkills, fetchSkillFromUrl } from '@/api/skills.js'
+import { searchSkills, fetchSkillFromUrl } from '@/api/skills.js'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/store/index.js'
 import { cn } from '@/lib/utils'
@@ -47,8 +47,7 @@ export function ChatInput({
   const [isDragOver, setIsDragOver] = useState(false)
   const [skillsModalOpen, setSkillsModalOpen] = useState(false)
   const [sessionSkillIds, setSessionSkillIds] = useState([])
-  const [skillsModalData, setSkillsModalData] = useState({ sessionSkills: [], dawSkills: [], allSkills: [] })
-  const [skillsLoading, setSkillsLoading] = useState(false)
+  const [skillsModalData] = useState({ sessionSkills: [], dawSkills: [], allSkills: [] })
   const [skillSearchQuery, setSkillSearchQuery] = useState(null)
   const [skillSearchResults, setSkillSearchResults] = useState([])
   const [skillSearchLoading, setSkillSearchLoading] = useState(false)
