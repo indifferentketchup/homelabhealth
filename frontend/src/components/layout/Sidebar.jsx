@@ -70,6 +70,7 @@ function BoocodeDawRow({
   hydrateFromChat,
 }) {
   const queryClient = useQueryClient()
+  const pendingRecreateRef = useRef(new Set())
 
   const { data: terminalsData } = useQuery({
     queryKey: ['sidebar-terminals', daw.id],
@@ -118,6 +119,8 @@ function BoocodeDawRow({
   }
 
   async function recreateClosed(s) {
+    if (pendingRecreateRef.current.has(s.id)) return
+    pendingRecreateRef.current.add(s.id)
     try {
       const created = await terminalsApi.create({
         machineId: s.machine_id,
@@ -125,8 +128,8 @@ function BoocodeDawRow({
         label: s.label ?? null,
         startingCmd: s.starting_cmd ?? null,
       })
+      await queryClient.refetchQueries({ queryKey: ['terminals', daw.id] })
       await queryClient.invalidateQueries({ queryKey: ['sidebar-terminals', daw.id] })
-      await queryClient.invalidateQueries({ queryKey: ['terminals', daw.id] })
       if (created?.id) {
         window.dispatchEvent(new CustomEvent('boocode:open-terminal', { detail: { sessionId: created.id } }))
       }
@@ -134,6 +137,8 @@ function BoocodeDawRow({
     } catch (e) {
       // No toast surface inside the sidebar; log to console for now (matches existing posture).
       console.warn('recreate closed terminal failed', friendlyErr(e, 'Re-create failed'))
+    } finally {
+      pendingRecreateRef.current.delete(s.id)
     }
   }
 
@@ -240,7 +245,7 @@ function BoocodeDawRow({
             {closedSessions.length > 0 && (
               <div className="mt-1">
                 <span className="fs-nav block px-1 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Recently Closed ({closedSessions.length})
+                  Recently Closed ({Math.min(closedSessions.length, 5)})
                 </span>
                 {closedSessions.slice(0, 5).map((s) => (
                   <button
