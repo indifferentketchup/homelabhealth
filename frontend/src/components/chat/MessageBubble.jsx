@@ -14,9 +14,13 @@ import { useAppStore } from '@/store/index.js'
 import { useShallow } from 'zustand/react/shallow'
 
 import { PersonaGlyph } from './PersonaGlyph.jsx'
+import { SendToTerminalMenu } from './SendToTerminalMenu.jsx'
 
-function CodeBlockShell({ language, rawText, children }) {
+function CodeBlockShell({ language, rawText, chatMode, children }) {
   const [copied, setCopied] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [menuAnchor, setMenuAnchor] = useState(null)
+
   async function copyCode() {
     try {
       await navigator.clipboard.writeText(rawText || '')
@@ -26,8 +30,19 @@ function CodeBlockShell({ language, rawText, children }) {
       /* ignore */
     }
   }
+
+  function handleContextMenu(e) {
+    if (chatMode !== 'boocode') return
+    e.preventDefault()
+    setMenuAnchor({ x: e.clientX, y: e.clientY })
+    setMenuOpen(true)
+  }
+
   return (
-    <div className="group/code mb-2 last:mb-0 overflow-hidden rounded-md border border-border bg-muted">
+    <div
+      className="group/code mb-2 last:mb-0 overflow-hidden rounded-md border border-border bg-muted"
+      onContextMenu={handleContextMenu}
+    >
       <div className="flex items-center justify-between gap-2 border-b border-border bg-background/30 px-3 py-1">
         <span className="fs-code font-mono text-[0.7rem] uppercase tracking-wide text-muted-foreground">
           {language || 'code'}
@@ -43,6 +58,14 @@ function CodeBlockShell({ language, rawText, children }) {
         </button>
       </div>
       {children}
+      {chatMode === 'boocode' && (
+        <SendToTerminalMenu
+          open={menuOpen}
+          onOpenChange={setMenuOpen}
+          anchor={menuAnchor}
+          text={rawText || ''}
+        />
+      )}
     </div>
   )
 }
@@ -55,26 +78,41 @@ function extractCodeText(node) {
   return ''
 }
 
-const mdComponents = {
-  p: ({ children }) => <p className="mb-2 last:mb-0 text-foreground">{children}</p>,
-  ul: ({ children }) => <ul className="mb-2 list-disc pl-4 last:mb-0">{children}</ul>,
-  ol: ({ children }) => <ol className="mb-2 list-decimal pl-4 last:mb-0">{children}</ol>,
-  li: ({ children }) => <li className="text-foreground">{children}</li>,
-  a: ({ href, children }) => (
-    <a href={href} className="text-primary underline underline-offset-2" target="_blank" rel="noreferrer">
-      {children}
-    </a>
-  ),
-  code: ({ className, children, ...props }) => {
-    const inline = !className
-    const mono = { fontFamily: 'var(--font-mono), ui-monospace, monospace' }
-    const mobileCodeSize = 'max-[600px]:!text-[0.85rem]'
-    if (inline) {
+function makeMdComponents({ chatMode } = {}) {
+  return {
+    p: ({ children }) => <p className="mb-2 last:mb-0 text-foreground">{children}</p>,
+    ul: ({ children }) => <ul className="mb-2 list-disc pl-4 last:mb-0">{children}</ul>,
+    ol: ({ children }) => <ol className="mb-2 list-decimal pl-4 last:mb-0">{children}</ol>,
+    li: ({ children }) => <li className="text-foreground">{children}</li>,
+    a: ({ href, children }) => (
+      <a href={href} className="text-primary underline underline-offset-2" target="_blank" rel="noreferrer">
+        {children}
+      </a>
+    ),
+    code: ({ className, children, ...props }) => {
+      const inline = !className
+      const mono = { fontFamily: 'var(--font-mono), ui-monospace, monospace' }
+      const mobileCodeSize = 'max-[600px]:!text-[0.85rem]'
+      if (inline) {
+        return (
+          <code
+            className={cn(
+              'fs-code max-w-full [overflow-wrap:anywhere] break-words rounded bg-muted px-1 py-0.5 text-[0.9em]',
+              mobileCodeSize,
+            )}
+            style={mono}
+            {...props}
+          >
+            {children}
+          </code>
+        )
+      }
       return (
         <code
           className={cn(
-            'fs-code max-w-full [overflow-wrap:anywhere] break-words rounded bg-muted px-1 py-0.5 text-[0.9em]',
+            'fs-code block w-full min-w-0 max-w-full [overflow-wrap:anywhere] whitespace-pre-wrap break-words bg-transparent p-3',
             mobileCodeSize,
+            className,
           )}
           style={mono}
           {...props}
@@ -82,45 +120,32 @@ const mdComponents = {
           {children}
         </code>
       )
-    }
-    return (
-      <code
-        className={cn(
-          'fs-code block w-full min-w-0 max-w-full [overflow-wrap:anywhere] whitespace-pre-wrap break-words bg-transparent p-3',
-          mobileCodeSize,
-          className,
-        )}
-        style={mono}
-        {...props}
-      >
-        {children}
-      </code>
-    )
-  },
-  pre: ({ children }) => {
-    const first = Children.toArray(children)[0]
-    const cls = first?.props?.className || ''
-    const lang = cls.match(/language-([\w-]+)/)?.[1] || null
-    const rawText = extractCodeText(first).replace(/\n$/, '')
-    return (
-      <CodeBlockShell language={lang} rawText={rawText}>
-        <pre
-          className={cn(
-            'm-0 block w-full min-w-0 max-w-full overflow-x-auto whitespace-pre-wrap break-words [overflow-wrap:anywhere]',
-            'max-[600px]:max-h-[300px] max-[600px]:overflow-auto max-[600px]:!text-[0.85rem]',
-          )}
-        >
-          {children}
-        </pre>
-      </CodeBlockShell>
-    )
-  },
-  h1: ({ children }) => <h1 className="mb-2 text-lg font-semibold">{children}</h1>,
-  h2: ({ children }) => <h2 className="mb-2 text-base font-semibold">{children}</h2>,
-  h3: ({ children }) => <h3 className="mb-1 text-sm font-semibold">{children}</h3>,
-  blockquote: ({ children }) => (
-    <blockquote className="mb-2 border-l-2 border-border pl-3 text-muted-foreground">{children}</blockquote>
-  ),
+    },
+    pre: ({ children }) => {
+      const first = Children.toArray(children)[0]
+      const cls = first?.props?.className || ''
+      const lang = cls.match(/language-([\w-]+)/)?.[1] || null
+      const rawText = extractCodeText(first).replace(/\n$/, '')
+      return (
+        <CodeBlockShell language={lang} rawText={rawText} chatMode={chatMode}>
+          <pre
+            className={cn(
+              'm-0 block w-full min-w-0 max-w-full overflow-x-auto whitespace-pre-wrap break-words [overflow-wrap:anywhere]',
+              'max-[600px]:max-h-[300px] max-[600px]:overflow-auto max-[600px]:!text-[0.85rem]',
+            )}
+          >
+            {children}
+          </pre>
+        </CodeBlockShell>
+      )
+    },
+    h1: ({ children }) => <h1 className="mb-2 text-lg font-semibold">{children}</h1>,
+    h2: ({ children }) => <h2 className="mb-2 text-base font-semibold">{children}</h2>,
+    h3: ({ children }) => <h3 className="mb-1 text-sm font-semibold">{children}</h3>,
+    blockquote: ({ children }) => (
+      <blockquote className="mb-2 border-l-2 border-border pl-3 text-muted-foreground">{children}</blockquote>
+    ),
+  }
 }
 
 function formatTimestamp(isoString) {
@@ -156,10 +181,12 @@ export function MessageBubble({
   chatId,
   message,
   streaming = false,
+  chatMode,
   onSaveMessageAsNote,
   onEditUser,
   onRegenerate,
 }) {
+  const mdComponents = makeMdComponents({ chatMode })
   const [hover, setHover] = useState(false)
   const [forkError, setForkError] = useState(null)
   const [editing, setEditing] = useState(false)
