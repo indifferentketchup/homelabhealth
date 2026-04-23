@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useOutletContext, useParams } from 'react-router-dom'
 import { ChatView } from '@/components/chat/ChatView.jsx'
 import { MobileRightDrawer } from '@/components/layout/MobileRightDrawer.jsx'
@@ -16,6 +16,7 @@ export default function BooCodeDawWorkspace() {
   const setActiveChatId = useAppStore((s) => s.setActiveChatId)
   const prevDawIdRef = useRef(dawId ?? null)
   const { chatBgOpacity } = useBoocodeFx()
+  const closeRightDrawer = useCallback(() => setMobileRightDrawer(false), [setMobileRightDrawer])
 
   useEffect(() => {
     if (!dawId) return
@@ -64,7 +65,7 @@ export default function BooCodeDawWorkspace() {
       <RepoFilePreview dawId={dawId} />
       <MobileRightDrawer
         open={mobileRightDrawer}
-        onClose={() => setMobileRightDrawer(false)}
+        onClose={closeRightDrawer}
         dawId={dawId ?? null}
       />
     </div>

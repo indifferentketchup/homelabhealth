@@ -48,7 +48,7 @@ export function MobileRightDrawer({ open, onClose, dawId }) {
           'transition-transform duration-200 ease-out md:hidden',
           open ? 'translate-x-0 shadow-[var(--glow)]' : 'translate-x-full',
         )}
-        role="dialog"
+        role="complementary"
         aria-label="Repo files"
         aria-hidden={!open}
       >
