@@ -10,7 +10,7 @@ from typing import Any, AsyncIterator
 
 import asyncpg
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 
@@ -991,6 +991,115 @@ async def delete_chat(chat_id: uuid.UUID, principal: dict[str, Any] = Depends(ge
     if result == "DELETE 0":
         raise HTTPException(status_code=404, detail="Chat not found")
     return {"ok": True}
+
+
+@router.post("/{chat_id}/export")
+async def export_chat(
+    chat_id: uuid.UUID,
+    request: Request,
+    principal: dict[str, Any] = Depends(get_principal),
+) -> dict:
+    """Save a chat's messages to /data/history/chats/<daw-slug>/<file-slug>.md.
+
+    Requires the chat to be in a DAW (daw_id must not be NULL).
+    Attempts an AI rename via _openai_short_chat_title; on failure the
+    timestamp filename persists and ai_renamed=false is returned.
+    """
+    from services.history import daw_dir, slugify, safe_path
+    from services.history_writer import render_chat_markdown, timestamp_slug
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        chat_row = await conn.fetchrow(
+            "SELECT id, title, daw_id, model, created_at FROM chats WHERE id=$1::uuid",
+            chat_id,
+        )
+        if chat_row is None:
+            raise HTTPException(status_code=404, detail="Chat not found")
+        if chat_row["daw_id"] is None:
+            raise HTTPException(status_code=400, detail="chat must be in a DAW to export")
+
+        daw_row = await conn.fetchrow(
+            "SELECT name FROM daws WHERE id=$1::uuid",
+            chat_row["daw_id"],
+        )
+        if daw_row is None:
+            raise HTTPException(status_code=400, detail="DAW not found")
+
+        msg_rows = await conn.fetch(
+            """
+            SELECT role, content, created_at
+            FROM messages
+            WHERE chat_id=$1::uuid
+            ORDER BY created_at ASC, id ASC
+            """,
+            chat_id,
+        )
+
+    daw_name: str = daw_row["name"]
+    messages = [
+        {
+            "role": r["role"],
+            "content": r["content"],
+            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+        }
+        for r in msg_rows
+    ]
+    chat_dict = {
+        "title": chat_row["title"],
+        "model": chat_row["model"],
+        "created_at": chat_row["created_at"].isoformat() if chat_row["created_at"] else None,
+    }
+
+    content = render_chat_markdown(chat_dict, messages)
+
+    ts = timestamp_slug()
+    initial_filename = f"{ts}.md"
+
+    target_dir = daw_dir("chats", daw_name)
+    file_path = target_dir / initial_filename
+    file_path.write_text(content, encoding="utf-8")
+
+    # AI rename: derive a descriptive filename from the first user messages.
+    ai_renamed = False
+    user_texts = [m["content"] for m in messages if m.get("role") == "user"]
+    user_sample = "\n".join(user_texts)[:1000]
+    default_model = os.environ.get("DEFAULT_MODEL", "llama-gpu/qwen3.5-9b-exl3")
+    model_for_title = (chat_row["model"] or default_model or "").strip() or default_model
+    if user_sample:
+        try:
+            ai_title = await _openai_short_chat_title(
+                model=model_for_title,
+                user_message_text=user_sample,
+            )
+            if ai_title:
+                slug = slugify(ai_title, max_len=60)
+                candidate = f"{slug}-{ts}.md"
+                # Collision check
+                candidate_path = target_dir / candidate
+                nonce = 1
+                while candidate_path.exists():
+                    candidate = f"{slug}-{ts}-{nonce:03d}.md"
+                    candidate_path = target_dir / candidate
+                    nonce += 1
+                file_path.rename(candidate_path)
+                file_path = candidate_path
+                ai_renamed = True
+        except Exception as exc:
+            logger.warning(
+                "export_chat ai_rename failed chat_id=%s err=%s", str(chat_id), exc
+            )
+
+    logger.info(
+        "export_chat chat_id=%s daw=%s file=%s ai_renamed=%s",
+        str(chat_id), daw_name, file_path.name, ai_renamed,
+    )
+    return {
+        "filename": file_path.name,
+        "daw_slug": slugify(daw_name),
+        "path": str(file_path),
+        "ai_renamed": ai_renamed,
+    }
 
 
 @router.get("/{chat_id}/messages")

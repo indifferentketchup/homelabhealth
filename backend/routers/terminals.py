@@ -36,6 +36,7 @@ from pydantic import BaseModel, Field
 from starlette.websockets import WebSocketState
 
 from db import get_pool
+from routers.chats import _openai_short_chat_title
 from services import tmux_session
 from services.terminal_sweep import lru_evict_if_needed
 
@@ -478,6 +479,113 @@ async def paste(sid: uuid.UUID, body: PasteBody, request: Request) -> dict[str, 
             },
         )
     return {"ok": True, "len": len(text)}
+
+
+@router.post("/{sid}/export")
+# TODO(auth): add require_owner once member-tier lands.
+async def export_terminal(sid: uuid.UUID, request: Request) -> dict:
+    """Capture tmux pane output and write to /data/history/terminals/<daw-slug>/<file>.txt.
+
+    Requires the session to have a daw_id and must not be closed (closed sessions
+    have no tmux pane to capture).
+    """
+    import os
+    from services.history import daw_dir, slugify
+    from services.history_writer import render_terminal_plaintext, timestamp_slug
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT id, daw_id, tmux_name, label, machine_id, closed_at
+            FROM terminal_sessions
+            WHERE id=$1::uuid
+            """,
+            sid,
+        )
+        if row is None:
+            raise HTTPException(status_code=404, detail="session not found")
+        if row["closed_at"] is not None:
+            raise HTTPException(
+                status_code=400,
+                detail="session is closed and cannot be captured",
+            )
+        if row["daw_id"] is None:
+            raise HTTPException(status_code=400, detail="terminal must be in a DAW to export")
+
+        daw_row = await conn.fetchrow(
+            "SELECT name FROM daws WHERE id=$1::uuid",
+            row["daw_id"],
+        )
+        if daw_row is None:
+            raise HTTPException(status_code=400, detail="DAW not found")
+
+        machine_row = await conn.fetchrow(
+            "SELECT name FROM terminal_machines WHERE id=$1::uuid",
+            row["machine_id"],
+        )
+
+    daw_name: str = daw_row["name"]
+    machine_name: str = machine_row["name"] if machine_row else "unknown"
+    label: str = row["label"] or str(sid)
+    tmux_name: str = row["tmux_name"]
+
+    raw = await tmux_session.capture_pane(tmux_name, lines=10000)
+    if not raw:
+        logger.warning(
+            "export_terminal empty capture sid=%s tmux_name=%s", str(sid), tmux_name
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot capture a closed or missing tmux session.",
+        )
+
+    content = render_terminal_plaintext(label, machine_name, raw)
+
+    ts = timestamp_slug()
+    initial_filename = f"{ts}.txt"
+    target_dir = daw_dir("terminals", daw_name)
+    file_path = target_dir / initial_filename
+    file_path.write_text(content, encoding="utf-8")
+
+    # AI rename: use the tail of the captured text as a prompt.
+    ai_renamed = False
+    stripped_text = content  # already stripped by render_terminal_plaintext
+    tail = stripped_text[-500:].strip() if len(stripped_text) > 500 else stripped_text.strip()
+    default_model = os.environ.get("DEFAULT_MODEL", "llama-gpu/qwen3.5-9b-exl3")
+    if tail:
+        try:
+            ai_title = await _openai_short_chat_title(
+                model=default_model,
+                user_message_text=tail,
+            )
+            if ai_title:
+                slug = slugify(ai_title, max_len=60)
+                candidate = f"{slug}-{ts}.txt"
+                candidate_path = target_dir / candidate
+                nonce = 1
+                while candidate_path.exists():
+                    candidate = f"{slug}-{ts}-{nonce:03d}.txt"
+                    candidate_path = target_dir / candidate
+                    nonce += 1
+                file_path.rename(candidate_path)
+                file_path = candidate_path
+                ai_renamed = True
+        except Exception as exc:
+            logger.warning(
+                "export_terminal ai_rename failed sid=%s err=%s", str(sid), exc
+            )
+
+    logger.info(
+        "export_terminal sid=%s daw=%s file=%s ai_renamed=%s",
+        str(sid), daw_name, file_path.name, ai_renamed,
+    )
+    return {
+        "filename": file_path.name,
+        "daw_slug": slugify(daw_name),
+        "path": str(file_path),
+        "ai_renamed": ai_renamed,
+    }
 
 
 # ── WebSocket ────────────────────────────────────────────────────────────────
