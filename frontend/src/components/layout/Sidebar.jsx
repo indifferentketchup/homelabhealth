@@ -23,7 +23,7 @@ import {
 
 import { applyBrandingCss, fetchBranding } from '@/api/branding.js'
 import { friendlyErr } from '@/lib/friendlyErr.js'
-import { deleteChat, listChats, patchChat, patchRecentChatsListCache } from '@/api/chats.js'
+import { deleteChat, exportChat, listChats, patchChat, patchRecentChatsListCache } from '@/api/chats.js'
 import { listDaws } from '@/api/daws.js'
 import * as terminalsApi from '@/api/terminals.js'
 import { Button } from '@/components/ui/button'
@@ -68,6 +68,7 @@ function BoocodeDawRow({
   setActiveDawId,
   setActiveChatId,
   hydrateFromChat,
+  onTerminalContextMenu,
 }) {
   const queryClient = useQueryClient()
   const pendingRecreateRef = useRef(new Set())
@@ -210,6 +211,7 @@ function BoocodeDawRow({
                 type="button"
                 className="fs-nav flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-sm outline-none ring-sidebar-ring hover:bg-sidebar-accent/50 focus-visible:ring-2"
                 onClick={() => openTerminal(s.id)}
+                onContextMenu={(e) => onTerminalContextMenu(e, s, daw)}
               >
                 {s.pinned ? (
                   <Pin className="size-3.5 shrink-0 opacity-60" aria-hidden />
@@ -354,6 +356,8 @@ export function Sidebar({
   const [editTitle, setEditTitle] = useState('')
   const [pendingDelete, setPendingDelete] = useState(null)
   const [deleting, setDeleting] = useState(false)
+  const [savedToast, setSavedToast] = useState(null)
+  const savedToastTimerRef = useRef(null)
   const editInputRef = useRef(null)
 
   useEffect(() => {
@@ -566,10 +570,22 @@ export function Sidebar({
     if (isMobile) onMobileOpenChange(false)
   }
 
+  function showSavedToast(msg) {
+    if (savedToastTimerRef.current) clearTimeout(savedToastTimerRef.current)
+    setSavedToast(msg)
+    savedToastTimerRef.current = setTimeout(() => setSavedToast(null), 3500)
+  }
+
   function onChatContextMenu(e, chat) {
     e.preventDefault()
     e.stopPropagation()
     setCtx({ x: e.clientX, y: e.clientY, chat })
+  }
+
+  function onTerminalContextMenu(e, session, daw) {
+    e.preventDefault()
+    e.stopPropagation()
+    setCtx({ x: e.clientX, y: e.clientY, terminal: session, terminalDaw: daw })
   }
 
   async function commitRename(chatId) {
@@ -1020,6 +1036,7 @@ export function Sidebar({
                         setActiveDawId={setActiveDawId}
                         setActiveChatId={setActiveChatId}
                         hydrateFromChat={hydrateFromChat}
+                        onTerminalContextMenu={onTerminalContextMenu}
                       />
                     ))
                   )}
@@ -1327,22 +1344,92 @@ export function Sidebar({
           onClick={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
         >
-          <button
-            type="button"
-            role="menuitem"
-            className="fs-nav flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-left outline-none hover:bg-accent hover:text-accent-foreground"
-            onClick={() => startRename(ctx.chat)}
-          >
-            Rename
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className="fs-nav flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-left text-destructive outline-none hover:bg-destructive/10"
-            onClick={() => requestDeleteChat(ctx.chat)}
-          >
-            Delete
-          </button>
+          {ctx.terminal ? (
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                className="fs-nav flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-left outline-none hover:bg-accent hover:text-accent-foreground"
+                onClick={async () => {
+                  const sid = ctx.terminal.id
+                  closeCtx()
+                  try {
+                    const res = await terminalsApi.exportTerminal(sid)
+                    await terminalsApi.del(sid)
+                    await queryClient.invalidateQueries({ queryKey: ['terminals'] })
+                    await queryClient.invalidateQueries({ queryKey: ['sidebar-terminals'] })
+                    showSavedToast(`Saved: ${res?.filename ?? 'terminal'}`)
+                  } catch (e) {
+                    showSavedToast(`Save failed: ${friendlyErr(e, 'export error')}`)
+                  }
+                }}
+              >
+                Save &amp; Close
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="fs-nav flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-left text-destructive outline-none hover:bg-destructive/10"
+                onClick={async () => {
+                  const sid = ctx.terminal.id
+                  closeCtx()
+                  try {
+                    await terminalsApi.del(sid)
+                    await queryClient.invalidateQueries({ queryKey: ['terminals'] })
+                    await queryClient.invalidateQueries({ queryKey: ['sidebar-terminals'] })
+                  } catch (e) {
+                    showSavedToast(`Close failed: ${friendlyErr(e, 'close error')}`)
+                  }
+                }}
+              >
+                Close
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                className="fs-nav flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-left outline-none hover:bg-accent hover:text-accent-foreground"
+                onClick={() => startRename(ctx.chat)}
+              >
+                Rename
+              </button>
+              {appMode === 'boocode' && ctx.chat?.daw_id && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="fs-nav flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-left outline-none hover:bg-accent hover:text-accent-foreground"
+                  onClick={async () => {
+                    const cid = ctx.chat.id
+                    closeCtx()
+                    try {
+                      const res = await exportChat(cid)
+                      showSavedToast(`Saved: ${res?.filename ?? 'chat'}`)
+                    } catch (e) {
+                      showSavedToast(`Save failed: ${friendlyErr(e, 'export error')}`)
+                    }
+                  }}
+                >
+                  Save to file
+                </button>
+              )}
+              <button
+                type="button"
+                role="menuitem"
+                className="fs-nav flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-left text-destructive outline-none hover:bg-destructive/10"
+                onClick={() => requestDeleteChat(ctx.chat)}
+              >
+                Delete
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {savedToast && (
+        <div className="fixed bottom-4 left-1/2 z-[60] -translate-x-1/2 rounded-md border border-border bg-popover px-4 py-2 text-sm text-popover-foreground shadow-md">
+          {savedToast}
         </div>
       )}
 

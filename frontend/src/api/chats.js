@@ -60,6 +60,10 @@ export function forkChat(chatId, messageId) {
   return apiFetch(`/api/chats/${chatId}/messages/${messageId}/fork`, { method: 'POST' })
 }
 
+export function exportChat(id) {
+  return apiFetch(`/api/chats/${encodeURIComponent(id)}/export`, { method: 'POST' })
+}
+
 export function getChatSourceSelection(chatId) {
   return apiFetch(`/api/chats/${chatId}/source-selection`)
 }

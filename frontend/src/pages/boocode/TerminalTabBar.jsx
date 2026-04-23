@@ -74,6 +74,7 @@ function Tab({
   onCancelRename,
   onPin,
   onClose,
+  onSaveAndClose,
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const dot = session.device_count > 0
@@ -162,6 +163,11 @@ function Tab({
           )}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
+        {onSaveAndClose && (
+          <DropdownMenuItem onSelect={() => onSaveAndClose()}>
+            Save &amp; Close
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem onSelect={() => onClose()} className="text-destructive">
           <X className="size-3.5" /> Close
         </DropdownMenuItem>
@@ -178,6 +184,7 @@ export default function TerminalTabBar({
   onRename,
   onPin,
   onClose,
+  onSaveAndClose,
   trailing,
 }) {
   const [renamingId, setRenamingId] = useState(null)
@@ -225,6 +232,7 @@ export default function TerminalTabBar({
             onCancelRename={() => setRenamingId(null)}
             onPin={(next) => onPin(s.id, next)}
             onClose={() => onClose(s.id)}
+            onSaveAndClose={onSaveAndClose ? () => onSaveAndClose(s.id) : undefined}
           />
         ))}
       </div>
@@ -242,6 +250,7 @@ export default function TerminalTabBar({
             onCancelRename={() => setRenamingId(null)}
             onPin={(next) => onPin(active.id, next)}
             onClose={() => onClose(active.id)}
+            onSaveAndClose={onSaveAndClose ? () => onSaveAndClose(active.id) : undefined}
           />
         ) : null}
         {others.length > 0 ? (
