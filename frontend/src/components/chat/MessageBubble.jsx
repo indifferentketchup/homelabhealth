@@ -1,4 +1,5 @@
 import { Children, useEffect, useMemo, useState } from 'react'
+import { useLongPress } from '@/hooks/useLongPress.js'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
@@ -38,10 +39,17 @@ function CodeBlockShell({ language, rawText, chatMode, children }) {
     setMenuOpen(true)
   }
 
+  const lp = useLongPress(handleContextMenu)
+
   return (
     <div
       className="group/code mb-2 last:mb-0 overflow-hidden rounded-md border border-border bg-muted"
       onContextMenu={handleContextMenu}
+      onTouchStart={lp.onTouchStart}
+      onTouchMove={lp.onTouchMove}
+      onTouchEnd={lp.onTouchEnd}
+      onTouchCancel={lp.onTouchCancel}
+      style={{ WebkitTouchCallout: 'none' }}
     >
       <div className="flex items-center justify-between gap-2 border-b border-border bg-background/30 px-3 py-1">
         <span className="fs-code font-mono text-[0.7rem] uppercase tracking-wide text-muted-foreground">

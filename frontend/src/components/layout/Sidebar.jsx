@@ -51,6 +51,81 @@ import {
 } from '@/routes/paths.js'
 import { useAppStore } from '@/store/index.js'
 import { cn } from '@/lib/utils'
+import { useLongPress } from '@/hooks/useLongPress.js'
+
+// ---------------------------------------------------------------------------
+// Subcomponents for long-press parity on touch devices
+// ---------------------------------------------------------------------------
+
+/** Single terminal session row — extracts useLongPress out of .map() */
+function TerminalRow({ session, daw, onActivate, onContextMenu }) {
+  const lp = useLongPress((e) => onContextMenu(e, session, daw))
+  return (
+    <button
+      type="button"
+      className="fs-nav flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-sm outline-none ring-sidebar-ring hover:bg-sidebar-accent/50 focus-visible:ring-2"
+      style={{ WebkitTouchCallout: 'none' }}
+      onClick={() => onActivate(session.id)}
+      onContextMenu={(e) => onContextMenu(e, session, daw)}
+      onTouchStart={lp.onTouchStart}
+      onTouchMove={lp.onTouchMove}
+      onTouchEnd={lp.onTouchEnd}
+      onTouchCancel={lp.onTouchCancel}
+    >
+      {session.pinned ? (
+        <Pin className="size-3.5 shrink-0 opacity-60" aria-hidden />
+      ) : (
+        <TerminalSquare className="size-3.5 shrink-0 opacity-60" aria-hidden />
+      )}
+      <span className="min-w-0 flex-1 truncate">
+        {session.label || session.machine_name || 'session'}
+      </span>
+      {session.device_count > 0 && (
+        <span className="flex items-center gap-1 shrink-0">
+          <span
+            className="size-1.5 rounded-full"
+            style={{ background: '#3cff7a' }}
+            aria-label="active"
+          />
+          {session.device_count > 1 && (
+            <span className="text-[10px] text-muted-foreground">{session.device_count}</span>
+          )}
+        </span>
+      )}
+    </button>
+  )
+}
+
+/** Single recent-chat row — extracts useLongPress out of .map() */
+function ChatRow({ chat, activeChatId, onSelect, onContextMenu, collapsed }) {
+  const lp = useLongPress((e) => onContextMenu(e, chat))
+  const isActive = chat.id === activeChatId
+  return (
+    <Button
+      type="button"
+      variant={isActive ? 'secondary' : 'ghost'}
+      className={
+        collapsed
+          ? 'h-auto min-h-9 w-full justify-center px-0 py-2 font-normal'
+          : 'h-auto min-h-9 w-full justify-start gap-2 py-2 text-left font-normal'
+      }
+      style={{ WebkitTouchCallout: 'none' }}
+      onClick={() => onSelect(chat.id)}
+      onContextMenu={(e) => onContextMenu(e, chat)}
+      onTouchStart={lp.onTouchStart}
+      onTouchMove={lp.onTouchMove}
+      onTouchEnd={lp.onTouchEnd}
+      onTouchCancel={lp.onTouchCancel}
+      aria-current={isActive ? 'page' : undefined}
+      title={collapsed ? (chat.title || 'Untitled chat') : undefined}
+    >
+      <MessagesSquare className="size-4 shrink-0 opacity-70" />
+      {!collapsed && (
+        <span className="fs-nav line-clamp-2">{chat.title || 'Untitled chat'}</span>
+      )}
+    </Button>
+  )
+}
 
 // ---------------------------------------------------------------------------
 // BooCode per-DAW row with nested TERMINALS + CHATS subsections
@@ -206,34 +281,13 @@ function BoocodeDawRow({
               Terminals ({sessions.length})
             </span>
             {sessions.map((s) => (
-              <button
+              <TerminalRow
                 key={s.id}
-                type="button"
-                className="fs-nav flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-sm outline-none ring-sidebar-ring hover:bg-sidebar-accent/50 focus-visible:ring-2"
-                onClick={() => openTerminal(s.id)}
-                onContextMenu={(e) => onTerminalContextMenu(e, s, daw)}
-              >
-                {s.pinned ? (
-                  <Pin className="size-3.5 shrink-0 opacity-60" aria-hidden />
-                ) : (
-                  <TerminalSquare className="size-3.5 shrink-0 opacity-60" aria-hidden />
-                )}
-                <span className="min-w-0 flex-1 truncate">
-                  {s.label || s.machine_name || 'session'}
-                </span>
-                {s.device_count > 0 && (
-                  <span className="flex items-center gap-1 shrink-0">
-                    <span
-                      className="size-1.5 rounded-full"
-                      style={{ background: '#3cff7a' }}
-                      aria-label="active"
-                    />
-                    {s.device_count > 1 && (
-                      <span className="text-[10px] text-muted-foreground">{s.device_count}</span>
-                    )}
-                  </span>
-                )}
-              </button>
+                session={s}
+                daw={daw}
+                onActivate={openTerminal}
+                onContextMenu={onTerminalContextMenu}
+              />
             ))}
             {/* + new terminal */}
             <button
@@ -1089,17 +1143,13 @@ export function Sidebar({
                           onClick={(e) => e.stopPropagation()}
                         />
                       ) : (
-                        <Button
-                          type="button"
-                          variant={c.id === activeChatId ? 'secondary' : 'ghost'}
-                          className="h-auto min-h-9 w-full justify-start gap-2 py-2 text-left font-normal"
-                          onClick={() => selectChat(c.id)}
-                          onContextMenu={(e) => onChatContextMenu(e, c)}
-                          aria-current={c.id === activeChatId ? 'page' : undefined}
-                        >
-                          <MessagesSquare className="size-4 shrink-0 opacity-70" />
-                          <span className="fs-nav line-clamp-2">{c.title || 'Untitled chat'}</span>
-                        </Button>
+                        <ChatRow
+                          chat={c}
+                          activeChatId={activeChatId}
+                          onSelect={selectChat}
+                          onContextMenu={onChatContextMenu}
+                          collapsed={false}
+                        />
                       )}
                     </div>
                   ))}
@@ -1194,18 +1244,14 @@ export function Sidebar({
             {(appMode === 'booops' || appMode === '808notes') && desktopCollapsed && (
               <div className="flex flex-col gap-1">
                 {chats.map((c) => (
-                  <Button
+                  <ChatRow
                     key={c.id}
-                    type="button"
-                    variant={c.id === activeChatId ? 'secondary' : 'ghost'}
-                    className="h-auto min-h-9 w-full justify-center px-0 py-2 font-normal"
-                    onClick={() => selectChat(c.id)}
-                    onContextMenu={(e) => onChatContextMenu(e, c)}
-                    aria-current={c.id === activeChatId ? 'page' : undefined}
-                    title={c.title || 'Untitled chat'}
-                  >
-                    <MessagesSquare className="size-4 shrink-0 opacity-70" />
-                  </Button>
+                    chat={c}
+                    activeChatId={activeChatId}
+                    onSelect={selectChat}
+                    onContextMenu={onChatContextMenu}
+                    collapsed={true}
+                  />
                 ))}
               </div>
             )}

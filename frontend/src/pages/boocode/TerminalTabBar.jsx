@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, Pin, PinOff, Plus, TerminalSquare, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { useLongPress } from '@/hooks/useLongPress.js'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -78,6 +79,15 @@ function Tab({
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const dot = session.device_count > 0
+
+  function handleContextMenu(e) {
+    e.preventDefault()
+    if (!isActive) onActivate()
+    setMenuOpen(true)
+  }
+
+  const lp = useLongPress(handleContextMenu)
+
   return (
     <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen} modal={false}>
       <DropdownMenuTrigger asChild>
@@ -85,17 +95,18 @@ function Tab({
           type="button"
           onClick={onActivate}
           onDoubleClick={onStartRename}
-          onContextMenu={(e) => {
-            e.preventDefault()
-            if (!isActive) onActivate()
-            setMenuOpen(true)
-          }}
+          onContextMenu={handleContextMenu}
+          onTouchStart={lp.onTouchStart}
+          onTouchMove={lp.onTouchMove}
+          onTouchEnd={lp.onTouchEnd}
+          onTouchCancel={lp.onTouchCancel}
           className="group/tab flex shrink-0 items-center gap-1.5 rounded border px-2 py-0.5 text-xs transition-colors"
           style={{
             borderColor: isActive ? 'var(--orange, #ff8c00)' : 'var(--border)',
             color: isActive ? 'var(--orange, #ff8c00)' : 'var(--text)',
             background: isActive ? 'var(--bg-card)' : 'transparent',
             fontFamily: "'JetBrains Mono', monospace",
+            WebkitTouchCallout: 'none',
           }}
           aria-current={isActive ? 'true' : undefined}
         >
