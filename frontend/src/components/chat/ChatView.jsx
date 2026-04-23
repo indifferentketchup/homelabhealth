@@ -500,6 +500,7 @@ export function ChatView({
               streamingAssistant={busy ? streamText : null}
               sourcesByMessageIndex={sourcesByMessageIndex}
               streamingRagContext={busy ? streamingRag : null}
+              chatMode={chatMode}
               onSaveMessageAsNote={notesDawIdForSave ? saveMessageAsNote : undefined}
               onEditUser={handleEditUser}
               onRegenerate={handleRegenerate}
