@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useOutletContext, useParams } from 'react-router-dom'
-import { ChatView } from '@/components/chat/ChatView.jsx'
 import { MobileRightDrawer } from '@/components/layout/MobileRightDrawer.jsx'
 import { useBoocodeFx } from '@/hooks/useBoocodeFx.jsx'
 import { useAppStore } from '@/store/index.js'
 import { RepoStatusBar } from './RepoStatusBar.jsx'
+import BoocodeCenterPane from './BoocodeCenterPane.jsx'
 import { RepoFilesPanel } from './RepoFilesPanel.jsx'
 import { RepoFilePreview } from './RepoFilePreview.jsx'
-import TerminalDrawer from './TerminalDrawer.jsx'
 
 export default function BooCodeDawWorkspace() {
   const { dawId } = useParams()
@@ -52,16 +51,12 @@ export default function BooCodeDawWorkspace() {
     >
       <RepoStatusBar dawId={dawId} />
       <div className="flex min-h-0 flex-1 flex-row overflow-hidden">
-        <section className="boocode-terminal-frame flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
-                 style={{ background: chatBg }}>
-          <ChatView chatMode="boocode" workspaceDawId={dawId} />
-        </section>
+        <BoocodeCenterPane dawId={dawId} />
         <aside className="boocode-terminal-frame hidden w-80 shrink-0 flex-col overflow-hidden border-l md:flex"
                style={{ borderColor: 'var(--border)', background: panelBg }}>
           <RepoFilesPanel dawId={dawId} />
         </aside>
       </div>
-      <TerminalDrawer dawId={dawId} />
       <RepoFilePreview dawId={dawId} />
       <MobileRightDrawer
         open={mobileRightDrawer}
