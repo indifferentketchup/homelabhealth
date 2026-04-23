@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Outlet, useNavigate } from 'react-router-dom'
-import { Loader2, Menu } from 'lucide-react'
+import { FolderOpen, Loader2, Menu } from 'lucide-react'
 
 import { fetchBranding } from '@/api/branding.js'
 import { getOllamaSettings } from '@/api/ollama.js'
@@ -43,9 +43,10 @@ export function BooCodeSettingsRoute() {
   )
 }
 
-function BooCodeShell({ mobileSidebar, setMobileSidebar }) {
+function BooCodeShell({ mobileSidebar, setMobileSidebar, mobileRightDrawer, setMobileRightDrawer }) {
   const { matrixEnabled, crtEnabled, density, speed, matrixOpacity, crtOpacity } = useBoocodeFx()
   const { suppressMatrix, suppressCrt } = useFxSuppressState()
+  const activeDawId = useAppStore((s) => s.activeDawId)
 
   const showMatrix = matrixEnabled && !suppressMatrix
   const showCrt = crtEnabled && !suppressCrt
@@ -78,9 +79,21 @@ function BooCodeShell({ mobileSidebar, setMobileSidebar }) {
               <Menu className="size-5" />
             </Button>
             <ModelSelectorBar className="min-w-0 flex-1" />
+            {activeDawId ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="ml-auto h-11 w-11 md:h-9 md:w-9"
+                aria-label="Repo files"
+                onClick={() => setMobileRightDrawer(true)}
+              >
+                <FolderOpen className="size-5" />
+              </Button>
+            ) : null}
           </header>
           <main className="main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-            <Outlet />
+            <Outlet context={{ mobileRightDrawer, setMobileRightDrawer }} />
           </main>
         </div>
       </div>
@@ -90,6 +103,7 @@ function BooCodeShell({ mobileSidebar, setMobileSidebar }) {
 
 export default function BooCodeApp() {
   const [mobileSidebar, setMobileSidebar] = useState(false)
+  const [mobileRightDrawer, setMobileRightDrawer] = useState(false)
   const setPersonas = useAppStore((s) => s.setPersonas)
   const setDefaultModel = useAppStore((s) => s.setDefaultModel)
   const hydrateUserProfile = useAppStore((s) => s.hydrateUserProfile)
@@ -141,7 +155,12 @@ export default function BooCodeApp() {
       <TooltipProvider>
         <DawQuerySync />
         <BooCodeCommandPalette />
-        <BooCodeShell mobileSidebar={mobileSidebar} setMobileSidebar={setMobileSidebar} />
+        <BooCodeShell
+          mobileSidebar={mobileSidebar}
+          setMobileSidebar={setMobileSidebar}
+          mobileRightDrawer={mobileRightDrawer}
+          setMobileRightDrawer={setMobileRightDrawer}
+        />
       </TooltipProvider>
     </FxSuppressProvider>
   )
