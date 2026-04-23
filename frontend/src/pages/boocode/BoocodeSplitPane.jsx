@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { cn } from '@/lib/utils'
 
 const RATIO_MIN = 0.2
 const RATIO_MAX = 0.8
@@ -15,6 +16,7 @@ const RATIO_MAX = 0.8
  *  - onRatioChange:   (next: number) => void
  *  - left:            ReactNode
  *  - right:           ReactNode
+ *  - primary?:        'left' | 'right'  — which side gets the focus ring (default 'left')
  *  - ariaLabelLeft?:  string        — defaults to "Primary pane"
  *  - ariaLabelRight?: string        — defaults to "Secondary pane"
  */
@@ -23,6 +25,7 @@ export default function BoocodeSplitPane({
   onRatioChange,
   left,
   right,
+  primary = 'left',
   ariaLabelLeft = 'Primary pane',
   ariaLabelRight = 'Secondary pane',
 }) {
@@ -86,10 +89,13 @@ export default function BoocodeSplitPane({
       className="flex min-h-0 flex-1 overflow-hidden"
       style={{ flexDirection: 'row', userSelect: dragging ? 'none' : undefined }}
     >
-      {/* Left pane */}
+      {/* Left pane — AC-4: focus ring on the primary side */}
       <div
         aria-label={ariaLabelLeft}
-        className="flex min-h-0 min-w-0 flex-col overflow-hidden"
+        className={cn(
+          'flex min-h-0 min-w-0 flex-col overflow-hidden',
+          primary === 'left' && 'ring-2 ring-inset ring-[color:var(--orange,#ff8c00)]/40',
+        )}
         style={{ flexBasis: leftPct, flexShrink: 0, flexGrow: 0, transition }}
       >
         {left}
@@ -120,10 +126,13 @@ export default function BoocodeSplitPane({
         />
       </div>
 
-      {/* Right pane */}
+      {/* Right pane — AC-4: focus ring on the primary side */}
       <div
         aria-label={ariaLabelRight}
-        className="flex min-h-0 min-w-0 flex-col overflow-hidden"
+        className={cn(
+          'flex min-h-0 min-w-0 flex-col overflow-hidden',
+          primary === 'right' && 'ring-2 ring-inset ring-[color:var(--orange,#ff8c00)]/40',
+        )}
         style={{ flexBasis: rightPct, flexShrink: 0, flexGrow: 0, transition }}
       >
         {right}

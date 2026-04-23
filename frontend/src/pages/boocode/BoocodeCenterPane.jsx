@@ -147,13 +147,20 @@ export default function BoocodeCenterPane({ dawId, dawName = null }) {
       })()
     }
 
+    // AC-7: sidebar chat-row click → switch primary to chat
+    function onOpenChat() {
+      setPrimary('chat')
+    }
+
     window.addEventListener('boocode:new-terminal', onNew)
     window.addEventListener('boocode:open-terminal', onOpen)
     window.addEventListener('boocode:send-to-terminal', onSend)
+    window.addEventListener('boocode:open-chat', onOpenChat)
     return () => {
       window.removeEventListener('boocode:new-terminal', onNew)
       window.removeEventListener('boocode:open-terminal', onOpen)
       window.removeEventListener('boocode:send-to-terminal', onSend)
+      window.removeEventListener('boocode:open-chat', onOpenChat)
     }
   }, [dawId, qc, setToastMsg, setShowNewModal, setPrimary, setActiveSessionId])
 
@@ -225,6 +232,7 @@ export default function BoocodeCenterPane({ dawId, dawName = null }) {
           onRatioChange={setSplitRatio}
           left={chatNode}
           right={termNode}
+          primary={primary === 'chat' ? 'left' : 'right'}
           ariaLabelLeft="Chat pane"
           ariaLabelRight="Terminal pane"
         />
@@ -247,11 +255,6 @@ export default function BoocodeCenterPane({ dawId, dawName = null }) {
         </div>
       ) : null}
 
-      {/*
-        TODO(commit-3): wire boocode:open-chat listener here when the sidebar
-        dispatches it for per-DAW CHATS section clicks. Handler would set
-        primary='chat' and let ChatView handle the chat activation itself.
-      */}
     </div>
   )
 }

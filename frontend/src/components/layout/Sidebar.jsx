@@ -107,6 +107,8 @@ function BoocodeDawRow({
     setActiveChatId(c.id)
     hydrateFromChat(c)
     setActiveDawId(daw.id)
+    // AC-7: tell BoocodeCenterPane to switch primary to 'chat'
+    window.dispatchEvent(new CustomEvent('boocode:open-chat', { detail: { chatId: c.id } }))
     navigate(boocodeDawPath(daw.id))
     if (isMobile) onMobileClose()
   }
