@@ -25,14 +25,14 @@ def ansi_strip(text: str) -> str:
 
 
 def timestamp_slug(now: _dt.datetime | None = None) -> str:
-    d = now or _dt.datetime.utcnow()
+    d = now or _dt.datetime.now(_dt.timezone.utc)
     return d.strftime("%Y%m%d-%H%M%S")
 
 
 def render_chat_markdown(chat: dict, messages: list[dict]) -> str:
     """chat: dict with at least title/created_at; messages: role+content+created_at."""
     title = (chat.get("title") or "Untitled Chat").strip()
-    exported_at = _dt.datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    exported_at = _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
     parts = [f"# {title}", "", f"Exported: {exported_at}"]
     if chat.get("model"):
         parts.append(f"Model: {chat['model']}")
@@ -55,7 +55,7 @@ def render_terminal_plaintext(label: str, machine: str, raw_capture: bytes) -> s
         f"# Terminal export\n"
         f"Label: {label}\n"
         f"Machine: {machine}\n"
-        f"Exported: {_dt.datetime.utcnow().isoformat(timespec='seconds')}Z\n"
+        f"Exported: {_dt.datetime.now(_dt.timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')}\n"
         + "-" * 60 + "\n\n"
     )
     text = raw_capture.decode("utf-8", errors="replace")
