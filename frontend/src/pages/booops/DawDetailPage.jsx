@@ -23,6 +23,7 @@ import {
 import { fetchOllamaModels, getOllamaSettings } from '@/api/ollama.js'
 import { syncRepo, updateRepoConfig } from '@/api/boocode.js'
 import { listSkills, getDawSkills, addSkillToDaw, removeSkillFromDaw, toggleDawSkill } from '@/api/skills'
+import HistoryModal from '@/pages/boocode/HistoryModal.jsx'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { PATH_808NOTES, PATH_BOOOPS, is808notesRouteContext } from '@/routes/paths.js'
@@ -89,6 +90,8 @@ export default function DawDetailPage() {
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [clearing, setClearing] = useState(false)
   const [skillsAddDialogOpen, setSkillsAddDialogOpen] = useState(false)
+  const [chatHistoryOpen, setChatHistoryOpen] = useState(false)
+  const [terminalHistoryOpen, setTerminalHistoryOpen] = useState(false)
 
   const invalidateDaw = () => {
     queryClient.invalidateQueries({ queryKey: ['daws'] })
@@ -930,6 +933,35 @@ const saveInferMut = useMutation({
                 </li>
               </ul>
             </section>
+
+            <section className="rounded-md border border-border bg-card p-4">
+              <h2 className="mb-3 text-sm font-medium text-foreground">History</h2>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" size="sm" onClick={() => setChatHistoryOpen(true)}>
+                  Chat History
+                </Button>
+                {isBoocode && (
+                  <Button variant="outline" size="sm" onClick={() => setTerminalHistoryOpen(true)}>
+                    Terminal History
+                  </Button>
+                )}
+              </div>
+            </section>
+
+            <HistoryModal
+              open={chatHistoryOpen}
+              onClose={() => setChatHistoryOpen(false)}
+              kind="chats"
+              dawId={id}
+              dawName={daw?.name || ''}
+            />
+            <HistoryModal
+              open={terminalHistoryOpen}
+              onClose={() => setTerminalHistoryOpen(false)}
+              kind="terminals"
+              dawId={id}
+              dawName={daw?.name || ''}
+            />
 
             <section className="rounded-lg border border-destructive bg-destructive/5 p-4">
               <h2 className="mb-3 text-sm font-medium text-destructive">Danger zone</h2>
