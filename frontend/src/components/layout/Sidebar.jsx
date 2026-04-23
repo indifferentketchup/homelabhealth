@@ -1108,7 +1108,7 @@ export function Sidebar({
               </div>
             )}
 
-            {(appMode === 'booops' || appMode === '808notes' || appMode === 'boocode') && desktopCollapsed && (
+            {(appMode === 'booops' || appMode === '808notes') && desktopCollapsed && (
               <div className="flex flex-col gap-1">
                 {chats.map((c) => (
                   <Button
