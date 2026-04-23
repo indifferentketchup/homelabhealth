@@ -25,13 +25,16 @@ export default function BooCodeCommandPalette() {
   const activeDawId = useAppStore((s) => s.activeDawId)
   const navigate = useNavigate()
 
-  // Adjust during render: reset page/selection each time the palette opens.
+  // Adjust during render: reset page each time the palette opens; clear
+  // selectionText on CLOSE (it is captured by the keydown handler on open,
+  // before cmdk's focus-trap collapses the selection).
   if (open && !prevOpen) {
     setPrevOpen(true)
     setPage('root')
-    setSelectionText('')
+    // selectionText already populated by the keydown handler
   } else if (!open && prevOpen) {
     setPrevOpen(false)
+    setSelectionText('')  // clear on close so next open starts fresh
   }
 
   useEffect(() => {
@@ -39,6 +42,13 @@ export default function BooCodeCommandPalette() {
       const meta = e.metaKey || e.ctrlKey
       if (meta && e.key.toLowerCase() === 'k') {
         e.preventDefault()
+        if (!open) {
+          // capture selection BEFORE opening — focus-trap will collapse it otherwise
+          const sel = typeof window !== 'undefined'
+            ? (window.getSelection()?.toString() ?? '').trim()
+            : ''
+          setSelectionText(sel)
+        }
         setOpen((v) => !v)
       } else if (e.key === 'Escape' && open) {
         setOpen(false)
@@ -69,7 +79,7 @@ export default function BooCodeCommandPalette() {
   const { data: termsPack } = useQuery({
     queryKey: ['palette-terminals', activeDawId],
     queryFn: () => terminalsApi.list({ dawId: activeDawId }),
-    enabled: open && page !== 'root' && Boolean(activeDawId),
+    enabled: open && Boolean(activeDawId),
     staleTime: 5_000,
   })
   const activeTerminals = Array.isArray(termsPack?.active) ? termsPack.active : []
@@ -147,11 +157,7 @@ export default function BooCodeCommandPalette() {
               {activeDawId && (
                 <Command.Item
                   value="send selection to terminal"
-                  onSelect={() => {
-                    const sel = typeof window !== 'undefined' ? (window.getSelection()?.toString() ?? '') : ''
-                    setSelectionText(sel.trim())
-                    setPage('send-selection')
-                  }}
+                  onSelect={() => setPage('send-selection')}
                 >
                   &gt; send selection to terminal…
                 </Command.Item>
@@ -197,7 +203,7 @@ export default function BooCodeCommandPalette() {
               &lt; back
             </Command.Item>
             {activeTerminals.length === 0 ? (
-              <Command.Item value="__empty__" disabled>
+              <Command.Item value="__empty-attach__" disabled>
                 <span style={{ color: 'var(--text-dim)' }}>No active terminals for this DAW.</span>
               </Command.Item>
             ) : activeTerminals.map((t) => (
@@ -211,8 +217,8 @@ export default function BooCodeCommandPalette() {
                 <span style={{ color: 'var(--orange)' }}>attach</span>&nbsp;
                 <span>{t.label || t.machine_name || 'session'}</span>
                 {t.device_count > 0 ? (
-                  <span className="ml-2 inline-block size-1.5 rounded-full align-middle"
-                        style={{ background: '#3cff7a' }} aria-label="attached" />
+                  <span className="ml-2 inline-block size-1.5 rounded-full self-center"
+                        style={{ background: 'var(--green, #3cff7a)' }} aria-label="attached" />
                 ) : null}
               </Command.Item>
             ))}
@@ -229,7 +235,7 @@ export default function BooCodeCommandPalette() {
                 <span style={{ color: 'var(--text-dim)' }}>No text selected — select text first and reopen.</span>
               </Command.Item>
             ) : activeTerminals.length === 0 ? (
-              <Command.Item value="__empty__" disabled>
+              <Command.Item value="__empty-send__" disabled>
                 <span style={{ color: 'var(--text-dim)' }}>No active terminals for this DAW.</span>
               </Command.Item>
             ) : activeTerminals.map((t) => (
@@ -245,8 +251,8 @@ export default function BooCodeCommandPalette() {
                 <span style={{ color: 'var(--orange)' }}>send →</span>&nbsp;
                 <span>{t.label || t.machine_name || 'session'}</span>
                 {t.device_count > 0 ? (
-                  <span className="ml-2 inline-block size-1.5 rounded-full align-middle"
-                        style={{ background: '#3cff7a' }} aria-label="attached" />
+                  <span className="ml-2 inline-block size-1.5 rounded-full self-center"
+                        style={{ background: 'var(--green, #3cff7a)' }} aria-label="attached" />
                 ) : null}
               </Command.Item>
             ))}
