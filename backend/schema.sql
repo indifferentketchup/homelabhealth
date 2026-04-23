@@ -603,23 +603,31 @@ CREATE INDEX IF NOT EXISTS idx_term_lru
     ON terminal_sessions(last_detached_at)
     WHERE closed_at IS NULL AND pinned = FALSE;
 
--- Idempotent seed; `local` and `embedding` ship disabled (see notes below).
--- For existing installs the follow-up UPDATE forces `enabled=FALSE` on every
--- startup since ON CONFLICT DO NOTHING won't update already-seeded rows.
+-- Idempotent seed; `local`, `ubuntu-homelab`, and `embedding` ship disabled
+-- (see notes below). For existing installs the follow-up UPDATE forces
+-- `enabled=FALSE` on every startup since ON CONFLICT DO NOTHING won't
+-- update already-seeded rows.
 INSERT INTO terminal_machines (name, host, ssh_user, default_cwd, enabled) VALUES
     ('local',          'localhost',      NULL,         '/opt',   FALSE),
-    ('ubuntu-homelab', '100.114.205.53', 'samkintop',  '/opt',   TRUE),
+    ('ubuntu-homelab', '100.114.205.53', 'samkintop',  '/opt',   FALSE),
     ('sam-desktop',    '100.101.41.16',  'samki',      NULL,     TRUE),
     ('embedding',      '100.93.187.4',   NULL,         NULL,     FALSE)
 ON CONFLICT (name) DO NOTHING;
 
 -- `local` runs inside boolab_agent, which ships with no runtimes (no node,
 -- python, git) — users would land in a dead shell. Re-enable only if we
--- invest in adding those runtimes to Dockerfile.agent. Real work happens
--- via SSH targets (ubuntu-homelab, sam-desktop).
+-- invest in adding those runtimes to Dockerfile.agent.
 UPDATE terminal_machines
    SET enabled = FALSE
  WHERE name = 'local';
+
+-- `ubuntu-homelab` resolves to the same physical host that runs
+-- boolab_agent — SSH-to-self adds a password-prompting round-trip with
+-- zero benefit over the unused `local` target. Disable on every startup
+-- to prevent it creeping back via a re-seed.
+UPDATE terminal_machines
+   SET enabled = FALSE
+ WHERE name = 'ubuntu-homelab';
 
 -- Audit log — events: open, close, paste, pin, rename, device_connect,
 -- device_disconnect. Paste entries store sha256(text) + len, not plaintext.
