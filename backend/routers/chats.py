@@ -1005,7 +1005,7 @@ async def export_chat(
     Attempts an AI rename via _openai_short_chat_title; on failure the
     timestamp filename persists and ai_renamed=false is returned.
     """
-    from services.history import daw_dir, slugify, safe_path
+    from services.history import daw_dir, slugify
     from services.history_writer import render_chat_markdown, timestamp_slug
 
     pool = await get_pool()

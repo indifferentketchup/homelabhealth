@@ -489,7 +489,6 @@ async def export_terminal(sid: uuid.UUID, request: Request) -> dict:
     Requires the session to have a daw_id and must not be closed (closed sessions
     have no tmux pane to capture).
     """
-    import os
     from services.history import daw_dir, slugify
     from services.history_writer import render_terminal_plaintext, timestamp_slug
 
