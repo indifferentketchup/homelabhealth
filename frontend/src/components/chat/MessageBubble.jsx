@@ -1,4 +1,4 @@
-import { Children, useEffect, useState } from 'react'
+import { Children, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
@@ -186,7 +186,7 @@ export function MessageBubble({
   onEditUser,
   onRegenerate,
 }) {
-  const mdComponents = makeMdComponents({ chatMode })
+  const mdComponents = useMemo(() => makeMdComponents({ chatMode }), [chatMode])
   const [hover, setHover] = useState(false)
   const [forkError, setForkError] = useState(null)
   const [editing, setEditing] = useState(false)
