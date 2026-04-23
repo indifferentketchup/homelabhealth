@@ -358,6 +358,11 @@ export function Sidebar({
   const [deleting, setDeleting] = useState(false)
   const [savedToast, setSavedToast] = useState(null)
   const savedToastTimerRef = useRef(null)
+  useEffect(() => () => {
+    if (savedToastTimerRef.current) {
+      clearTimeout(savedToastTimerRef.current)
+    }
+  }, [])
   const editInputRef = useRef(null)
 
   useEffect(() => {
