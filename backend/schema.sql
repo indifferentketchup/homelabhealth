@@ -628,3 +628,10 @@ CREATE INDEX IF NOT EXISTS terminal_audit_session_idx
     ON terminal_audit(session_id);
 CREATE INDEX IF NOT EXISTS terminal_audit_created_idx
     ON terminal_audit(created_at DESC);
+
+-- Deprecate the ubuntu-homelab target: same physical host as boolab_agent.
+-- The `local` target now reaches host paths via bind-mounts in
+-- docker-compose.yml, so SSH-to-self is no longer needed.
+UPDATE terminal_machines
+   SET enabled = FALSE
+ WHERE name = 'ubuntu-homelab';
