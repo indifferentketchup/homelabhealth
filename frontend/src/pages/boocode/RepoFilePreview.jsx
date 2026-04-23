@@ -167,9 +167,12 @@ export function RepoFilePreview({ dawId }) {
   }
   const attach = () => {
     if (!path || !dawId) return
-    window.dispatchEvent(new CustomEvent('boocode:attach-file', {
-      detail: { dawId, path, language: data?.language },
-    }))
+    const detail = { dawId, path, language: data?.language }
+    if (selection) {
+      detail.lineStart = selection.start
+      detail.lineEnd = selection.end
+    }
+    window.dispatchEvent(new CustomEvent('boocode:attach-file', { detail }))
     close()
   }
 
@@ -218,9 +221,10 @@ export function RepoFilePreview({ dawId }) {
               <Copy className="size-3" />
             </button>
             <button type="button" onClick={attach}
-                    className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs"
+                    className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs whitespace-nowrap"
                     style={{ borderColor: 'var(--orange)', color: 'var(--orange)' }}>
-              <Paperclip className="size-3" /> attach
+              <Paperclip className="size-3" />
+              {selection ? `attach ${selection.start}-${selection.end}` : 'attach'}
             </button>
             <button type="button" onClick={close}
                     className="rounded-md border p-1" style={{ borderColor: 'var(--border)' }}
@@ -292,7 +296,7 @@ export function RepoFilePreview({ dawId }) {
                         style={inRange ? { background: 'rgba(255,140,0,0.12)' } : undefined}
                       >
                         {lineTokens.length === 0 ? (
-                          <span>{' '}</span>
+                          <span>{' '}</span>
                         ) : (
                           lineTokens.map((token, j) => (
                             <span key={j} style={{ color: token.color || shikiMeta.fg }}>

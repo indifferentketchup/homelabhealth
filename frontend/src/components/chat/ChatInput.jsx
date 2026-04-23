@@ -448,16 +448,18 @@ export function ChatInput({
           <div className="flex flex-wrap gap-1.5 pb-1.5 pt-0.5">
             {boocodeFiles.map((f) => (
               <span
-                key={`${f.dawId}:${f.path}`}
+                key={`${f.path}#${f.lineStart ?? ''}-${f.lineEnd ?? ''}`}
                 className="flex items-center gap-1 rounded-md border px-2 py-0.5 font-mono text-xs"
                 style={{ borderColor: 'var(--orange)', color: 'var(--orange)', background: 'var(--bg-card)' }}
               >
-                <span className="max-w-[220px] truncate">{f.path}</span>
+                <span className="max-w-[220px] truncate">
+                  {f.path}{(f.lineStart != null && f.lineEnd != null) ? `:${f.lineStart}-${f.lineEnd}` : ''}
+                </span>
                 <button
                   type="button"
                   aria-label={`Remove ${f.path}`}
                   className="ml-0.5 inline-flex size-4 items-center justify-center rounded opacity-70 outline-none transition-opacity hover:opacity-100"
-                  onClick={() => onRemoveBoocodeFile?.(f.path, f.dawId)}
+                  onClick={() => onRemoveBoocodeFile?.(f)}
                 >
                   <X className="size-3" aria-hidden />
                 </button>
