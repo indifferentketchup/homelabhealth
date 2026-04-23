@@ -145,10 +145,39 @@ export function RepoFilePreview({ dawId }) {
     setSelection({ start: Math.min(anchor, ln), end: Math.max(anchor, ln) })
   }
 
-  // Touch: tap-to-select single line (drag on touch is deferred)
+  // Touch: tap-to-select with two-tap range extension.
+  //
+  //  - First tap (no selection): set single-line selection at ln.
+  //  - Second tap on a DIFFERENT line: extend the range from the
+  //    existing selection to include ln (min/max anchoring).
+  //  - Third tap on yet another line (or tapping outside the current
+  //    range): reset to a fresh single-line selection at ln.
+  //
+  // This gives mobile users range selection without needing Shift+tap
+  // or drag gestures. Desktop shift-click is handled by handleGutterMouseDown.
   function handleGutterTouchStart(ln, e) {
     e.preventDefault()
-    setSelection({ start: ln, end: ln })
+    const cur = selectionRef.current
+    if (!cur) {
+      // No selection yet — start fresh.
+      setSelection({ start: ln, end: ln })
+      return
+    }
+    if (ln === cur.start && ln === cur.end) {
+      // Tapping the same single-line selection deselects it.
+      setSelection(null)
+      return
+    }
+    if (ln >= cur.start && ln <= cur.end) {
+      // Tapping inside an existing range resets to that single line.
+      setSelection({ start: ln, end: ln })
+      return
+    }
+    // Tapping outside extends the range.
+    setSelection({
+      start: Math.min(cur.start, ln),
+      end: Math.max(cur.end, ln),
+    })
   }
 
   const close = () => {
@@ -224,7 +253,19 @@ export function RepoFilePreview({ dawId }) {
                     className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs whitespace-nowrap"
                     style={{ borderColor: 'var(--orange)', color: 'var(--orange)' }}>
               <Paperclip className="size-3" />
-              {selection ? `attach ${selection.start}-${selection.end}` : 'attach'}
+              {/* On <sm screens show "attach" + a compact badge so the header
+                  row doesn't overflow on 320-375px phones. On sm+ show the
+                  full "attach N-M" inline label. */}
+              {selection ? (
+                <>
+                  <span className="sm:hidden">attach</span>
+                  <span className="hidden sm:inline">{`attach ${selection.start}-${selection.end}`}</span>
+                  <span className="sm:hidden rounded bg-orange-500/20 px-1 text-[0.625rem] font-semibold leading-4"
+                        style={{ color: 'var(--orange)' }}>
+                    {selection.start}-{selection.end}
+                  </span>
+                </>
+              ) : 'attach'}
             </button>
             <button type="button" onClick={close}
                     className="rounded-md border p-1" style={{ borderColor: 'var(--border)' }}
@@ -270,7 +311,7 @@ export function RepoFilePreview({ dawId }) {
                     return (
                       <div
                         key={i}
-                        className="cursor-pointer px-2 hover:text-white/60"
+                        className="cursor-pointer px-2 py-1 hover:text-white/60 sm:py-0"
                         style={inRange
                           ? { background: 'rgba(255,140,0,0.25)', color: 'rgba(255,255,255,0.85)' }
                           : { color: 'rgba(255,255,255,0.28)' }}
