@@ -12,7 +12,7 @@ import asyncpg
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from auth_deps import (
     assert_daw_usable,
@@ -127,8 +127,20 @@ async def _render_boocode_attachments(
             text = raw.decode("utf-8")
         except UnicodeDecodeError:
             text = raw.decode("latin-1", errors="replace")
+        start_line: int | None = None
+        end_line: int | None = None
+        if ref.line_start is not None and ref.line_end is not None:
+            lines = text.split("\n")
+            total_lines = len(lines)
+            if ref.line_start > total_lines:
+                # Out of range — skip this attachment rather than render empty.
+                continue
+            start_line = max(1, ref.line_start)
+            end_line = min(total_lines, ref.line_end)
+            text = "\n".join(lines[start_line - 1:end_line])
         lang = code_chunker.resolve_language(rel) or ""
-        header = f"\n\n[attached file: {rel}{f' ({lang})' if lang else ''}]\n"
+        range_tag = f":{start_line}-{end_line}" if start_line is not None and end_line is not None else ""
+        header = f"\n\n[attached file: {rel}{range_tag}{f' ({lang})' if lang else ''}]\n"
         fence_open = f"```{lang}\n"
         fence_close = "\n```\n"
         framing_len = len(header) + len(fence_open) + len(fence_close)
@@ -621,6 +633,19 @@ class ChatPatch(BaseModel):
 
 class BoocodeFileRef(BaseModel):
     path: str = Field(..., min_length=1, max_length=4096)
+    line_start: int | None = Field(default=None, ge=1)
+    line_end: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def _validate_line_range(self) -> "BoocodeFileRef":
+        # Both-or-neither: if only one is set, treat as whole file (drop both).
+        if self.line_start is None or self.line_end is None:
+            self.line_start = None
+            self.line_end = None
+            return self
+        if self.line_end < self.line_start:
+            raise ValueError("line_end must be >= line_start")
+        return self
 
 
 class MessageCreate(BaseModel):
