@@ -27,9 +27,6 @@ services:
     volumes:
       - boolab_tmux:/shared/tmux
       - /home/samkintop/.ssh:/home/agent/.ssh:ro
-      - /opt:/opt
-      - /home/samkintop:/home/samkintop
-      - /HomeLabRepos:/HomeLabRepos
     networks:
       - boolab_net
 
