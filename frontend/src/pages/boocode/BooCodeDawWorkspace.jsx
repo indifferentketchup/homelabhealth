@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useOutletContext, useParams } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { MobileRightDrawer } from '@/components/layout/MobileRightDrawer.jsx'
 import { useBoocodeFx } from '@/hooks/useBoocodeFx.jsx'
 import { useAppStore } from '@/store/index.js'
+import { getDaw } from '@/api/daws.js'
 import { RepoStatusBar } from './RepoStatusBar.jsx'
 import BoocodeCenterPane from './BoocodeCenterPane.jsx'
 import { RepoFilesPanel } from './RepoFilesPanel.jsx'
@@ -17,14 +19,24 @@ export default function BooCodeDawWorkspace() {
   const { chatBgOpacity } = useBoocodeFx()
   const closeRightDrawer = useCallback(() => setMobileRightDrawer(false), [setMobileRightDrawer])
 
+  // AC-1: fetch the active DAW so we can pass its name to BoocodeCenterPane
+  const { data: daw } = useQuery({
+    queryKey: ['daw', dawId],
+    queryFn: () => getDaw(dawId),
+    enabled: Boolean(dawId),
+    staleTime: 60_000,
+  })
+
   useEffect(() => {
     if (!dawId) return
     setActiveDawId(dawId)
     if (prevDawIdRef.current && prevDawIdRef.current !== dawId) {
       setActiveChatId(null)
+      // AC-9: close mobile right drawer when navigating to a different DAW
+      setMobileRightDrawer(false)
     }
     prevDawIdRef.current = dawId
-  }, [dawId, setActiveDawId, setActiveChatId])
+  }, [dawId, setActiveDawId, setActiveChatId, setMobileRightDrawer])
 
   // The base boocode bg (#0a0604) mixed with N% opacity — higher alpha → more
   // solid panel, lower alpha → more matrix rain bleeding through. Exposed as
@@ -51,7 +63,7 @@ export default function BooCodeDawWorkspace() {
     >
       <RepoStatusBar dawId={dawId} />
       <div className="flex min-h-0 flex-1 flex-row overflow-hidden">
-        <BoocodeCenterPane dawId={dawId} />
+        <BoocodeCenterPane dawId={dawId} dawName={daw?.name ?? null} />
         <aside className="boocode-terminal-frame hidden w-80 shrink-0 flex-col overflow-hidden border-l md:flex"
                style={{ borderColor: 'var(--border)', background: panelBg }}>
           <RepoFilesPanel dawId={dawId} />
