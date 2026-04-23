@@ -9,9 +9,13 @@ const DEFAULT_MOVE_TOLERANCE_PX = 10
  * finger move > 10px or early release.
  *
  * The synthetic event is a plain object with `{ clientX, clientY, currentTarget,
- * preventDefault() }` — enough to reuse the same callback the desktop
- * onContextMenu uses (which typically reads clientX/clientY to position
- * a popover).
+ * preventDefault(), stopPropagation() }` — enough to reuse the same callback
+ * the desktop onContextMenu uses (which typically reads clientX/clientY to
+ * position a popover).
+ *
+ * After a successful long-press, onTouchEnd calls e.preventDefault() to
+ * suppress the synthetic click on most browsers. Callers that need a harder
+ * guard can check the returned `didFireRef.current` inside their onClick.
  *
  * Haptic feedback via navigator.vibrate(12) if available.
  *
@@ -35,6 +39,7 @@ export function useLongPress(onLongPress, opts = {}) {
   }
 
   const onTouchStart = (e) => {
+    cancel()
     if (!e.touches || e.touches.length === 0) return
     firedRef.current = false
     const t = e.touches[0]
@@ -48,6 +53,7 @@ export function useLongPress(onLongPress, opts = {}) {
         clientY: startRef.current?.y ?? 0,
         currentTarget: startRef.current?.target ?? target,
         preventDefault: () => {},
+        stopPropagation: () => {},
       })
     }, threshold)
   }
@@ -61,7 +67,10 @@ export function useLongPress(onLongPress, opts = {}) {
     if (dx > moveTolerance || dy > moveTolerance) cancel()
   }
 
-  const onTouchEnd = () => cancel()
+  const onTouchEnd = (e) => {
+    if (firedRef.current) e.preventDefault()
+    cancel()
+  }
   const onTouchCancel = () => cancel()
 
   useEffect(() => () => cancel(), [])
