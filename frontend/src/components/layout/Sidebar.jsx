@@ -12,14 +12,18 @@ import {
   MessageSquarePlus,
   MessagesSquare,
   PanelLeft,
+  Pin,
+  Plus,
   Search,
   Settings,
+  TerminalSquare,
   User,
 } from 'lucide-react'
 
 import { applyBrandingCss, fetchBranding } from '@/api/branding.js'
 import { deleteChat, listChats, patchChat, patchRecentChatsListCache } from '@/api/chats.js'
 import { listDaws } from '@/api/daws.js'
+import * as terminalsApi from '@/api/terminals.js'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -45,6 +49,231 @@ import {
 } from '@/routes/paths.js'
 import { useAppStore } from '@/store/index.js'
 import { cn } from '@/lib/utils'
+
+// ---------------------------------------------------------------------------
+// BooCode per-DAW row with nested TERMINALS + CHATS subsections
+// ---------------------------------------------------------------------------
+function BoocodeDawRow({
+  daw,
+  isActive,
+  isExpanded,
+  onToggle,
+  isMobile,
+  onMobileClose,
+  navigate,
+  activeChatId,
+  activeDawId,
+  setActiveDawId,
+  setActiveChatId,
+  hydrateFromChat,
+}) {
+  const { data: terminalsData } = useQuery({
+    queryKey: ['sidebar-terminals', daw.id],
+    queryFn: () => terminalsApi.list({ dawId: daw.id }),
+    enabled: isExpanded,
+    refetchInterval: isExpanded ? 15_000 : false,
+  })
+
+  const { data: chatsData } = useQuery({
+    queryKey: ['sidebar-chats-daw', daw.id],
+    queryFn: () => listChats({ limit: 5, mode: 'boocode', dawId: daw.id }),
+    enabled: isExpanded,
+    staleTime: 15_000,
+  })
+
+  const sessions = useMemo(() => {
+    const raw = Array.isArray(terminalsData?.items)
+      ? terminalsData.items
+      : Array.isArray(terminalsData)
+        ? terminalsData
+        : []
+    return [...raw].sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1
+      if (!a.pinned && b.pinned) return 1
+      return new Date(a.created_at) - new Date(b.created_at)
+    })
+  }, [terminalsData])
+
+  const chatList = useMemo(() => {
+    return Array.isArray(chatsData?.items) ? chatsData.items : []
+  }, [chatsData])
+
+  function openTerminal(sessionId) {
+    window.dispatchEvent(new CustomEvent('boocode:open-terminal', { detail: { sessionId } }))
+  }
+
+  function newTerminal() {
+    window.dispatchEvent(new CustomEvent('boocode:new-terminal', { detail: { dawId: daw.id } }))
+  }
+
+  function selectDawChat(c) {
+    setActiveDawId(daw.id)
+    setActiveChatId(c.id)
+    hydrateFromChat(c)
+    navigate(boocodeDawPath(daw.id))
+    if (isMobile) onMobileClose()
+  }
+
+  return (
+    <div className="w-full">
+      {/* DAW row header */}
+      <div className="flex w-full items-center gap-1 rounded-md pr-1 hover:bg-sidebar-accent/30">
+        <button
+          type="button"
+          className="flex shrink-0 items-center justify-center rounded-sm p-1 text-muted-foreground outline-none ring-sidebar-ring hover:text-foreground focus-visible:ring-2"
+          onClick={onToggle}
+          aria-label={isExpanded ? 'Collapse' : 'Expand'}
+        >
+          <ChevronRight
+            className={cn(
+              'size-3.5 shrink-0 transition-transform duration-150',
+              isExpanded && 'rotate-90',
+            )}
+            aria-hidden
+          />
+        </button>
+        <Button
+          type="button"
+          variant={isActive ? 'secondary' : 'ghost'}
+          className="h-auto min-h-8 flex-1 justify-start gap-2 py-1.5 text-left font-normal"
+          asChild
+        >
+          <Link
+            to={`${PATH_BOOCODE}/daw/${daw.id}`}
+            onClick={() => {
+              if (isMobile) onMobileClose()
+            }}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              navigate(`${PATH_BOOCODE}/daws/${daw.id}`)
+            }}
+          >
+            <span
+              className="size-2.5 shrink-0 rounded-full"
+              style={{ background: daw.color || '#7c3aed' }}
+              aria-hidden
+            />
+            <span className="fs-nav line-clamp-2">{daw.name}</span>
+          </Link>
+        </Button>
+      </div>
+
+      {/* Expanded nested sections */}
+      {isExpanded && (
+        <div className="ml-3 mt-0.5 flex flex-col gap-0.5 border-l border-sidebar-border pl-2">
+          {/* TERMINALS subsection */}
+          <div className="mt-1">
+            <span className="fs-nav block px-1 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              Terminals ({sessions.length})
+            </span>
+            {sessions.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                className="fs-nav flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-sm outline-none ring-sidebar-ring hover:bg-sidebar-accent/50 focus-visible:ring-2"
+                onClick={() => openTerminal(s.id)}
+              >
+                {s.pinned ? (
+                  <Pin className="size-3.5 shrink-0 opacity-60" aria-hidden />
+                ) : (
+                  <TerminalSquare className="size-3.5 shrink-0 opacity-60" aria-hidden />
+                )}
+                <span className="min-w-0 flex-1 truncate">
+                  {s.label || s.machine_name || 'session'}
+                </span>
+                {s.device_count > 0 && (
+                  <span className="flex items-center gap-1 shrink-0">
+                    <span
+                      className="size-1.5 rounded-full"
+                      style={{ background: '#3cff7a' }}
+                      aria-label="active"
+                    />
+                    {s.device_count > 1 && (
+                      <span className="text-[10px] text-muted-foreground">{s.device_count}</span>
+                    )}
+                  </span>
+                )}
+              </button>
+            ))}
+            {/* + new terminal */}
+            <button
+              type="button"
+              className="fs-nav flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-xs text-muted-foreground outline-none ring-sidebar-ring hover:bg-sidebar-accent/50 focus-visible:ring-2"
+              onClick={newTerminal}
+            >
+              <Plus className="size-3 shrink-0 opacity-60" aria-hidden />
+              <span>new terminal</span>
+            </button>
+          </div>
+
+          {/* CHATS subsection */}
+          <div className="mt-1">
+            <span className="fs-nav block px-1 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              Chats ({chatList.length})
+            </span>
+            {chatList.length === 0 ? (
+              <span className="fs-nav block px-1 py-1 text-xs text-muted-foreground">
+                No chats yet
+              </span>
+            ) : (
+              chatList.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  className={cn(
+                    'fs-nav flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-sm outline-none ring-sidebar-ring hover:bg-sidebar-accent/50 focus-visible:ring-2',
+                    c.id === activeChatId && String(activeDawId) === String(daw.id) && 'bg-sidebar-accent/60 font-medium',
+                  )}
+                  onClick={() => selectDawChat(c)}
+                >
+                  <MessagesSquare className="size-3.5 shrink-0 opacity-60" aria-hidden />
+                  <span className="min-w-0 flex-1 truncate">{c.title || 'Untitled chat'}</span>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// localStorage helpers for per-DAW expand state
+// ---------------------------------------------------------------------------
+const DAW_EXPANDED_KEY = 'bb-sidebar-daw-expanded'
+
+function readDawExpandedMap() {
+  try {
+    const raw = localStorage.getItem(DAW_EXPANDED_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeDawExpandedMap(m) {
+  try {
+    localStorage.setItem(DAW_EXPANDED_KEY, JSON.stringify(m))
+  } catch {
+    /* quota / private mode — non-fatal */
+  }
+}
+
+// ---------------------------------------------------------------------------
+// localStorage helpers for section open/closed
+// ---------------------------------------------------------------------------
+function readSectionOpen(key, defaultOpen) {
+  try {
+    const v = localStorage.getItem(key)
+    if (v === null) return defaultOpen
+    return v === 'true'
+  } catch {
+    return defaultOpen
+  }
+}
 
 export function Sidebar({
   mobileOpen,
@@ -132,7 +361,7 @@ export function Sidebar({
         ...(activeDawId ? { dawId: activeDawId } : {}),
       }),
     staleTime: 15_000,
-    enabled: appMode === 'booops' || appMode === '808notes' || appMode === 'boocode',
+    enabled: appMode === 'booops' || appMode === '808notes',
   })
 
   const { data: brandingRow } = useQuery({
@@ -158,18 +387,33 @@ export function Sidebar({
     return list.filter((d) => d.pinned_booops === true)
   }, [dawsListPack, appMode])
 
-  const readSectionOpen = (key, defaultOpen) => {
-    try {
-      const v = localStorage.getItem(key)
-      if (v === null) return defaultOpen
-      return v === 'true'
-    } catch {
-      return defaultOpen
+  const [pinnedOpen, setPinnedOpen] = useState(() => readSectionOpen('bb-sidebar-pinned-open', true))
+  const [recentOpen, setRecentOpen] = useState(() => readSectionOpen('bb-sidebar-recent-open', true))
+
+  // Per-DAW expand state (BooCode only)
+  const [dawExpandedMap, setDawExpandedMap] = useState(() => readDawExpandedMap())
+
+  // Auto-expand active DAW on navigation — "adjust during render" pattern
+  const [lastActiveDaw, setLastActiveDaw] = useState(activeDawId ?? null)
+  if ((activeDawId ?? null) !== lastActiveDaw) {
+    setLastActiveDaw(activeDawId ?? null)
+    if (appMode === 'boocode' && activeDawId) {
+      setDawExpandedMap((prev) => {
+        if (prev[activeDawId]) return prev
+        const next = { ...prev, [activeDawId]: true }
+        writeDawExpandedMap(next)
+        return next
+      })
     }
   }
 
-  const [pinnedOpen, setPinnedOpen] = useState(() => readSectionOpen('bb-sidebar-pinned-open', true))
-  const [recentOpen, setRecentOpen] = useState(() => readSectionOpen('bb-sidebar-recent-open', true))
+  const toggleDawExpanded = useCallback((dawId) => {
+    setDawExpandedMap((prev) => {
+      const next = { ...prev, [dawId]: !prev[dawId] }
+      writeDawExpandedMap(next)
+      return next
+    })
+  }, [])
 
   function togglePinnedOpen() {
     setPinnedOpen((o) => {
@@ -701,31 +945,21 @@ export function Sidebar({
                     <span className="fs-nav block px-2 text-muted-foreground">No DAWs</span>
                   ) : (
                     pinnedDaws.map((d) => (
-                      <Button
+                      <BoocodeDawRow
                         key={d.id}
-                        type="button"
-                        variant={String(d.id) === String(activeDawId) ? 'secondary' : 'ghost'}
-                        className="h-auto min-h-9 w-full justify-start gap-2 py-2 text-left font-normal"
-                        asChild
-                      >
-                        <Link
-                          to={`${PATH_BOOCODE}/daw/${d.id}`}
-                          onClick={() => {
-                            if (isMobile) onMobileOpenChange(false)
-                          }}
-                          onContextMenu={(e) => {
-                            e.preventDefault()
-                            navigate(`${PATH_BOOCODE}/daws/${d.id}`)
-                          }}
-                        >
-                          <span
-                            className="size-2.5 shrink-0 rounded-full"
-                            style={{ background: d.color || '#7c3aed' }}
-                            aria-hidden
-                          />
-                          <span className="fs-nav line-clamp-2">{d.name}</span>
-                        </Link>
-                      </Button>
+                        daw={d}
+                        isActive={String(d.id) === String(activeDawId)}
+                        isExpanded={Boolean(dawExpandedMap[d.id])}
+                        onToggle={() => toggleDawExpanded(d.id)}
+                        isMobile={isMobile}
+                        onMobileClose={() => onMobileOpenChange(false)}
+                        navigate={navigate}
+                        activeChatId={activeChatId}
+                        activeDawId={activeDawId}
+                        setActiveDawId={setActiveDawId}
+                        setActiveChatId={setActiveChatId}
+                        hydrateFromChat={hydrateFromChat}
+                      />
                     ))
                   )}
                 </div>
@@ -734,7 +968,7 @@ export function Sidebar({
               </>
             )}
 
-            {(appMode === 'booops' || appMode === '808notes' || appMode === 'boocode') && !desktopCollapsed && (
+            {(appMode === 'booops' || appMode === '808notes') && !desktopCollapsed && (
               <>
                 <button
                   type="button"
@@ -1071,7 +1305,7 @@ export function Sidebar({
             <DialogTitle>Delete chat?</DialogTitle>
             <DialogDescription>
               {pendingDelete
-                ? `“${pendingDelete.title || 'Untitled chat'}” will be permanently deleted. This cannot be undone.`
+                ? `"${pendingDelete.title || 'Untitled chat'}" will be permanently deleted. This cannot be undone.`
                 : ''}
             </DialogDescription>
           </DialogHeader>
