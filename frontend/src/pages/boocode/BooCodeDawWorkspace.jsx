@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
-import { useParams } from 'react-router-dom'
+import { useOutletContext, useParams } from 'react-router-dom'
 import { ChatView } from '@/components/chat/ChatView.jsx'
+import { MobileRightDrawer } from '@/components/layout/MobileRightDrawer.jsx'
 import { useBoocodeFx } from '@/hooks/useBoocodeFx.jsx'
 import { useAppStore } from '@/store/index.js'
 import { RepoStatusBar } from './RepoStatusBar.jsx'
@@ -10,6 +11,7 @@ import TerminalDrawer from './TerminalDrawer.jsx'
 
 export default function BooCodeDawWorkspace() {
   const { dawId } = useParams()
+  const { mobileRightDrawer = false, setMobileRightDrawer = () => {} } = useOutletContext() ?? {}
   const setActiveDawId = useAppStore((s) => s.setActiveDawId)
   const setActiveChatId = useAppStore((s) => s.setActiveChatId)
   const prevDawIdRef = useRef(dawId ?? null)
@@ -60,6 +62,11 @@ export default function BooCodeDawWorkspace() {
       </div>
       <TerminalDrawer dawId={dawId} />
       <RepoFilePreview dawId={dawId} />
+      <MobileRightDrawer
+        open={mobileRightDrawer}
+        onClose={() => setMobileRightDrawer(false)}
+        dawId={dawId ?? null}
+      />
     </div>
   )
 }
