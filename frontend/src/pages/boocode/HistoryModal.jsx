@@ -40,6 +40,8 @@ export default function HistoryModal({ open, onClose, kind, dawId, dawName }) {
     queryKey,
     queryFn: () => listHistory(kind, { dawId }),
     enabled: Boolean(open && dawId),
+    staleTime: 0,
+    refetchOnWindowFocus: false,
   })
 
   const title =
@@ -109,7 +111,7 @@ export default function HistoryModal({ open, onClose, kind, dawId, dawName }) {
     onClose()
   }
 
-  const files = Array.isArray(data?.files) ? data.files : []
+  const files = Array.isArray(data?.items) ? data.items : []
 
   return (
     <>
@@ -138,9 +140,9 @@ export default function HistoryModal({ open, onClose, kind, dawId, dawName }) {
             <ScrollArea className="max-h-[60vh]">
               <ul className="flex flex-col gap-1 pr-2">
                 {files.map((entry) => {
-                  const file = typeof entry === 'string' ? entry : entry.name
-                  const mtime = entry.mtime ?? null
-                  const size = entry.size ?? null
+                  const file = entry.filename
+                  const size = entry.size
+                  const mtime = entry.modified_at
                   const isRenaming = renamingSet.has(file)
                   const isDeleting = deletingSet.has(file)
                   const isPendingDel = pendingDelete === file
