@@ -245,7 +245,7 @@ function BoocodeDawRow({
             {closedSessions.length > 0 && (
               <div className="mt-1">
                 <span className="fs-nav block px-1 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Recently Closed ({Math.min(closedSessions.length, 5)})
+                  Recently Closed{closedSessions.length > 5 ? ' (5 of ' + closedSessions.length + ')' : ''}
                 </span>
                 {closedSessions.slice(0, 5).map((s) => (
                   <button
