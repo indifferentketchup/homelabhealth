@@ -64,6 +64,7 @@ services:
       - boolab_uploads:/data/uploads
       - boolab_branding:/data/branding
       - boolab_tmux:/shared/tmux
+      - /opt/boolab/history:/data/history
     networks:
       - boolab_net
 
