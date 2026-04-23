@@ -9,3 +9,5 @@ frontend/dist/
 Docs/
 .worktrees/
 *.bak-*
+
+.superpowers/
