@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import parse from 'html-react-parser'
 import { X, Copy, Paperclip, WrapText } from 'lucide-react'
-import { codeToHtml } from 'shiki'
+import { codeToTokens } from 'shiki'
 
 import { getRepoFile, listRepoSymbols } from '@/api/boocode.js'
 import { cn } from '@/lib/utils.js'
@@ -35,8 +34,27 @@ export function RepoFilePreview({ dawId }) {
   const line = params.get('line')
   const open = Boolean(path)
   const [wrap, setWrap] = useState(false)
-  const [shikiHtml, setShikiHtml] = useState('')
+  const [tokenLines, setTokenLines] = useState([])
+  const [shikiMeta, setShikiMeta] = useState({ bg: '#0d1117', fg: '#e6edf3' })
   const containerRef = useRef(null)
+
+  // Selection state: null | { start: number, end: number } (1-indexed, inclusive)
+  const [selection, setSelection] = useState(null)
+  // selectionRef lets event handlers read the latest selection without stale closures.
+  // Updated in a layout effect (outside render) to satisfy the react-hooks/refs lint rule.
+  const selectionRef = useRef(null)
+  const dragRef = useRef(null) // { anchor: number } during drag
+
+  useEffect(() => {
+    selectionRef.current = selection
+  })
+
+  // Adjust-during-render pattern: clear selection when file path changes
+  const [lastPath, setLastPath] = useState(path)
+  if (path !== lastPath) {
+    setLastPath(path)
+    setSelection(null)
+  }
 
   // Palette updates URL via history.replaceState + dispatchEvent(PopStateEvent).
   // React Router reads location, but without this listener the preview wouldn't
@@ -45,6 +63,17 @@ export function RepoFilePreview({ dawId }) {
     const h = () => setPopTick((n) => n + 1)
     window.addEventListener('popstate', h)
     return () => window.removeEventListener('popstate', h)
+  }, [])
+
+  // Window-level mouseup/touchend to clear drag state
+  useEffect(() => {
+    const onUp = () => { dragRef.current = null }
+    window.addEventListener('mouseup', onUp)
+    window.addEventListener('touchend', onUp)
+    return () => {
+      window.removeEventListener('mouseup', onUp)
+      window.removeEventListener('touchend', onUp)
+    }
   }, [])
 
   const { data, isLoading, isError, error } = useQuery({
@@ -63,34 +92,64 @@ export function RepoFilePreview({ dawId }) {
 
   useEffect(() => {
     let cancelled = false
-    if (!data?.content) { setShikiHtml(''); return }
-    const lang = (data.language || 'text').toLowerCase()
-    codeToHtml(data.content, {
-      lang,
-      theme: 'github-dark',
-      transformers: [{
-        line(node, lineNumber) {
-          node.properties['data-line'] = String(lineNumber)
-        },
-      }],
-    }).then((out) => { if (!cancelled) setShikiHtml(out) })
-      .catch(() => {
+    const content = data?.content
+    const language = data?.language
+
+    async function highlight() {
+      if (!content) {
+        if (!cancelled) setTokenLines([])
+        return
+      }
+      const lang = (language || 'text').toLowerCase()
+      try {
+        const result = await codeToTokens(content, { lang, theme: 'github-dark' })
         if (!cancelled) {
-          const esc = (data.content || '').replace(/[&<>]/g,
-            (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))
-          setShikiHtml(`<pre>${esc}</pre>`)
+          setShikiMeta({ bg: result.bg || '#0d1117', fg: result.fg || '#e6edf3' })
+          setTokenLines(result.tokens)
         }
-      })
+      } catch {
+        if (!cancelled) {
+          // Fallback: plain text, split into lines
+          const lines = content.split('\n')
+          setTokenLines(lines.map((l) => [{ content: l, color: undefined }]))
+        }
+      }
+    }
+
+    void highlight()
     return () => { cancelled = true }
   }, [data?.content, data?.language])
 
-  const parsedCode = useMemo(() => (shikiHtml ? parse(shikiHtml) : null), [shikiHtml])
-
+  // Scroll to line when `line` param changes or tokenLines load
   useEffect(() => {
-    if (!line || !containerRef.current) return
+    if (!line || !containerRef.current || tokenLines.length === 0) return
     const el = containerRef.current.querySelector(`[data-line="${line}"]`)
     if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' })
-  }, [line, parsedCode])
+  }, [line, tokenLines])
+
+  function handleGutterMouseDown(ln, shift) {
+    if (shift && selectionRef.current) {
+      setSelection({
+        start: Math.min(selectionRef.current.start, ln),
+        end: Math.max(selectionRef.current.end, ln),
+      })
+      return
+    }
+    dragRef.current = { anchor: ln }
+    setSelection({ start: ln, end: ln })
+  }
+
+  function handleGutterMouseEnter(ln) {
+    if (!dragRef.current) return
+    const anchor = dragRef.current.anchor
+    setSelection({ start: Math.min(anchor, ln), end: Math.max(anchor, ln) })
+  }
+
+  // Touch: tap-to-select single line (drag on touch is deferred)
+  function handleGutterTouchStart(ln, e) {
+    e.preventDefault()
+    setSelection({ start: ln, end: ln })
+  }
 
   const close = () => {
     const next = new URLSearchParams(params)
@@ -177,28 +236,76 @@ export function RepoFilePreview({ dawId }) {
           </aside>
           <div
             ref={containerRef}
-            className={cn(
-              'min-h-0 flex-1 overflow-auto font-mono text-xs',
-              wrap && '[&_pre]:whitespace-pre-wrap',
-              // Strip Shiki's theme background so the container's bg paints
-              // uniformly top-to-bottom regardless of file length. Pad the code
-              // and force it to fill the container vertically so the drawer
-              // never shows a half-filled look on short files.
-              '[&_pre]:!bg-transparent [&_pre]:m-0 [&_pre]:p-3 [&_pre]:min-h-full',
-            )}
+            className="flex min-h-0 flex-1 overflow-auto text-xs leading-5"
             style={{
-              background: 'var(--bg)',
+              background: shikiMeta.bg,
+              color: shikiMeta.fg,
+              fontFamily: 'var(--font-mono, ui-monospace, monospace)',
               userSelect: 'text',
               WebkitUserSelect: 'text',
             }}
           >
-            {isLoading && <div className="p-3" style={{ color: 'var(--text-dim)' }}>loading…</div>}
+            {isLoading && (
+              <div className="p-3" style={{ color: 'var(--text-dim)' }}>loading…</div>
+            )}
             {isError && (
               <div className="p-3 text-xs" style={{ color: '#ff6b6b' }}>
                 {String(error?.message || 'Could not load file')}
               </div>
             )}
-            {!isLoading && !isError && parsedCode}
+            {!isLoading && !isError && tokenLines.length > 0 && (
+              <>
+                {/* Gutter column */}
+                <div
+                  className="sticky left-0 shrink-0 select-none border-r border-white/10 pr-1 text-right"
+                  style={{ background: shikiMeta.bg, minWidth: '3.5rem' }}
+                >
+                  {tokenLines.map((_, i) => {
+                    const ln = i + 1
+                    const inRange = selection && ln >= selection.start && ln <= selection.end
+                    return (
+                      <div
+                        key={i}
+                        className="cursor-pointer px-2 hover:text-white/60"
+                        style={inRange
+                          ? { background: 'rgba(255,140,0,0.25)', color: 'rgba(255,255,255,0.85)' }
+                          : { color: 'rgba(255,255,255,0.28)' }}
+                        onMouseDown={(e) => handleGutterMouseDown(ln, e.shiftKey)}
+                        onMouseEnter={() => handleGutterMouseEnter(ln)}
+                        onTouchStart={(e) => handleGutterTouchStart(ln, e)}
+                      >
+                        {ln}
+                      </div>
+                    )
+                  })}
+                </div>
+                {/* Code column */}
+                <div className="flex-1 overflow-x-auto">
+                  {tokenLines.map((lineTokens, i) => {
+                    const ln = i + 1
+                    const inRange = selection && ln >= selection.start && ln <= selection.end
+                    return (
+                      <div
+                        key={i}
+                        data-line={ln}
+                        className={cn('px-3', wrap && 'whitespace-pre-wrap')}
+                        style={inRange ? { background: 'rgba(255,140,0,0.12)' } : undefined}
+                      >
+                        {lineTokens.length === 0 ? (
+                          <span>{' '}</span>
+                        ) : (
+                          lineTokens.map((token, j) => (
+                            <span key={j} style={{ color: token.color || shikiMeta.fg }}>
+                              {token.content}
+                            </span>
+                          ))
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
