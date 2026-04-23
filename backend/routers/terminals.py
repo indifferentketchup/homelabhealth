@@ -26,6 +26,7 @@ from typing import Any
 
 from fastapi import (
     APIRouter,
+    Depends,
     HTTPException,
     Query,
     Request,
@@ -35,6 +36,7 @@ from fastapi import (
 from pydantic import BaseModel, Field
 from starlette.websockets import WebSocketState
 
+from auth_deps import get_principal
 from db import get_pool
 from routers.chats import _openai_short_chat_title
 from services import tmux_session
@@ -482,8 +484,11 @@ async def paste(sid: uuid.UUID, body: PasteBody, request: Request) -> dict[str, 
 
 
 @router.post("/{sid}/export")
-# TODO(auth): add require_owner once member-tier lands.
-async def export_terminal(sid: uuid.UUID, request: Request) -> dict:
+async def export_terminal(
+    sid: uuid.UUID,
+    request: Request,
+    principal: dict[str, Any] = Depends(get_principal),
+) -> dict:
     """Capture tmux pane output and write to /data/history/terminals/<daw-slug>/<file>.txt.
 
     Requires the session to have a daw_id and must not be closed (closed sessions
@@ -564,6 +569,8 @@ async def export_terminal(sid: uuid.UUID, request: Request) -> dict:
                 candidate_path = target_dir / candidate
                 nonce = 1
                 while candidate_path.exists():
+                    if nonce > 50:
+                        raise HTTPException(status_code=500, detail="export collision loop")
                     candidate = f"{slug}-{ts}-{nonce:03d}.txt"
                     candidate_path = target_dir / candidate
                     nonce += 1

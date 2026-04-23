@@ -1079,6 +1079,8 @@ async def export_chat(
                 candidate_path = target_dir / candidate
                 nonce = 1
                 while candidate_path.exists():
+                    if nonce > 50:
+                        raise HTTPException(status_code=500, detail="export collision loop")
                     candidate = f"{slug}-{ts}-{nonce:03d}.md"
                     candidate_path = target_dir / candidate
                     nonce += 1

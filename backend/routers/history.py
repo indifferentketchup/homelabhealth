@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import uuid
 from pathlib import Path
 
@@ -168,8 +169,7 @@ async def rename_history(kind: str, body: RenameBody, request: Request, principa
     base_old = old_path.stem
     ts_suffix = ""
     # Heuristic: if old stem ends with -YYYYMMDD-HHMMSS, preserve it.
-    import re as _re
-    m = _re.search(r"-(\d{8}-\d{6})$", base_old)
+    m = re.search(r"-(\d{8}-\d{6})$", base_old)
     if m:
         ts_suffix = "-" + m.group(1)
 
