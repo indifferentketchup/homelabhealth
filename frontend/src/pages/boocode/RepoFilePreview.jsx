@@ -145,13 +145,11 @@ export function RepoFilePreview({ dawId }) {
     setSelection({ start: Math.min(anchor, ln), end: Math.max(anchor, ln) })
   }
 
-  // Touch: tap-to-select with two-tap range extension.
-  //
-  //  - First tap (no selection): set single-line selection at ln.
-  //  - Second tap on a DIFFERENT line: extend the range from the
-  //    existing selection to include ln (min/max anchoring).
-  //  - Third tap on yet another line (or tapping outside the current
-  //    range): reset to a fresh single-line selection at ln.
+  // Two-tap range selection on touch (no drag):
+  //   Case 1: No selection → set single-line at N.
+  //   Case 2: Re-tap the currently-selected single line → clear selection.
+  //   Case 3: Tap inside an existing multi-line range → reset to single-line at N.
+  //   Case 4: Tap outside the existing range → extend to include N.
   //
   // This gives mobile users range selection without needing Shift+tap
   // or drag gestures. Desktop shift-click is handled by handleGutterMouseDown.
@@ -333,7 +331,7 @@ export function RepoFilePreview({ dawId }) {
                       <div
                         key={i}
                         data-line={ln}
-                        className={cn('px-3', wrap && 'whitespace-pre-wrap')}
+                        className={cn('px-3 py-1 sm:py-0', wrap && 'whitespace-pre-wrap')}
                         style={inRange ? { background: 'rgba(255,140,0,0.12)' } : undefined}
                       >
                         {lineTokens.length === 0 ? (
