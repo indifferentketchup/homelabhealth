@@ -13,7 +13,7 @@ const POLL_MS = 15_000
 /**
  * TerminalPanesHost
  *
- * Lifted from TerminalDrawer — owns session fetching, sorting, tab state,
+ * Owns session fetching + active-tab state + new-terminal modal wiring, sorting,
  * and the keep-alive TerminalPane grid. Does NOT own the drawer chrome,
  * open/collapse state, height persistence, or Ctrl+` handling — those belong
  * to BoocodeCenterPane / the workspace layout.

@@ -72,7 +72,8 @@ export default function BoocodeSplitPane({
   // onRatioChange is a state setter from the parent — it's stable (setSplitRatio).
   // Including it in deps would re-register pointer listeners on every ratio tick
   // mid-drag, causing the effect to tear down and re-mount while the user is
-  // dragging. Intentional omission: see TerminalDrawer.jsx:259 for the same pattern.
+  // dragging. Intentional omission: this matches the standard "adjust during render"
+  // + "effect writes to stable setter" pattern already used elsewhere in this codebase.
   }, [dragging]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const leftPct = `${(ratio * 100).toFixed(2)}%`
