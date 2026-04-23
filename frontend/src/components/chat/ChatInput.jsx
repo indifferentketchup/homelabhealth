@@ -457,7 +457,7 @@ export function ChatInput({
                 </span>
                 <button
                   type="button"
-                  aria-label={`Remove ${f.path}`}
+                  aria-label={`Remove ${f.path}${f.lineStart != null && f.lineEnd != null ? `:${f.lineStart}-${f.lineEnd}` : ''}`}
                   className="ml-0.5 inline-flex size-4 items-center justify-center rounded opacity-70 outline-none transition-opacity hover:opacity-100"
                   onClick={() => onRemoveBoocodeFile?.(f)}
                 >
