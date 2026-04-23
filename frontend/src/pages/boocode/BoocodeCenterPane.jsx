@@ -69,7 +69,7 @@ export default function BoocodeCenterPane({ dawId, dawName = null }) {
 
   // ── Ctrl+` keyboard toggle ───────────────────────────────────────────────
   // Flip primary when Ctrl+` is pressed outside of input/textarea/contenteditable.
-  // Same filter as TerminalDrawer.jsx:161-177.
+  // Skip when focus is in an input/textarea/contenteditable so Ctrl+` doesn't steal typed backticks.
   const cyclePrimary = useCallback(() => {
     setPrimary((p) => (p === 'chat' ? 'terminal' : 'chat'))
   }, [])
