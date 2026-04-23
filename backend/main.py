@@ -35,6 +35,7 @@ from routers import (
 from routers.boocode import router as boocode_router
 from routers.dubdrive import router as dubdrive_router
 from routers.dubdrive_sync import router as dubdrive_sync_router
+from routers.history import router as history_router
 from routers.notes import router as notes_router
 from routers.sources import router as sources_router
 
@@ -136,6 +137,7 @@ api.include_router(sources_router, tags=["sources"])
 api.include_router(dubdrive_router, prefix="/dubdrive", tags=["dubdrive"])
 api.include_router(dubdrive_sync_router)
 api.include_router(boocode_router)
+api.include_router(history_router, prefix="/history", tags=["history"])
 api.include_router(skills.router, prefix="/skills", tags=["skills"])
 api.include_router(terminals.router, prefix="/terminals", tags=["terminals"])
 
