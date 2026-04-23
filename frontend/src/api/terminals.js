@@ -22,6 +22,9 @@ export const create = ({ machineId, dawId, label, startingCmd }) =>
 export const del = (id) =>
   apiFetch(`/api/terminals/${encodeURIComponent(id)}`, { method: 'DELETE' })
 
+export const exportTerminal = (id) =>
+  apiFetch(`/api/terminals/${encodeURIComponent(id)}/export`, { method: 'POST' })
+
 export const patch = (id, body) =>
   apiFetch(`/api/terminals/${encodeURIComponent(id)}`, {
     method: 'PATCH',

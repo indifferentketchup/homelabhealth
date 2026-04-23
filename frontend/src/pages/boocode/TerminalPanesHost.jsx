@@ -124,6 +124,20 @@ export default function TerminalPanesHost({
     [invalidateSessions, onToast],
   )
 
+  const handleSaveAndClose = useCallback(
+    async (sid) => {
+      try {
+        const res = await terminalsApi.exportTerminal(sid)
+        await terminalsApi.del(sid)
+        await invalidateSessions()
+        onToast(`Saved: ${res?.filename ?? 'terminal'}`)
+      } catch (e) {
+        onToast(friendlyErr(e, 'Save failed'))
+      }
+    },
+    [invalidateSessions, onToast],
+  )
+
   const handleCreated = useCallback(
     async (session) => {
       await invalidateSessions()
@@ -143,6 +157,7 @@ export default function TerminalPanesHost({
         onRename={handleRename}
         onPin={handlePin}
         onClose={handleClose}
+        onSaveAndClose={handleSaveAndClose}
       />
 
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
