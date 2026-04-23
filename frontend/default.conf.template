@@ -22,6 +22,26 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    # BooCode terminals (Phase 5). WebSocket upgrade requires http/1.1 and
+    # the Upgrade/Connection headers; otherwise nginx strips them and the
+    # connection falls through to try_files → index.html, which is why the
+    # browser saw "immediate disconnect".
+    location /ws/ {
+        set $boolab_upstream "${BOOLAB_API_UPSTREAM}";
+        proxy_pass http://$boolab_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+    }
+
     location / {
         try_files $uri $uri/ /index.html;
     }
