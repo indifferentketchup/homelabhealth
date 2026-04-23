@@ -65,7 +65,7 @@ export default function BoocodeSplitPane({
     window.addEventListener('touchend', onUp)
     return () => {
       window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('touchmove', onMove)
+      window.removeEventListener('touchmove', onMove, { passive: false })
       window.removeEventListener('mouseup', onUp)
       window.removeEventListener('touchend', onUp)
     }
@@ -77,7 +77,7 @@ export default function BoocodeSplitPane({
 
   const leftPct = `${(ratio * 100).toFixed(2)}%`
   const rightPct = `${((1 - ratio) * 100).toFixed(2)}%`
-  const transition = dragging ? 'none' : undefined
+  const transition = dragging ? 'none' : 'flex-basis 120ms ease-out'
 
   return (
     <div

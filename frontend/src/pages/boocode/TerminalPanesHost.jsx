@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 
+import { friendlyErr } from '@/lib/friendlyErr.js'
 import * as terminalsApi from '@/api/terminals.js'
 
 import NewTerminalModal from './NewTerminalModal.jsx'
@@ -31,17 +32,6 @@ const POLL_MS = 15_000
  *  - onRequestNewModal:     () => void         — called when the + tab-bar button is clicked
  *  - onToast:               (msg: string) => void
  */
-
-function friendlyErr(e, fallback) {
-  const raw = e?.message || fallback
-  try {
-    const parsed = JSON.parse(raw)
-    if (parsed?.detail) return String(parsed.detail)
-  } catch {
-    /* not JSON — use raw */
-  }
-  return raw
-}
 
 export default function TerminalPanesHost({
   dawId,
@@ -95,7 +85,8 @@ export default function TerminalPanesHost({
 
   const handleEvicted = useCallback(async () => {
     await invalidateSessions()
-  }, [invalidateSessions])
+    onToast('Terminal session was evicted')
+  }, [invalidateSessions, onToast])
 
   const handleRename = useCallback(
     async (sid, label) => {

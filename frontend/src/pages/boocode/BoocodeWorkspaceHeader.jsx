@@ -1,5 +1,7 @@
 import { Columns2, MessageSquare, TerminalSquare } from 'lucide-react'
 
+import { Button } from '@/components/ui/button'
+
 /**
  * BoocodeWorkspaceHeader
  *
@@ -27,12 +29,11 @@ export default function BoocodeWorkspaceHeader({
 
   return (
     <div
-      className="bc-prompt-line flex shrink-0 items-center gap-2 border-b px-3 py-1"
+      className="bc-prompt-line flex shrink-0 items-center gap-2 border-b px-3 py-1 min-h-[2.75rem] md:min-h-[2rem]"
       style={{
         borderColor: 'var(--border)',
         background: 'var(--bg-card)',
         fontFamily: "'JetBrains Mono', monospace",
-        minHeight: '2rem',
       }}
     >
       {/* Prompt sigil */}
@@ -49,10 +50,11 @@ export default function BoocodeWorkspaceHeader({
 
       <div className="ml-auto flex items-center gap-1.5">
         {/* Cycle primary button — shown on all screen sizes */}
-        <button
-          type="button"
+        <Button
+          variant="outline"
+          size="xs"
           onClick={onCyclePrimary}
-          className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs transition-colors hover:opacity-80"
+          className="h-11 px-4 md:h-7 md:px-2.5"
           style={{
             borderColor: 'var(--orange, #ff8c00)',
             color: 'var(--orange, #ff8c00)',
@@ -70,26 +72,25 @@ export default function BoocodeWorkspaceHeader({
             {isTerm ? 'TERM' : 'CHAT'}
             {' '}⇄
           </span>
-        </button>
+        </Button>
 
         {/* Split toggle — desktop only (hidden below md) */}
-        <button
-          type="button"
+        <Button
+          variant={split ? 'default' : 'outline'}
+          size="xs"
           onClick={onToggleSplit}
           aria-pressed={split}
-          className="hidden md:inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs transition-colors hover:opacity-80"
-          style={{
-            borderColor: split ? 'var(--orange, #ff8c00)' : 'var(--border)',
-            color: split ? 'var(--orange, #ff8c00)' : 'var(--text)',
-            background: split
-              ? 'color-mix(in srgb, var(--orange, #ff8c00) 15%, transparent)'
-              : 'transparent',
-          }}
+          className="hidden md:inline-flex"
+          style={
+            split
+              ? undefined
+              : { borderColor: 'var(--border)', color: 'var(--text)', background: 'transparent' }
+          }
           title={split ? 'Close split view' : 'Open split view (chat + terminal side by side)'}
         >
           <Columns2 className="size-3 shrink-0" />
           <span className="uppercase tracking-wide">⇔ SPLIT</span>
-        </button>
+        </Button>
       </div>
     </div>
   )
