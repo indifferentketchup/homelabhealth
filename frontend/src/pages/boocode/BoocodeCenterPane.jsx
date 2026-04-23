@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { ChatView } from '@/components/chat/ChatView.jsx'
+import { friendlyErr } from '@/lib/friendlyErr.js'
 import * as terminalsApi from '@/api/terminals.js'
 
 import BoocodeWorkspaceHeader from './BoocodeWorkspaceHeader.jsx'
@@ -27,17 +28,6 @@ import TerminalPanesHost from './TerminalPanesHost.jsx'
  *  - activeSessionId: string | null         starts at null
  *  - splitRatio:      number                starts at 0.5
  */
-
-function friendlyErr(e, fallback) {
-  const raw = e?.message || fallback
-  try {
-    const parsed = JSON.parse(raw)
-    if (parsed?.detail) return String(parsed.detail)
-  } catch {
-    /* not JSON — use raw */
-  }
-  return raw
-}
 
 export default function BoocodeCenterPane({ dawId, dawName = null }) {
   const qc = useQueryClient()
@@ -165,7 +155,7 @@ export default function BoocodeCenterPane({ dawId, dawName = null }) {
       window.removeEventListener('boocode:open-terminal', onOpen)
       window.removeEventListener('boocode:send-to-terminal', onSend)
     }
-  }, [dawId, qc])
+  }, [dawId, qc, setToastMsg, setShowNewModal, setPrimary, setActiveSessionId])
 
   // ── Header callbacks ─────────────────────────────────────────────────────
   const handleToggleSplit = useCallback(() => {
