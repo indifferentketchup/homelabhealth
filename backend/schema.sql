@@ -611,7 +611,7 @@ INSERT INTO terminal_machines (name, host, ssh_user, default_cwd, enabled) VALUE
     ('local',          'localhost',      NULL,         '/opt',   FALSE),
     ('ubuntu-homelab', '100.114.205.53', 'samkintop',  '/opt',   FALSE),
     ('sam-desktop',    '100.101.41.16',  'samki',      NULL,     TRUE),
-    ('embedding',      '100.93.187.4',   NULL,         NULL,     FALSE)
+    ('embedding',      '100.90.172.55',  'samkintop',  NULL,     FALSE)
 ON CONFLICT (name) DO NOTHING;
 
 -- `local` runs inside boolab_agent, which ships with no runtimes (no node,
@@ -628,6 +628,15 @@ UPDATE terminal_machines
 UPDATE terminal_machines
    SET enabled = FALSE
  WHERE name = 'ubuntu-homelab';
+
+-- `embedding` host migrated: Tailscale IP changed (100.93.187.4 →
+-- 100.90.172.55) and ssh_user is known (samkintop). Keep enabled=FALSE
+-- until key-based auth lands on the target (authorized_keys populated
+-- via ssh-copy-id on host). Flip to TRUE in a follow-up commit once the
+-- agent can reach the host without a password prompt.
+UPDATE terminal_machines
+   SET host = '100.90.172.55', ssh_user = 'samkintop'
+ WHERE name = 'embedding';
 
 -- Audit log — events: open, close, paste, pin, rename, device_connect,
 -- device_disconnect. Paste entries store sha256(text) + len, not plaintext.
