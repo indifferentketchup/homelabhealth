@@ -90,8 +90,12 @@ export default function DawDetailPage() {
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [clearing, setClearing] = useState(false)
   const [skillsAddDialogOpen, setSkillsAddDialogOpen] = useState(false)
-  const [chatHistoryOpen, setChatHistoryOpen] = useState(false)
-  const [terminalHistoryOpen, setTerminalHistoryOpen] = useState(false)
+  const [chatHistoryOpen, setChatHistoryOpen] = useState(
+    () => new URLSearchParams(window.location.search).get('history') === 'chats',
+  )
+  const [terminalHistoryOpen, setTerminalHistoryOpen] = useState(
+    () => new URLSearchParams(window.location.search).get('history') === 'terminals',
+  )
 
   const invalidateDaw = () => {
     queryClient.invalidateQueries({ queryKey: ['daws'] })
