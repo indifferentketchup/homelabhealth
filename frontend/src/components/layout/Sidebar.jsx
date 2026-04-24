@@ -147,9 +147,6 @@ function BoocodeDawRow({
   onTerminalContextMenu,
   onChatContextMenu,
 }) {
-  const queryClient = useQueryClient()
-  const pendingRecreateRef = useRef(new Set())
-
   const { data: terminalsData } = useQuery({
     queryKey: ['sidebar-terminals', daw.id],
     queryFn: () => terminalsApi.list({ dawId: daw.id }),
@@ -174,15 +171,8 @@ function BoocodeDawRow({
     })
   }, [terminalsData])
 
-  const closedSessions = useMemo(() => {
-    const raw = Array.isArray(terminalsData?.recent) ? terminalsData.recent : []
-    // Most-recently-closed first (API already does this; guard anyway)
-    return [...raw].sort((a, b) => {
-      const ac = a.closed_at ?? ''
-      const bc = b.closed_at ?? ''
-      return ac < bc ? 1 : ac > bc ? -1 : 0
-    })
-  }, [terminalsData])
+  const [chatsOpen, setChatsOpen] = useState(true)
+  const [terminalsOpen, setTerminalsOpen] = useState(true)
 
   const chatList = useMemo(() => {
     return Array.isArray(chatsData?.items) ? chatsData.items : []
@@ -194,30 +184,6 @@ function BoocodeDawRow({
 
   function newTerminal() {
     window.dispatchEvent(new CustomEvent('boocode:new-terminal', { detail: { dawId: daw.id } }))
-  }
-
-  async function recreateClosed(s) {
-    if (pendingRecreateRef.current.has(s.id)) return
-    pendingRecreateRef.current.add(s.id)
-    try {
-      const created = await terminalsApi.create({
-        machineId: s.machine_id,
-        dawId: daw.id,
-        label: s.label ?? null,
-        startingCmd: s.starting_cmd ?? null,
-      })
-      await queryClient.refetchQueries({ queryKey: ['terminals', daw.id] })
-      await queryClient.invalidateQueries({ queryKey: ['sidebar-terminals', daw.id] })
-      if (created?.id) {
-        window.dispatchEvent(new CustomEvent('boocode:open-terminal', { detail: { sessionId: created.id } }))
-      }
-      if (isMobile) onMobileClose()
-    } catch (e) {
-      // No toast surface inside the sidebar; log to console for now (matches existing posture).
-      console.warn('recreate closed terminal failed', friendlyErr(e, 'Re-create failed'))
-    } finally {
-      pendingRecreateRef.current.delete(s.id)
-    }
   }
 
   function selectDawChat(c) {
@@ -277,77 +243,91 @@ function BoocodeDawRow({
       {/* Expanded nested sections */}
       {isExpanded && (
         <div className="ml-3 mt-0.5 flex flex-col gap-0.5 border-l border-sidebar-border pl-2">
-          {/* TERMINALS subsection */}
+          {/* CHATS subsection — first */}
           <div className="mt-1">
-            <span className="fs-nav block px-1 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              Terminals ({sessions.length})
-            </span>
-            {sessions.map((s) => (
-              <TerminalRow
-                key={s.id}
-                session={s}
-                daw={daw}
-                onActivate={openTerminal}
-                onContextMenu={onTerminalContextMenu}
-              />
-            ))}
-            {/* + new terminal */}
             <button
               type="button"
-              className="fs-nav flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-xs text-muted-foreground outline-none ring-sidebar-ring hover:bg-sidebar-accent/50 focus-visible:ring-2"
-              onClick={newTerminal}
+              onClick={() => setChatsOpen((o) => !o)}
+              className="fs-nav flex w-full items-center gap-1 rounded-sm px-1 py-0.5 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground outline-none ring-sidebar-ring hover:text-foreground focus-visible:ring-2"
+              aria-expanded={chatsOpen}
             >
-              <Plus className="size-3 shrink-0 opacity-60" aria-hidden />
-              <span>new terminal</span>
+              <ChevronRight
+                className={cn('size-3 shrink-0 transition-transform duration-150', chatsOpen && 'rotate-90')}
+                aria-hidden
+              />
+              <span>Chats ({chatList.length})</span>
             </button>
-            {closedSessions.length > 0 && (
-              <div className="mt-1">
-                <span className="fs-nav block px-1 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Recently Closed{closedSessions.length > 5 ? ' (5 of ' + closedSessions.length + ')' : ''}
+            {chatsOpen && (
+              chatList.length === 0 ? (
+                <span className="fs-nav block px-1 py-1 text-xs text-muted-foreground">
+                  No chats yet
                 </span>
-                {closedSessions.slice(0, 5).map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => recreateClosed(s)}
-                    className="flex w-full items-center gap-2 rounded-sm px-1 py-0.5 text-left text-[11px] opacity-60 outline-none ring-sidebar-ring hover:opacity-100 hover:bg-sidebar-accent/40 focus-visible:ring-2"
-                    title="Re-create a fresh session with the same label + target"
-                  >
-                    <RotateCcw className="size-3 shrink-0" aria-hidden />
-                    <span className="truncate" style={{ color: 'var(--text-dim)' }}>
-                      {s.label || s.machine_name || 'session'}
-                    </span>
-                    <span className="ml-auto shrink-0 text-[9px]" style={{ color: 'var(--text-dim)' }}>
-                      {s.machine_name}
-                    </span>
-                  </button>
-                ))}
-              </div>
+              ) : (
+                chatList.map((c) => (
+                  <ChatRow
+                    key={c.id}
+                    chat={c}
+                    activeChatId={activeChatId}
+                    activeDawId={daw.id}
+                    onSelect={() => selectDawChat(c)}
+                    onContextMenu={onChatContextMenu}
+                    collapsed={false}
+                  />
+                ))
+              )
             )}
           </div>
 
-          {/* CHATS subsection */}
+          {/* TERMINALS subsection — second */}
           <div className="mt-1">
-            <span className="fs-nav block px-1 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              Chats ({chatList.length})
-            </span>
-            {chatList.length === 0 ? (
-              <span className="fs-nav block px-1 py-1 text-xs text-muted-foreground">
-                No chats yet
-              </span>
-            ) : (
-              chatList.map((c) => (
-                <ChatRow
-                  key={c.id}
-                  chat={c}
-                  activeChatId={activeChatId}
-                  activeDawId={daw.id}
-                  onSelect={() => selectDawChat(c)}
-                  onContextMenu={onChatContextMenu}
-                  collapsed={false}
-                />
-              ))
+            <button
+              type="button"
+              onClick={() => setTerminalsOpen((o) => !o)}
+              className="fs-nav flex w-full items-center gap-1 rounded-sm px-1 py-0.5 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground outline-none ring-sidebar-ring hover:text-foreground focus-visible:ring-2"
+              aria-expanded={terminalsOpen}
+            >
+              <ChevronRight
+                className={cn('size-3 shrink-0 transition-transform duration-150', terminalsOpen && 'rotate-90')}
+                aria-hidden
+              />
+              <span>Terminals ({sessions.length})</span>
+            </button>
+            {terminalsOpen && (
+              <>
+                {sessions.map((s) => (
+                  <TerminalRow
+                    key={s.id}
+                    session={s}
+                    daw={daw}
+                    onActivate={openTerminal}
+                    onContextMenu={onTerminalContextMenu}
+                  />
+                ))}
+                <button
+                  type="button"
+                  className="fs-nav flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-sm outline-none ring-sidebar-ring text-muted-foreground hover:bg-sidebar-accent/40 hover:text-foreground focus-visible:ring-2"
+                  onClick={newTerminal}
+                >
+                  <Plus className="size-3.5 shrink-0 opacity-70" aria-hidden />
+                  <span>new terminal</span>
+                </button>
+              </>
             )}
+          </div>
+
+          {/* Recently Closed — link, always visible when DAW expanded */}
+          <div className="mt-1">
+            <button
+              type="button"
+              onClick={() => {
+                navigate(`${PATH_BOOCODE}/daws/${daw.id}?history=terminals`)
+                if (isMobile) onMobileClose()
+              }}
+              className="fs-nav flex w-full items-center gap-1 rounded-sm px-1 py-0.5 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground outline-none ring-sidebar-ring hover:text-foreground focus-visible:ring-2"
+            >
+              <RotateCcw className="size-3 shrink-0 opacity-60" aria-hidden />
+              <span>Recently Closed →</span>
+            </button>
           </div>
         </div>
       )}
