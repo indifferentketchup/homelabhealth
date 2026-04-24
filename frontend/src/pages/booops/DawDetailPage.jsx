@@ -23,7 +23,7 @@ import {
 import { fetchOllamaModels, getOllamaSettings } from '@/api/ollama.js'
 import { syncRepo, updateRepoConfig } from '@/api/boocode.js'
 import { listSkills, getDawSkills, addSkillToDaw, removeSkillFromDaw, toggleDawSkill } from '@/api/skills'
-import HistoryModal from '@/pages/boocode/HistoryModal.jsx'
+import HistoryList from '@/pages/boocode/HistoryList.jsx'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { PATH_808NOTES, PATH_BOOOPS, is808notesRouteContext } from '@/routes/paths.js'
@@ -90,13 +90,6 @@ export default function DawDetailPage() {
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [clearing, setClearing] = useState(false)
   const [skillsAddDialogOpen, setSkillsAddDialogOpen] = useState(false)
-  const [chatHistoryOpen, setChatHistoryOpen] = useState(
-    () => new URLSearchParams(window.location.search).get('history') === 'chats',
-  )
-  const [terminalHistoryOpen, setTerminalHistoryOpen] = useState(
-    () => new URLSearchParams(window.location.search).get('history') === 'terminals',
-  )
-
   const invalidateDaw = () => {
     queryClient.invalidateQueries({ queryKey: ['daws'] })
   }
@@ -153,6 +146,17 @@ export default function DawDetailPage() {
   useEffect(() => {
     return () => {}
   }, [])
+
+  useEffect(() => {
+    const hash = (typeof window !== 'undefined' && window.location.hash) || ''
+    if (!hash) return
+    // tiny delay so the section is mounted before the scroll
+    const handle = window.setTimeout(() => {
+      const el = document.getElementById(hash.slice(1))
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 50)
+    return () => window.clearTimeout(handle)
+  }, [id])
 
   const { data: files = [] } = useQuery({
     queryKey: ['daw-context-files', id],
@@ -938,34 +942,10 @@ const saveInferMut = useMutation({
               </ul>
             </section>
 
-            <section className="rounded-md border border-border bg-card p-4">
-              <h2 className="mb-3 text-sm font-medium text-foreground">History</h2>
-              <div className="flex flex-wrap gap-2">
-                <Button variant="outline" size="sm" onClick={() => setChatHistoryOpen(true)}>
-                  Chat History
-                </Button>
-                {isBoocode && (
-                  <Button variant="outline" size="sm" onClick={() => setTerminalHistoryOpen(true)}>
-                    Terminal History
-                  </Button>
-                )}
-              </div>
-            </section>
-
-            <HistoryModal
-              open={chatHistoryOpen}
-              onClose={() => setChatHistoryOpen(false)}
-              kind="chats"
-              dawId={id}
-              dawName={daw?.name || ''}
-            />
-            <HistoryModal
-              open={terminalHistoryOpen}
-              onClose={() => setTerminalHistoryOpen(false)}
-              kind="terminals"
-              dawId={id}
-              dawName={daw?.name || ''}
-            />
+            {isBoocode && (
+              <HistoryList kind="terminals" dawId={id} dawName={daw?.name || ''} />
+            )}
+            <HistoryList kind="chats" dawId={id} dawName={daw?.name || ''} />
 
             <section className="rounded-lg border border-destructive bg-destructive/5 p-4">
               <h2 className="mb-3 text-sm font-medium text-destructive">Danger zone</h2>

@@ -320,7 +320,7 @@ function BoocodeDawRow({
             <button
               type="button"
               onClick={() => {
-                navigate(`${PATH_BOOCODE}/daws/${daw.id}?history=terminals`)
+                navigate(`${PATH_BOOCODE}/daws/${daw.id}#terminal-history`)
                 if (isMobile) onMobileClose()
               }}
               className="fs-nav flex w-full items-center gap-1 rounded-sm px-1 py-0.5 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground outline-none ring-sidebar-ring hover:text-foreground focus-visible:ring-2"
