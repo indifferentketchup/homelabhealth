@@ -37,6 +37,10 @@ services:
     volumes:
       - boolab_tmux:/shared/tmux
       - /home/samkintop/.ssh:/home/agent/.ssh:ro
+      # DubDrive-managed repo root; owned by samkintop (uid 1000) on host
+      # so the agent user (uid 1000) has rw. DAW repo_path values like
+      # `/HomeLabRepos/boolab` resolve to real files here.
+      - /docker/dubdrive/files/samkintop/HomeLabRepos:/HomeLabRepos:rw
     networks:
       - boolab_net
 

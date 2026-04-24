@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2, ServerCog } from 'lucide-react'
 
+import { getDaw } from '@/api/daws.js'
 import * as terminalsApi from '@/api/terminals.js'
 import { Button } from '@/components/ui/button'
 import {
@@ -19,6 +20,8 @@ export default function NewTerminalModal({ dawId, onClose, onCreated, onError })
   const [machineId, setMachineId] = useState(null)
   const [label, setLabel] = useState('')
   const [startingCmd, setStartingCmd] = useState('')
+  const [cwd, setCwd] = useState('')
+  const [cwdDirty, setCwdDirty] = useState(false)
   const [attachToDaw, setAttachToDaw] = useState(Boolean(dawId))
   const [submitting, setSubmitting] = useState(false)
   const [err, setErr] = useState(null)
@@ -29,17 +32,45 @@ export default function NewTerminalModal({ dawId, onClose, onCreated, onError })
     staleTime: 60_000,
   })
 
+  // Pull the DAW's repo_path so we can default machine + cwd when the user
+  // opens this from inside a BooCode DAW.
+  const { data: daw } = useQuery({
+    queryKey: ['daw', dawId],
+    queryFn: () => getDaw(dawId),
+    enabled: Boolean(dawId),
+    staleTime: 30_000,
+  })
+
   const enabledMachines = useMemo(
     () => (Array.isArray(machines) ? machines.filter((m) => m.enabled) : []),
     [machines],
   )
 
+  const dawRepoPath = attachToDaw ? (daw?.repo_path || '').trim() : ''
+  const selectedMachine = useMemo(
+    () => enabledMachines.find((m) => m.id === machineId) || null,
+    [enabledMachines, machineId],
+  )
+
+  // Default machine: prefer ubuntu-homelab when we're attaching to a DAW
+  // (repo files are bind-mounted into that agent), else first enabled.
   useEffect(() => {
-    if (!machineId && enabledMachines.length > 0) {
-      const local = enabledMachines.find((m) => m.name === 'local')
-      setMachineId(local ? local.id : enabledMachines[0].id)
-    }
-  }, [enabledMachines, machineId])
+    if (machineId || enabledMachines.length === 0) return
+    const preferred = attachToDaw
+      ? enabledMachines.find((m) => m.name === 'ubuntu-homelab')
+      : null
+    const fallback = enabledMachines.find((m) => m.name === 'ubuntu-homelab')
+      || enabledMachines[0]
+    setMachineId((preferred || fallback).id)
+  }, [enabledMachines, machineId, attachToDaw])
+
+  // Default cwd: DAW's repo_path if available, else the machine's default_cwd.
+  // Users can override; once they edit the field we stop auto-updating it.
+  useEffect(() => {
+    if (cwdDirty) return
+    const next = dawRepoPath || selectedMachine?.default_cwd || ''
+    setCwd(next)
+  }, [dawRepoPath, selectedMachine, cwdDirty])
 
   const submit = async () => {
     setErr(null)
@@ -49,11 +80,19 @@ export default function NewTerminalModal({ dawId, onClose, onCreated, onError })
     }
     setSubmitting(true)
     try {
+      const trimmedCwd = cwd.trim()
+      // Only send cwd when it diverges from the machine default — keeps
+      // the legacy path (cwd=null → use machine.default_cwd) intact.
+      const cwdOverride =
+        trimmedCwd && trimmedCwd !== (selectedMachine?.default_cwd || '')
+          ? trimmedCwd
+          : null
       const created = await terminalsApi.create({
         machineId,
         dawId: attachToDaw ? dawId : null,
         label: label.trim() || null,
         startingCmd: startingCmd.trim() || null,
+        cwd: cwdOverride,
       })
       onCreated?.(created)
     } catch (e) {
@@ -167,6 +206,25 @@ export default function NewTerminalModal({ dawId, onClose, onCreated, onError })
               placeholder="e.g. llama-swap"
               maxLength={120}
             />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="bc-term-cwd">Working directory</Label>
+            <Input
+              id="bc-term-cwd"
+              value={cwd}
+              onChange={(e) => {
+                setCwd(e.target.value)
+                setCwdDirty(true)
+              }}
+              placeholder={selectedMachine?.default_cwd || '/'}
+              maxLength={512}
+            />
+            {dawRepoPath && !cwdDirty ? (
+              <span className="text-[0.6875rem]" style={{ color: 'var(--text-dim)' }}>
+                Auto-filled from this DAW's repo path.
+              </span>
+            ) : null}
           </div>
 
           <div className="flex flex-col gap-1.5">

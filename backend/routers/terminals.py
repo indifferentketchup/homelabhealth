@@ -86,6 +86,25 @@ class CreateSessionBody(BaseModel):
     daw_id: uuid.UUID | None = None
     label: str | None = Field(default=None, max_length=120)
     starting_cmd: str | None = Field(default=None, max_length=4096)
+    cwd: str | None = Field(default=None, max_length=512)
+
+
+def _validate_cwd(cwd: str | None) -> str | None:
+    """Light sanity check on a caller-supplied tmux cwd. Owner-only auth
+    already gates the route; this is defense-in-depth against a stray
+    `..` or embedded null that would confuse tmux."""
+    if cwd is None:
+        return None
+    trimmed = cwd.strip()
+    if not trimmed:
+        return None
+    if "\x00" in trimmed:
+        raise HTTPException(status_code=400, detail="cwd contains null byte")
+    if not trimmed.startswith("/"):
+        raise HTTPException(status_code=400, detail="cwd must be absolute")
+    if ".." in trimmed.split("/"):
+        raise HTTPException(status_code=400, detail="cwd contains '..'")
+    return trimmed
 
 
 class PatchSessionBody(BaseModel):
@@ -302,7 +321,7 @@ async def create_session(body: CreateSessionBody, request: Request) -> SessionOu
         # accidentally firing before the shell is ready).
         starting_cmd = (body.starting_cmd or "").strip() or None
 
-        cwd = machine["default_cwd"]
+        cwd = _validate_cwd(body.cwd) or machine["default_cwd"]
         try:
             await tmux_session.spawn(tmux_name, target_cmd, cwd)
         except tmux_session.TmuxCommandError as e:

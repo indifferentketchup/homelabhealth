@@ -603,30 +603,33 @@ CREATE INDEX IF NOT EXISTS idx_term_lru
     ON terminal_sessions(last_detached_at)
     WHERE closed_at IS NULL AND pinned = FALSE;
 
--- Idempotent seed; `local`, `ubuntu-homelab`, and `embedding` ship disabled
--- (see notes below). For existing installs the follow-up UPDATE forces
--- `enabled=FALSE` on every startup since ON CONFLICT DO NOTHING won't
--- update already-seeded rows.
+-- Idempotent seed. `ubuntu-homelab` is the local agent container (same
+-- physical host as boolab_agent); it runs `bash -l` directly — no SSH —
+-- with /HomeLabRepos bind-mounted via docker-compose so terminals can
+-- actually cd into DAW repo paths. `local` is kept as a legacy alias
+-- and force-disabled (use ubuntu-homelab instead). `embedding` stays
+-- disabled until key-based auth is populated on that host.
 INSERT INTO terminal_machines (name, host, ssh_user, default_cwd, enabled) VALUES
-    ('local',          'localhost',      NULL,         '/opt',   FALSE),
-    ('ubuntu-homelab', '100.114.205.53', 'samkintop',  '/opt',   FALSE),
-    ('sam-desktop',    '100.101.41.16',  'samki',      NULL,     TRUE),
-    ('embedding',      '100.90.172.55',  'samkintop',  NULL,     FALSE)
+    ('local',          'localhost',      NULL,         '/opt',           FALSE),
+    ('ubuntu-homelab', 'localhost',      NULL,         '/HomeLabRepos',  TRUE),
+    ('sam-desktop',    '100.101.41.16',  'samki',      NULL,             TRUE),
+    ('embedding',      '100.90.172.55',  'samkintop',  NULL,             FALSE)
 ON CONFLICT (name) DO NOTHING;
 
--- `local` runs inside boolab_agent, which ships with no runtimes (no node,
--- python, git) — users would land in a dead shell. Re-enable only if we
--- invest in adding those runtimes to Dockerfile.agent.
+-- Legacy `local` row: ubuntu-homelab now fills this role. Keep the row
+-- so historical session foreign keys still resolve, but disable it.
 UPDATE terminal_machines
    SET enabled = FALSE
  WHERE name = 'local';
 
--- `ubuntu-homelab` resolves to the same physical host that runs
--- boolab_agent — SSH-to-self adds a password-prompting round-trip with
--- zero benefit over the unused `local` target. Disable on every startup
--- to prevent it creeping back via a re-seed.
+-- `ubuntu-homelab` previously shipped as an SSH target at the Tailscale
+-- IP. Force it back to a local bash on every startup so legacy DBs get
+-- repaired on API restart without a manual SQL edit.
 UPDATE terminal_machines
-   SET enabled = FALSE
+   SET host = 'localhost',
+       ssh_user = NULL,
+       default_cwd = '/HomeLabRepos',
+       enabled = TRUE
  WHERE name = 'ubuntu-homelab';
 
 -- `embedding` host migrated: Tailscale IP changed (100.93.187.4 →

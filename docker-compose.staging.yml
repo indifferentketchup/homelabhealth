@@ -30,6 +30,7 @@ services:
     volumes:
       - boolab_tmux_staging:/shared/tmux
       - /home/samkintop/.ssh:/home/agent/.ssh:ro
+      - /docker/dubdrive/files/samkintop/HomeLabRepos:/HomeLabRepos:rw
 
 volumes:
   boolab_tmux_staging:
