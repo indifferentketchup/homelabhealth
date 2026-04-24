@@ -2,5 +2,6 @@ node_modules
 dist
 .git
 *.md
+!public/spec.md
 .env
 .env.*
