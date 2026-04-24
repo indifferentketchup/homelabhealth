@@ -161,12 +161,22 @@ async def _render_boocode_attachments(
 
 
 async def _default_persona_id_for_mode(conn: asyncpg.Connection, mode: str) -> uuid.UUID | None:
-    """Default persona for new chat: global personas table + per-app default flags."""
-    m = mode if mode in ("booops", "808notes") else "booops"
-    if m == "808notes":
-        return await conn.fetchval(
+    """Default persona for new chat. Try the mode-specific default first
+    (is_default_<mode>), then fall back to is_default_booops so every chat
+    gets something sensible even if the user hasn't set a per-mode default.
+    """
+    if mode == "808notes":
+        pid = await conn.fetchval(
             "SELECT id FROM personas WHERE is_default_808notes IS TRUE LIMIT 1",
         )
+        if pid:
+            return pid
+    elif mode == "boocode":
+        pid = await conn.fetchval(
+            "SELECT id FROM personas WHERE is_default_boocode IS TRUE LIMIT 1",
+        )
+        if pid:
+            return pid
     return await conn.fetchval(
         "SELECT id FROM personas WHERE is_default_booops IS TRUE LIMIT 1",
     )
@@ -285,11 +295,20 @@ async def _assembled_system_prompt(
             persona_prompt = (pr["system_prompt"] or "").strip()
 
     if not persona_prompt:
-        if mode == "808notes":
+        # `mode` here has been coerced to booops/808notes; the authoritative
+        # chat mode is `chat["mode"]`. Try the mode-specific default first,
+        # fall back to booops if none is set for this mode.
+        persona_mode = chat["mode"] if chat["mode"] in ("booops", "808notes", "boocode") else "booops"
+        d = None
+        if persona_mode == "808notes":
             d = await conn.fetchrow(
                 "SELECT system_prompt FROM personas WHERE is_default_808notes IS TRUE LIMIT 1",
             )
-        else:
+        elif persona_mode == "boocode":
+            d = await conn.fetchrow(
+                "SELECT system_prompt FROM personas WHERE is_default_boocode IS TRUE LIMIT 1",
+            )
+        if not d:
             d = await conn.fetchrow(
                 "SELECT system_prompt FROM personas WHERE is_default_booops IS TRUE LIMIT 1",
             )
