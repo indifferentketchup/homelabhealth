@@ -758,7 +758,7 @@ async def list_chats(
     principal: dict[str, Any] = Depends(get_principal),
 ):
     pool = await get_pool()
-    m = mode if mode in ("booops", "808notes") else "booops"
+    m = mode if mode in ("booops", "808notes", "boocode") else "booops"
     cols = """
                 id, title, daw_id, mode, persona_id, model, web_search_enabled, rag_enabled,
                 pruning_summary, message_count, is_main_chat, created_at, updated_at
@@ -810,7 +810,7 @@ async def delete_non_daw_chats(
 ):
     """Delete all chats in the given mode that are not tied to a DAW (daw_id IS NULL)."""
     pool = await get_pool()
-    m = mode if mode in ("booops", "808notes") else "booops"
+    m = mode if mode in ("booops", "808notes", "boocode") else "booops"
     async with pool.acquire() as conn:
         deleted = await conn.fetchval(
             """
