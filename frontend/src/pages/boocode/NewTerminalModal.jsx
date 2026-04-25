@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, ServerCog } from 'lucide-react'
 
 import { getDaw } from '@/api/daws.js'
@@ -23,8 +23,18 @@ export default function NewTerminalModal({ dawId, onClose, onCreated, onError })
   const [cwd, setCwd] = useState('')
   const [cwdDirty, setCwdDirty] = useState(false)
   const [attachToDaw, setAttachToDaw] = useState(Boolean(dawId))
+  const [sessionType, setSessionType] = useState('bash')
   const [submitting, setSubmitting] = useState(false)
+  const [submittedAt, setSubmittedAt] = useState(0)
   const [err, setErr] = useState(null)
+  const [, forceTick] = useState(0)
+  const queryClient = useQueryClient()
+
+  useEffect(() => {
+    if (!submitting) return
+    const t = setInterval(() => forceTick((n) => n + 1), 250)
+    return () => clearInterval(t)
+  }, [submitting])
 
   const { data: machines, isLoading } = useQuery({
     queryKey: ['terminal-machines'],
@@ -72,6 +82,24 @@ export default function NewTerminalModal({ dawId, onClose, onCreated, onError })
     setCwd(next)
   }, [dawRepoPath, selectedMachine, cwdDirty])
 
+  const computeAutoLabel = () => {
+    if (!attachToDaw || !dawId) return null
+    // Read the cached session list for this DAW; pick the next free integer.
+    const cached = queryClient.getQueryData(['terminals', dawId])
+    const active = Array.isArray(cached?.active) ? cached.active : []
+    const recent = Array.isArray(cached?.recent) ? cached.recent : []
+    const all = [...active, ...recent]
+    const re = new RegExp(`^${sessionType}-(\\d+)$`)
+    const used = new Set()
+    for (const s of all) {
+      const m = (s?.label || '').match(re)
+      if (m) used.add(Number(m[1]))
+    }
+    let n = 1
+    while (used.has(n)) n += 1
+    return `${sessionType}-${n}`
+  }
+
   const submit = async () => {
     setErr(null)
     if (!machineId) {
@@ -79,6 +107,7 @@ export default function NewTerminalModal({ dawId, onClose, onCreated, onError })
       return
     }
     setSubmitting(true)
+    setSubmittedAt(Date.now())
     try {
       const trimmedCwd = cwd.trim()
       // Only send cwd when it diverges from the machine default — keeps
@@ -90,9 +119,10 @@ export default function NewTerminalModal({ dawId, onClose, onCreated, onError })
       const created = await terminalsApi.create({
         machineId,
         dawId: attachToDaw ? dawId : null,
-        label: label.trim() || null,
+        label: label.trim() || computeAutoLabel(),
         startingCmd: startingCmd.trim() || null,
         cwd: cwdOverride,
+        sessionType,
       })
       onCreated?.(created)
     } catch (e) {
@@ -109,6 +139,13 @@ export default function NewTerminalModal({ dawId, onClose, onCreated, onError })
       setSubmitting(false)
     }
   }
+
+  const submitLabel = (() => {
+    if (!submitting) return 'START'
+    const elapsed = Date.now() - submittedAt
+    if (elapsed >= 500 && sessionType !== 'bash') return 'CONNECTING…'
+    return 'STARTING…'
+  })()
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose?.() }}>
@@ -198,6 +235,41 @@ export default function NewTerminalModal({ dawId, onClose, onCreated, onError })
           </div>
 
           <div className="flex flex-col gap-1.5">
+            <Label>Type</Label>
+            <div className="grid grid-cols-3 gap-1.5">
+              {[
+                { id: 'bash', name: 'Bash', desc: 'Interactive shell' },
+                { id: 'claude', name: 'Claude Code', desc: 'Agentic CLI' },
+                { id: 'opencode', name: 'OpenCode', desc: 'Agentic CLI' },
+              ].map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setSessionType(t.id)}
+                  aria-pressed={sessionType === t.id}
+                  className="flex flex-col items-start gap-0.5 rounded border px-2 py-2 text-left transition-colors"
+                  style={{
+                    borderColor: sessionType === t.id ? 'var(--orange, #ff8c00)' : 'var(--border)',
+                    background: sessionType === t.id ? 'var(--bg-card)' : 'transparent',
+                  }}
+                >
+                  <span
+                    className="text-xs font-medium tracking-wide"
+                    style={{
+                      color: sessionType === t.id ? 'var(--orange, #ff8c00)' : 'var(--text)',
+                    }}
+                  >
+                    {t.name}
+                  </span>
+                  <span className="text-[0.6875rem]" style={{ color: 'var(--text-dim)' }}>
+                    {t.desc}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
             <Label htmlFor="bc-term-label">Label (optional)</Label>
             <Input
               id="bc-term-label"
@@ -277,7 +349,7 @@ export default function NewTerminalModal({ dawId, onClose, onCreated, onError })
               letterSpacing: '0.2em',
             }}
           >
-            {submitting ? 'STARTING…' : 'START'}
+            {submitLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

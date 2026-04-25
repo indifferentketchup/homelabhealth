@@ -8,7 +8,7 @@ export const list = ({ dawId } = {}) => {
   return apiFetch(`/api/terminals${qs}`)
 }
 
-export const create = ({ machineId, dawId, label, startingCmd, cwd }) =>
+export const create = ({ machineId, dawId, label, startingCmd, cwd, sessionType }) =>
   apiFetch('/api/terminals', {
     method: 'POST',
     json: {
@@ -17,6 +17,7 @@ export const create = ({ machineId, dawId, label, startingCmd, cwd }) =>
       label: label ?? null,
       starting_cmd: startingCmd ?? null,
       cwd: cwd ?? null,
+      session_type: sessionType ?? 'bash',
     },
   })
 
