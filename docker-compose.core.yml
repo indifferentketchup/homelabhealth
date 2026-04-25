@@ -36,7 +36,11 @@ services:
     restart: unless-stopped
     volumes:
       - boolab_tmux:/shared/tmux
-      - /home/samkintop/.ssh:/home/agent/.ssh:ro
+      # Phase 5.1: narrowed from the whole .ssh dir to only the two files
+      # SSH actually needs (identity + pre-validated host keys). Smaller
+      # surface; pub key, authorized_keys, and any extra keys stay on host.
+      - /home/samkintop/.ssh/id_ed25519:/home/agent/.ssh/id_ed25519:ro
+      - /home/samkintop/.ssh/known_hosts:/home/agent/.ssh/known_hosts:ro
       # DubDrive-managed repo root; owned by samkintop (uid 1000) on host
       # so the agent user (uid 1000) has rw. DAW repo_path values like
       # `/HomeLabRepos/boolab` resolve to real files here.
