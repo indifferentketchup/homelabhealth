@@ -603,12 +603,13 @@ CREATE INDEX IF NOT EXISTS idx_term_lru
     ON terminal_sessions(last_detached_at)
     WHERE closed_at IS NULL AND pinned = FALSE;
 
--- Idempotent seed. `ubuntu-homelab` is the local agent container (same
--- physical host as boolab_agent); it runs `bash -l` directly — no SSH —
--- with /HomeLabRepos bind-mounted via docker-compose so terminals can
--- actually cd into DAW repo paths. `local` is kept as a legacy alias
--- and force-disabled (use ubuntu-homelab instead). `embedding` stays
--- disabled until key-based auth is populated on that host.
+-- Idempotent seed. `ubuntu-homelab` is the host itself reached via SSH
+-- from the agent container (host's Tailscale IP, ssh_user=samkintop) —
+-- this lets host-installed agents (claude, opencode) keep their auth
+-- state without bind-mounts. /HomeLabRepos resolves natively on the host.
+-- `local` is kept as a legacy alias and force-disabled (use ubuntu-homelab
+-- instead). `embedding` stays disabled until key-based auth is populated
+-- on that host.
 INSERT INTO terminal_machines (name, host, ssh_user, default_cwd, enabled) VALUES
     ('local',          'localhost',         NULL,         '/opt',           FALSE),
     ('ubuntu-homelab', '100.114.205.53',    'samkintop',  '/HomeLabRepos',  TRUE),
