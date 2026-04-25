@@ -481,20 +481,26 @@ async def paste(sid: uuid.UUID, body: PasteBody, request: Request) -> dict[str, 
     if len(text.encode("utf-8", errors="replace")) > tmux_session.PASTE_MAX_BYTES:
         raise HTTPException(status_code=413, detail="paste too large")
 
-    # Strip literal newlines when the caller did not opt into firing commands.
-    # The outer Enter (append_newline=True) is what actually fires; stripping
-    # here prevents a rogue inline \n from firing mid-payload.
-    if not body.append_newline:
-        text = text.replace("\n", "").replace("\r", "")
-
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT tmux_name, closed_at FROM terminal_sessions WHERE id = $1::uuid",
+            "SELECT tmux_name, closed_at, session_type FROM terminal_sessions WHERE id = $1::uuid",
             sid,
         )
         if row is None or row["closed_at"] is not None:
             raise HTTPException(status_code=404, detail="session not found")
+
+        # Newline policy depends on session type:
+        # - bash: strip inline newlines unless caller opts into firing. A
+        #   stray \n would fire mid-payload as a command. Bash 4.4+ honors
+        #   bracketed paste, but conservatism wins until we know every
+        #   bash session's PS2/READLINE state.
+        # - claude/opencode: preserve newlines. Bracketed paste markers
+        #   from send_keys make the TUI treat the payload atomically; the
+        #   user submits explicitly. Stripping here flattens multi-line
+        #   snippets and breaks the chip flow.
+        if not body.append_newline and row["session_type"] == "bash":
+            text = text.replace("\n", "").replace("\r", "")
 
         try:
             await tmux_session.send_keys(row["tmux_name"], text, body.append_newline)
