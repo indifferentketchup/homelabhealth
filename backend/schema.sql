@@ -603,6 +603,23 @@ CREATE INDEX IF NOT EXISTS idx_term_lru
     ON terminal_sessions(last_detached_at)
     WHERE closed_at IS NULL AND pinned = FALSE;
 
+-- Phase 5.1: agentic spawn. Existing rows default to 'bash'. CHECK keeps
+-- the column tight so an unknown type can't sneak in via a buggy client.
+ALTER TABLE terminal_sessions
+    ADD COLUMN IF NOT EXISTS session_type TEXT NOT NULL DEFAULT 'bash';
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'terminal_sessions_session_type_check'
+    ) THEN
+        ALTER TABLE terminal_sessions
+            ADD CONSTRAINT terminal_sessions_session_type_check
+            CHECK (session_type IN ('bash', 'claude', 'opencode'));
+    END IF;
+END$$;
+
 -- Idempotent seed. `ubuntu-homelab` is the host itself reached via SSH
 -- from the agent container (host's Tailscale IP, ssh_user=samkintop) —
 -- this lets host-installed agents (claude, opencode) keep their auth

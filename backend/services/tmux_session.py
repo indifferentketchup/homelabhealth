@@ -24,6 +24,8 @@ import uuid
 from collections import defaultdict, deque
 from typing import Iterable
 
+from fastapi import HTTPException
+
 logger = logging.getLogger(__name__)
 
 
@@ -113,14 +115,57 @@ async def list_active() -> set[str]:
 
 
 async def send_keys(tmux_name: str, text: str, append_newline: bool) -> None:
-    """Literal paste (``-l``), then optional Enter keypress.
+    """Bracketed paste via tmux's paste buffer, then optional Enter.
 
-    If ``append_newline`` is False the caller already stripped ``\n`` from
-    ``text``; we still use ``-l`` (literal) so tmux does not interpret
-    key names inside the payload.
+    Sequence:
+      1. ``load-buffer -b <buf> -`` reads text from stdin into a named buffer
+      2. ``paste-buffer -t NAME -b <buf> -d -p`` pastes with bracketed markers
+         (``-p``) and deletes the buffer afterward (``-d``)
+      3. optional ``send-keys ... Enter`` to fire
+
+    Why bracketed: agent TUIs (claude, opencode) honor bracketed paste — the
+    TUI recognizes the wrapper and treats the payload as a single atomic
+    pre-submit input. send-keys -l sends bytes "as if typed", so embedded
+    \\n bytes fire mid-paste as submits, fragmenting multi-line snippets.
+    Bash ignores the markers; behavior unchanged for bash sessions.
+
+    The buffer name is per-session so concurrent pastes from different
+    terminals never share a buffer. If paste-buffer fails (e.g., the
+    target session died between load and paste), we explicitly delete the
+    leaked buffer because ``-d`` only runs on a successful paste.
     """
     if text:
-        await _run(_tmux(["send-keys", "-t", tmux_name, "-l", text]))
+        loop = asyncio.get_running_loop()
+        text_bytes = text.encode("utf-8")
+        buf_name = f"boo-paste-{tmux_name}"
+        # Step 1: load-buffer reads from stdin. _run can't pipe stdin, so
+        # call subprocess.run directly through run_in_executor.
+        await loop.run_in_executor(
+            None,
+            lambda: subprocess.run(
+                _tmux(["load-buffer", "-b", buf_name, "-"]),
+                input=text_bytes,
+                check=True,
+                capture_output=True,
+                timeout=15,
+            ),
+        )
+        # Step 2: paste with bracketed markers (-p), delete buffer after (-d).
+        # On failure (e.g., target session vanished) `-d` does NOT fire and
+        # the buffer leaks on the shared socket; explicitly clean it up.
+        try:
+            await _run(_tmux([
+                "paste-buffer", "-t", tmux_name, "-b", buf_name, "-d", "-p",
+            ]))
+        except Exception:
+            try:
+                await _run(_tmux(["delete-buffer", "-b", buf_name]), check=False)
+            except Exception:
+                logger.warning(
+                    "send_keys paste failed and buffer cleanup also failed name=%s",
+                    buf_name,
+                )
+            raise
     if append_newline:
         await _run(_tmux(["send-keys", "-t", tmux_name, "Enter"]))
 
@@ -197,25 +242,68 @@ def reset_paste_rate(session_id: str) -> None:
     _paste_window.pop(session_id, None)
 
 
-def target_cmd_for(machine: dict) -> list[str]:
-    """Build the shell argv tmux will exec for a given machine row.
+def target_cmd_for(
+    machine: dict,
+    session_type: str,
+    cwd: str,
+) -> list[str]:
+    """Build the shell argv tmux will exec for (machine, session_type, cwd).
 
-    ``local`` → ``bash -l`` (no SSH). Others → ``ssh -o ...
-    user@host``. Strict host-key checking is intentional: the agent's
-    ``~/.ssh`` is bind-mounted read-only, so TOFU writes to
-    ``known_hosts`` would silently fail. known_hosts must be
-    pre-populated on the host for each Tailscale peer.
+    INVARIANT: cwd is a HOST path. It is passed verbatim to the remote shell
+    via SSH. Do NOT translate, normalize, or map it through any container-
+    side filesystem view. ubuntu-homelab is the host; /HomeLabRepos already
+    resolves there.
+
+    INVARIANT: bash -lc is load-bearing. -l forces a login shell on the
+    host so ~/.profile is sourced, extending PATH to include ~/.local/bin
+    where claude and opencode live. Do NOT drop -l.
+
+    INVARIANT: ssh -t is required. claude and opencode are full-screen TUIs
+    that refuse to start without a remote tty — `-t` forces remote pty
+    allocation. Without it, the TUI exits immediately with "stdin not a tty".
+
+    INVARIANT: StrictHostKeyChecking=yes is intentional. The agent's
+    ~/.ssh is bind-mounted read-only (only id_ed25519 + known_hosts), so
+    TOFU writes would silently fail. known_hosts must be pre-populated on
+    the host for each Tailscale peer (currently just ubuntu-homelab).
     """
+    import shlex
+
+    if not cwd:
+        raise HTTPException(status_code=400, detail="cwd is required")
+    if session_type not in ("bash", "claude", "opencode"):
+        raise HTTPException(
+            status_code=400, detail=f"unknown session_type: {session_type}",
+        )
+
     name = (machine.get("name") or "").strip()
     host = (machine.get("host") or "").strip()
     ssh_user = (machine.get("ssh_user") or "").strip()
+
+    # `local` (legacy): bash inside the agent container. Non-default
+    # fallback for sidecar shell access. Agents not allowed here.
     if name == "local" or not host or host == "localhost":
-        return ["bash", "-l"]
+        if session_type != "bash":
+            raise HTTPException(
+                status_code=400,
+                detail="claude/opencode require ubuntu-homelab (they run on the host)",
+            )
+        return ["bash", "-lc", f"cd {shlex.quote(cwd)} && exec bash -l"]
+
+    # Remote via SSH (ubuntu-homelab is one such target).
     if not ssh_user:
-        raise ValueError(f"machine {name!r} needs ssh_user before use")
-    return [
-        "ssh",
+        raise HTTPException(
+            status_code=400, detail=f"machine {name!r} needs ssh_user before use",
+        )
+    ssh = [
+        "ssh", "-t",
         "-o", "StrictHostKeyChecking=yes",
         "-o", "ServerAliveInterval=30",
+        "-o", "ServerAliveCountMax=3",
         f"{ssh_user}@{host}",
     ]
+    if session_type == "bash":
+        remote = f"cd {shlex.quote(cwd)} && exec bash -l"
+    else:  # claude | opencode
+        remote = f"cd {shlex.quote(cwd)} && exec {session_type}"
+    return ssh + ["bash", "-lc", remote]

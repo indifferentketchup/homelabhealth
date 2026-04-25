@@ -74,6 +74,7 @@ class SessionOut(BaseModel):
     tmux_name: str
     label: str | None
     starting_cmd: str | None
+    session_type: str
     pinned: bool
     created_at: str
     last_detached_at: str | None
@@ -87,6 +88,7 @@ class CreateSessionBody(BaseModel):
     label: str | None = Field(default=None, max_length=120)
     starting_cmd: str | None = Field(default=None, max_length=4096)
     cwd: str | None = Field(default=None, max_length=512)
+    session_type: str = Field(default="bash")
 
 
 def _validate_cwd(cwd: str | None) -> str | None:
@@ -129,6 +131,7 @@ def _row_to_session(row: Any) -> SessionOut:
         tmux_name=row["tmux_name"],
         label=row["label"],
         starting_cmd=row["starting_cmd"],
+        session_type=row["session_type"],
         pinned=bool(row["pinned"]),
         created_at=row["created_at"].isoformat() if row["created_at"] else "",
         last_detached_at=(
@@ -312,16 +315,23 @@ async def create_session(body: CreateSessionBody, request: Request) -> SessionOu
         sid = uuid.uuid4()
         tmux_name = tmux_session.tmux_name_for(sid)
 
-        try:
-            target_cmd = tmux_session.target_cmd_for(dict(machine))
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-
         # Optional starting command prefix (strip newlines to avoid
         # accidentally firing before the shell is ready).
         starting_cmd = (body.starting_cmd or "").strip() or None
 
+        # Resolve cwd before building target_cmd — the cwd is embedded in
+        # the remote `bash -lc 'cd <cwd> && exec ...'` for SSH targets,
+        # so it must be a real path before we hand it off.
         cwd = _validate_cwd(body.cwd) or machine["default_cwd"]
+        if not cwd:
+            raise HTTPException(status_code=400, detail="cwd is required")
+
+        # target_cmd_for raises HTTPException(400) directly for invalid
+        # session_type / type-machine combinations.
+        target_cmd = tmux_session.target_cmd_for(
+            dict(machine), body.session_type, cwd,
+        )
+
         try:
             await tmux_session.spawn(tmux_name, target_cmd, cwd)
         except tmux_session.TmuxCommandError as e:
@@ -331,11 +341,13 @@ async def create_session(body: CreateSessionBody, request: Request) -> SessionOu
             row = await conn.fetchrow(
                 """
                 INSERT INTO terminal_sessions (
-                    id, daw_id, machine_id, tmux_name, label, starting_cmd
+                    id, daw_id, machine_id, tmux_name, label,
+                    starting_cmd, session_type
                 )
-                VALUES ($1::uuid, $2, $3::uuid, $4, $5, $6)
-                RETURNING id, daw_id, machine_id, tmux_name, label, starting_cmd,
-                          pinned, created_at, last_detached_at, closed_at
+                VALUES ($1::uuid, $2, $3::uuid, $4, $5, $6, $7)
+                RETURNING id, daw_id, machine_id, tmux_name, label,
+                          starting_cmd, session_type, pinned,
+                          created_at, last_detached_at, closed_at
                 """,
                 sid,
                 body.daw_id,
@@ -343,6 +355,7 @@ async def create_session(body: CreateSessionBody, request: Request) -> SessionOu
                 tmux_name,
                 body.label,
                 starting_cmd,
+                body.session_type,
             )
         except Exception:
             # Roll back the tmux session if the DB insert fails so we don't
@@ -409,7 +422,7 @@ async def patch_session(
             SET label = $2, pinned = $3
             WHERE id = $1::uuid
             RETURNING id, daw_id, machine_id, tmux_name, label, starting_cmd,
-                      pinned, created_at, last_detached_at, closed_at
+                      session_type, pinned, created_at, last_detached_at, closed_at
             """,
             sid,
             new_label,
