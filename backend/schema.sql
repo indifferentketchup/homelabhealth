@@ -610,10 +610,10 @@ CREATE INDEX IF NOT EXISTS idx_term_lru
 -- and force-disabled (use ubuntu-homelab instead). `embedding` stays
 -- disabled until key-based auth is populated on that host.
 INSERT INTO terminal_machines (name, host, ssh_user, default_cwd, enabled) VALUES
-    ('local',          'localhost',      NULL,         '/opt',           FALSE),
-    ('ubuntu-homelab', 'localhost',      NULL,         '/HomeLabRepos',  TRUE),
-    ('sam-desktop',    '100.101.41.16',  'samki',      NULL,             TRUE),
-    ('embedding',      '100.90.172.55',  'samkintop',  NULL,             FALSE)
+    ('local',          'localhost',         NULL,         '/opt',           FALSE),
+    ('ubuntu-homelab', '100.114.205.53',    'samkintop',  '/HomeLabRepos',  TRUE),
+    ('sam-desktop',    '100.101.41.16',     'samki',      NULL,             TRUE),
+    ('embedding',      '100.90.172.55',     'samkintop',  NULL,             FALSE)
 ON CONFLICT (name) DO NOTHING;
 
 -- Legacy `local` row: ubuntu-homelab now fills this role. Keep the row
@@ -622,12 +622,14 @@ UPDATE terminal_machines
    SET enabled = FALSE
  WHERE name = 'local';
 
--- `ubuntu-homelab` previously shipped as an SSH target at the Tailscale
--- IP. Force it back to a local bash on every startup so legacy DBs get
--- repaired on API restart without a manual SQL edit.
+-- Phase 5.1: ubuntu-homelab is an SSH target to the host itself. The agent
+-- container reaches it via the host's Tailscale IP. Reverses the prior
+-- "force back to localhost" repair from Phase 5 Session 2 — that decision
+-- predated agent-type support, where claude/opencode must run on the host
+-- where they're installed. Idempotent on every API restart.
 UPDATE terminal_machines
-   SET host = 'localhost',
-       ssh_user = NULL,
+   SET host = '100.114.205.53',
+       ssh_user = 'samkintop',
        default_cwd = '/HomeLabRepos',
        enabled = TRUE
  WHERE name = 'ubuntu-homelab';
