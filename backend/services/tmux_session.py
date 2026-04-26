@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shlex
 import subprocess
 import time
 import uuid
@@ -247,16 +248,16 @@ def target_cmd_for(
     session_type: str,
     cwd: str,
 ) -> list[str]:
-    """Build the shell argv tmux will exec for (machine, session_type, cwd).
+    """Build argv for `tmux new-session` given (machine, session_type, cwd).
 
-    INVARIANT: cwd is a HOST path. It is passed verbatim to the remote shell
-    via SSH. Do NOT translate, normalize, or map it through any container-
-    side filesystem view. ubuntu-homelab is the host; /HomeLabRepos already
-    resolves there.
+    INVARIANT: cwd is a HOST path. Passed verbatim to the remote shell via
+    SSH. Do NOT translate, normalize, or map through any container view.
+    /HomeLabRepos/<repo> is provided on the host via per-repo fstab binds
+    (see Phase 5.1 spec Section 3 step 0).
 
     INVARIANT: bash -lc is load-bearing. -l forces a login shell on the
     host so ~/.profile is sourced, extending PATH to include ~/.local/bin
-    where claude and opencode live. Do NOT drop -l.
+    and ~/.opencode/bin. Do NOT drop -l.
 
     INVARIANT: ssh -t is required. claude and opencode are full-screen TUIs
     that refuse to start without a remote tty — `-t` forces remote pty
@@ -266,9 +267,20 @@ def target_cmd_for(
     ~/.ssh is bind-mounted read-only (only id_ed25519 + known_hosts), so
     TOFU writes would silently fail. known_hosts must be pre-populated on
     the host for each Tailscale peer (currently just ubuntu-homelab).
-    """
-    import shlex
 
+    INVARIANT: SSH flattens post-host argv with single spaces before sending
+    the command to the remote (man ssh: "additional arguments... separated
+    by spaces"). Therefore `bash -lc <script>` MUST be assembled as a SINGLE
+    quoted argv element before being passed to ssh. Splitting it as
+    ['bash', '-lc', script] causes the remote shell to re-parse
+    `bash -lc cd /path && exec X` as `bash -lc cd` (with $0=path discarded
+    → cd to $HOME) chained via && to `exec X` running in the outer
+    NON-login shell, bypassing ~/.profile PATH. Symptom pre-fix: bash
+    self-corrected because `&& exec bash -l` re-established the login shell
+    (cwd silently wrong but shell alive); claude/opencode died with exit
+    127 because they aren't on the non-login PATH. Local mode (no ssh
+    layer) keeps the three-arg form because tmux invokes argv directly.
+    """
     if not cwd:
         raise HTTPException(status_code=400, detail="cwd is required")
     if session_type not in ("bash", "claude", "opencode"):
@@ -280,8 +292,9 @@ def target_cmd_for(
     host = (machine.get("host") or "").strip()
     ssh_user = (machine.get("ssh_user") or "").strip()
 
-    # `local` (legacy): bash inside the agent container. Non-default
-    # fallback for sidecar shell access. Agents not allowed here.
+    # `local` (legacy): bash inside the agent container. tmux invokes argv
+    # directly (no ssh layer, no flatten), so the three-arg form is correct.
+    # Non-default fallback for sidecar shell access. Agents not allowed here.
     if name == "local" or not host or host == "localhost":
         if session_type != "bash":
             raise HTTPException(
@@ -290,7 +303,8 @@ def target_cmd_for(
             )
         return ["bash", "-lc", f"cd {shlex.quote(cwd)} && exec bash -l"]
 
-    # Remote via SSH (ubuntu-homelab is one such target).
+    # Remote via SSH (ubuntu-homelab is one such target). Single-string form
+    # for the bash invocation to survive ssh's argv flatten — see invariant.
     if not ssh_user:
         raise HTTPException(
             status_code=400, detail=f"machine {name!r} needs ssh_user before use",
@@ -303,7 +317,8 @@ def target_cmd_for(
         f"{ssh_user}@{host}",
     ]
     if session_type == "bash":
-        remote = f"cd {shlex.quote(cwd)} && exec bash -l"
+        remote_script = f"cd {shlex.quote(cwd)} && exec bash -l"
     else:  # claude | opencode
-        remote = f"cd {shlex.quote(cwd)} && exec {session_type}"
-    return ssh + ["bash", "-lc", remote]
+        remote_script = f"cd {shlex.quote(cwd)} && exec {session_type}"
+    remote_cmd = f"bash -lc {shlex.quote(remote_script)}"
+    return ssh + [remote_cmd]
