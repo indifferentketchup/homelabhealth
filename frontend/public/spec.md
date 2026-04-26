@@ -94,22 +94,34 @@ from fastapi import HTTPException
 def target_cmd_for(machine, session_type: str, cwd: str) -> list[str]:
     """Build argv for `tmux new-session` given (machine, type, cwd).
 
-    INVARIANT: cwd is a HOST path. It is passed verbatim to the remote shell
-    via SSH. Do NOT attempt to translate, normalize, or map it through any
-    container-side filesystem view. ubuntu-homelab is the host; /HomeLabRepos
-    already resolves there.
+    INVARIANT: cwd is a HOST path. Passed verbatim to the remote shell via
+    SSH. Do NOT translate, normalize, or map through any container view.
+    /HomeLabRepos/<repo> is provided on the host via per-repo fstab binds
+    (see Section 3 step 0).
 
-    INVARIANT: bash -lc is load-bearing. -l forces a login shell on the host
-    so ~/.profile is sourced, extending PATH to include ~/.local/bin (where
-    claude and opencode live). Do NOT drop -l.
+    INVARIANT: bash -lc is load-bearing. -l forces a login shell on the
+    host so ~/.profile is sourced, extending PATH to include ~/.local/bin
+    and ~/.opencode/bin. Do NOT drop -l.
+
+    INVARIANT: ssh -t is required. claude and opencode are full-screen TUIs
+    that refuse to start without a remote tty — `-t` forces remote pty
+    allocation. Without it the TUI exits immediately with "stdin not a tty".
+
+    INVARIANT: SSH flattens post-host argv with single spaces before sending
+    the command to the remote. Therefore `bash -lc <script>` MUST be
+    assembled as a SINGLE quoted argv element before being passed to ssh.
+    Splitting it as ['bash', '-lc', script] causes the remote shell to
+    re-parse `bash -lc cd /path && exec X` as `bash -lc cd` (with $0=path
+    discarded → cd to $HOME) chained via && to `exec X` running in the
+    outer NON-login shell, bypassing ~/.profile PATH. Local mode (no ssh
+    layer) keeps the three-arg form because tmux invokes argv directly.
     """
     if not cwd:
         raise HTTPException(status_code=400, detail='cwd is required')
     if session_type not in ('bash', 'claude', 'opencode'):
         raise HTTPException(status_code=400, detail=f'unknown session_type: {session_type}')
 
-    # `local` (legacy): bash inside the agent container. Non-default fallback.
-    # Kept for FK integrity and sidecar shell access.
+    # Local: tmux invokes argv directly (no ssh, no flatten). Three-arg form is correct.
     if machine.name == 'local':
         if session_type != 'bash':
             raise HTTPException(
@@ -118,8 +130,7 @@ def target_cmd_for(machine, session_type: str, cwd: str) -> list[str]:
             )
         return ['bash', '-lc', f'cd {shlex.quote(cwd)} && exec bash -l']
 
-    # Remote via SSH. ubuntu-homelab is the host itself; schema can hold
-    # additional remotes later (sam-desktop, embedding, etc.).
+    # Remote via SSH. Single-string form to survive ssh's argv flatten.
     target = f'{machine.ssh_user}@{machine.host}'
     ssh = [
         'ssh', '-t',
@@ -129,13 +140,16 @@ def target_cmd_for(machine, session_type: str, cwd: str) -> list[str]:
         target,
     ]
     if session_type == 'bash':
-        remote = f'cd {shlex.quote(cwd)} && exec bash -l'
+        remote_script = f'cd {shlex.quote(cwd)} && exec bash -l'
     else:  # claude | opencode
-        remote = f'cd {shlex.quote(cwd)} && exec {session_type}'
-    return ssh + ['bash', '-lc', remote]
+        remote_script = f'cd {shlex.quote(cwd)} && exec {session_type}'
+    remote_cmd = f'bash -lc {shlex.quote(remote_script)}'
+    return ssh + [remote_cmd]
 ```
 
 The `-t` forces remote PTY allocation — `claude` and `opencode` are full-screen TUIs and will not render without it. `ServerAliveInterval=30` keeps long agent sessions alive through NAT and idle windows; three missed pings (90s) declare the session dead and SSH exits.
+
+**SSH argv-flatten — third load-bearing invariant.** OpenSSH joins post-host argv with single spaces before sending the command to the remote (`man ssh`: "additional arguments... separated by spaces"). The three-argv form `[..., 'bash', '-lc', script]` arrives at the remote as the shell string `bash -lc <script-words>`, which the remote shell re-splits — `bash -lc` consumes only the next single token as its `-c` script, so `cd /path && exec X` becomes `bash -lc cd` (with `/path` discarded as `$0`, sending cd to `$HOME`) chained via `&&` to `exec X` running in the outer NON-login shell where `.profile`'s PATH additions are absent. Symptom: bash sessions self-corrected because `exec bash -l` re-establishes the login shell (cwd silently wrong but shell alive); agent sessions died with exit 127 because claude/opencode aren't on the non-login PATH. Fix: assemble `bash -lc <shlex.quote(script)>` as ONE argv element before ssh.
 
 ### Other backend touchpoints (commit #2)
 
@@ -440,7 +454,7 @@ Post-deploy verification: `docker exec -it boolab_agent ssh samkintop@100.114.20
 
 All run against the live stack (no mocks, per project feedback memory):
 
-1. **Bash default** — new terminal, default type (`bash`), default machine (`ubuntu-homelab`), attached to DAW. Verify: SSH handshake completes, prompt appears, `pwd` equals the DAW's `repo_path`, `hostname` reports the host.
+1. **Bash default** — new terminal, default type (`bash`), default machine (`ubuntu-homelab`), DAW with `repo_path=/HomeLabRepos/<repo>`. Run `hostname && pwd && whoami && ls .git/HEAD`. Pass: hostname is the host (not container), **pwd matches the DAW's `repo_path`** (regression guard against ssh-flatten cd-discard), whoami=samkintop, `.git/HEAD` exists.
 2. **Bash local** — new terminal, `type=bash`, `machine=local`. Verify: prompt in agent container (`whoami` → `agent`, `hostname` → container ID).
 3. **Claude spawn** — new terminal, `type=claude`, `machine=ubuntu-homelab`. Verify: `claude` TUI renders; its initial screen is visible and interactive.
 4. **OpenCode spawn** — new terminal, `type=opencode`, `machine=ubuntu-homelab`. Verify: `opencode` TUI renders.
@@ -471,6 +485,7 @@ All run against the live stack (no mocks, per project feedback memory):
 | Self-loop SSH latency | Negligible (<1 ms over lo + Tailscale NAT) | — |
 | Tool installer edits only `.bashrc` → invisible to `bash -lc` | High (agent TUI exits 127 immediately on spawn) | Bootstrap step 1.5 verifies via login shell. Add export to `.profile` if either binary missing. |
 | New DAW added without a paired `/HomeLabRepos/<repo>` fstab entry | Medium (agent TUI fails for that DAW only; regression silent until first agent spawn) | Operator runbook: every DAW with a `repo_path` needs a fstab line + `mount -a`. Future improvement: a generator script that reads dubdrive's live mount table and emits diff. |
+| SSH argv-flatten breaks three-arg `bash -lc <script>` form | High (silent cwd bug for bash; immediate exit 127 for claude/opencode) | `target_cmd_for` assembles bash invocation as a single shlex-quoted argv element. Local mode keeps three-arg form. Acceptance Test 1's `pwd` check + Test 3's liveness check guard against regression. |
 
 ### Deferred (do not build in 5.1)
 
