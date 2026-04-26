@@ -340,11 +340,67 @@ The `local` disable UPDATE (schema.sql:621-623) is unchanged.
 
 ### One-time host bootstrap (deploy runbook, not code)
 
+0. **Host `/HomeLabRepos/<repo>` per-repo bind mounts.** The Phase 5 `boolab_agent` container resolves `/HomeLabRepos/<repo>` via a single compose-level bind mount of `/docker/dubdrive/files/samkintop/HomeLabRepos`. The Phase 5.1 SSH path runs `cd /HomeLabRepos/<repo>` *on the host*, which sees those paths only if each repo has its own bind mount in `/etc/fstab`. The 13 binds must mirror DubDrive's mount table (the source of truth for repo casing and the `bourbites→bourbites3` alias). Generate them from `docker inspect dubdrive` rather than typing by hand:
+
+   ```bash
+   docker inspect dubdrive --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{"\n"}}{{end}}' \
+     | awk -F' -> ' '$2 ~ /^\/data\/files\/samkintop\/HomeLabRepos\// {
+         sub(/^\/data\/files\/samkintop\/HomeLabRepos\//, "/HomeLabRepos/", $2)
+         printf "%s %s none bind 0 0\n", $1, $2
+       }' \
+     | sort > /tmp/homelabrepos-fstab.lines
+   ```
+
+   Pre-create the 13 child mountpoint directories under `/HomeLabRepos` (Linux bind mounts require existing targets):
+
+   ```bash
+   awk '{print $2}' /tmp/homelabrepos-fstab.lines | sudo xargs mkdir -p
+   ```
+
+   Backup `/etc/fstab`, append the lines, and apply:
+
+   ```bash
+   sudo cp /etc/fstab /etc/fstab.bak-$(date +%Y%m%d)
+   {
+     echo ""
+     echo "# BooCode Phase 5.1 — /HomeLabRepos visibility on host (mirrors dubdrive container binds)"
+     cat /tmp/homelabrepos-fstab.lines
+   } | sudo tee -a /etc/fstab > /dev/null
+   sudo mount -a
+   ```
+
+   Verify each child is a mountpoint and content sanity-checks pass:
+
+   ```bash
+   while read -r src tgt rest; do
+     printf "%-40s " "$tgt"; mountpoint -q "$tgt" && echo OK || echo FAIL
+   done < /tmp/homelabrepos-fstab.lines
+   ls /HomeLabRepos/boolab/.git | head -3
+   ```
+
+   Without these binds, agent TUIs exit immediately with `cd: /HomeLabRepos/<repo>: No such file or directory`. New DAWs require a corresponding fstab entry — see the Risks table below.
+
 1. **Self-SSH auth**: ensure the host's own public key is in its authorized_keys:
    ```
    cat ~samkintop/.ssh/id_ed25519.pub >> ~samkintop/.ssh/authorized_keys
    # (skip if already present; sort -u to dedupe)
    ```
+
+   **1.5. Login-shell PATH for agent binaries.** `bash -lc` (the shell `target_cmd_for` invokes on the remote) sources `~/.profile` / `~/.bash_profile` — NOT `~/.bashrc`. Tool installers that only edit `.bashrc` (default OpenCode install) will not be on PATH for the SSH-from-container path; the agent TUI exits 127 immediately. Verify both binaries via the exact login-shell environment:
+
+   ```bash
+   ssh samkintop@<host> 'bash -lc "command -v claude && command -v opencode"'
+   ```
+
+   If either is missing, append the install dir to `~/.profile` (idempotent):
+
+   ```bash
+   ssh samkintop@<host> 'grep -qF "/path/to/dir" ~/.profile || \
+     echo "export PATH=\"\$HOME/.opencode/bin:\$PATH\"" >> ~/.profile'
+   ```
+
+   (For the canonical install, the OpenCode binary lives at `~/.opencode/bin/opencode` — adjust if your installer differs.)
+
 2. **known_hosts pre-populate**: prevent the first-connection TOFU prompt (required by `StrictHostKeyChecking=yes`):
    ```
    ssh-keyscan 100.114.205.53 >> ~samkintop/.ssh/known_hosts
@@ -413,6 +469,8 @@ All run against the live stack (no mocks, per project feedback memory):
 | Narrowed bind mount breaks a future code path | Low | Only `id_ed25519` and `known_hosts` are needed for our SSH calls. If a future consumer needs the wider `.ssh` (e.g., a new host's `authorized_keys` read), they can add a specific mount in their own change. |
 | CC/OC version drift on host | Low | Agents update via host's normal channels (nvm, npm, etc.). Container doesn't pin any version because the container doesn't see them. Spec's run-on-host decision specifically avoids this class of problem. |
 | Self-loop SSH latency | Negligible (<1 ms over lo + Tailscale NAT) | — |
+| Tool installer edits only `.bashrc` → invisible to `bash -lc` | High (agent TUI exits 127 immediately on spawn) | Bootstrap step 1.5 verifies via login shell. Add export to `.profile` if either binary missing. |
+| New DAW added without a paired `/HomeLabRepos/<repo>` fstab entry | Medium (agent TUI fails for that DAW only; regression silent until first agent spawn) | Operator runbook: every DAW with a `repo_path` needs a fstab line + `mount -a`. Future improvement: a generator script that reads dubdrive's live mount table and emits diff. |
 
 ### Deferred (do not build in 5.1)
 
@@ -436,6 +494,8 @@ All run against the live stack (no mocks, per project feedback memory):
 **Why not use ACP (Agent Client Protocol)?** ACP would let us speak JSON-RPC to CC/OC instead of driving PTYs. Genuinely better long-term but a bigger lift: new backend protocol adapter, new frontend rendering (not an xterm), and both agents' ACP servers are still evolving. 5.1 is a PTY-only MVP. ACP is explicitly listed in "Deferred".
 
 **Why not a tool-use loop in the BooCode chat LLM?** That's a product pivot (BooCode chat becomes an agent), not a feature extension. Out of scope.
+
+**Why per-repo fstab binds instead of a single `/HomeLabRepos` bind?** The repos don't live under one host parent. DubDrive composes them from 13 separate `/opt/<repo>` working dirs (some lowercase, some not, plus `bourbites→bourbites3` aliasing). A single parent bind would only work if `/opt` itself were the source — which would expose every other `/opt/<service>` (caddyui, dubdrive, monitoring, etc.) under `/HomeLabRepos`, not just the DAW-relevant repos. Per-repo binds keep the surface narrow and the casing exact. The `bourbites3→bourbites` alias is the trap: DubDrive's UI strips the version suffix; hand-typing fstab would silently miss it. Use `docker inspect dubdrive` as the source of truth.
 
 ## Appendix B — Where this spec is served
 
