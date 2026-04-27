@@ -151,7 +151,7 @@ export default function Notes808App() {
     <TooltipProvider>
       <DawQuerySync />
       <div
-        className="layout flex h-[100dvh] w-full overflow-clip bg-background text-foreground md:flex-row"
+        className="layout flex h-[100lvh] w-full overflow-clip bg-background text-foreground md:flex-row"
         data-mode="808notes"
       >
         <Sidebar
@@ -207,7 +207,10 @@ export default function Notes808App() {
               </Button>
             ) : null}
           </header>
-          <main className="main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <main
+            className="main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+            style={{ paddingBottom: 'var(--bc-keyboard-pad, 0px)' }}
+          >
             <Outlet />
           </main>
         </div>

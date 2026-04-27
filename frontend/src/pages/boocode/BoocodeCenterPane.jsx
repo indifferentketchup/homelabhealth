@@ -67,6 +67,19 @@ export default function BoocodeCenterPane({ dawId, dawName = null }) {
     return () => window.clearTimeout(t)
   }, [toastMsg])
 
+  // ── Publish current primary view to <html> ───────────────────────────────
+  // CSS rules outside this component (e.g., the BooCodeApp mobile header and
+  // the RepoStatusBar) read this attribute to hide themselves when the user
+  // is focused on the terminal — the model selector and repo-sync bar are
+  // chat-side concerns and just steal vertical space from the TUI on mobile.
+  useEffect(() => {
+    const view = primary === 'terminal' && !split ? 'terminal' : 'chat'
+    document.documentElement.dataset.bcPrimary = view
+    return () => {
+      delete document.documentElement.dataset.bcPrimary
+    }
+  }, [primary, split])
+
   // ── Ctrl+` keyboard toggle ───────────────────────────────────────────────
   // Flip primary when Ctrl+` is pressed outside of input/textarea/contenteditable.
   // Skip when focus is in an input/textarea/contenteditable so Ctrl+` doesn't steal typed backticks.

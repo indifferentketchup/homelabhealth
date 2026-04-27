@@ -674,6 +674,21 @@ class MessageCreate(BaseModel):
     boocode_files: list[BoocodeFileRef] | None = None
 
 
+def _scrub_pg_text(value: str) -> str:
+    """Strip null bytes from a string before INSERT into a Postgres TEXT
+    column. asyncpg + Postgres reject 0x00 in TEXT with
+    `CharacterNotInRepertoireError: invalid byte sequence for encoding "UTF8"`.
+
+    The frontend gates image attachments out at the input layer, but this
+    is defense-in-depth — a stray null byte from any other binary that
+    slipped past the MIME check (zip dropped as octet-stream, etc.) would
+    otherwise 500 the messages endpoint.
+    """
+    if not value:
+        return value
+    return value.replace("\x00", "")
+
+
 class WebSearchToggleBody(BaseModel):
     enabled: bool
 
@@ -1298,7 +1313,7 @@ async def append_message(
                 """,
                 user_msg_id,
                 chat_id,
-                body.content.strip(),
+                _scrub_pg_text(body.content.strip()),
                 effective_model,
             )
             await conn.execute(
@@ -1324,7 +1339,7 @@ async def append_message(
         assembled, rag_sse_meta = await _assembled_system_prompt(
             conn,
             chat,
-            user_query_for_rag=body.content.strip(),
+            user_query_for_rag=_scrub_pg_text(body.content.strip()),
             include_site_private=True,
             session_skill_ids=body.session_skill_ids,
             boocode_files=body.boocode_files,
@@ -1352,7 +1367,7 @@ async def append_message(
             user_profile_block = ""
 
     summary = chat["pruning_summary"]
-    user_message_text = body.content.strip()
+    user_message_text = _scrub_pg_text(body.content.strip())
 
     async def gen() -> AsyncIterator[bytes]:
         sources_list: list[dict[str, str]] = []

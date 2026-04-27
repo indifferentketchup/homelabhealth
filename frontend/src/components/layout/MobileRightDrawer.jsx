@@ -3,6 +3,7 @@ import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils.js'
 import { RepoFilesPanel } from '@/pages/boocode/RepoFilesPanel.jsx'
+import { RepoStatusBar } from '@/pages/boocode/RepoStatusBar.jsx'
 
 /**
  * MobileRightDrawer — slide-in right-side sheet for the repo files browser.
@@ -69,10 +70,17 @@ export function MobileRightDrawer({ open, onClose, dawId }) {
           </Button>
         </div>
 
-        {/* Body */}
+        {/* Body — RepoStatusBar at top, RepoFilesPanel fills remaining */}
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {dawId ? (
-            <RepoFilesPanel dawId={dawId} />
+            <>
+              <div className="shrink-0 border-b border-sidebar-border">
+                <RepoStatusBar dawId={dawId} />
+              </div>
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <RepoFilesPanel dawId={dawId} />
+              </div>
+            </>
           ) : (
             <p className="p-4 text-sm text-muted-foreground">
               Open a DAW to see its files.
