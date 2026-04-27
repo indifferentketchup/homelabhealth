@@ -3,8 +3,7 @@ import '@xterm/xterm/css/xterm.css'
 
 import { useTerminalSession } from '@/hooks/useTerminalSession.js'
 
-export default function TerminalPane({ sessionId, visible, onEvicted }) {
-  const wrapperRef = useRef(null)
+export default function TerminalPane({ sessionId, visible, onEvicted, onSessionApi }) {
   const hostRef = useRef(null)
   const roRef = useRef(null)
 
@@ -15,9 +14,19 @@ export default function TerminalPane({ sessionId, visible, onEvicted }) {
     [onEvicted, sessionId],
   )
 
-  const { attachTo, fitOnVisible } = useTerminalSession(sessionId, {
-    onEvicted: handleEvicted,
-  })
+  const { attachTo, fitOnVisible, sendInput, armCtrl, ctrlArmed } = useTerminalSession(
+    sessionId,
+    { onEvicted: handleEvicted },
+  )
+
+  // Publish this pane's send/arm controls (and ctrlArmed flag) up to the host
+  // so the on-screen hotkey bar can drive whichever session is active. Re-runs
+  // whenever ctrlArmed flips so the Ctrl button can highlight in real time.
+  useEffect(() => {
+    if (typeof onSessionApi !== 'function') return undefined
+    onSessionApi(sessionId, { sendInput, armCtrl, ctrlArmed })
+    return () => onSessionApi(sessionId, null)
+  }, [sessionId, sendInput, armCtrl, ctrlArmed, onSessionApi])
 
   useEffect(() => {
     const node = hostRef.current
@@ -64,31 +73,20 @@ export default function TerminalPane({ sessionId, visible, onEvicted }) {
     return () => window.clearTimeout(handle)
   }, [visible, fitOnVisible])
 
-  // Suppress the browser's default touch panning so a finger drag doesn't
-  // scroll the whole page or rubber-band the body. Bound to the outer
-  // wrapper (covers the 6px paddingTop strip too) in CAPTURE phase, since
-  // xterm.js calls stopPropagation in its own selection touch logic — a
-  // bubble-phase listener never fires for touches that land on
-  // .xterm-rows / .xterm-screen children. Listener must be passive: false
-  // for preventDefault to take effect on iOS. attachTouchScroll (in
-  // useTerminalSession, also capture phase, on the inner host) keeps doing
-  // its scrollback translation on the normal screen; this handler is
-  // strictly about page-scroll suppression and runs alongside it on both
-  // normal and alternate screens.
+  // Keep finger drags inside the terminal from scrolling the page or
+  // rubber-banding the body on iOS. Listener must be passive: false so
+  // preventDefault actually takes effect; touch-action: none on the host
+  // div (below) classifies the gesture as non-pannable at touchstart.
   useEffect(() => {
-    const el = wrapperRef.current
+    const el = hostRef.current
     if (!el) return
-    const onTouchMove = (e) => {
-      if (e.cancelable) e.preventDefault()
-    }
-    el.addEventListener('touchmove', onTouchMove, { passive: false, capture: true })
-    return () => el.removeEventListener('touchmove', onTouchMove, { capture: true })
+    const onTouchMove = (e) => { if (e.cancelable) e.preventDefault() }
+    el.addEventListener('touchmove', onTouchMove, { passive: false })
+    return () => el.removeEventListener('touchmove', onTouchMove)
   }, [])
 
   return (
     <div
-      ref={wrapperRef}
-      data-terminal-host=""
       className="h-full w-full min-h-0 min-w-0"
       style={{
         display: visible ? 'block' : 'none',
@@ -99,7 +97,11 @@ export default function TerminalPane({ sessionId, visible, onEvicted }) {
         paddingTop: 6,
       }}
     >
-      <div ref={hostRef} className="h-full w-full" />
+      <div
+        ref={hostRef}
+        className="h-full w-full"
+        style={{ touchAction: 'none', overscrollBehavior: 'contain' }}
+      />
     </div>
   )
 }

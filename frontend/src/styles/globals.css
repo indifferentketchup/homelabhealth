@@ -435,34 +435,6 @@ main {
   height: 100% !important;
 }
 /*
- * Touch containment. Without these, dragging a finger on the terminal in
- * iOS Safari/Vivaldi scrolls the whole page (or rubber-bands the body)
- * instead of staying inside the terminal pane.
- *
- * touch-action must reach EVERY descendant: iOS classifies the gesture at
- * touchstart based on the *target* element's effective touch-action, and
- * across iOS versions has been inconsistent about honoring an ancestor's
- * value when the child has its own (default) touch-action. Setting it on
- * the host wrapper plus all its children (which includes .xterm,
- * .xterm-viewport, .xterm-screen, and the row spans) closes that gap.
- *
- * overscroll-behavior: contain stops the scroll chain from bubbling to
- * the page when the xterm buffer hits its top/bottom edge; user-select:
- * none keeps a long-press from raising the iOS callout over the terminal.
- */
-[data-terminal-host],
-[data-terminal-host] *,
-.xterm,
-.xterm * {
-  touch-action: none;
-}
-[data-terminal-host],
-.xterm {
-  overscroll-behavior: contain;
-  -webkit-user-select: none;
-  user-select: none;
-}
-/*
  * Lock cell metrics so block-element glyphs (U+2580..U+259F) tile without
  * subpixel gaps. Any non-zero letter-spacing or line-height ≠ 1 leaves
  * fractional space between cells that paints as a horizontal/vertical
