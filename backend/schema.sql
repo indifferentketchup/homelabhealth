@@ -678,3 +678,23 @@ CREATE INDEX IF NOT EXISTS terminal_audit_session_idx
 CREATE INDEX IF NOT EXISTS terminal_audit_created_idx
     ON terminal_audit(created_at DESC);
 
+-- Persistent chat generation: status, sequencing, error tracking, timestamps.
+ALTER TABLE messages DROP CONSTRAINT IF EXISTS messages_status_check;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'complete' CHECK (status IN ('pending','streaming','complete','error','cancelled'));
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS last_seq integer NOT NULL DEFAULT 0;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS error text;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS started_at timestamptz;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS finished_at timestamptz;
+
+CREATE TABLE IF NOT EXISTS message_tokens (
+    message_id uuid NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    seq integer NOT NULL,
+    delta text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (message_id, seq)
+);
+
+CREATE INDEX IF NOT EXISTS idx_messages_inflight
+    ON messages(status)
+    WHERE status IN ('pending','streaming');
+
