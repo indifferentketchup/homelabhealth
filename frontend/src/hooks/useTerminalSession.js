@@ -81,12 +81,16 @@ export function useTerminalSession(sessionId, { onEvicted } = {}) {
 
   const ensureTerminal = useCallback(() => {
     if (termRef.current) return termRef.current
+    // On mobile viewports (<768px) the screen is too narrow for 13px to fit
+    // enough columns for TUIs like opencode. Drop to 11px to gain ~9 extra cols
+    // (≈50 → ≈59 on a 390px iPhone) while staying readable.
+    const fontSize = typeof window !== 'undefined' && window.innerWidth < 768 ? 11 : 13
     const term = new Terminal({
       convertEol: true,
       cursorBlink: true,
       allowProposedApi: true,
       fontFamily: "'JetBrains Mono', 'Fira Code', Menlo, monospace",
-      fontSize: 13,
+      fontSize,
       theme: {
         background: '#0a0604',
         foreground: '#f4ece2',
@@ -226,9 +230,11 @@ export function useTerminalSession(sessionId, { onEvicted } = {}) {
           const obj = JSON.parse(ev.data)
           if (obj && obj.type === 'init') {
             term.clear()
-            if (typeof obj.rows === 'number' && typeof obj.cols === 'number') {
-              lastSizeRef.current = { cols: obj.cols, rows: obj.rows }
-            }
+            // Do NOT overwrite lastSizeRef with the server's reported size.
+            // The server always reports DEFAULT_COLS/ROWS (80×24) in the init
+            // frame — updating lastSizeRef would undo the correct size that
+            // FitAddon already computed and sent on WS open. Instead, re-send
+            // our locally-measured size so the PTY syncs to the xterm viewport.
             const { cols, rows } = lastSizeRef.current
             try {
               ws.send(JSON.stringify({ type: 'resize', cols, rows }))
@@ -330,23 +336,9 @@ export function useTerminalSession(sessionId, { onEvicted } = {}) {
     return () => vp.removeEventListener('resize', onResize)
   }, [])
 
-  // Refit once webfonts settle. xterm measures the rendered cell on first
-  // open(); if the configured fontFamily (JetBrains Mono → fallbacks) is
-  // still resolving, the initial measurement uses the system fallback and
-  // computes a wider/narrower cell than the final font. Re-fitting after
-  // document.fonts.ready re-runs the measurement against the loaded font
-  // and snaps cols to fill the pane edge-to-edge.
-  useEffect(() => {
-    if (typeof document === 'undefined' || !document.fonts?.ready) return
-    let cancelled = false
-    document.fonts.ready.then(() => {
-      if (cancelled) return
-      try { fitRef.current?.fit() } catch { /* ignore */ }
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  // Note: the document.fonts.ready refit is handled in TerminalPane.jsx
+  // (after attachTo) so the fit runs against the live DOM node, not before
+  // the terminal element has been opened.
 
   return {
     attachTo,

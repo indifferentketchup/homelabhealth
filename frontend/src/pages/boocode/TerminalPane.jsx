@@ -23,6 +23,19 @@ export default function TerminalPane({ sessionId, visible, onEvicted }) {
     if (!node) return
     attachTo(node)
 
+    // Refit once fonts settle. The terminal measures its cell dimensions on
+    // open(); if JetBrains Mono hasn't loaded yet the measurement uses the
+    // system fallback and computes the wrong cols. We refit here (after
+    // attachTo) so fitRef is guaranteed to exist when the promise resolves.
+    let fontRafId = null
+    document.fonts?.ready?.then(() => {
+      fontRafId = requestAnimationFrame(() => fitOnVisible())
+    })
+
+    // Second-pass refit: mobile browsers can settle layout slightly late,
+    // causing the initial measurement to read a stale clientWidth.
+    const delayedFit = window.setTimeout(() => fitOnVisible(), 150)
+
     // Refit whenever the host's box changes (drawer resize, tab switch-in,
     // viewport resize). xterm doesn't track layout on its own.
     if (typeof ResizeObserver !== 'undefined') {
@@ -33,6 +46,8 @@ export default function TerminalPane({ sessionId, visible, onEvicted }) {
       roRef.current = ro
     }
     return () => {
+      if (fontRafId !== null) cancelAnimationFrame(fontRafId)
+      window.clearTimeout(delayedFit)
       if (roRef.current) {
         try { roRef.current.disconnect() } catch { /* ignore */ }
         roRef.current = null
