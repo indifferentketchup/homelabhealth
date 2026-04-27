@@ -437,6 +437,21 @@ main {
 .xterm .xterm-viewport {
   overflow-y: hidden !important;
   scrollbar-width: none !important;
+  /*
+   * xterm.css ships `background-color: #000` on the viewport (kept around
+   * for OS X scrollbar opacity in the upstream default). FitAddon rounds
+   * cols down to integer cells, so .xterm-screen is up to `cellWidth - 1`
+   * pixels narrower than .xterm-viewport — the strip between the canvas
+   * right edge and the viewport right edge then paints viewport's #000,
+   * which differs from the theme background (#0a0604, set on the host
+   * wrapper in TerminalPane.jsx + via Terminal options.theme.background)
+   * and shows up as a visible right-edge gap.
+   *
+   * Setting viewport's background transparent lets the host wrapper's
+   * #0a0604 show through, hiding the sub-cell remainder. Single source of
+   * truth for the bg color: the host.
+   */
+  background-color: transparent !important;
 }
 .xterm .xterm-viewport::-webkit-scrollbar {
   width: 0 !important;
