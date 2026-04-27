@@ -76,9 +76,48 @@ export function useTerminalSession(sessionId, { onEvicted } = {}) {
   const closedByUserRef = useRef(false)
   const lastSizeRef = useRef({ cols: 80, rows: 24 })
   const connectRef = useRef(null)
+  // Sticky-Ctrl modifier for the on-screen hotkey bar. ctrlArmedRef is read
+  // synchronously inside term.onData (which fires per-keystroke); ctrlArmed
+  // state mirror exists so React can highlight the Ctrl button.
+  const ctrlArmedRef = useRef(false)
+  const ctrlTimerRef = useRef(null)
 
   const [connected, setConnected] = useState(false)
   const [deviceCount, setDeviceCount] = useState(0)
+  const [ctrlArmed, setCtrlArmed] = useState(false)
+
+  const setCtrlArmedSync = useCallback((armed) => {
+    ctrlArmedRef.current = armed
+    setCtrlArmed(armed)
+    if (ctrlTimerRef.current) {
+      window.clearTimeout(ctrlTimerRef.current)
+      ctrlTimerRef.current = null
+    }
+    if (armed) {
+      // Auto-disarm if the user taps Ctrl and never follows up — prevents a
+      // stale arm from quietly mangling the next keystroke minutes later.
+      ctrlTimerRef.current = window.setTimeout(() => {
+        ctrlArmedRef.current = false
+        setCtrlArmed(false)
+        ctrlTimerRef.current = null
+      }, 5000)
+    }
+  }, [])
+
+  const armCtrl = useCallback(() => {
+    setCtrlArmedSync(!ctrlArmedRef.current)
+  }, [setCtrlArmedSync])
+
+  const sendInput = useCallback((data) => {
+    if (!data) return
+    const ws = wsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    try {
+      ws.send(new TextEncoder().encode(data))
+    } catch {
+      /* ignore */
+    }
+  }, [])
 
   const ensureTerminal = useCallback(() => {
     if (termRef.current) return termRef.current
@@ -118,7 +157,21 @@ export function useTerminalSession(sessionId, { onEvicted } = {}) {
     term.onData((data) => {
       const ws = wsRef.current
       if (!ws || ws.readyState !== WebSocket.OPEN) return
-      ws.send(new TextEncoder().encode(data))
+      let out = data
+      // Sticky Ctrl from the hotkey bar: apply to the next typed key, then
+      // disarm. Only single-byte ASCII 0x40..0x7e (@, A-Z, [, \, ], ^, _, `,
+      // a-z, {, |, }, ~) get the Ctrl bit applied (c & 0x1f). Multi-byte
+      // sequences (arrows/Esc/etc.) pass through untouched and disarm.
+      if (ctrlArmedRef.current) {
+        if (data.length === 1) {
+          const c = data.charCodeAt(0)
+          if (c >= 0x40 && c <= 0x7e) {
+            out = String.fromCharCode(c & 0x1f)
+          }
+        }
+        setCtrlArmedSync(false)
+      }
+      ws.send(new TextEncoder().encode(out))
     })
     term.onResize(({ cols, rows }) => {
       lastSizeRef.current = { cols, rows }
@@ -131,7 +184,7 @@ export function useTerminalSession(sessionId, { onEvicted } = {}) {
       }
     })
     return term
-  }, [])
+  }, [setCtrlArmedSync])
 
   // Bypass FitAddon's proposeDimensions(), which subtracts the native
   // vertical scrollbar's reserved width even when we've CSS-hidden the
@@ -339,6 +392,10 @@ export function useTerminalSession(sessionId, { onEvicted } = {}) {
         window.clearTimeout(reconnectTimerRef.current)
         reconnectTimerRef.current = null
       }
+      if (ctrlTimerRef.current) {
+        window.clearTimeout(ctrlTimerRef.current)
+        ctrlTimerRef.current = null
+      }
       const ws = wsRef.current
       if (ws) {
         try { ws.close(1000, 'unmount') } catch { /* ignore */ }
@@ -392,6 +449,9 @@ export function useTerminalSession(sessionId, { onEvicted } = {}) {
     attachTo,
     fitOnVisible,
     sendResize,
+    sendInput,
+    armCtrl,
+    ctrlArmed,
     connect,
     disconnect,
     connected,

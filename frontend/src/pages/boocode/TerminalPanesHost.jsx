@@ -5,6 +5,7 @@ import { friendlyErr } from '@/lib/friendlyErr.js'
 import * as terminalsApi from '@/api/terminals.js'
 
 import NewTerminalModal from './NewTerminalModal.jsx'
+import TerminalHotkeyBar from './TerminalHotkeyBar.jsx'
 import TerminalPane from './TerminalPane.jsx'
 import TerminalTabBar from './TerminalTabBar.jsx'
 
@@ -88,6 +89,24 @@ export default function TerminalPanesHost({
     onToast('Terminal session was evicted')
   }, [invalidateSessions, onToast])
 
+  // Each TerminalPane publishes its session API ({sendInput, armCtrl,
+  // ctrlArmed}) here. The hotkey bar reads the active session's entry to
+  // route taps. Stored in React state (not a ref) so the bar re-renders when
+  // a session's ctrlArmed flips.
+  const [sessionApis, setSessionApis] = useState({})
+
+  const handleSessionApi = useCallback((sid, api) => {
+    setSessionApis((prev) => {
+      if (api == null) {
+        if (!(sid in prev)) return prev
+        const next = { ...prev }
+        delete next[sid]
+        return next
+      }
+      return { ...prev, [sid]: api }
+    })
+  }, [])
+
   const handleRename = useCallback(
     async (sid, label) => {
       try {
@@ -147,6 +166,8 @@ export default function TerminalPanesHost({
     [invalidateSessions, onActiveSessionChange, onCloseNewModal],
   )
 
+  const activeApi = effectiveActiveId ? sessionApis[effectiveActiveId] || null : null
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <TerminalTabBar
@@ -159,6 +180,8 @@ export default function TerminalPanesHost({
         onClose={handleClose}
         onSaveAndClose={handleSaveAndClose}
       />
+
+      <TerminalHotkeyBar api={activeApi} />
 
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         {sessions.length === 0 ? (
@@ -179,6 +202,7 @@ export default function TerminalPanesHost({
                 sessionId={s.id}
                 visible={s.id === effectiveActiveId}
                 onEvicted={handleEvicted}
+                onSessionApi={handleSessionApi}
               />
             </div>
           ))

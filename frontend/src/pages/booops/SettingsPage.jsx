@@ -32,6 +32,7 @@ import {
   uploadBrandingAssetBoocode,
   uploadBrandingAsset808notes,
 } from '@/api/branding.js'
+import HotkeysSettingsTab from '@/components/settings/HotkeysSettingsTab.jsx'
 import SearchSettingsTab from '@/components/settings/SearchSettingsTab.jsx'
 import { useBoocodeFx } from '@/hooks/useBoocodeFx.jsx'
 import { SkillsLibraryPage } from '@/pages/SkillsLibraryPage.jsx'
@@ -61,6 +62,7 @@ const TABS = [
   { id: 'layout', label: 'Layout' },
   { id: 'search', label: 'Search' },
   { id: 'skills', label: 'Skills' },
+  { id: 'hotkeys', label: 'Hotkeys', modes: ['boocode'] },
 ]
 
 /** Lucide export names — right-click branding cards to pick. Invalid names fall back per mode. */
@@ -157,7 +159,10 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
    *  to `initialMode` (the mode the settings route was opened from). BooCode
    *  has no stored branding row, so we hide the branding tab entirely. */
   const selectedMode = initialMode === '808notes' ? '808notes' : initialMode === 'boocode' ? 'boocode' : 'booops'
-  const settingsTabs = useMemo(() => [...TABS], [])
+  const settingsTabs = useMemo(
+    () => TABS.filter((t) => !t.modes || t.modes.includes(selectedMode)),
+    [selectedMode],
+  )
   const storeBrandingMode = useAppBrandingMode()
   /** Host shell for this settings surface — always matches `selectedMode` now. */
   const appBrandingMode =
@@ -1040,6 +1045,8 @@ export default function SettingsPage({ mode: initialMode = 'booops', onClose }) 
           {tab === 'search' && <SearchSettingsTab mode={selectedMode} />}
 
           {tab === 'skills' && <SkillsLibraryPage />}
+
+          {tab === 'hotkeys' && <HotkeysSettingsTab />}
         </div>
       </div>
     </div>
