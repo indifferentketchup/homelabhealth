@@ -63,6 +63,25 @@ export default function TerminalPane({ sessionId, visible, onEvicted }) {
     return () => window.clearTimeout(handle)
   }, [visible, fitOnVisible])
 
+  // Suppress the browser's default touch panning so a finger drag doesn't
+  // scroll the whole page or rubber-band the body. touch-action: none in
+  // CSS handles most engines, but iOS Safari still fires cancelable
+  // touchmove events that we must explicitly preventDefault to keep the
+  // gesture confined to the terminal. Listener must be passive: false —
+  // passive listeners can't preventDefault. attachTouchScroll (in
+  // useTerminalSession) keeps doing its scrollback translation on the
+  // normal screen; this handler is purely about page-scroll suppression
+  // and runs alongside it on both normal and alternate screens.
+  useEffect(() => {
+    const el = hostRef.current
+    if (!el) return
+    const onTouchMove = (e) => {
+      if (e.cancelable) e.preventDefault()
+    }
+    el.addEventListener('touchmove', onTouchMove, { passive: false })
+    return () => el.removeEventListener('touchmove', onTouchMove)
+  }, [])
+
   return (
     <div
       className="h-full w-full min-h-0 min-w-0"
@@ -75,7 +94,7 @@ export default function TerminalPane({ sessionId, visible, onEvicted }) {
         paddingTop: 6,
       }}
     >
-      <div ref={hostRef} className="h-full w-full" />
+      <div ref={hostRef} data-terminal-host="" className="h-full w-full" />
     </div>
   )
 }
