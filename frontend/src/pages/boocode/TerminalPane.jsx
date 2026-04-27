@@ -4,6 +4,7 @@ import '@xterm/xterm/css/xterm.css'
 import { useTerminalSession } from '@/hooks/useTerminalSession.js'
 
 export default function TerminalPane({ sessionId, visible, onEvicted }) {
+  const wrapperRef = useRef(null)
   const hostRef = useRef(null)
   const roRef = useRef(null)
 
@@ -64,26 +65,30 @@ export default function TerminalPane({ sessionId, visible, onEvicted }) {
   }, [visible, fitOnVisible])
 
   // Suppress the browser's default touch panning so a finger drag doesn't
-  // scroll the whole page or rubber-band the body. touch-action: none in
-  // CSS handles most engines, but iOS Safari still fires cancelable
-  // touchmove events that we must explicitly preventDefault to keep the
-  // gesture confined to the terminal. Listener must be passive: false —
-  // passive listeners can't preventDefault. attachTouchScroll (in
-  // useTerminalSession) keeps doing its scrollback translation on the
-  // normal screen; this handler is purely about page-scroll suppression
-  // and runs alongside it on both normal and alternate screens.
+  // scroll the whole page or rubber-band the body. Bound to the outer
+  // wrapper (covers the 6px paddingTop strip too) in CAPTURE phase, since
+  // xterm.js calls stopPropagation in its own selection touch logic — a
+  // bubble-phase listener never fires for touches that land on
+  // .xterm-rows / .xterm-screen children. Listener must be passive: false
+  // for preventDefault to take effect on iOS. attachTouchScroll (in
+  // useTerminalSession, also capture phase, on the inner host) keeps doing
+  // its scrollback translation on the normal screen; this handler is
+  // strictly about page-scroll suppression and runs alongside it on both
+  // normal and alternate screens.
   useEffect(() => {
-    const el = hostRef.current
+    const el = wrapperRef.current
     if (!el) return
     const onTouchMove = (e) => {
       if (e.cancelable) e.preventDefault()
     }
-    el.addEventListener('touchmove', onTouchMove, { passive: false })
-    return () => el.removeEventListener('touchmove', onTouchMove)
+    el.addEventListener('touchmove', onTouchMove, { passive: false, capture: true })
+    return () => el.removeEventListener('touchmove', onTouchMove, { capture: true })
   }, [])
 
   return (
     <div
+      ref={wrapperRef}
+      data-terminal-host=""
       className="h-full w-full min-h-0 min-w-0"
       style={{
         display: visible ? 'block' : 'none',
@@ -94,7 +99,7 @@ export default function TerminalPane({ sessionId, visible, onEvicted }) {
         paddingTop: 6,
       }}
     >
-      <div ref={hostRef} data-terminal-host="" className="h-full w-full" />
+      <div ref={hostRef} className="h-full w-full" />
     </div>
   )
 }
