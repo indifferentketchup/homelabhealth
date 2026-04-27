@@ -54,7 +54,10 @@ export default function TerminalPane({ sessionId, visible, onEvicted }) {
       style={{
         display: visible ? 'block' : 'none',
         background: '#0a0604',
-        padding: '6px 8px 0',
+        // Edge-to-edge: drop the 8px lateral padding so the terminal grid
+        // gets the full pane width (matters on narrow mobile viewports
+        // where TUIs like opencode need every column).
+        paddingTop: 6,
       }}
     >
       <div ref={hostRef} className="h-full w-full" />

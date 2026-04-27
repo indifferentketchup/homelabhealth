@@ -61,12 +61,19 @@ export default function BooCodeDawWorkspace() {
         '--card': cardBg,
       }}
     >
-      <RepoStatusBar dawId={dawId} />
       <div className="flex min-h-0 flex-1 flex-row overflow-hidden">
         <BoocodeCenterPane dawId={dawId} dawName={daw?.name ?? null} />
         <aside className="boocode-terminal-frame hidden w-80 shrink-0 flex-col overflow-hidden border-l md:flex"
                style={{ borderColor: 'var(--border)', background: panelBg }}>
-          <RepoFilesPanel dawId={dawId} />
+          {/* RepoStatusBar moved here from the workspace top — keeps repo
+              status + sync controls accessible without taking vertical
+              space from the chat / terminal panes. */}
+          <div className="shrink-0 border-b" style={{ borderColor: 'var(--border)' }}>
+            <RepoStatusBar dawId={dawId} />
+          </div>
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <RepoFilesPanel dawId={dawId} />
+          </div>
         </aside>
       </div>
       <RepoFilePreview dawId={dawId} />

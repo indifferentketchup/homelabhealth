@@ -64,6 +64,11 @@ export function MessageList({
       className="h-full min-h-0 w-full"
       data={all}
       followOutput="smooth"
+      // iMessage-style anchoring: when the message list is shorter than the
+      // viewport (first message, sparse chats), pin items to the bottom so
+      // new messages appear just above the input and push older ones up.
+      // When the list overflows, behaves normally (oldest scrolled up).
+      alignToBottom
       increaseViewportBy={{ top: 600, bottom: 600 }}
       computeItemKey={(_, m) => m.id ?? `idx-${_}`}
       itemContent={(i, m) => {
@@ -75,7 +80,7 @@ export function MessageList({
           streamingRagContext.count > 0
         const isLast = i === all.length - 1
         return (
-          <div className={`flex flex-col gap-1 px-4 min-w-0 max-w-full overflow-x-hidden ${isLast ? 'pb-28' : 'pb-4'}`}>
+          <div className={`flex flex-col gap-1 px-4 min-w-0 max-w-full overflow-x-hidden ${isLast ? 'pb-1' : 'pb-4'}`}>
             {rowSources?.length ? (
               <div className="flex w-full min-w-0 gap-2 flex-row">
                 <div className="mt-0.5 size-8 shrink-0" aria-hidden />

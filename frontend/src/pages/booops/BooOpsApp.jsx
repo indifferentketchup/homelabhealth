@@ -51,7 +51,7 @@ export default function BooOpsApp() {
   return (
     <TooltipProvider>
       <DawQuerySync />
-      <div className="flex h-[100dvh] w-full overflow-clip bg-background text-foreground md:flex-row">
+      <div className="flex h-[100lvh] w-full overflow-clip bg-background text-foreground md:flex-row">
         <Sidebar
           appMode="booops"
           routeBase={PATH_BOOOPS}
@@ -71,7 +71,10 @@ export default function BooOpsApp() {
             </Button>
             <ModelSelectorBar className="min-w-0 flex-1" />
           </header>
-          <div className="flex min-h-0 flex-1 flex-col">
+          <div
+            className="flex min-h-0 flex-1 flex-col"
+            style={{ paddingBottom: 'var(--bc-keyboard-pad, 0px)' }}
+          >
             <Outlet />
           </div>
         </div>

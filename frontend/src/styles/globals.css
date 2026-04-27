@@ -382,6 +382,104 @@ main {
   overflow-x: hidden;
 }
 
+/*
+ * Mobile chat input anchor.
+ *
+ * On mobile, the chat input must always sit at the bottom of the visible
+ * viewport regardless of page scroll or virtual keyboard state — that's
+ * what every native chat UI does. Browsers don't agree on how to position
+ * fixed elements relative to the keyboard:
+ *   • Chrome (Android, with `interactive-widget=resizes-content` on the
+ *     viewport meta) shrinks the layout viewport to fit above the keyboard,
+ *     so `bottom: 0` already works.
+ *   • iOS Safari ignores `interactive-widget` and keeps the layout viewport
+ *     at full height; the keyboard overlays the bottom. We compensate by
+ *     publishing the keyboard inset as `--bc-keyboard-pad` (see App.jsx)
+ *     and pinning the input `bottom` to that value.
+ * `max(safe-area-inset-bottom, --bc-keyboard-pad)` covers both: when the
+ * keyboard is down, safe-area-inset-bottom keeps the input above the home
+ * indicator; when up, --bc-keyboard-pad puts it above the keyboard.
+ *
+ * On desktop (≥ md) we revert to in-flow layout — the input sits at the
+ * bottom of the chat column via the existing flex-shrink-0 wrapper.
+ */
+/*
+ * Hide the BooCode AI-model selector header and the repo status/sync bar
+ * when the user is on the terminal pane. Both are chat-side concerns — in
+ * a terminal session they just eat vertical space and (especially on
+ * mobile) squeeze TUIs like opencode into a few rows. Triggered by the
+ * data-bc-primary attribute that BoocodeCenterPane publishes on <html>.
+ */
+:root[data-bc-primary="terminal"] .bc-hide-on-terminal {
+  display: none !important;
+}
+
+/*
+ * xterm.js ships `overflow-y: scroll` on the viewport so older browsers
+ * always paint a scrollbar gutter. That gutter steals 15-20px on the
+ * right and (importantly) shrinks viewport.clientWidth, which is what
+ * xterm's FitAddon measures to compute cols — so the terminal grid ends
+ * up narrower than the pane allows. opencode in particular looks like
+ * it has a permanent right-margin because of this.
+ *
+ * We override to `overflow-y: hidden`. xterm's own JS wheel + touch
+ * handlers (and our touchstart/touchmove on the host node) still work
+ * because they bind to the element directly — they don't depend on the
+ * viewport's native scroll behavior.
+ */
+/* Make sure .xterm itself fills the host node — its only non-absolute
+   sizing comes from the canvas, and we don't want fractional rounding to
+   leave a phantom right-edge stripe. */
+.xterm {
+  width: 100% !important;
+  height: 100% !important;
+}
+.xterm .xterm-viewport {
+  overflow-y: hidden !important;
+  scrollbar-width: none !important;
+}
+.xterm .xterm-viewport::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+/*
+ * RepoStatusBar (.bc-prompt-line) wraps to two rows by design — the
+ * RepoStatusBar JSX puts a `basis-full` span (files · chunks count) after
+ * the sync/edit button cluster, which forces a flex line break and keeps
+ * the top row compact: $ boocode @terminal: path (branch) [STATUS] [sync]
+ * [edit]. Stats drop to row 2. Applies on every viewport — mobile drawer,
+ * desktop right rail, even a hypothetical full-width header.
+ */
+.bc-prompt-line {
+  flex-wrap: wrap;
+  row-gap: 0.25rem;
+}
+
+@media (max-width: 767.98px) {
+  .bc-chat-anchor {
+    position: fixed;
+    left: 0;
+    right: 0;
+    /* +6px breathing room so the card's bottom border isn't visually
+       clipped by the keyboard / safe-area edge on devices where the
+       browser cuts pixels right at the boundary. */
+    bottom: calc(max(env(safe-area-inset-bottom, 0px), var(--bc-keyboard-pad, 0px)) + 6px);
+    z-index: 30;
+    /* No bottom padding here — the bottom positioning IS the offset. */
+    padding-bottom: 0 !important;
+  }
+  /*
+   * Reserve space at the bottom of the messages list so the latest message
+   * isn't hidden behind the fixed input. The reservation is roughly the
+   * input's resting height (1-line + padding) plus the same bottom inset.
+   */
+  .bc-chat-messages-mobile {
+    padding-bottom: calc(102px + max(env(safe-area-inset-bottom, 0px), var(--bc-keyboard-pad, 0px)));
+  }
+}
+
 /* —— Boolab hub landing (Dashgaard-style; vars set inline on .boolab-hub) —— */
 .boolab-hub {
   --hub-accent: #5dcf8f;

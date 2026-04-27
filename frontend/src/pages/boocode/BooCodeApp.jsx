@@ -51,12 +51,16 @@ function BooCodeShell({ mobileSidebar, setMobileSidebar, mobileRightDrawer, setM
   const showMatrix = matrixEnabled && !suppressMatrix
   const showCrt = crtEnabled && !suppressCrt
 
+  // The --bc-keyboard-pad CSS var is now published from LayoutBootstrap in
+  // App.jsx (so it works in every mode). The terminal pane / chat input
+  // styles consume it via var(--bc-keyboard-pad, 0px).
+
   return (
     <>
       {showMatrix ? <MatrixRain density={density} speed={speed} opacity={matrixOpacity} /> : null}
       {showCrt ? <CRTOverlay opacity={crtOpacity} /> : null}
       <div
-        className="layout flex h-[100dvh] w-full overflow-clip text-foreground md:flex-row"
+        className="layout flex h-[100lvh] w-full overflow-clip text-foreground md:flex-row"
         data-mode="boocode"
         style={{ position: 'relative', zIndex: 10 }}
       >
@@ -67,7 +71,7 @@ function BooCodeShell({ mobileSidebar, setMobileSidebar, mobileRightDrawer, setM
           onMobileOpenChange={setMobileSidebar}
         />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <header className="flex min-w-0 items-center gap-2 border-b border-border bg-background px-2 py-2 md:hidden">
+          <header className="bc-hide-on-terminal flex min-w-0 items-center gap-2 border-b border-border bg-background px-2 py-2 md:hidden">
             <Button
               type="button"
               variant="ghost"
@@ -92,7 +96,10 @@ function BooCodeShell({ mobileSidebar, setMobileSidebar, mobileRightDrawer, setM
               </Button>
             ) : null}
           </header>
-          <main className="main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <main
+            className="main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+            style={{ paddingBottom: 'var(--bc-keyboard-pad, 0px)' }}
+          >
             <Outlet context={{ mobileRightDrawer, setMobileRightDrawer }} />
           </main>
         </div>

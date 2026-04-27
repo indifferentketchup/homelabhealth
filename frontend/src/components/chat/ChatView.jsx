@@ -448,7 +448,23 @@ export function ChatView({
           className={cn(
             'flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-8',
             compactEmptyState ? 'justify-end' : 'items-center justify-center gap-8',
+            // On mobile, lift content down toward the lower half of the
+            // visible area (BoocodeWorkspaceHeader does this naturally for
+            // BooCode chat; this matches that visual position for BooOps and
+            // 808notes which have no such header). Desktop keeps true
+            // vertical center.
+            !compactEmptyState && 'pt-[20vh] md:pt-0',
           )}
+          style={{
+            // Reserve space at the bottom for the position:fixed input + the
+            // keyboard inset. Without this, the centered persona block (logo
+            // + name) drops into the same vertical band as the fixed input
+            // and they visually collide. Desktop picks `0px` since
+            // safe-area-inset-bottom is 0 there and there's no
+            // --bc-keyboard-pad fixed-input drama.
+            paddingBottom:
+              'max(0px, calc(120px + max(env(safe-area-inset-bottom, 0px), var(--bc-keyboard-pad, 0px))))',
+          }}
         >
           {!compactEmptyState && (
             <div className="flex w-full flex-col items-center gap-4" style={{ maxWidth: chatMaxW }}>
@@ -460,7 +476,7 @@ export function ChatView({
               <h1 className="fs-heading text-center font-semibold tracking-tight text-foreground">{personaDisplayName}</h1>
             </div>
           )}
-          <div className={cn('w-full', compactEmptyState && 'mt-auto')}>
+          <div className={cn('bc-chat-anchor w-full px-4', compactEmptyState && 'mt-auto')}>
             {sendError ? (
               <div className="mb-2 flex items-center justify-center gap-2" role="alert">
                 <p className="text-sm text-destructive">{sendError}</p>
@@ -505,7 +521,7 @@ export function ChatView({
         </div>
       ) : null}
       <div className="mx-auto flex min-h-0 w-full flex-1 flex-col" style={{ maxWidth: chatMaxW }}>
-        <div className="min-h-0 flex-1">
+        <div className="bc-chat-messages-mobile min-h-0 flex-1">
           {isLoading && !busy ? (
             <MessageListSkeleton />
           ) : (
@@ -522,7 +538,16 @@ export function ChatView({
             />
           )}
         </div>
-        <div className="shrink-0 px-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
+        <div
+          className="bc-chat-anchor shrink-0 px-4"
+          style={{
+            // Desktop only — on mobile, .bc-chat-anchor positions via fixed +
+            // bottom: max(safe-area, --bc-keyboard-pad). On desktop, this
+            // padding-bottom keeps the input above the home indicator.
+            paddingBottom:
+              'max(0px, calc(1rem + env(safe-area-inset-bottom, 0px) - var(--bc-keyboard-pad, 0px)))',
+          }}
+        >
           {sendError ? (
             <div className="mb-2 flex items-center gap-2" role="alert">
               <p className="flex-1 text-sm text-destructive">{sendError}</p>
@@ -542,7 +567,7 @@ export function ChatView({
             value={draft}
             onChange={setDraft}
             onSend={send}
-            disabled={busy}
+            disabled={false}
             streaming={busy}
             onStop={abort}
             activeChatId={activeChatId}

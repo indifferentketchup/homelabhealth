@@ -97,12 +97,12 @@ export function RepoStatusBar({ dawId }) {
             {status}
             {status === 'syncing' && filesDone != null ? ` ${filesDone}/${files}` : null}
           </span>
-          <span className="truncate text-xs" style={{ color: 'var(--text-muted)' }}>
-            {files} files · {chunks} chunks
-          </span>
-          {data.error && status === 'error' && (
-            <span className="truncate text-xs" style={{ color: '#ff6b6b' }}>{data.error}</span>
-          )}
+          {/*
+            Sync + edit move up to the top row alongside the status pill. The
+            files/chunks count + any error text drop to a second row via
+            `basis-full` (forces a flex line break with flex-wrap on). Same
+            layout on desktop and mobile — keeps the bar compact everywhere.
+          */}
           <div className="ml-auto flex items-center gap-2">
             <button type="button"
                     disabled={status === 'syncing' || !data.repo_path}
@@ -119,6 +119,12 @@ export function RepoStatusBar({ dawId }) {
               <Edit3 className="size-3" />
             </button>
           </div>
+          <span className="basis-full truncate text-xs" style={{ color: 'var(--text-muted)' }}>
+            {files} files · {chunks} chunks
+          </span>
+          {data.error && status === 'error' && (
+            <span className="basis-full truncate text-xs" style={{ color: '#ff6b6b' }}>{data.error}</span>
+          )}
         </>
       ) : (
         <div className="flex flex-1 flex-wrap items-center gap-2">
