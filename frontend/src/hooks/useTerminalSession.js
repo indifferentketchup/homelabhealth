@@ -122,6 +122,35 @@ export function useTerminalSession(sessionId, { onEvicted } = {}) {
     return term
   }, [])
 
+  // Bypass FitAddon's proposeDimensions(), which subtracts the native
+  // vertical scrollbar's reserved width even when we've CSS-hidden the
+  // scrollbar (overflow-y: hidden + scrollbar-width: none in globals.css).
+  // That reservation leaves a ~15-18px right-edge gap on every terminal —
+  // .xterm-viewport reaches the edge but .xterm-screen (sized to cols ×
+  // cellWidth) stops short by exactly the reserved-but-invisible scrollbar
+  // width. Compute cols/rows from host.clientWidth/clientHeight directly
+  // and tell xterm; this matches the actual paintable area instead of
+  // FitAddon's worst-case-with-scrollbar estimate.
+  //
+  // Cell metrics come from xterm's private _renderService.dimensions; this
+  // is the only stable way to get them in xterm 5.x without
+  // re-implementing the char-measure pass. FitAddon stays loaded so any
+  // future caller can still reach it via term.fit() / proposeDimensions().
+  const fitFull = useCallback(() => {
+    const term = termRef.current
+    const host = containerRef.current
+    if (!term || !host) return
+    const core = term._core
+    const cellW = core?._renderService?.dimensions?.css?.cell?.width
+    const cellH = core?._renderService?.dimensions?.css?.cell?.height
+    if (!cellW || !cellH) return
+    const cols = Math.max(2, Math.floor(host.clientWidth / cellW))
+    const rows = Math.max(1, Math.floor(host.clientHeight / cellH))
+    if (cols !== term.cols || rows !== term.rows) {
+      try { term.resize(cols, rows) } catch { /* ignore invalid sizes */ }
+    }
+  }, [])
+
   const attachTo = useCallback((node) => {
     containerRef.current = node
     if (!node) return
@@ -131,21 +160,17 @@ export function useTerminalSession(sessionId, { onEvicted } = {}) {
       term.open(node)
       attachTouchScroll(node, term)
     }
-    try {
-      fitRef.current?.fit()
-    } catch {
-      /* layout not ready yet */
-    }
-  }, [ensureTerminal])
+    // Defer the first fit one frame so xterm's render service has time to
+    // populate _renderService.dimensions; otherwise fitFull bails early on
+    // missing cell metrics. Subsequent ResizeObserver / fonts.ready /
+    // visibility refits in TerminalPane.jsx will catch up regardless.
+    requestAnimationFrame(() => fitFull())
+  }, [ensureTerminal, fitFull])
 
   const fitOnVisible = useCallback(() => {
     if (!containerRef.current || !termRef.current) return
-    try {
-      fitRef.current?.fit()
-    } catch {
-      /* noop */
-    }
-  }, [])
+    fitFull()
+  }, [fitFull])
 
   const sendResize = useCallback((cols, rows) => {
     if (!termRef.current) return
@@ -328,13 +353,13 @@ export function useTerminalSession(sessionId, { onEvicted } = {}) {
     if (typeof window === 'undefined' || !window.visualViewport) return
     const vp = window.visualViewport
     const onResize = () => {
-      if (!termRef.current || !fitRef.current) return
-      try { fitRef.current.fit() } catch { /* ignore */ }
+      if (!termRef.current) return
+      fitFull()
       try { termRef.current.scrollToBottom() } catch { /* ignore */ }
     }
     vp.addEventListener('resize', onResize)
     return () => vp.removeEventListener('resize', onResize)
-  }, [])
+  }, [fitFull])
 
   // Note: the document.fonts.ready refit is handled in TerminalPane.jsx
   // (after attachTo) so the fit runs against the live DOM node, not before
