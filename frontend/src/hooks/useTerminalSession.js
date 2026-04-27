@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
+import { WebglAddon } from '@xterm/addon-webgl'
 
 import { wsUrl } from '@/api/terminals.js'
 
@@ -89,8 +90,18 @@ export function useTerminalSession(sessionId, { onEvicted } = {}) {
       convertEol: true,
       cursorBlink: true,
       allowProposedApi: true,
-      fontFamily: "'JetBrains Mono', 'Fira Code', Menlo, monospace",
+      // @fontsource-variable/jetbrains-mono ships its @font-face under
+      // 'JetBrains Mono Variable' (not 'JetBrains Mono'), so we list the
+      // variable name first; otherwise xterm falls back to system monospace
+      // and the cell metrics it measures don't match the glyphs that paint.
+      fontFamily: "'JetBrains Mono Variable', 'JetBrains Mono', 'Fira Code', Menlo, monospace",
       fontSize,
+      // Block-element glyphs (U+2580..U+259F) tile cell-to-cell only when
+      // every cell is exactly fontSize tall and fontSize-derived wide.
+      // Anything other than 1.0 / 0 introduces fractional row gaps that show
+      // up as horizontal stripes between rows in the opencode banner on iOS.
+      lineHeight: 1.0,
+      letterSpacing: 0,
       theme: {
         background: '#0a0604',
         foreground: '#f4ece2',
@@ -158,6 +169,18 @@ export function useTerminalSession(sessionId, { onEvicted } = {}) {
     if (!term.element || term.element.parentElement !== node) {
       while (node.firstChild) node.removeChild(node.firstChild)
       term.open(node)
+      // WebGL renderer paints block-element glyphs cell-aligned; the default
+      // DOM renderer leaves subpixel gaps between row spans on iOS, which
+      // shows up as horizontal stripes through opencode's banner. Must load
+      // AFTER open(); also dispose on context loss so a backgrounded tab
+      // doesn't blank the terminal forever.
+      try {
+        const webgl = new WebglAddon()
+        webgl.onContextLoss(() => webgl.dispose())
+        term.loadAddon(webgl)
+      } catch {
+        /* WebGL unavailable (e.g. no GPU, headless test) — DOM renderer fallback */
+      }
       attachTouchScroll(node, term)
     }
     // Defer the first fit one frame so xterm's render service has time to
