@@ -434,6 +434,22 @@ main {
   width: 100% !important;
   height: 100% !important;
 }
+/*
+ * Lock cell metrics so block-element glyphs (U+2580..U+259F) tile without
+ * subpixel gaps. Any non-zero letter-spacing or line-height ≠ 1 leaves
+ * fractional space between cells that paints as a horizontal/vertical
+ * stripe through the opencode banner on iOS. Disabling ligatures
+ * (font-feature-settings + font-variant-ligatures) prevents the renderer
+ * from collapsing adjacent block chars into shaped glyphs at unpredictable
+ * widths.
+ */
+.xterm,
+.xterm .xterm-rows {
+  letter-spacing: 0 !important;
+  line-height: 1 !important;
+  font-feature-settings: "liga" 0, "calt" 0 !important;
+  font-variant-ligatures: none !important;
+}
 .xterm .xterm-viewport {
   overflow-y: hidden !important;
   scrollbar-width: none !important;
