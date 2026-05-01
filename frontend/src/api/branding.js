@@ -107,6 +107,14 @@ export const DEFAULT_BOOLAB_BRANDING = {
     title: '808notes',
     description: 'Music notes, sources, and project context.',
   },
+  boocodeCard: {
+    icon: 'Terminal',
+    iconUrl: '',
+    iconSize: 44,
+    accent: '#f97316',
+    title: 'BooCode',
+    description: 'Repo-aware code DAWs — terminals, RAG, agents.',
+  },
   /** `center` | `start` | `end` — hub landing app cards */
   hubCardsTextAlign: 'center',
   /** Multiplier for card title, body, and icon (~0.75–1.5). */
@@ -176,6 +184,11 @@ export function patchBoolabBranding(base, partial) {
     ...DEFAULT_BOOLAB_BRANDING.notes808Card,
     ...(base?.notes808Card && typeof base.notes808Card === 'object' ? base.notes808Card : {}),
     ...(partial?.notes808Card && typeof partial.notes808Card === 'object' ? partial.notes808Card : {}),
+  }
+  merged.boocodeCard = {
+    ...DEFAULT_BOOLAB_BRANDING.boocodeCard,
+    ...(base?.boocodeCard && typeof base.boocodeCard === 'object' ? base.boocodeCard : {}),
+    ...(partial?.boocodeCard && typeof partial.boocodeCard === 'object' ? partial.boocodeCard : {}),
   }
   return merged
 }

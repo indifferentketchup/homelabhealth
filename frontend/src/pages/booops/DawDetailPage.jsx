@@ -79,6 +79,8 @@ export default function DawDetailPage() {
   const [pinned808notes, setPinned808notes] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState(null)
+  const [syncSaving, setSyncSaving] = useState(false)
+  const [syncSaveErr, setSyncSaveErr] = useState(null)
   // Boocode repo fields (only used when daw.mode === 'boocode'):
   const [repoPath, setRepoPath] = useState('')
   const [repoBranch, setRepoBranch] = useState('main')
@@ -244,6 +246,23 @@ export default function DawDetailPage() {
       setRepoSaveErr(e?.message || 'Could not save repo config.')
     } finally {
       setRepoSaving(false)
+    }
+  }
+
+  async function saveSyncConfig() {
+    if (!id) return
+    setSyncSaving(true)
+    setSyncSaveErr(null)
+    try {
+      await updateDaw(id, {
+        dubdrive_sync_folder: syncFolder.trim() || null,
+        dubdrive_sync_enabled: syncEnabled,
+      })
+      invalidateDaw()
+    } catch (e) {
+      setSyncSaveErr(e?.message || 'Could not save sync config.')
+    } finally {
+      setSyncSaving(false)
     }
   }
 
@@ -903,9 +922,23 @@ const saveInferMut = useMutation({
                     <span className="text-foreground">Auto-sync enabled</span>
                     <EmbeddableSwitch embeddable={syncEnabled} disabled={false} onToggle={setSyncEnabled} />
                   </div>
-                  <Button type="button" size="sm" onClick={triggerSync} disabled={syncing || !syncFolder.trim()}>
-                    {syncing ? 'Syncing…' : 'Sync now'}
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button type="button" size="sm" onClick={() => void saveSyncConfig()} disabled={syncSaving}>
+                      {syncSaving ? 'Saving…' : 'Save sync config'}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={triggerSync}
+                      disabled={syncing || !syncFolder.trim()}
+                    >
+                      {syncing ? 'Syncing…' : 'Sync now'}
+                    </Button>
+                  </div>
+                  {syncSaveErr ? (
+                    <p className="text-sm text-destructive" role="alert">{syncSaveErr}</p>
+                  ) : null}
                   {syncResult ? (
                     <p className="text-sm text-muted-foreground" role="status">
                       {syncResult.error != null
@@ -913,9 +946,6 @@ const saveInferMut = useMutation({
                         : `Queued ${syncResult.queued}, skipped ${syncResult.skipped} of ${syncResult.total_found}`}
                     </p>
                   ) : null}
-                  <p className="text-xs text-muted-foreground">
-                    Persist folder path and auto-sync with <span className="text-foreground">Save</span> in Details above.
-                  </p>
                 </div>
               </section>
             )}
