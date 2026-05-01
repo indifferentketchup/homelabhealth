@@ -38,6 +38,7 @@ export function getHotkey(id) {
 }
 
 export const DEFAULT_BAR = [
+  'esc',
   'shift-tab',
   'tab',
   'ctrl',

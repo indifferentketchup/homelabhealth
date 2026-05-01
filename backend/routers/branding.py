@@ -146,6 +146,14 @@ DEFAULT_BOOLAB_BRANDING: dict[str, Any] = {
         "title": "808notes",
         "description": "Music notes, sources, and project context.",
     },
+    "boocodeCard": {
+        "icon": "Terminal",
+        "iconUrl": "",
+        "iconSize": 44,
+        "accent": "#f97316",
+        "title": "BooCode",
+        "description": "Repo-aware code DAWs — terminals, RAG, agents.",
+    },
     "hubCardsTextAlign": "center",
     "hubCardsFontScale": 1.0,
     # Hero title, tagline, section labels, footer (~0.75–1.5).
@@ -287,7 +295,7 @@ async def _persist_boolab_patch(patch: dict[str, Any]) -> dict[str, Any]:
 def _merge_boolab_response(current: dict[str, Any]) -> dict[str, Any]:
     """Shallow merge defaults + DB; nested card dicts replaced entirely from stored JSON."""
     base = {**DEFAULT_BOOLAB_BRANDING, **current}
-    for key in ("booopsCard", "notes808Card"):
+    for key in ("booopsCard", "notes808Card", "boocodeCard"):
         if isinstance(current.get(key), dict):
             merged_card = {**(DEFAULT_BOOLAB_BRANDING.get(key) or {}), **current[key]}
             base[key] = merged_card

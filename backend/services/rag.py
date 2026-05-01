@@ -260,7 +260,7 @@ async def retrieve_memory_facts(query: str, mode: str, conn: Any) -> list[str]:
             WHERE is_deleted = false
               AND embedding IS NOT NULL
               AND mode = $3
-              AND (embedding <=> $1::vector) < $2
+              AND (1 - (embedding <=> $1::vector)) >= $2
             ORDER BY embedding <=> $1::vector
             LIMIT $4
             """,
@@ -302,7 +302,7 @@ async def retrieve_context(query: str, daw_id: str, source_ids: list[str]) -> tu
                 JOIN sources s ON s.id = sc.source_id
                 WHERE sc.source_id = ANY($4::uuid[])
                   AND sc.embedding IS NOT NULL
-                  AND (sc.embedding <=> $2::vector) < $3
+                  AND (1 - (sc.embedding <=> $2::vector)) >= $3
                 ORDER BY sc.embedding <=> $2::vector
                 LIMIT $1
                 """,

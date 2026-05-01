@@ -12,8 +12,10 @@ import {
 import {
   PATH_BOOLAB,
   PATH_808NOTES_HOME,
+  PATH_BOOCODE_HOME,
   PATH_BOOOPS_HOME,
   get808notesPublicHref,
+  getBoocodePublicHref,
   getBooopsPublicHref,
   isHttpUrl,
 } from '@/routes/paths.js'
@@ -78,6 +80,7 @@ export default function BoolabLanding() {
 
   const boo = merged.booopsCard || DEFAULT_BOOLAB_BRANDING.booopsCard
   const notes = merged.notes808Card || DEFAULT_BOOLAB_BRANDING.notes808Card
+  const code = merged.boocodeCard || DEFAULT_BOOLAB_BRANDING.boocodeCard
   const displayStack = merged.hubDisplayFont ? `'${merged.hubDisplayFont}', monospace` : undefined
   const monoStack = merged.hubMonoFont ? `'${merged.hubMonoFont}', monospace` : undefined
   const landingFontScale = clampHubLandingFontScale(merged.hubLandingFontScale)
@@ -256,6 +259,16 @@ export default function BoolabLanding() {
               publicHref={get808notesPublicHref()}
               fallbackTo={PATH_808NOTES_HOME}
               card={notes}
+              landingIconScale={landingIconScale}
+              monoStack={monoStack}
+              displayStack={displayStack}
+              textAlign={merged.hubCardsTextAlign}
+              fontScale={merged.hubCardsFontScale}
+            />
+            <HubAppCard
+              publicHref={getBoocodePublicHref()}
+              fallbackTo={PATH_BOOCODE_HOME}
+              card={code}
               landingIconScale={landingIconScale}
               monoStack={monoStack}
               displayStack={displayStack}
