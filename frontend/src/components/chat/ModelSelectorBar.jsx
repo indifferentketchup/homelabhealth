@@ -1,32 +1,16 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useLocation } from 'react-router-dom'
 import { Check, ChevronDown, Search } from 'lucide-react'
 
-import { listDaws } from '@/api/daws.js'
+import { listWorkspaces } from '@/api/workspaces.js'
 import { listPersonas } from '@/api/personas.js'
-import { DEFAULT_OLLAMA_MODEL, fetchOllamaModels, getOllamaSettings } from '@/api/ollama.js'
+import { fetchModels, getModelSettings } from '@/api/inference.js'
 import { getChat, patchChat } from '@/api/chats.js'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/store/index.js'
 import { cn, sortSelectedFirst } from '@/lib/utils'
-import { is808notesRouteContext } from '@/routes/paths.js'
 
 import { PersonaGlyph } from './PersonaGlyph.jsx'
-
-const CLAUDE_PICKER_MODELS = [
-  { id: 'claude-sonnet', size: null },
-  { id: 'claude-haiku', size: null },
-  { id: 'claude-opus', size: null },
-]
-
-function read808notesClaudeEnabled() {
-  try {
-    return localStorage.getItem('808notes_claude_enabled') === 'true'
-  } catch {
-    return false
-  }
-}
 
 function formatModelSize(bytes) {
   if (bytes == null || Number.isNaN(bytes)) return '—'
@@ -78,13 +62,10 @@ function FixedDropdownPanel({ rect, children, className, minWidthPx }) {
 export function ModelSelectorBar({
   className,
   hidePersona = false,
-  /** When true, omit DAW picker UI (808notes DAW workspace). Reserved for bar extensions. */
-  hideDaw: _hideDaw = false,
+  /** When true, omit Workspace picker UI. Reserved for bar extensions. */
+  hideWorkspace: _hideWorkspace = false,
 }) {
   const queryClient = useQueryClient()
-  const location = useLocation()
-  const storeMode = useAppStore((s) => s.mode)
-  const is808notes = is808notesRouteContext(location.pathname, storeMode)
 
   const [modelOpen, setModelOpen] = useState(false)
   const [personaOpen, setPersonaOpen] = useState(false)
@@ -105,25 +86,24 @@ export function ModelSelectorBar({
   const userTouchedLandingModelRef = useRef(false)
   const prevActiveChatIdRef = useRef(activeChatId)
   const storePersonaId = useAppStore((s) => s.activePersonaId)
-  const storeDawId = useAppStore((s) => s.activeDawId)
+  const storeWorkspaceId = useAppStore((s) => s.activeWorkspaceId)
   const setActivePersonaId = useAppStore((s) => s.setActivePersonaId)
 
-  const { data: ollamaData, isLoading: modelsLoading } = useQuery({
-    queryKey: ['ollama', 'models'],
-    queryFn: fetchOllamaModels,
+  const { data: modelsData, isLoading: modelsLoading } = useQuery({
+    queryKey: ['inference', 'models'],
+    queryFn: fetchModels,
     staleTime: 60_000,
   })
 
-  const ollamaSettingsMode = is808notes ? '808notes' : 'booops'
-  const { data: ollamaSettings, isLoading: settingsLoading } = useQuery({
-    queryKey: ['ollama', 'settings', ollamaSettingsMode],
-    queryFn: () => getOllamaSettings(ollamaSettingsMode),
+  const { data: modelSettings, isLoading: settingsLoading } = useQuery({
+    queryKey: ['inference', 'settings'],
+    queryFn: () => getModelSettings(),
     staleTime: 60_000,
   })
 
   const hiddenNames = useMemo(
-    () => new Set(Array.isArray(ollamaSettings?.hidden_models) ? ollamaSettings.hidden_models : []),
-    [ollamaSettings],
+    () => new Set(Array.isArray(modelSettings?.hidden_models) ? modelSettings.hidden_models : []),
+    [modelSettings],
   )
 
   const { data: personaPack } = useQuery({
@@ -133,9 +113,8 @@ export function ModelSelectorBar({
   })
   const personas = personaPack?.items ?? []
   const defaultPersona = useMemo(() => {
-    if (is808notes) return personas.find((p) => p.is_default_808notes) ?? null
-    return personas.find((p) => p.is_default_booops) ?? null
-  }, [personas, is808notes])
+    return personas.find((p) => p.is_default_808notes) ?? null
+  }, [personas])
 
   const { data: chat } = useQuery({
     queryKey: ['chat', activeChatId],
@@ -143,36 +122,22 @@ export function ModelSelectorBar({
     enabled: Boolean(activeChatId),
   })
 
-  const { data: dawPack } = useQuery({
-    queryKey: ['daws', is808notes ? '808notes' : 'booops'],
-    queryFn: () => listDaws(is808notes ? '808notes' : 'booops'),
+  const { data: workspacePack } = useQuery({
+    queryKey: ['workspaces'],
+    queryFn: () => listWorkspaces(),
     staleTime: 30_000,
   })
-  const daws = dawPack?.items ?? []
-
-  const [claudePickerRev, setClaudePickerRev] = useState(0)
-  useEffect(() => {
-    const fn = () => setClaudePickerRev((x) => x + 1)
-    window.addEventListener('808notes-models', fn)
-    return () => window.removeEventListener('808notes-models', fn)
-  }, [])
+  const workspaces = workspacePack?.items ?? []
 
   const models = useMemo(() => {
-    const raw = Array.isArray(ollamaData?.data) ? ollamaData.data : []
-    let list = raw
+    const raw = Array.isArray(modelsData?.data) ? modelsData.data : []
+    return raw
       .map((m) => ({
         id: typeof m?.id === 'string' ? m.id : '',
         size: m?.size,
       }))
       .filter((m) => m.id && !hiddenNames.has(m.id))
-    if (is808notes && read808notesClaudeEnabled()) {
-      const have = new Set(list.map((m) => m.id))
-      for (const c of CLAUDE_PICKER_MODELS) {
-        if (!have.has(c.id)) list = [...list, c]
-      }
-    }
-    return list
-  }, [ollamaData, hiddenNames, is808notes, claudePickerRev])
+  }, [modelsData, hiddenNames])
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase()
@@ -186,25 +151,27 @@ export function ModelSelectorBar({
   )
 
   const chatPersonaId = chat?.persona_id ?? null
-  const chatDawId = chat?.daw_id ?? null
+  const chatWorkspaceId = chat?.workspace_id ?? null
   const effectivePersonaId = activeChatId ? chatPersonaId : storePersonaId
-  const effectiveDawId = activeChatId ? chatDawId : storeDawId
+  const effectiveWorkspaceId = activeChatId ? chatWorkspaceId : storeWorkspaceId
 
   const displayPersona = useMemo(() => {
     if (effectivePersonaId) return personas.find((p) => p.id === effectivePersonaId) ?? defaultPersona
     return defaultPersona
   }, [effectivePersonaId, personas, defaultPersona])
 
-  const displayDaw = useMemo(() => {
-    if (!effectiveDawId) return null
-    return daws.find((w) => w.id === effectiveDawId) ?? null
-  }, [effectiveDawId, daws])
+  const displayWorkspace = useMemo(() => {
+    if (!effectiveWorkspaceId) return null
+    return workspaces.find((w) => w.id === effectiveWorkspaceId) ?? null
+  }, [effectiveWorkspaceId, workspaces])
 
-  const dawPinnedModel = useMemo(
-    () => (displayDaw?.model && String(displayDaw.model).trim()) || '',
-    [displayDaw?.model],
+  const workspacePinnedModel = useMemo(
+    () => (displayWorkspace?.model && String(displayWorkspace.model).trim()) || '',
+    [displayWorkspace?.model],
   )
-  const modelLocked = Boolean(dawPinnedModel && (activeChatId ? chatDawId : storeDawId))
+  const modelLocked = Boolean(
+    workspacePinnedModel && (activeChatId ? chatWorkspaceId : storeWorkspaceId),
+  )
 
   const sortedPersonas = useMemo(
     () => sortSelectedFirst(personas, effectivePersonaId || defaultPersona?.id, 'id'),
@@ -218,14 +185,14 @@ export function ModelSelectorBar({
   }, [activeChatId])
 
   useEffect(() => {
-    const v = String(ollamaSettings?.default_model ?? '').trim()
-    setDefaultModel(v || DEFAULT_OLLAMA_MODEL)
-  }, [ollamaSettings?.default_model, setDefaultModel])
+    const v = String(modelSettings?.default_model ?? '').trim()
+    setDefaultModel(v || null)
+  }, [modelSettings?.default_model, setDefaultModel])
 
   useEffect(() => {
-    if (!modelLocked || !dawPinnedModel) return
-    if (selectedModel !== dawPinnedModel) setSelectedModel(dawPinnedModel)
-  }, [modelLocked, dawPinnedModel, selectedModel, setSelectedModel])
+    if (!modelLocked || !workspacePinnedModel) return
+    if (selectedModel !== workspacePinnedModel) setSelectedModel(workspacePinnedModel)
+  }, [modelLocked, workspacePinnedModel, selectedModel, setSelectedModel])
 
   useEffect(() => {
     if (activeChatId != null) return
@@ -233,10 +200,8 @@ export function ModelSelectorBar({
     if (modelsLoading || settingsLoading) return
     if (!models.length) return
     if (userTouchedLandingModelRef.current) return
-    const def = String(ollamaSettings?.default_model ?? '').trim() || DEFAULT_OLLAMA_MODEL
-    const pick = models.some((m) => m.id === def)
-      ? def
-      : (models.find((m) => m.id === DEFAULT_OLLAMA_MODEL)?.id ?? models[0].id)
+    const def = String(modelSettings?.default_model ?? '').trim()
+    const pick = def && models.some((m) => m.id === def) ? def : models[0].id
     if (useAppStore.getState().selectedModel === pick) return
     setSelectedModel(pick)
   }, [
@@ -244,7 +209,7 @@ export function ModelSelectorBar({
     modelsLoading,
     settingsLoading,
     models,
-    ollamaSettings?.default_model,
+    modelSettings?.default_model,
     setSelectedModel,
     modelLocked,
   ])
@@ -335,16 +300,10 @@ export function ModelSelectorBar({
     }
   }
 
-  const displayName = (modelLocked ? dawPinnedModel : selectedModel) || 'Select model'
+  const displayName = (modelLocked ? workspacePinnedModel : selectedModel) || 'Select model'
 
-  const showModelPicker = useAppStore((s) => {
-    const r = s.currentUser?.role
-    return r === 'owner' || r === 'super_admin'
-  })
-  const showPersonaPicker = useAppStore((s) => {
-    const r = s.currentUser?.role
-    return r === 'owner' || r === 'super_admin' || r === 'member'
-  })
+  const showModelPicker = true
+  const showPersonaPicker = true
 
   return (
     <div className={cn('flex min-w-0 flex-wrap items-center justify-center gap-2', className)}>
@@ -355,7 +314,7 @@ export function ModelSelectorBar({
             type="button"
             variant="ghost"
             disabled={modelLocked}
-            title={modelLocked ? 'Model pinned by DAW (change on DAW detail page)' : undefined}
+            title={modelLocked ? 'Model pinned by workspace (change on workspace detail page)' : undefined}
             className="h-9 max-w-full gap-2 px-3 font-normal text-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-60"
             aria-expanded={modelOpen}
             aria-haspopup="dialog"
@@ -453,7 +412,7 @@ export function ModelSelectorBar({
                       iconUrl={defaultPersona?.icon_url}
                       emoji={defaultPersona?.avatar_emoji}
                     />
-                    <span className="truncate">Default ({defaultPersona?.name || 'BooOps'})</span>
+                    <span className="truncate">Default ({defaultPersona?.name || 'Assistant'})</span>
                     {!effectivePersonaId && <Check className="ml-auto size-4 shrink-0 text-primary" />}
                   </button>
                 </li>

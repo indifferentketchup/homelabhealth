@@ -1,5 +1,6 @@
 /**
- * Authelia handles auth upstream. No tokens, no cookies in-app.
+ * Single-user app: every request is treated as the owner. Add a reverse proxy
+ * (oauth2-proxy, Authelia, etc.) in front of the API for real auth.
  * @param {string} path
  * @param {RequestInit & { json?: unknown }} options
  */
@@ -24,25 +25,26 @@ export async function apiFetch(path, options = {}) {
   return res.text()
 }
 
-export async function getDawMemory(dawId) {
-  return apiFetch(`/api/daws/${encodeURIComponent(dawId)}/memory`)
+export async function getWorkspaceMemory(workspaceId) {
+  return apiFetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/memory`)
 }
 
-export async function addDawMemory(dawId, content) {
-  return apiFetch(`/api/daws/${encodeURIComponent(dawId)}/memory`, {
+export async function addWorkspaceMemory(workspaceId, content) {
+  return apiFetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/memory`, {
     method: 'POST',
     json: { content },
   })
 }
 
-export async function deleteDawMemory(dawId, entryId) {
-  return apiFetch(`/api/daws/${encodeURIComponent(dawId)}/memory/${encodeURIComponent(entryId)}`, {
-    method: 'DELETE',
-  })
+export async function deleteWorkspaceMemory(workspaceId, entryId) {
+  return apiFetch(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/memory/${encodeURIComponent(entryId)}`,
+    { method: 'DELETE' },
+  )
 }
 
-export async function clearDawEmbeddings(dawId) {
-  return apiFetch(`/api/sources/${encodeURIComponent(dawId)}/chunks`, {
+export async function clearWorkspaceEmbeddings(workspaceId) {
+  return apiFetch(`/api/sources/${encodeURIComponent(workspaceId)}/chunks`, {
     method: 'DELETE',
   })
 }

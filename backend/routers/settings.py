@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from auth_deps import require_admin
+from deps import require_admin
 from db import get_pool
 
 router = APIRouter()
@@ -108,7 +108,7 @@ async def patch_ui_layout(
         await _write_ui_layout(conn, merged)
         return merged
 
-_OLLAMA_KEYS = ("flash_attention", "max_loaded_models", "keep_alive")
+_MODEL_SERVER_KEYS = ("flash_attention", "max_loaded_models", "keep_alive")
 
 _GLOBAL_SETTING_KEYS = ()
 
@@ -157,7 +157,7 @@ def _parse_flash_attention(raw: str | None) -> bool:
     return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
-class OllamaConfigPatch(BaseModel):
+class ModelServerConfigPatch(BaseModel):
     """Save: all three fields (single form submit)."""
 
     flash_attention: bool
@@ -165,10 +165,10 @@ class OllamaConfigPatch(BaseModel):
     keep_alive: str = Field(min_length=1, max_length=64)
 
 
-async def _ollama_config_from_conn(conn: Any) -> dict[str, Any]:
+async def _model_server_config_from_conn(conn: Any) -> dict[str, Any]:
     rows = await conn.fetch(
         "SELECT key, value FROM ollama_config WHERE key = ANY($1::text[])",
-        list(_OLLAMA_KEYS),
+        list(_MODEL_SERVER_KEYS),
     )
     m = {r["key"]: r["value"] for r in rows}
     try:
@@ -183,16 +183,16 @@ async def _ollama_config_from_conn(conn: Any) -> dict[str, Any]:
     }
 
 
-@router.get("/ollama")
-async def get_ollama_config(_: dict = Depends(require_admin)) -> dict[str, Any]:
+@router.get("/inference")
+async def get_model_server_config(_: dict = Depends(require_admin)) -> dict[str, Any]:
     pool = await get_pool()
     async with pool.acquire() as conn:
-        return await _ollama_config_from_conn(conn)
+        return await _model_server_config_from_conn(conn)
 
 
-@router.patch("/ollama")
-async def patch_ollama_config(
-    body: OllamaConfigPatch,
+@router.patch("/inference")
+async def patch_model_server_config(
+    body: ModelServerConfigPatch,
     _: dict = Depends(require_admin),
 ) -> dict[str, Any]:
     ka = body.keep_alive.strip() or "30m"
@@ -219,4 +219,4 @@ async def patch_ollama_config(
             """,
             ka,
         )
-        return await _ollama_config_from_conn(conn)
+        return await _model_server_config_from_conn(conn)

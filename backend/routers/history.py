@@ -1,17 +1,13 @@
-"""Manage previously-exported chat/terminal history files.
+"""Manage previously-exported chat history files.
 
-The export endpoints in routers.chats / routers.terminals write under
-/data/history/<kind>/<daw-slug>/. This router exposes list / read /
+The export endpoints in routers.chats write under
+/data/history/chats/<workspace-slug>/. This router exposes list / read /
 rename / delete over that tree.
-
-Auth: same posture as the rest of the BooCode routers — Authelia
-forward_auth gates the vhost; owner is the only principal in phase 5.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 import re
 import uuid
 from pathlib import Path
@@ -21,43 +17,44 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
-from auth_deps import get_principal
+from deps import get_principal
 from db import get_pool
 from services.history import (
     VALID_KINDS,
-    daw_dir,
+    workspace_dir,
     history_root,
     safe_path,
     slugify,
     validate_filename,
 )
+from services.inference_defaults import required_default_model
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 MAX_FILE_BYTES = 2 * 1024 * 1024  # 2 MB — keep the payload sane
-EXT_FOR_KIND = {"chats": ".md", "terminals": ".txt"}
+EXT_FOR_KIND = {"chats": ".md"}
 
 
 class RenameBody(BaseModel):
     old: str = Field(..., min_length=1)
     new: str = Field(..., min_length=1)  # manual slug or "__ai__"
-    daw_id: uuid.UUID
+    workspace_id: uuid.UUID
 
 
 class DeleteBody(BaseModel):
     file: str = Field(..., min_length=1)
-    daw_id: uuid.UUID
+    workspace_id: uuid.UUID
 
 
-async def _daw_name(daw_id: uuid.UUID) -> str:
+async def _workspace_name(workspace_id: uuid.UUID) -> str:
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT name FROM daws WHERE id = $1::uuid", daw_id,
+            "SELECT name FROM daws WHERE id = $1::uuid", workspace_id,
         )
     if not row or not row["name"]:
-        raise HTTPException(status_code=404, detail="daw not found")
+        raise HTTPException(status_code=404, detail="workspace not found")
     return row["name"]
 
 
@@ -69,12 +66,12 @@ def _ensure_kind(kind: str) -> None:
 @router.get("/{kind}")
 async def list_history(
     kind: str,
-    daw_id: uuid.UUID = Query(...),
+    workspace_id: uuid.UUID = Query(...),
     principal: dict[str, Any] = Depends(get_principal),
 ) -> dict:
     _ensure_kind(kind)
-    name = await _daw_name(daw_id)
-    folder = daw_dir(kind, name)  # creates if missing
+    name = await _workspace_name(workspace_id)
+    folder = workspace_dir(kind, name)  # creates if missing
     items = []
     for entry in folder.iterdir():
         if not entry.is_file():
@@ -91,18 +88,18 @@ async def list_history(
             "modified_at": int(st.st_mtime),
         })
     items.sort(key=lambda x: x["modified_at"], reverse=True)
-    return {"kind": kind, "daw_id": str(daw_id), "daw_slug": slugify(name), "items": items}
+    return {"kind": kind, "workspace_id": str(workspace_id), "workspace_slug": slugify(name), "items": items}
 
 
 @router.get("/{kind}/content")
 async def read_history(
     kind: str,
-    daw_id: uuid.UUID = Query(...),
+    workspace_id: uuid.UUID = Query(...),
     file: str = Query(..., min_length=1),
     principal: dict[str, Any] = Depends(get_principal),
 ) -> dict:
     _ensure_kind(kind)
-    name = await _daw_name(daw_id)
+    name = await _workspace_name(workspace_id)
     try:
         path = safe_path(kind, name, file)
     except ValueError as e:
@@ -130,7 +127,7 @@ async def read_history(
 @router.post("/{kind}/rename")
 async def rename_history(kind: str, body: RenameBody, request: Request, principal: dict[str, Any] = Depends(get_principal)) -> dict:
     _ensure_kind(kind)
-    name = await _daw_name(body.daw_id)
+    name = await _workspace_name(body.workspace_id)
     try:
         old_path = safe_path(kind, name, body.old)
     except ValueError as e:
@@ -151,7 +148,7 @@ async def rename_history(kind: str, body: RenameBody, request: Request, principa
             try:
                 text = old_path.read_text(encoding="utf-8", errors="replace")
                 sample = text[:4000]
-                default_model = os.environ.get("DEFAULT_MODEL", "llama-gpu/qwen3.5-9b-exl3")
+                default_model = required_default_model()
                 proposed = await _openai_short_chat_title(model=default_model, user_message_text=sample)
             except Exception as e:
                 logger.warning("ai rename failed kind=%s file=%s err=%s", kind, body.old, e)
@@ -205,7 +202,7 @@ async def rename_history(kind: str, body: RenameBody, request: Request, principa
 @router.delete("/{kind}")
 async def delete_history(kind: str, body: DeleteBody, request: Request, principal: dict[str, Any] = Depends(get_principal)) -> dict:
     _ensure_kind(kind)
-    name = await _daw_name(body.daw_id)
+    name = await _workspace_name(body.workspace_id)
     try:
         path = safe_path(kind, name, body.file)
     except ValueError as e:

@@ -1,18 +1,18 @@
 import { apiFetch } from '@/api/index.js'
 
-export function getMemory(mode = 'booops') {
-  return apiFetch(`/api/memory/?mode=${encodeURIComponent(mode)}`)
+export function getMemory() {
+  return apiFetch('/api/memory/')
 }
 
-export function putMemory(mode, content) {
-  return apiFetch(`/api/memory/?mode=${encodeURIComponent(mode)}`, {
+export function putMemory(content) {
+  return apiFetch('/api/memory/', {
     method: 'PUT',
     json: { content },
   })
 }
 
-export function extractMemory(mode = 'booops') {
-  return apiFetch(`/api/memory/extract?mode=${encodeURIComponent(mode)}`, { method: 'POST' })
+export function extractMemory() {
+  return apiFetch('/api/memory/extract', { method: 'POST' })
 }
 
 export function embedAllMemories() {

@@ -1,5 +1,4 @@
 import { Children, useEffect, useMemo, useState } from 'react'
-import { useLongPress } from '@/hooks/useLongPress.js'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
@@ -8,19 +7,16 @@ import { BookmarkPlus, Check, Copy, GitFork, Loader2, Pencil, RefreshCw } from '
 
 import { forkChat } from '@/api/chats.js'
 import { Button } from '@/components/ui/button'
-import { PATH_BOOOPS_HOME } from '@/routes/paths.js'
+import { PATH_HOME } from '@/routes/paths.js'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/index.js'
 import { useShallow } from 'zustand/react/shallow'
 
 import { PersonaGlyph } from './PersonaGlyph.jsx'
-import { SendToTerminalMenu } from './SendToTerminalMenu.jsx'
 
-function CodeBlockShell({ language, rawText, chatMode, children }) {
+function CodeBlockShell({ language, rawText, children }) {
   const [copied, setCopied] = useState(false)
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [menuAnchor, setMenuAnchor] = useState(null)
 
   async function copyCode() {
     try {
@@ -32,23 +28,9 @@ function CodeBlockShell({ language, rawText, chatMode, children }) {
     }
   }
 
-  function handleContextMenu(e) {
-    if (chatMode !== 'boocode') return
-    e.preventDefault()
-    setMenuAnchor({ x: e.clientX, y: e.clientY })
-    setMenuOpen(true)
-  }
-
-  const lp = useLongPress(handleContextMenu)
-
   return (
     <div
       className="group/code mb-2 last:mb-0 overflow-hidden rounded-md border border-border bg-muted"
-      onContextMenu={handleContextMenu}
-      onTouchStart={lp.onTouchStart}
-      onTouchMove={lp.onTouchMove}
-      onTouchEnd={lp.onTouchEnd}
-      onTouchCancel={lp.onTouchCancel}
       style={{ WebkitTouchCallout: 'none' }}
     >
       <div className="flex items-center justify-between gap-2 border-b border-border bg-background/30 px-3 py-1">
@@ -66,14 +48,6 @@ function CodeBlockShell({ language, rawText, chatMode, children }) {
         </button>
       </div>
       {children}
-      {chatMode === 'boocode' && (
-        <SendToTerminalMenu
-          open={menuOpen}
-          onOpenChange={setMenuOpen}
-          anchor={menuAnchor}
-          text={rawText || ''}
-        />
-      )}
     </div>
   )
 }
@@ -86,7 +60,7 @@ function extractCodeText(node) {
   return ''
 }
 
-function makeMdComponents({ chatMode } = {}) {
+function makeMdComponents() {
   return {
     p: ({ children }) => <p className="mb-2 last:mb-0 text-foreground">{children}</p>,
     ul: ({ children }) => <ul className="mb-2 list-disc pl-4 last:mb-0">{children}</ul>,
@@ -135,7 +109,7 @@ function makeMdComponents({ chatMode } = {}) {
       const lang = cls.match(/language-([\w-]+)/)?.[1] || null
       const rawText = extractCodeText(first).replace(/\n$/, '')
       return (
-        <CodeBlockShell language={lang} rawText={rawText} chatMode={chatMode}>
+        <CodeBlockShell language={lang} rawText={rawText}>
           <pre
             className={cn(
               'm-0 block w-full min-w-0 max-w-full overflow-x-auto whitespace-pre-wrap break-words [overflow-wrap:anywhere]',
@@ -189,12 +163,11 @@ export function MessageBubble({
   chatId,
   message,
   streaming = false,
-  chatMode,
   onSaveMessageAsNote,
   onEditUser,
   onRegenerate,
 }) {
-  const mdComponents = useMemo(() => makeMdComponents({ chatMode }), [chatMode])
+  const mdComponents = useMemo(() => makeMdComponents(), [])
   const [hover, setHover] = useState(false)
   const [forkError, setForkError] = useState(null)
   const [editing, setEditing] = useState(false)
@@ -244,7 +217,7 @@ export function MessageBubble({
       setActiveChatId(newChat.id)
       hydrateFromChat(newChat)
       queryClient.invalidateQueries({ queryKey: ['chats'] })
-      navigate(PATH_BOOOPS_HOME)
+      navigate(PATH_HOME)
     },
     onError: (err) => {
       setForkError(err instanceof Error ? err.message : 'Fork failed')

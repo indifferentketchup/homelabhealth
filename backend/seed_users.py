@@ -1,4 +1,4 @@
-"""Ensure the single samkintop owner row exists. Authelia handles auth — password column is dead weight."""
+"""Ensure the single owner row exists. Single-user app — password column is dead weight."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from db import get_pool
 
 logger = logging.getLogger(__name__)
 
-SUPER_ADMIN_USERNAME = "samkintop"
+SUPER_ADMIN_USERNAME = "owner"
 
 
 async def ensure_super_admin() -> None:

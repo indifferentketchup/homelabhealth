@@ -8,8 +8,7 @@ export function listChats(params = {}) {
   const q = new URLSearchParams()
   if (params.limit != null) q.set('limit', String(params.limit))
   if (params.offset != null) q.set('offset', String(params.offset))
-  if (params.mode) q.set('mode', params.mode)
-  if (params.dawId) q.set('daw_id', String(params.dawId))
+  if (params.workspaceId) q.set('workspace_id', String(params.workspaceId))
   const qs = q.toString()
   const path = qs ? `/api/chats/?${qs}` : '/api/chats/'
   return apiFetch(path)
@@ -46,10 +45,9 @@ export function deleteChat(chatId) {
   return apiFetch(`/api/chats/${chatId}`, { method: 'DELETE' })
 }
 
-/** Delete all chats with no DAW attached (regular BooOps / 808notes chats only). */
-export function deleteNonDawChats(mode = 'booops') {
-  const q = new URLSearchParams({ mode })
-  return apiFetch(`/api/chats/non-daw?${q}`, { method: 'DELETE' })
+/** Delete all chats with no workspace attached. */
+export function deleteNonWorkspaceChats() {
+  return apiFetch('/api/chats/non-workspace', { method: 'DELETE' })
 }
 
 export function listMessages(chatId) {
@@ -74,4 +72,3 @@ export function setChatSourceSelection(chatId, sourceIds) {
     json: { source_ids: sourceIds },
   })
 }
-

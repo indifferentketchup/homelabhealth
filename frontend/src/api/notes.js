@@ -1,11 +1,11 @@
 import { apiFetch } from '@/api/index.js'
 
-export function listNotes(dawId) {
-  return apiFetch(`/api/notes/${dawId}`)
+export function listNotes(workspaceId) {
+  return apiFetch(`/api/notes/${workspaceId}`)
 }
 
-export function createNote(dawId, body) {
-  return apiFetch(`/api/notes/${dawId}`, { method: 'POST', json: body })
+export function createNote(workspaceId, body) {
+  return apiFetch(`/api/notes/${workspaceId}`, { method: 'POST', json: body })
 }
 
 export function updateNote(noteId, body) {

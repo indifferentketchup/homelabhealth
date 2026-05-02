@@ -1,4 +1,4 @@
-"""808notes (and shared) knowledge source upload + listing."""
+"""Workspace knowledge source upload + listing."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
-from auth_deps import get_principal, require_admin
+from deps import get_principal, require_admin
 from db import get_pool
 from services.chunking import chunk_text, parse_source_bytes
 from services.embeddings import EmbeddingError, embed_batch, format_vector
@@ -78,7 +78,7 @@ def _resolve_upload_parse_mime(raw: bytes, declared: str | None, filename: str |
     raise ValueError(f"Unsupported MIME type: {m}")
 
 
-async def _ingest_source(source_id: uuid.UUID, daw_id: uuid.UUID, raw: bytes, mime: str, name: str) -> None:
+async def _ingest_source(source_id: uuid.UUID, workspace_id: uuid.UUID, raw: bytes, mime: str, name: str) -> None:
     pool = await get_pool()
     try:
         text = parse_source_bytes(raw, mime)
@@ -160,9 +160,9 @@ async def _ingest_source(source_id: uuid.UUID, daw_id: uuid.UUID, raw: bytes, mi
             pass
 
 
-@router.post("/{daw_id}/upload")
+@router.post("/{workspace_id}/upload")
 async def upload_source(
-    daw_id: uuid.UUID,
+    workspace_id: uuid.UUID,
     file: UploadFile = File(...),
     _: dict = Depends(get_principal),
 ) -> dict[str, Any]:
@@ -181,16 +181,16 @@ async def upload_source(
     h = _sha256(raw)
     pool = await get_pool()
     async with pool.acquire() as conn:
-        daw_exists = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", daw_id)
-        if not daw_exists:
-            raise HTTPException(404, "DAW not found")
+        workspace_exists = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", workspace_id)
+        if not workspace_exists:
+            raise HTTPException(404, "Workspace not found")
         existing = await conn.fetchval("SELECT id FROM sources WHERE content_hash = $1 LIMIT 1", h)
         if existing:
             return {"source_id": str(existing), "status": "already_exists"}
 
-        daw = await conn.fetchval("SELECT id FROM daws WHERE id = $1::uuid", daw_id)
-        if not daw:
-            raise HTTPException(404, "DAW not found")
+        workspace = await conn.fetchval("SELECT id FROM daws WHERE id = $1::uuid", workspace_id)
+        if not workspace:
+            raise HTTPException(404, "Workspace not found")
 
         source_id = uuid.uuid4()
         name = (file.filename or "upload").strip() or "upload"
@@ -203,7 +203,7 @@ async def upload_source(
             VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, 'processing', NOW())
             """,
             source_id,
-            daw_id,
+            workspace_id,
             name,
             stype,
             mime,
@@ -211,20 +211,20 @@ async def upload_source(
             h,
         )
 
-    asyncio.create_task(_ingest_source(source_id, daw_id, raw, mime, name))
+    asyncio.create_task(_ingest_source(source_id, workspace_id, raw, mime, name))
     return {"source_id": str(source_id), "status": "ingesting"}
 
 
-@router.get("/{daw_id}")
+@router.get("/{workspace_id}")
 async def list_sources(
-    daw_id: uuid.UUID,
+    workspace_id: uuid.UUID,
     _: dict = Depends(get_principal),
 ) -> list[dict[str, Any]]:
     pool = await get_pool()
     async with pool.acquire() as conn:
-        daw_exists = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", daw_id)
-        if not daw_exists:
-            raise HTTPException(404, "DAW not found")
+        workspace_exists = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", workspace_id)
+        if not workspace_exists:
+            raise HTTPException(404, "Workspace not found")
         rows = await conn.fetch(
             """
             SELECT id, name, chunk_count, embedding_status, created_at, source_type, mime_type
@@ -232,7 +232,7 @@ async def list_sources(
             WHERE daw_id = $1::uuid
             ORDER BY created_at DESC
             """,
-            daw_id,
+            workspace_id,
         )
     out: list[dict[str, Any]] = []
     for r in rows:
@@ -266,24 +266,24 @@ async def delete_source(
     return {"deleted": str(source_id)}
 
 
-@router.delete("/{daw_id}/chunks")
-async def clear_daw_chunks(
-    daw_id: uuid.UUID,
+@router.delete("/{workspace_id}/chunks")
+async def clear_workspace_chunks(
+    workspace_id: uuid.UUID,
     _: dict = Depends(get_principal),
 ) -> dict[str, Any]:
-    """Delete all chunks and reset embedding status for all sources in a DAW."""
+    """Delete all chunks and reset embedding status for all sources in a workspace."""
     pool = await get_pool()
     async with pool.acquire() as conn:
-        daw_exists = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", daw_id)
-        if not daw_exists:
-            raise HTTPException(404, "DAW not found")
+        workspace_exists = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", workspace_id)
+        if not workspace_exists:
+            raise HTTPException(404, "Workspace not found")
         result = await conn.fetchval(
             """
             DELETE FROM source_chunks
             WHERE source_id IN (SELECT id FROM sources WHERE daw_id = $1::uuid)
             RETURNING id
             """,
-            daw_id,
+            workspace_id,
         )
         deleted_count = int(result or 0)
         result = await conn.fetchval(
@@ -293,7 +293,7 @@ async def clear_daw_chunks(
             WHERE daw_id = $1::uuid
             RETURNING id
             """,
-            daw_id,
+            workspace_id,
         )
         reset_count = int(result or 0)
     return {"deleted_chunks": deleted_count, "reset_sources": reset_count}

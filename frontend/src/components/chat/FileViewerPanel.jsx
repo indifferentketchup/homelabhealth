@@ -4,32 +4,6 @@ import { ChevronLeft } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 
-const EXT_LANG = {
-  js: 'javascript',
-  jsx: 'jsx',
-  ts: 'typescript',
-  tsx: 'tsx',
-  py: 'python',
-  go: 'go',
-  yml: 'yaml',
-  yaml: 'yaml',
-  json: 'json',
-  sh: 'bash',
-  bash: 'bash',
-  md: 'markdown',
-  markdown: 'markdown',
-  css: 'css',
-  html: 'html',
-  sql: 'sql',
-  dockerfile: 'dockerfile',
-  toml: 'toml',
-}
-
-function getLang(filename) {
-  const ext = (filename || '').split('.').pop().toLowerCase()
-  return EXT_LANG[ext] || 'plaintext'
-}
-
 /**
  * @param {object} props
  * @param {{ filename: string, path: string } | null} props.file
@@ -43,7 +17,7 @@ export function FileViewerPanel({ file, onClose, onAttachLines }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [tokenLines, setTokenLines] = useState([])
-  const [shikiMeta, setShikiMeta] = useState({ bg: '#0d1117', fg: '#e6edf3' })
+  const shikiMeta = { bg: '#0d1117', fg: '#e6edf3' }
   const [truncated, setTruncated] = useState(false)
   const [selectedLines, setSelectedLines] = useState([])
   const [retryNonce, setRetryNonce] = useState(0)
@@ -85,55 +59,10 @@ export function FileViewerPanel({ file, onClose, onAttachLines }) {
     setTokenLines([])
     setTruncated(false)
 
-    async function load() {
-      setLoading(true)
-      try {
-        const res = await fetch(`/api/dubdrive/preview?path=${encodeURIComponent(file.path)}`)
-        if (!res.ok) throw new Error(`${res.status}`)
-        const { text } = await res.json()
-
-        const MAX_LINES = 5000
-        let lines = text.split('\n')
-        if (lines.length > MAX_LINES) {
-          lines = lines.slice(0, MAX_LINES)
-          setTruncated(true)
-        }
-        const clipped = lines.join('\n')
-        textRef.current = clipped
-
-        if (!highlighterRef.current) {
-          await new Promise((resolve, reject) => {
-            const interval = setInterval(() => {
-              if (highlighterRef.current) {
-                clearInterval(interval)
-                resolve()
-              }
-            }, 100)
-            setTimeout(() => {
-              clearInterval(interval)
-              reject(new Error('highlighter timeout'))
-            }, 5000)
-          })
-        }
-
-        const lang = getLang(file.filename)
-        const result = highlighterRef.current.codeToTokens(clipped, {
-          theme: 'github-dark',
-          lang,
-        })
-        setShikiMeta({
-          bg: result.bg || '#0d1117',
-          fg: result.fg || '#e6edf3',
-        })
-        setTokenLines(result.tokens)
-      } catch (e) {
-        setError(e.message || 'Failed to load file')
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    void load()
+    // File preview backend is currently disconnected -- show inert state.
+    textRef.current = ''
+    setLoading(false)
+    setError('Preview unavailable.')
   }, [file?.path, file?.filename, highlighterReady, retryNonce])
 
   function handleLineClick(lineNum, isShift) {

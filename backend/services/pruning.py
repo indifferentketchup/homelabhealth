@@ -10,6 +10,7 @@ import asyncpg
 import httpx
 
 from db import get_pool
+from services.inference_defaults import required_default_model
 
 
 async def _get_setting(conn: asyncpg.Connection, key: str, default: str) -> str:
@@ -21,12 +22,12 @@ async def _get_setting(conn: asyncpg.Connection, key: str, default: str) -> str:
 
 
 def _inference_base() -> str:
-    return os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+    return os.environ.get("INFERENCE_URL", "http://localhost:8080").rstrip("/")
 
 
 def _openai_headers() -> dict[str, str]:
     h = {"Content-Type": "application/json"}
-    key = (os.environ.get("OPENAI_API_KEY") or os.environ.get("BIFROST_API_KEY") or "").strip()
+    key = (os.environ.get("OPENAI_API_KEY") or "").strip()
     if key:
         h["Authorization"] = f"Bearer {key}"
     return h
@@ -145,7 +146,7 @@ async def summarize_and_compress(
         prev = chat["pruning_summary"] or ""
         bundle = f"Previous summary:\n{prev}\n\nMessages to compress:\n{transcript}" if prev else transcript
 
-        default_model = await _get_setting(conn, "default_model", "llama-gpu/qwen3.5-9b-exl3")
+        default_model = (await _get_setting(conn, "default_model", "") or "").strip() or required_default_model()
         try:
             summary = await _openai_summarize(default_model, bundle)
         except Exception:

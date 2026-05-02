@@ -1,4 +1,4 @@
-"""SearXNG configuration per app mode (DB + optional settings.yml sync)."""
+"""SearXNG configuration (DB + optional settings.yml sync)."""
 
 from __future__ import annotations
 
@@ -10,14 +10,12 @@ import yaml
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from auth_deps import require_admin
+from deps import _SCHEMA_MODE_VALUE, require_admin
 from db import get_pool
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-_VALID_MODES = frozenset({"booops", "808notes", "boocode"})
 
 
 class SearxngConfigUpdate(BaseModel):
@@ -129,10 +127,9 @@ def _write_searxng_settings_yaml(
         logger.warning("Could not write SearXNG settings %s: %s", path, e)
 
 
-@router.get("/{mode}", response_model=SearxngConfigResponse)
-async def get_searxng_config(mode: str):
-    if mode not in _VALID_MODES:
-        raise HTTPException(status_code=400, detail="Invalid mode")
+@router.get("/", response_model=SearxngConfigResponse)
+async def get_searxng_config():
+    mode = _SCHEMA_MODE_VALUE
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -143,7 +140,7 @@ async def get_searxng_config(mode: str):
             mode,
         )
     if not row:
-        raise HTTPException(status_code=404, detail="Mode not found")
+        raise HTTPException(status_code=404, detail="Config not found")
     return SearxngConfigResponse(
         mode=mode,
         safe_search=int(row["safe_search"]),
@@ -153,15 +150,12 @@ async def get_searxng_config(mode: str):
     )
 
 
-@router.patch("/{mode}")
+@router.patch("/")
 async def update_searxng_config(
-    mode: str,
     body: SearxngConfigUpdate,
     _owner: dict = Depends(require_admin),
 ):
-    if mode not in _VALID_MODES:
-        raise HTTPException(status_code=400, detail="Invalid mode")
-
+    mode = _SCHEMA_MODE_VALUE
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -172,7 +166,7 @@ async def update_searxng_config(
             mode,
         )
         if not row:
-            raise HTTPException(status_code=404, detail="Mode not found")
+            raise HTTPException(status_code=404, detail="Config not found")
 
         safe_search = int(body.safe_search if body.safe_search is not None else row["safe_search"])
         if safe_search not in (0, 1, 2):

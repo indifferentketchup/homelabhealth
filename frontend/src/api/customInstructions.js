@@ -1,11 +1,11 @@
 import { apiFetch } from '@/api/index.js'
 
-export function getCustomInstructions(scope) {
-  return apiFetch(`/api/custom-instructions/?scope=${encodeURIComponent(scope)}`)
+export function getCustomInstructions() {
+  return apiFetch('/api/custom-instructions/')
 }
 
-export function putCustomInstructions(scope, content) {
-  return apiFetch(`/api/custom-instructions/?scope=${encodeURIComponent(scope)}`, {
+export function putCustomInstructions(content) {
+  return apiFetch('/api/custom-instructions/', {
     method: 'PUT',
     json: { content },
   })

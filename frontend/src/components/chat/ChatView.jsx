@@ -5,13 +5,12 @@ import { useSearchParams } from 'react-router-dom'
 
 import { fetchBranding } from '@/api/branding.js'
 import { createChat, forkChat, getChat, listMessages, patchRecentChatsListCache } from '@/api/chats.js'
-import { getDaw } from '@/api/daws.js'
 import { createNote } from '@/api/notes.js'
 import { useStream } from '@/hooks/useStream.js'
 import { cn } from '@/lib/utils.js'
 import { useAppStore } from '@/store/index.js'
 
-import { BooOpsMark } from './BooOpsMark.jsx'
+import { PersonaMark } from './PersonaMark.jsx'
 import { ChatInput } from './ChatInput.jsx'
 import { MessageList } from './MessageList.jsx'
 import { ModelSelectorBar } from './ModelSelectorBar.jsx'
@@ -20,7 +19,7 @@ function sameUserBubbleContent(serverText, optimisticText) {
   return String(serverText ?? '').trim() === String(optimisticText ?? '').trim()
 }
 
-const DAW_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const WORKSPACE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 function MessageListSkeleton() {
   const rows = [
@@ -62,51 +61,32 @@ function MessageListSkeleton() {
 
 function friendlyStreamError(msg) {
   if (!msg) return 'Something went wrong.'
-  const s = String(msg)
-  if (s.includes('guest_limit_reached')) {
-    return "You've used your 20 free messages. Create an account to keep chatting."
-  }
-  if (s.includes('member_daily_limit_reached')) {
-    return "You've hit the 200 message daily limit. Resets at midnight."
-  }
-  if (s.includes('upload_limit_reached')) {
-    return 'Upload limit reached (10 files max).'
-  }
-  return s
+  return String(msg)
 }
 
-function normalizeDawUuid(raw) {
+function normalizeWorkspaceUuid(raw) {
   if (raw == null || raw === '') return null
   const s = String(raw).trim()
-  return DAW_UUID_RE.test(s) ? s : null
+  return WORKSPACE_UUID_RE.test(s) ? s : null
 }
 
 export function ChatView({
-  chatMode = 'booops',
   compactEmptyState = false,
   modelBarProps = {},
   hidePersonaInChatInput = false,
-  /** When set (e.g. 808notes `/daw/:id`), used if Zustand `activeDawId` is stale so new chats still attach to the workspace. */
-  workspaceDawId = null,
+  /** When set (e.g. `/workspace/:id`), used if Zustand `activeWorkspaceId` is stale so new chats still attach to the workspace. */
+  workspaceId: workspaceIdProp = null,
   /** When true, skip the desktop-only model bar row (e.g. parent renders `ModelSelectorBar` in a full-width header). */
   hideDesktopModelBar = false,
 }) {
   const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
-  const dawFromQuery = normalizeDawUuid(searchParams.get('daw'))
-  const resolvedWorkspaceDaw = normalizeDawUuid(workspaceDawId) || dawFromQuery
-  const workspaceDawKey = normalizeDawUuid(workspaceDawId)
-  const { data: activeDaw } = useQuery({
-    queryKey: ['daws', workspaceDawKey],
-    queryFn: () => getDaw(workspaceDawKey),
-    enabled: Boolean(workspaceDawKey),
-    staleTime: 60_000,
-  })
-  const dawSyncFolder = activeDaw?.dubdrive_sync_folder || null
+  const workspaceFromQuery = normalizeWorkspaceUuid(searchParams.get('workspace'))
+  const resolvedWorkspaceId = normalizeWorkspaceUuid(workspaceIdProp) || workspaceFromQuery
   const storeBranding = useAppStore((s) => s.branding)
   const { data: branding } = useQuery({
-    queryKey: ['branding', chatMode],
-    queryFn: () => fetchBranding(chatMode),
+    queryKey: ['branding'],
+    queryFn: () => fetchBranding(),
     staleTime: 60_000,
   })
   const chatMaxW = storeBranding?.chatMaxWidth ?? branding?.chatMaxWidth ?? 1200
@@ -130,19 +110,18 @@ export function ChatView({
     if (chat) hydrateFromChat(chat)
   }, [chat, hydrateFromChat])
 
-  const notesDawIdForSave =
-    chatMode === '808notes' && resolvedWorkspaceDaw ? resolvedWorkspaceDaw : null
+  const notesWorkspaceIdForSave = resolvedWorkspaceId ?? null
 
   const saveMessageAsNote = useCallback(
     async (text) => {
-      const did = notesDawIdForSave
-      if (!did) return
+      const wid = notesWorkspaceIdForSave
+      if (!wid) return
       const body = String(text ?? '').trim()
       if (!body) return
-      await createNote(did, { content: body, source_type: 'ai_response' })
-      await queryClient.invalidateQueries({ queryKey: ['notes', did] })
+      await createNote(wid, { content: body, source_type: 'ai_response' })
+      await queryClient.invalidateQueries({ queryKey: ['notes', wid] })
     },
-    [notesDawIdForSave, queryClient],
+    [notesWorkspaceIdForSave, queryClient],
   )
 
   const { data: msgPack, isLoading } = useQuery({
@@ -155,7 +134,6 @@ export function ChatView({
   const [draft, setDraft] = useState('')
   const [streamText, setStreamText] = useState('')
   const [sendError, setSendError] = useState(null)
-  const [boocodeFiles, setBoocodeFiles] = useState([])
 
   useEffect(() => {
     function onAttachChatFile(e) {
@@ -165,36 +143,10 @@ export function ChatView({
       const block = `**\`${filename}\`**\n\`\`\`\n${body}\n\`\`\``
       setDraft((d) => (d?.trim() ? `${d}\n\n${block}` : block))
     }
-    window.addEventListener('boolab:attach-chat-file', onAttachChatFile)
-    return () => window.removeEventListener('boolab:attach-chat-file', onAttachChatFile)
+    window.addEventListener('homelabhealth:attach-chat-file', onAttachChatFile)
+    return () => window.removeEventListener('homelabhealth:attach-chat-file', onAttachChatFile)
   }, [])
 
-  useEffect(() => {
-    if (chatMode !== 'boocode') return
-    function onAttachBoocodeFile(e) {
-      const d = e?.detail
-      if (!d || !d.path || !d.dawId) return
-      const lineStart = Number.isInteger(d.lineStart) ? d.lineStart : null
-      const lineEnd = Number.isInteger(d.lineEnd) ? d.lineEnd : null
-      // both-or-neither
-      const hasRange = lineStart != null && lineEnd != null && lineEnd >= lineStart
-      const nextStart = hasRange ? lineStart : null
-      const nextEnd = hasRange ? lineEnd : null
-      const dedupeKey = (x) => `${x.path}#${x.lineStart ?? ''}-${x.lineEnd ?? ''}`
-      const incomingKey = `${d.path}#${nextStart ?? ''}-${nextEnd ?? ''}`
-      setBoocodeFiles((prev) => {
-        if (prev.some((x) => x.dawId === d.dawId && dedupeKey(x) === incomingKey)) return prev
-        if (prev.length >= 4) return prev
-        return [...prev, { dawId: d.dawId, path: d.path, language: d.language, lineStart: nextStart, lineEnd: nextEnd }]
-      })
-    }
-    window.addEventListener('boocode:attach-file', onAttachBoocodeFile)
-    return () => window.removeEventListener('boocode:attach-file', onAttachBoocodeFile)
-  }, [chatMode])
-
-  const removeBoocodeFile = (chip) => {
-    setBoocodeFiles((prev) => prev.filter((x) => x !== chip))
-  }
   const { consumeStream, abort } = useStream()
   const [pendingSend, setPendingSend] = useState(false)
   const [optimisticUser, setOptimisticUser] = useState(null)
@@ -258,22 +210,11 @@ export function ChatView({
     streamingChatRef.current = chatId
     streamAssistantIndexRef.current = assistantMessageIndex
     const model = selectedModel || undefined
-    const bcFiles = chatMode === 'boocode' && boocodeFiles.length > 0
-      ? boocodeFiles.map((f) => {
-          const out = { path: f.path }
-          if (f.lineStart != null && f.lineEnd != null) {
-            out.line_start = f.lineStart
-            out.line_end = f.lineEnd
-          }
-          return out
-        })
-      : null
     await consumeStream({
       url: `/api/chats/${chatId}/messages`,
       body: {
         content,
         ...(model ? { model } : {}),
-        ...(bcFiles ? { boocode_files: bcFiles } : {}),
       },
       onToken: (t) => setStreamText((x) => x + t),
       onSearchSources: (sources) => {
@@ -309,7 +250,6 @@ export function ChatView({
           setStreamingRag(null)
           setStreamText('')
           setSendError(null)
-          setBoocodeFiles([])
         })
         if (!nextData) {
           queryClient.invalidateQueries({ queryKey: ['messages', chatId] })
@@ -346,14 +286,14 @@ export function ChatView({
       setStreamText('')
       setOptimisticUser({ id: '__optimistic_user__', role: 'user', content })
       try {
-        const { activePersonaId, activeDawId } = useAppStore.getState()
-        const dawForCreate = normalizeDawUuid(activeDawId) || resolvedWorkspaceDaw || undefined
+        const { activePersonaId, activeWorkspaceId } = useAppStore.getState()
+        const workspaceForCreate =
+          normalizeWorkspaceUuid(activeWorkspaceId) || resolvedWorkspaceId || undefined
         const modelForCreate = selectedModel || undefined
         const newChat = await createChat({
-          mode: chatMode,
           ...(modelForCreate ? { model: modelForCreate } : {}),
           ...(activePersonaId ? { persona_id: activePersonaId } : {}),
-          ...(dawForCreate ? { daw_id: dawForCreate } : {}),
+          ...(workspaceForCreate ? { workspace_id: workspaceForCreate } : {}),
           ...(webSearchEnabled ? { web_search_enabled: true } : {}),
         })
         if (newChat?.id == null) {
@@ -449,10 +389,7 @@ export function ChatView({
             'flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-8',
             compactEmptyState ? 'justify-end' : 'items-center justify-center gap-8',
             // On mobile, lift content down toward the lower half of the
-            // visible area (BoocodeWorkspaceHeader does this naturally for
-            // BooCode chat; this matches that visual position for BooOps and
-            // 808notes which have no such header). Desktop keeps true
-            // vertical center.
+            // visible area. Desktop keeps true vertical center.
             !compactEmptyState && 'pt-[20vh] md:pt-0',
           )}
           style={{
@@ -468,10 +405,10 @@ export function ChatView({
         >
           {!compactEmptyState && (
             <div className="flex w-full flex-col items-center gap-4" style={{ maxWidth: chatMaxW }}>
-              <BooOpsMark
+              <PersonaMark
                 iconUrl={personaIconUrl}
                 emoji={personaEmoji}
-                fallbackLetter={personaDisplayName?.slice(0, 1) || 'B'}
+                fallbackLetter={personaDisplayName?.slice(0, 1) || 'A'}
               />
               <h1 className="fs-heading text-center font-semibold tracking-tight text-foreground">{personaDisplayName}</h1>
             </div>
@@ -502,10 +439,6 @@ export function ChatView({
               activeChatId={null}
               chatMaxW={chatMaxW}
               hidePersonaInMenu={hidePersonaInChatInput}
-              dawSyncFolder={dawSyncFolder}
-              chatMode={chatMode}
-              boocodeFiles={boocodeFiles}
-              onRemoveBoocodeFile={removeBoocodeFile}
             />
           </div>
         </div>
@@ -531,8 +464,7 @@ export function ChatView({
               streamingAssistant={busy ? streamText : null}
               sourcesByMessageIndex={sourcesByMessageIndex}
               streamingRagContext={busy ? streamingRag : null}
-              chatMode={chatMode}
-              onSaveMessageAsNote={notesDawIdForSave ? saveMessageAsNote : undefined}
+              onSaveMessageAsNote={notesWorkspaceIdForSave ? saveMessageAsNote : undefined}
               onEditUser={handleEditUser}
               onRegenerate={handleRegenerate}
             />
@@ -573,10 +505,6 @@ export function ChatView({
             activeChatId={activeChatId}
             chatMaxW={chatMaxW}
             hidePersonaInMenu={hidePersonaInChatInput}
-            dawSyncFolder={dawSyncFolder}
-            chatMode={chatMode}
-            boocodeFiles={boocodeFiles}
-            onRemoveBoocodeFile={removeBoocodeFile}
           />
         </div>
       </div>

@@ -1,13 +1,13 @@
 import { apiFetch } from '@/api/index.js'
 
-export function uploadSource(file, dawId) {
+export function uploadSource(file, workspaceId) {
   const fd = new FormData()
   fd.append('file', file)
-  return apiFetch(`/api/sources/${dawId}/upload`, { method: 'POST', body: fd })
+  return apiFetch(`/api/sources/${workspaceId}/upload`, { method: 'POST', body: fd })
 }
 
-export function listSources(dawId) {
-  return apiFetch(`/api/sources/${dawId}`)
+export function listSources(workspaceId) {
+  return apiFetch(`/api/sources/${workspaceId}`)
 }
 
 export function deleteSource(sourceId) {

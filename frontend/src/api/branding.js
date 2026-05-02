@@ -1,6 +1,5 @@
 import { apiFetch } from '@/api/index.js'
-import { apply808notesLayoutToDom } from '@/lib/notes808Layout.js'
-import { applyMode } from '@/mode.js'
+import { applyWorkspaceLayoutToDom } from '@/lib/workspaceLayout.js'
 import { useAppStore } from '@/store/index.js'
 import { useLayoutStore } from '@/store/layoutStore.js'
 
@@ -49,175 +48,8 @@ export function resolveMonoFontStack(config) {
   return FONT_MONO_STACKS[merged.fontMono] || FONT_MONO_STACKS['Fira Code']
 }
 
-/** Default BooOps branding (aligned with API `/api/branding/booops` merge base). */
-export const DEFAULT_BOOOPS_BRANDING = {
-  accentColor: '#ff2d78',
-  accentCyan: '#00e5ff',
-  accentPurple: '#9b5de5',
-  bgColor: '#080b14',
-  bgPanel: '#0d1120',
-  bgCard: '#0f1525',
-  textColor: '#cde0ff',
-  textDim: '#5a7a9e',
-  borderColor: '#1e2d50',
-  fontFamily: 'Rajdhani, sans-serif',
-  fontSizeBase: 15,
-  baseFontSize: 15,
-  fsNav: 13,
-  fsChat: 15,
-  fsInput: 14,
-  fsHeading: 18,
-  fsCode: 13,
-  chatMaxWidth: 850,
-  sidebarWidth: 280,
-  /** Lucide icon name for settings / branding UI (optional URL asset later). */
-  appGlyphIcon: 'Bot',
-}
-
-/** Hub (`/boolab`) branding — aligned with `/api/branding/boolab`. */
-export const DEFAULT_BOOLAB_BRANDING = {
-  title: 'BooLab',
-  tagline: '// pick your lab bench.',
-  hubDisplayFont: 'JetBrains Mono',
-  hubMonoFont: 'Share Tech Mono',
-  accentColor: '#5dcf8f',
-  bgColor: '#050807',
-  bgPanel: '#0a100c',
-  bgCard: '#0d1510',
-  textColor: 'rgba(200, 230, 210, 0.92)',
-  textDim: 'rgba(120, 160, 140, 0.65)',
-  borderColor: 'rgba(93, 207, 143, 0.18)',
-  bannerUrl: '',
-  logoUrl: '',
-  faviconUrl: '',
-  appGlyphIcon: 'FlaskConical',
-  booopsCard: {
-    icon: 'Bot',
-    iconUrl: '',
-    iconSize: 44,
-    accent: '#4ade80',
-    title: 'BooOps',
-    description: 'LLM chat — personas, DAWs, memory.',
-  },
-  notes808Card: {
-    icon: 'Music2',
-    iconUrl: '',
-    iconSize: 44,
-    accent: '#34d399',
-    title: '808notes',
-    description: 'Music notes, sources, and project context.',
-  },
-  boocodeCard: {
-    icon: 'Terminal',
-    iconUrl: '',
-    iconSize: 44,
-    accent: '#f97316',
-    title: 'BooCode',
-    description: 'Repo-aware code DAWs — terminals, RAG, agents.',
-  },
-  /** `center` | `start` | `end` — hub landing app cards */
-  hubCardsTextAlign: 'center',
-  /** Multiplier for card title, body, and icon (~0.75–1.5). */
-  hubCardsFontScale: 1,
-  /** Hero title, tagline, “core”, footer, banner badge (~0.75–1.5). */
-  hubLandingFontScale: 1,
-  /** Hero logo tile + glyph, hub card icons (~0.75–1.35). */
-  hubLandingIconScale: 1,
-}
-
-export const FONT_HUB_DISPLAY_OPTIONS = [
-  'JetBrains Mono',
-  'Share Tech Mono',
-  'Oxanium',
-  'Exo 2',
-  'Space Grotesk',
-  'DM Sans',
-  'Rajdhani',
-  'Cinzel',
-  'Orbitron',
-  'IBM Plex Sans',
-]
-
-/** @param {string} id */
-function ensureStylesheetLink(id, href) {
-  let link = document.getElementById(id)
-  if (!link) {
-    link = document.createElement('link')
-    link.id = id
-    link.rel = 'stylesheet'
-    document.head.appendChild(link)
-  }
-  if (href && link.getAttribute('href') !== href) {
-    link.setAttribute('href', href)
-  }
-}
-
-/**
- * Load Google Fonts for the hub title / tagline. Idempotent; updates href when families change.
- * @param {string} [displayFont]
- * @param {string} [monoFont]
- */
-export function injectHubGoogleFonts(displayFont, monoFont) {
-  const d = typeof displayFont === 'string' ? displayFont.trim() : ''
-  const m = typeof monoFont === 'string' ? monoFont.trim() : ''
-  const parts = []
-  if (d) parts.push(`family=${encodeURIComponent(d).replace(/%20/g, '+')}:wght@400;600;700;800`)
-  if (m && m !== d) parts.push(`family=${encodeURIComponent(m).replace(/%20/g, '+')}:wght@400;500;600`)
-  if (!parts.length) return
-  const href = `https://fonts.googleapis.com/css2?${parts.join('&')}&display=swap`
-  ensureStylesheetLink('boolab-hub-google-fonts', href)
-}
-
-/** Merge boolab branding with defaults (nested cards). */
-export function patchBoolabBranding(base, partial) {
-  const merged = {
-    ...DEFAULT_BOOLAB_BRANDING,
-    ...(base && typeof base === 'object' ? base : {}),
-    ...(partial && typeof partial === 'object' ? partial : {}),
-  }
-  merged.booopsCard = {
-    ...DEFAULT_BOOLAB_BRANDING.booopsCard,
-    ...(base?.booopsCard && typeof base.booopsCard === 'object' ? base.booopsCard : {}),
-    ...(partial?.booopsCard && typeof partial.booopsCard === 'object' ? partial.booopsCard : {}),
-  }
-  merged.notes808Card = {
-    ...DEFAULT_BOOLAB_BRANDING.notes808Card,
-    ...(base?.notes808Card && typeof base.notes808Card === 'object' ? base.notes808Card : {}),
-    ...(partial?.notes808Card && typeof partial.notes808Card === 'object' ? partial.notes808Card : {}),
-  }
-  merged.boocodeCard = {
-    ...DEFAULT_BOOLAB_BRANDING.boocodeCard,
-    ...(base?.boocodeCard && typeof base.boocodeCard === 'object' ? base.boocodeCard : {}),
-    ...(partial?.boocodeCard && typeof partial.boocodeCard === 'object' ? partial.boocodeCard : {}),
-  }
-  return merged
-}
-
-export async function fetchBoolabBranding() {
-  try {
-    const row = await apiFetch('/api/branding/boolab')
-    return patchBoolabBranding(null, row)
-  } catch {
-    return patchBoolabBranding(null, DEFAULT_BOOLAB_BRANDING)
-  }
-}
-
-export async function updateBoolabBranding(patch) {
-  return apiFetch('/api/branding/boolab', { method: 'PATCH', json: patch })
-}
-
-export async function uploadBoolabAsset(slot, file) {
-  const fd = new FormData()
-  fd.append('file', file)
-  return apiFetch(`/api/branding/boolab/upload/${slot}`, { method: 'POST', body: fd })
-}
-
-export async function deleteBoolabAsset(slot) {
-  return apiFetch(`/api/branding/boolab/asset/${slot}`, { method: 'DELETE' })
-}
-
-/** Default 808notes branding (aligned with API `/api/branding/808notes`). */
-export const DEFAULT_808NOTES_BRANDING = {
+/** Default workspace branding (aligned with API `/api/branding/`). */
+export const DEFAULT_BRANDING = {
   accentColor: '#7c3aed',
   accentCyan: '#c084fc',
   accentPurple: '#e879f9',
@@ -237,9 +69,9 @@ export const DEFAULT_808NOTES_BRANDING = {
   fsCode: 13,
   chatMaxWidth: 850,
   sidebarWidth: 280,
-  title: '808notes',
-  /** Landing hero line under the title (editable in Settings → Branding). */
-  subtitle: '// pick your desk. open a daw workspace.',
+  title: 'Workspace',
+  /** Landing hero line under the title (editable in Settings -> Branding). */
+  subtitle: '// pick your desk. open a workspace.',
   bannerUrl: '',
   logoUrl: '',
   faviconUrl: '',
@@ -271,67 +103,15 @@ function mergeBrandingDefaults(defaults, base, partial) {
 
 /** Merge defaults + stored + optional patch (client preview). */
 export function patchBranding(base, partial) {
-  return mergeBrandingDefaults(DEFAULT_BOOOPS_BRANDING, base, partial)
-}
-
-/** Like `patchBranding` but for 808notes defaults (persona chat + branding settings). */
-export function patch808notesBranding(base, partial) {
   const merged = {
-    ...DEFAULT_808NOTES_BRANDING,
+    ...DEFAULT_BRANDING,
     ...(base && typeof base === 'object' ? base : {}),
     ...(partial && typeof partial === 'object' ? partial : {}),
   }
   // DB/API may store null; spread would otherwise wipe defaults and empty the landing tagline.
-  if (merged.title == null) merged.title = DEFAULT_808NOTES_BRANDING.title
-  if (merged.subtitle == null) merged.subtitle = DEFAULT_808NOTES_BRANDING.subtitle
-  return finalizeBranding(merged, DEFAULT_808NOTES_BRANDING)
-}
-
-/** Default BooCode branding (aligned with API `/api/branding/boocode`). */
-export const DEFAULT_BOOCODE_BRANDING = {
-  accentColor: '#f97316',
-  accentCyan: '#fbbf24',
-  accentPurple: '#c2410c',
-  bgColor: '#0a0604',
-  bgPanel: '#120a06',
-  bgCard: '#1a0e08',
-  textColor: '#f5e6d3',
-  textDim: '#9a7a5a',
-  borderColor: '#3a1f0c',
-  fontFamily: 'JetBrains Mono, monospace',
-  fontSizeBase: 15,
-  baseFontSize: 15,
-  fsNav: 13,
-  fsChat: 15,
-  fsInput: 14,
-  fsHeading: 18,
-  fsCode: 13,
-  chatMaxWidth: 1200,
-  sidebarWidth: 260,
-  title: 'BooCode',
-  subtitle: '// architect at 3am. terminal amber, code awareness.',
-  bannerUrl: '',
-  logoUrl: '',
-  faviconUrl: '',
-  ogBannerUrl: '',
-  appGlyphIcon: 'Terminal',
-  matrixRainDensity: 0.35,
-  matrixRainSpeed: 0.7,
-  matrixRainOpacity: 0.6,
-  crtOverlayOpacity: 0.7,
-  chatBgOpacity: 0.86,
-}
-
-/** Like `patchBranding` but for BooCode defaults. */
-export function patchBoocodeBranding(base, partial) {
-  const merged = {
-    ...DEFAULT_BOOCODE_BRANDING,
-    ...(base && typeof base === 'object' ? base : {}),
-    ...(partial && typeof partial === 'object' ? partial : {}),
-  }
-  if (merged.title == null) merged.title = DEFAULT_BOOCODE_BRANDING.title
-  if (merged.subtitle == null) merged.subtitle = DEFAULT_BOOCODE_BRANDING.subtitle
-  return finalizeBranding(merged, DEFAULT_BOOCODE_BRANDING)
+  if (merged.title == null) merged.title = DEFAULT_BRANDING.title
+  if (merged.subtitle == null) merged.subtitle = DEFAULT_BRANDING.subtitle
+  return finalizeBranding(merged, DEFAULT_BRANDING)
 }
 
 function clampFs(n, lo = 10, hi = 24) {
@@ -348,25 +128,10 @@ function fsToPx(v, fallback) {
 /**
  * Apply branding tokens to the document root (live preview).
  * @param {object} config Merged branding (+ layout) fields.
- * @param {'booops' | '808notes' | 'boocode' | null} brandingMode When set, drives default palette and syncs `<html data-mode>` so a cold load or cache clear cannot leave `boolab` and skip mode styling. When null, uses current `document.documentElement.dataset.mode`.
  */
-export function applyBrandingCss(config, brandingMode = null) {
+export function applyBrandingCss(config) {
   const root = document.documentElement
-  if (brandingMode === 'booops' || brandingMode === '808notes' || brandingMode === 'boocode') {
-    applyMode(brandingMode)
-  }
-  const mode =
-    brandingMode === 'booops' || brandingMode === '808notes' || brandingMode === 'boocode'
-      ? brandingMode
-      : root.dataset.mode
-  if (mode !== 'booops' && mode !== '808notes' && mode !== 'boocode') return
-
-  const defaults =
-    mode === '808notes'
-      ? DEFAULT_808NOTES_BRANDING
-      : mode === 'boocode'
-      ? DEFAULT_BOOCODE_BRANDING
-      : DEFAULT_BOOOPS_BRANDING
+  const defaults = DEFAULT_BRANDING
   const merged = mergeBrandingDefaults(defaults, config, null)
 
   const px = (n) => (typeof n === 'number' && Number.isFinite(n) ? `${Math.round(n)}px` : null)
@@ -417,7 +182,7 @@ export function applyBrandingCss(config, brandingMode = null) {
   if (typeof sw === 'number' && Number.isFinite(sw)) {
     const p = px(sw)
     set('--sidebar-width', p)
-    if (mode === '808notes') set('--sources-panel-width', p)
+    set('--sources-panel-width', p)
   }
   const cmw = merged.chatMaxWidth
   if (typeof cmw === 'number' && Number.isFinite(cmw)) {
@@ -441,51 +206,21 @@ export function applyBrandingCss(config, brandingMode = null) {
   }
 
   useAppStore.getState().setBranding(merged)
-  if (mode === '808notes') {
-    apply808notesLayoutToDom()
-  }
+  applyWorkspaceLayoutToDom()
 }
 
-export async function updateBranding(patch) {
-  return apiFetch('/api/branding/booops', { method: 'PUT', json: patch })
+export async function patchBrandingApi(patch) {
+  return apiFetch('/api/branding/', { method: 'PATCH', json: patch })
 }
 
 export async function uploadBrandingAsset(slot, file) {
   const fd = new FormData()
   fd.append('file', file)
-  return apiFetch(`/api/branding/booops/upload/${slot}`, { method: 'POST', body: fd })
+  return apiFetch(`/api/branding/upload/${slot}`, { method: 'POST', body: fd })
 }
 
 export async function deleteBrandingAsset(slot) {
-  return apiFetch(`/api/branding/booops/asset/${slot}`, { method: 'DELETE' })
-}
-
-export async function patchBranding808notes(patch) {
-  return apiFetch('/api/branding/808notes', { method: 'PATCH', json: patch })
-}
-
-export async function uploadBrandingAsset808notes(slot, file) {
-  const fd = new FormData()
-  fd.append('file', file)
-  return apiFetch(`/api/branding/808notes/upload/${slot}`, { method: 'POST', body: fd })
-}
-
-export async function deleteBrandingAsset808notes(slot) {
-  return apiFetch(`/api/branding/808notes/asset/${slot}`, { method: 'DELETE' })
-}
-
-export async function patchBrandingBoocode(patch) {
-  return apiFetch('/api/branding/boocode', { method: 'PATCH', json: patch })
-}
-
-export async function uploadBrandingAssetBoocode(slot, file) {
-  const fd = new FormData()
-  fd.append('file', file)
-  return apiFetch(`/api/branding/boocode/upload/${slot}`, { method: 'POST', body: fd })
-}
-
-export async function deleteBrandingAssetBoocode(slot) {
-  return apiFetch(`/api/branding/boocode/asset/${slot}`, { method: 'DELETE' })
+  return apiFetch(`/api/branding/asset/${slot}`, { method: 'DELETE' })
 }
 
 /** Map `GET /api/settings/layout` onto branding fields used by `applyBrandingCss`. */
@@ -504,7 +239,7 @@ export function layoutApiToBrandingPatch(layout) {
   return p
 }
 
-/** `ui_layout` global settings default to BooOps palette; do not let them override 808notes branding colors. */
+/** Global `ui_layout` settings carry a default palette; do not let them override per-workspace branding colors. */
 const UI_LAYOUT_THEME_KEYS = new Set([
   'accentColor',
   'accentCyan',
@@ -517,7 +252,7 @@ const UI_LAYOUT_THEME_KEYS = new Set([
   'borderColor',
 ])
 
-/** Strip palette fields from layout payload before merging into 808notes branding (global layout defaults are BooOps). */
+/** Strip palette fields from layout payload before merging into workspace branding. */
 export function layoutApiToBrandingPatchSansTheme(layoutApi) {
   const p = layoutApiToBrandingPatch(layoutApi)
   const out = { ...p }
@@ -531,19 +266,12 @@ export function mergeBrandingWithGlobalLayout(brandingRow, layoutApi, options = 
   return { ...(brandingRow && typeof brandingRow === 'object' ? brandingRow : {}), ...patch }
 }
 
-/** Fetch branding for a mode and apply CSS + store (see `applyBrandingCss`). */
-export async function fetchBranding(mode) {
-  const m =
-    mode === '808notes' ? '808notes' : mode === 'boocode' ? 'boocode' : 'booops'
-  const defaults =
-    m === '808notes'
-      ? DEFAULT_808NOTES_BRANDING
-      : m === 'boocode'
-      ? DEFAULT_BOOCODE_BRANDING
-      : DEFAULT_BOOOPS_BRANDING
+/** Fetch workspace branding and apply CSS + store. */
+export async function fetchBranding() {
+  const defaults = DEFAULT_BRANDING
   let row = defaults
   try {
-    row = await apiFetch(`/api/branding/${m}`)
+    row = await apiFetch('/api/branding/')
   } catch {
     row = defaults
   }
@@ -554,18 +282,9 @@ export async function fetchBranding(mode) {
     layout = {}
   }
   useLayoutStore.getState().hydrateFromServer(layout && typeof layout === 'object' ? layout : {})
-  // `ui_layout` stores a booops-default palette. Strip it when merging for any
-  // mode that has its own palette (808notes, boocode) so the global layout
-  // doesn't stomp the per-mode branding colors.
-  const merged = mergeBrandingWithGlobalLayout(row, layout, {
-    stripTheme: m === '808notes' || m === 'boocode',
-  })
-  const finalized =
-    m === '808notes'
-      ? patch808notesBranding(null, merged)
-      : m === 'boocode'
-      ? patchBoocodeBranding(null, merged)
-      : patchBranding(null, merged)
-  applyBrandingCss(finalized, m)
+  // Strip palette from global layout so it doesn't stomp the per-workspace branding colors.
+  const merged = mergeBrandingWithGlobalLayout(row, layout, { stripTheme: true })
+  const finalized = patchBranding(null, merged)
+  applyBrandingCss(finalized)
   return useAppStore.getState().branding
 }

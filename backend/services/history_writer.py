@@ -1,27 +1,7 @@
-"""Writers for chat/terminal history exports.
-
-Pure-ish helpers: format content, strip ANSI, optionally rename a file
-via the existing _openai_short_chat_title helper.
-"""
+"""Writers for chat history exports."""
 from __future__ import annotations
 
 import datetime as _dt
-import logging
-import re
-from pathlib import Path
-
-logger = logging.getLogger(__name__)
-
-# Match CSI sequences + common SGR/cursor + OSC terminators.
-# Covers the subset tmux capture-pane -e emits.
-_ANSI_CSI = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]")
-_ANSI_OSC = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
-
-
-def ansi_strip(text: str) -> str:
-    text = _ANSI_OSC.sub("", text)
-    text = _ANSI_CSI.sub("", text)
-    return text
 
 
 def timestamp_slug(now: _dt.datetime | None = None) -> str:
@@ -48,15 +28,3 @@ def render_chat_markdown(chat: dict, messages: list[dict]) -> str:
         parts.append((m.get("content") or "").rstrip())
         parts.append("")
     return "\n".join(parts).rstrip() + "\n"
-
-
-def render_terminal_plaintext(label: str, machine: str, raw_capture: bytes) -> str:
-    header = (
-        f"# Terminal export\n"
-        f"Label: {label}\n"
-        f"Machine: {machine}\n"
-        f"Exported: {_dt.datetime.now(_dt.timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')}\n"
-        + "-" * 60 + "\n\n"
-    )
-    text = raw_capture.decode("utf-8", errors="replace")
-    return header + ansi_strip(text)

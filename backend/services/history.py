@@ -1,20 +1,17 @@
-"""Slug + path helpers for exported chat/terminal history files.
+"""Slug + path helpers for exported chat history files.
 
-Host path: /opt/boolab/history/  (bind-mounted from docker-compose.yml)
+Host path: /data/history/  (bind-mounted from docker-compose.yml)
 Container path: /data/history/    (default, overridable via BOOLAB_HISTORY_DIR env)
 
 Layout:
     /data/history/
         chats/
-            <daw-slug>/
+            <workspace-slug>/
                 <file-slug>.md
-        terminals/
-            <daw-slug>/
-                <file-slug>.txt
 
-The <daw-slug> snapshots the DAW's name at export time. If a DAW gets
-renamed later, existing files keep their old directory (don't silently
-move).
+The <workspace-slug> snapshots the workspace's name at export time. If a
+workspace gets renamed later, existing files keep their old directory
+(don't silently move).
 """
 from __future__ import annotations
 
@@ -25,11 +22,11 @@ from pathlib import Path
 HISTORY_ENV = "BOOLAB_HISTORY_DIR"
 DEFAULT_HISTORY_DIR = "/data/history"
 
-VALID_KINDS = ("chats", "terminals")
+VALID_KINDS = ("chats",)
 
 # Permissive, non-empty after strip; at most 120 chars for FS sanity.
 _SLUG_STRIP = re.compile(r"[^a-z0-9]+")
-_FILENAME_RE = re.compile(r"^[A-Za-z0-9_\-]+\.(md|txt)$")
+_FILENAME_RE = re.compile(r"^[A-Za-z0-9_\-]+\.md$")
 
 
 def history_root() -> Path:
@@ -53,9 +50,9 @@ def kind_dir(kind: str) -> Path:
     return history_root() / kind
 
 
-def daw_dir(kind: str, daw_name: str) -> Path:
-    """Ensures the daw-slug subdir exists under the kind dir; returns its Path."""
-    d = kind_dir(kind) / slugify(daw_name)
+def workspace_dir(kind: str, workspace_name: str) -> Path:
+    """Ensures the workspace-slug subdir exists under the kind dir; returns its Path."""
+    d = kind_dir(kind) / slugify(workspace_name)
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -71,16 +68,16 @@ def validate_filename(name: str) -> str:
     if cleaned != name.strip():
         raise ValueError("filename must not contain path separators")
     if not _FILENAME_RE.match(cleaned):
-        raise ValueError("filename must match [A-Za-z0-9_-]+.(md|txt)")
+        raise ValueError("filename must match [A-Za-z0-9_-]+.md")
     return cleaned
 
 
-def safe_path(kind: str, daw_name: str, filename: str) -> Path:
-    """Resolves kind/daw/filename and guarantees it stays inside history_root()."""
+def safe_path(kind: str, workspace_name: str, filename: str) -> Path:
+    """Resolves kind/workspace/filename and guarantees it stays inside history_root()."""
     filename = validate_filename(filename)
-    daw_slug = slugify(daw_name)
+    workspace_slug = slugify(workspace_name)
     root = history_root().resolve()
-    target = (root / kind / daw_slug / filename).resolve()
+    target = (root / kind / workspace_slug / filename).resolve()
     # Defense in depth: even though slugify + validate_filename block
     # traversal, assert the final path is inside root.
     try:

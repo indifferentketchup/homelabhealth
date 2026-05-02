@@ -1,4 +1,4 @@
-"""Personas CRUD: single-user; defaults per app via `is_default_booops` / `is_default_808notes`."""
+"""Personas CRUD: single-user; defaults via `is_default_808notes`."""
 
 from __future__ import annotations
 
@@ -7,11 +7,11 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from auth_deps import get_principal, require_admin
+from deps import get_principal, require_admin
 from db import get_pool
 
 router = APIRouter()
@@ -30,9 +30,7 @@ class PersonaUpdate(BaseModel):
     name: str | None = None
     system_prompt: str | None = None
     avatar_emoji: str | None = None
-    is_default_booops: bool | None = None
     is_default_808notes: bool | None = None
-    is_default_boocode: bool | None = None
     icon_url: str | None = None
 
 
@@ -42,9 +40,7 @@ def _row(r: Any) -> dict[str, Any]:
         "name": r["name"],
         "icon_url": r["icon_url"],
         "system_prompt": r["system_prompt"] or "",
-        "is_default_booops": bool(r["is_default_booops"]),
         "is_default_808notes": bool(r["is_default_808notes"]),
-        "is_default_boocode": bool(r["is_default_boocode"]),
         "avatar_emoji": r["avatar_emoji"] or "🤖",
         "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
         "owner_id": str(r["owner_id"]) if r.get("owner_id") else None,
@@ -68,9 +64,9 @@ async def list_personas(_: dict[str, Any] = Depends(get_principal)):
         rows = await conn.fetch(
             """
             SELECT id, name, icon_url, system_prompt, avatar_emoji,
-                   is_default_booops, is_default_808notes, is_default_boocode, created_at, owner_id
+                   is_default_808notes, created_at, owner_id
             FROM personas
-            ORDER BY is_default_booops DESC, is_default_808notes DESC, is_default_boocode DESC, created_at ASC NULLS LAST
+            ORDER BY is_default_808notes DESC, created_at ASC NULLS LAST
             """,
         )
     return {"items": [_row(r) for r in rows]}
@@ -84,12 +80,12 @@ async def create_persona(body: PersonaCreate, principal: dict[str, Any] = Depend
             """
             INSERT INTO personas (
                 name, system_prompt, avatar_emoji,
-                is_default_booops, is_default_808notes, is_default_boocode,
+                is_default_808notes,
                 owner_id, default_model
             )
-            VALUES ($1, $2, $3, FALSE, FALSE, FALSE, $4, NULL)
+            VALUES ($1, $2, $3, FALSE, $4, NULL)
             RETURNING id, name, icon_url, system_prompt, avatar_emoji,
-                      is_default_booops, is_default_808notes, is_default_boocode, created_at, owner_id
+                      is_default_808notes, created_at, owner_id
             """,
             body.name.strip(),
             body.system_prompt or "",
@@ -102,15 +98,8 @@ async def create_persona(body: PersonaCreate, principal: dict[str, Any] = Depend
 @router.post("/{persona_id}/set-default")
 async def set_default_persona(
     persona_id: uuid.UUID,
-    slot: str = Query("booops"),
     _admin: dict[str, Any] = Depends(require_admin),
 ):
-    m = slot if slot in ("booops", "808notes", "boocode") else "booops"
-    col = {
-        "booops": "is_default_booops",
-        "808notes": "is_default_808notes",
-        "boocode": "is_default_boocode",
-    }[m]
     pool = await get_pool()
     async with pool.acquire() as conn:
         ok = await conn.fetchval("SELECT 1 FROM personas WHERE id = $1::uuid", persona_id)
@@ -118,17 +107,17 @@ async def set_default_persona(
             raise HTTPException(status_code=404, detail="Persona not found")
         async with conn.transaction():
             await conn.execute(
-                f"UPDATE personas SET {col} = FALSE WHERE id <> $1::uuid",
+                "UPDATE personas SET is_default_808notes = FALSE WHERE id <> $1::uuid",
                 persona_id,
             )
             await conn.execute(
-                f"UPDATE personas SET {col} = TRUE WHERE id = $1::uuid",
+                "UPDATE personas SET is_default_808notes = TRUE WHERE id = $1::uuid",
                 persona_id,
             )
         row = await conn.fetchrow(
             """
             SELECT id, name, icon_url, system_prompt, avatar_emoji,
-                   is_default_booops, is_default_808notes, is_default_boocode, created_at, owner_id
+                   is_default_808notes, created_at, owner_id
             FROM personas WHERE id = $1::uuid
             """,
             persona_id,
@@ -143,7 +132,7 @@ async def get_persona(persona_id: uuid.UUID, _: dict[str, Any] = Depends(get_pri
         row = await conn.fetchrow(
             """
             SELECT id, name, icon_url, system_prompt, avatar_emoji,
-                   is_default_booops, is_default_808notes, is_default_boocode, created_at, owner_id
+                   is_default_808notes, created_at, owner_id
             FROM personas
             WHERE id = $1::uuid
             """,
@@ -186,7 +175,7 @@ async def upload_persona_icon(
             UPDATE personas SET icon_url = $2, updated_at = NOW()
             WHERE id = $1::uuid
             RETURNING id, name, icon_url, system_prompt, avatar_emoji,
-                      is_default_booops, is_default_808notes, created_at, owner_id
+                      is_default_808notes, created_at, owner_id
             """,
             persona_id,
             icon_url,
@@ -217,7 +206,7 @@ async def update_persona(
         row = await conn.fetchrow(
             """
             SELECT id, name, icon_url, system_prompt, avatar_emoji,
-                   is_default_booops, is_default_808notes, is_default_boocode, created_at, owner_id
+                   is_default_808notes, created_at, owner_id
             FROM personas
             WHERE id = $1::uuid
             """,
@@ -231,9 +220,7 @@ async def update_persona(
         new_name = data.get("name", row["name"])
         new_prompt = data.get("system_prompt", row["system_prompt"])
         new_emoji = data.get("avatar_emoji", row["avatar_emoji"])
-        new_booops = data.get("is_default_booops", row["is_default_booops"])
         new_808 = data.get("is_default_808notes", row["is_default_808notes"])
-        new_boocode = data.get("is_default_boocode", row["is_default_boocode"])
         new_icon = row["icon_url"]
         if "icon_url" in data and data["icon_url"] is None:
             _delete_stored_persona_icon(persona_id)
@@ -247,38 +234,26 @@ async def update_persona(
             new_emoji = new_emoji.strip() or "🤖"
 
         async with conn.transaction():
-            if new_booops is True:
-                await conn.execute(
-                    "UPDATE personas SET is_default_booops = FALSE WHERE id <> $1::uuid",
-                    persona_id,
-                )
             if new_808 is True:
                 await conn.execute(
                     "UPDATE personas SET is_default_808notes = FALSE WHERE id <> $1::uuid",
-                    persona_id,
-                )
-            if new_boocode is True:
-                await conn.execute(
-                    "UPDATE personas SET is_default_boocode = FALSE WHERE id <> $1::uuid",
                     persona_id,
                 )
             updated = await conn.fetchrow(
                 """
                 UPDATE personas
                 SET name = $2, system_prompt = $3, avatar_emoji = $4,
-                    is_default_booops = $5, is_default_808notes = $6, is_default_boocode = $7,
-                    icon_url = $8, updated_at = NOW()
+                    is_default_808notes = $5,
+                    icon_url = $6, updated_at = NOW()
                 WHERE id = $1::uuid
                 RETURNING id, name, icon_url, system_prompt, avatar_emoji,
-                          is_default_booops, is_default_808notes, is_default_boocode, created_at, owner_id
+                          is_default_808notes, created_at, owner_id
                 """,
                 persona_id,
                 new_name,
                 new_prompt,
                 new_emoji,
-                bool(new_booops),
                 bool(new_808),
-                bool(new_boocode),
                 new_icon,
             )
     return _row(updated)
@@ -290,14 +265,14 @@ async def delete_persona(persona_id: uuid.UUID, _: dict[str, Any] = Depends(get_
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            SELECT id, is_default_booops, is_default_808notes, is_default_boocode
+            SELECT id, is_default_808notes
             FROM personas WHERE id = $1::uuid
             """,
             persona_id,
         )
         if row is None:
             raise HTTPException(status_code=404, detail="Persona not found")
-        if row["is_default_booops"] or row["is_default_808notes"] or row["is_default_boocode"]:
-            raise HTTPException(status_code=400, detail="Cannot delete a default persona for BooOps, 808notes, or BooCode")
+        if row["is_default_808notes"]:
+            raise HTTPException(status_code=400, detail="Cannot delete the default persona")
         await conn.execute("DELETE FROM personas WHERE id = $1::uuid", persona_id)
     return {"ok": True}

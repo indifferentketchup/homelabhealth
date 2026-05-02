@@ -1,10 +1,8 @@
 import { create } from 'zustand'
 
-import { fetchMe } from '@/api/auth.js'
-import { APP_MODE } from '../mode.js'
+import { fetchMe } from '@/api/profile.js'
 
-const USER_PROFILE_STORAGE_KEY = 'boolab-user-profile-v1'
-const USER_PROFILE_LEGACY_STORAGE_KEY = 'booops-user-profile-v1'
+const USER_PROFILE_STORAGE_KEY = 'homelabhealth-user-profile-v1'
 
 function normalizeUserProfile(raw) {
   if (!raw || typeof raw !== 'object') {
@@ -24,8 +22,7 @@ function normalizeUserProfile(raw) {
 
 function loadUserProfileFromStorage() {
   try {
-    let json = localStorage.getItem(USER_PROFILE_STORAGE_KEY)
-    if (!json) json = localStorage.getItem(USER_PROFILE_LEGACY_STORAGE_KEY)
+    const json = localStorage.getItem(USER_PROFILE_STORAGE_KEY)
     if (!json) return normalizeUserProfile(null)
     return normalizeUserProfile(JSON.parse(json))
   } catch {
@@ -33,25 +30,23 @@ function loadUserProfileFromStorage() {
   }
 }
 
-/** Active default for the given app (or BooOps when mode is boolab / unknown). */
-export function defaultPersonaForAppMode(personas, appMode) {
+/** Default persona, looked up from a personas list. */
+export function defaultPersona(personas) {
   const list = Array.isArray(personas) ? personas : []
-  if (appMode === '808notes') return list.find((x) => x.is_default_808notes) ?? null
-  if (appMode === 'boocode') return list.find((x) => x.is_default_boocode) ?? null
-  return list.find((x) => x.is_default_booops) ?? null
+  return list.find((x) => x.is_default_808notes) ?? null
 }
 
 /** Map API persona row → store display fields (also used after AI settings refetch). */
 export function personaFieldsFromRecord(p) {
   if (!p) {
     return {
-      personaDisplayName: 'BooOps',
+      personaDisplayName: 'Assistant',
       personaIconUrl: null,
       personaEmoji: '🤖',
     }
   }
   return {
-    personaDisplayName: (p.name && String(p.name).trim()) || 'BooOps',
+    personaDisplayName: (p.name && String(p.name).trim()) || 'Assistant',
     personaIconUrl: p.icon_url || null,
     personaEmoji: (p.avatar_emoji && String(p.avatar_emoji).trim()) || '🤖',
   }
@@ -72,9 +67,6 @@ function revokeProfileIconObjectUrl(url) {
 }
 
 export const useAppStore = create((set, get) => ({
-  /** Resolved from URL path / query / host (see `mode.js`, `ModeSync`). */
-  mode: APP_MODE,
-
   currentUser: null,
   /** `/api/auth/profile/icon-asset` cached as blob URL. */
   profileIconObjectUrl: null,
@@ -102,7 +94,6 @@ export const useAppStore = create((set, get) => ({
     })
     try {
       localStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(userProfile))
-      localStorage.removeItem(USER_PROFILE_LEGACY_STORAGE_KEY)
     } catch {
       /* ignore */
     }
@@ -118,13 +109,6 @@ export const useAppStore = create((set, get) => ({
       set({ currentUser: null, profileIconObjectUrl: null })
     }
   },
-  setMode: (mode) =>
-    set({
-      mode:
-        mode === 'booops' || mode === '808notes' || mode === 'boolab' || mode === 'boocode'
-          ? mode
-          : 'boolab',
-    }),
 
   chats: [],
   setChats: (chats) => set({ chats: Array.isArray(chats) ? chats : [] }),
@@ -138,14 +122,14 @@ export const useAppStore = create((set, get) => ({
   selectedModel: null,
   setSelectedModel: (model) => set({ selectedModel: model }),
 
-  /** Last known default from GET /api/ollama/settings */
+  /** Last known default from GET /api/inference/settings */
   defaultModel: null,
   setDefaultModel: (model) => set({ defaultModel: model ?? null }),
 
   webSearchEnabled: false,
   setWebSearchEnabled: (enabled) => set({ webSearchEnabled: Boolean(enabled) }),
 
-  personaDisplayName: 'BooOps',
+  personaDisplayName: 'Assistant',
   personaIconUrl: null,
   personaEmoji: '🤖',
   setPersonaIconUrl: (url) => set({ personaIconUrl: url ?? null }),
@@ -156,7 +140,7 @@ export const useAppStore = create((set, get) => ({
   setActivePersonaId: (id) =>
     set((s) => {
       if (!id) {
-        const def = defaultPersonaForAppMode(s.personas, s.mode)
+        const def = defaultPersona(s.personas)
         if (def) return { activePersonaId: def.id, ...personaToUi(def) }
         return { activePersonaId: null, ...personaToUi(null) }
       }
@@ -174,7 +158,7 @@ export const useAppStore = create((set, get) => ({
         activePersonaId = null
       }
       if (!activePersonaId) {
-        const def = defaultPersonaForAppMode(personas, s.mode)
+        const def = defaultPersona(personas)
         if (def) {
           return {
             personas,
@@ -193,9 +177,9 @@ export const useAppStore = create((set, get) => ({
       }
     }),
 
-  /** Optional default DAW (prompt context) for new chats */
-  activeDawId: null,
-  setActiveDawId: (id) => set({ activeDawId: id }),
+  /** Optional default workspace (prompt context) for new chats */
+  activeWorkspaceId: null,
+  setActiveWorkspaceId: (id) => set({ activeWorkspaceId: id }),
 
   sidebarOpen: true,
   setSidebarOpen: (open) => set({ sidebarOpen: Boolean(open) }),
@@ -203,7 +187,7 @@ export const useAppStore = create((set, get) => ({
   settingsOpen: false,
   setSettingsOpen: (open) => set({ settingsOpen: Boolean(open) }),
 
-  /** Merged BooOps branding (for layout tokens e.g. sidebar width); updated when CSS is applied */
+  /** Merged branding (for layout tokens e.g. sidebar width); updated when CSS is applied */
   branding: null,
   setBranding: (branding) => set({ branding }),
 
@@ -215,11 +199,6 @@ export const useAppStore = create((set, get) => ({
       const next = normalizeUserProfile({ ...s.userProfile, ...patch })
       try {
         localStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(next))
-        try {
-          localStorage.removeItem(USER_PROFILE_LEGACY_STORAGE_KEY)
-        } catch {
-          /* ignore */
-        }
       } catch {
         /* ignore quota / private mode */
       }
@@ -235,10 +214,10 @@ export const useAppStore = create((set, get) => ({
       selectedModel: chat.model ?? get().selectedModel,
       webSearchEnabled: Boolean(chat.web_search_enabled),
       activePersonaId: personaId,
-      activeDawId: chat.daw_id != null ? chat.daw_id : null,
+      activeWorkspaceId: chat.workspace_id != null ? chat.workspace_id : null,
     })
     if (!personaId) {
-      const def = defaultPersonaForAppMode(personas, get().mode)
+      const def = defaultPersona(personas)
       set(personaToUi(def ?? null))
       return
     }
@@ -249,10 +228,7 @@ export const useAppStore = create((set, get) => ({
 
 if (typeof window !== 'undefined') {
   window.addEventListener('storage', (e) => {
-    if (
-      e.key === USER_PROFILE_STORAGE_KEY ||
-      e.key === USER_PROFILE_LEGACY_STORAGE_KEY
-    ) {
+    if (e.key === USER_PROFILE_STORAGE_KEY) {
       useAppStore.getState().hydrateUserProfile()
     }
   })

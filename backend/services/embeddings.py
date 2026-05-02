@@ -8,7 +8,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-EMBEDDING_URL = os.environ.get("EMBEDDING_URL", "http://100.93.187.4:7997")
+EMBEDDING_URL = os.environ.get("EMBEDDING_URL", "http://localhost:7997")
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "BAAI/bge-m3")
 EMBEDDING_DIM = int(os.environ.get("EMBEDDING_DIM", "1024"))
 EMBEDDING_BATCH_SIZE = int(os.environ.get("EMBEDDING_BATCH_SIZE", "32"))

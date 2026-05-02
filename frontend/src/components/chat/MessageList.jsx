@@ -41,7 +41,6 @@ export function MessageList({
   streamingAssistant,
   sourcesByMessageIndex = {},
   streamingRagContext = null,
-  chatMode,
   onSaveMessageAsNote,
   onEditUser,
   onRegenerate,
@@ -103,7 +102,6 @@ export function MessageList({
               chatId={chatId}
               message={m}
               streaming={m.id === '__stream__' || m.id === '__pending__'}
-              chatMode={chatMode}
               onSaveMessageAsNote={onSaveMessageAsNote}
               onEditUser={onEditUser}
               onRegenerate={onRegenerate}
