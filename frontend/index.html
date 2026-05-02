@@ -3,20 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <!-- %VITE_*% constants: https://vite.dev/guide/env-and-mode.html#html-constant-replacement -->
-    <!-- Absolute OG URLs (set in frontend/.env.<mode> via dotenv-expand). Image path uses slot `og_banner`, e.g. …/api/branding/booops/asset/og_banner -->
     <link
       rel="icon"
       type="image/png"
-      href="/api/branding/%VITE_APP_MODE%/asset/icon"
+      href="/api/branding/asset/icon"
     />
     <link
       rel="apple-touch-icon"
       sizes="180x180"
-      href="/api/branding/%VITE_APP_MODE%/asset/icon"
+      href="/api/branding/asset/icon"
     />
     <link
       rel="manifest"
-      href='data:application/manifest+json,{"name":"%VITE_HTML_TITLE%","short_name":"%VITE_PWA_SHORT_NAME%","start_url":"/","display":"standalone","icons":[{"src":"/api/branding/%VITE_APP_MODE%/asset/icon","sizes":"512x512","type":"image/png","purpose":"any maskable"}]}'
+      href='data:application/manifest+json,{"name":"%VITE_HTML_TITLE%","short_name":"%VITE_PWA_SHORT_NAME%","start_url":"/","display":"standalone","icons":[{"src":"/api/branding/asset/icon","sizes":"512x512","type":"image/png","purpose":"any maskable"}]}'
     />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, interactive-widget=resizes-content" />
     <meta property="og:title" content="%VITE_OG_TITLE%" />

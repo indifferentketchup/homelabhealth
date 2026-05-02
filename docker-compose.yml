@@ -18,26 +18,6 @@ services:
       timeout: 5s
       retries: 5
 
-  boolab_agent:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.agent
-    container_name: boolab_agent
-    restart: unless-stopped
-    volumes:
-      - boolab_tmux:/shared/tmux
-      # Phase 5.1: narrowed from the whole .ssh dir to only the two files
-      # SSH actually needs (identity + pre-validated host keys). Smaller
-      # surface; pub key, authorized_keys, and any extra keys stay on host.
-      - /home/samkintop/.ssh/id_ed25519:/home/agent/.ssh/id_ed25519:ro
-      - /home/samkintop/.ssh/known_hosts:/home/agent/.ssh/known_hosts:ro
-      # DubDrive-managed repo root; owned by samkintop (uid 1000) on host
-      # so the agent user (uid 1000) has rw. DAW repo_path values like
-      # `/HomeLabRepos/boolab` resolve to real files here.
-      - /docker/dubdrive/files/samkintop/HomeLabRepos:/HomeLabRepos:rw
-    networks:
-      - boolab_net
-
   boolab_api:
     build:
       context: ./backend
@@ -48,64 +28,15 @@ services:
       - .env
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql://boolab:boolab@boolab_db:5432/boolab}
-      DUBDRIVE_URL: ${DUBDRIVE_URL:-http://100.114.205.53:9200}
-      DUBDRIVE_TOKEN: ${DUBDRIVE_TOKEN:-}
     depends_on:
       boolab_db:
         condition: service_healthy
-      boolab_agent:
-        condition: service_started
     ports:
       - "${BOOLAB_PORT_API:-9300}:8000"
     volumes:
       - boolab_uploads:/data/uploads
       - boolab_branding:/data/branding
-      - boolab_tmux:/shared/tmux
       - /opt/boolab/history:/data/history
-    networks:
-      - boolab_net
-
-  boolab_ui:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      args:
-        VITE_APP_MODE: boolab
-        VITE_OG_TITLE: "BooLab"
-        VITE_OG_DESCRIPTION: "Pick your lab bench. BooOps + 808notes."
-        VITE_HTML_OG_IMAGE: https://boolab.boogaardmusic.com/api/branding/boolab/asset/og_banner
-        VITE_PUBLIC_BOOLAB_URL: ${VITE_PUBLIC_BOOLAB_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9302}
-        VITE_PUBLIC_BOOOPS_URL: ${VITE_PUBLIC_BOOOPS_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9303}
-        VITE_PUBLIC_808NOTES_URL: ${VITE_PUBLIC_808NOTES_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9304}
-        VITE_PUBLIC_BOOCODE_URL: ${VITE_PUBLIC_BOOCODE_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9305}
-    container_name: boolab_ui
-    restart: unless-stopped
-    environment:
-      BOOLAB_API_UPSTREAM: ${BOOLAB_API_UPSTREAM:-boolab_api:8000}
-    ports:
-      - "${BOOLAB_PORT_BOOLAB_UI:-9302}:80"
-    networks:
-      - boolab_net
-
-  booops_ui:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      args:
-        VITE_APP_MODE: booops
-        VITE_OG_TITLE: "BooOps"
-        VITE_OG_DESCRIPTION: "Fuck corporate AI. This is my DAW: Digital AI Workspace."
-        VITE_HTML_OG_IMAGE: https://booops.boogaardmusic.com/api/branding/booops/asset/og_banner
-        VITE_PUBLIC_BOOLAB_URL: ${VITE_PUBLIC_BOOLAB_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9302}
-        VITE_PUBLIC_BOOOPS_URL: ${VITE_PUBLIC_BOOOPS_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9303}
-        VITE_PUBLIC_808NOTES_URL: ${VITE_PUBLIC_808NOTES_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9304}
-        VITE_PUBLIC_BOOCODE_URL: ${VITE_PUBLIC_BOOCODE_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9305}
-    container_name: booops_ui
-    restart: unless-stopped
-    environment:
-      BOOLAB_API_UPSTREAM: ${BOOLAB_API_UPSTREAM:-boolab_api:8000}
-    ports:
-      - "${BOOLAB_PORT_BOOOPS:-9303}:80"
     networks:
       - boolab_net
 
@@ -118,38 +49,13 @@ services:
         VITE_OG_TITLE: "808notes"
         VITE_OG_DESCRIPTION: "Open up your DAW: Digital AI Workspace."
         VITE_HTML_OG_IMAGE: https://808notes.boogaardmusic.com/api/branding/808notes/asset/og_banner
-        VITE_PUBLIC_BOOLAB_URL: ${VITE_PUBLIC_BOOLAB_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9302}
-        VITE_PUBLIC_BOOOPS_URL: ${VITE_PUBLIC_BOOOPS_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9303}
         VITE_PUBLIC_808NOTES_URL: ${VITE_PUBLIC_808NOTES_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9304}
-        VITE_PUBLIC_BOOCODE_URL: ${VITE_PUBLIC_BOOCODE_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9305}
     container_name: notes808_ui
     restart: unless-stopped
     environment:
       BOOLAB_API_UPSTREAM: ${BOOLAB_API_UPSTREAM:-boolab_api:8000}
     ports:
       - "${BOOLAB_PORT_808NOTES:-9304}:80"
-    networks:
-      - boolab_net
-
-  boocode_ui:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      args:
-        VITE_APP_MODE: boocode
-        VITE_OG_TITLE: "BooCode"
-        VITE_OG_DESCRIPTION: "Architect at 3am. Terminal amber, code awareness."
-        VITE_HTML_OG_IMAGE: https://boocode.boogaardmusic.com/api/branding/boocode/asset/og_banner
-        VITE_PUBLIC_BOOLAB_URL: ${VITE_PUBLIC_BOOLAB_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9302}
-        VITE_PUBLIC_BOOOPS_URL: ${VITE_PUBLIC_BOOOPS_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9303}
-        VITE_PUBLIC_808NOTES_URL: ${VITE_PUBLIC_808NOTES_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9304}
-        VITE_PUBLIC_BOOCODE_URL: ${VITE_PUBLIC_BOOCODE_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9305}
-    container_name: boocode_ui
-    restart: unless-stopped
-    environment:
-      BOOLAB_API_UPSTREAM: ${BOOLAB_API_UPSTREAM:-boolab_api:8000}
-    ports:
-      - "${BOOLAB_PORT_BOOCODE:-9305}:80"
     networks:
       - boolab_net
 
@@ -162,4 +68,3 @@ volumes:
   boolab_db_data:
   boolab_uploads:
   boolab_branding:
-  boolab_tmux:

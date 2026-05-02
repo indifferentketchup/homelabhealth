@@ -5,187 +5,39 @@ import uuid
 import json
 import os
 import logging
-import posixpath
 from typing import Any, AsyncIterator
 
 import asyncpg
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
-from auth_deps import (
-    assert_daw_usable,
+from deps import (
+    _SCHEMA_MODE_VALUE,
     assert_persona_usable,
+    assert_workspace_usable,
     get_principal,
 )
 from db import get_pool
-from routers.dubdrive_sync import _dubdrive_read_bytes
-from services import code_chunker
+from services.inference_defaults import required_default_model
 from services.pruning import summarize_and_compress
 from services.rag import (
     retrieve_context,
     retrieve_memory_facts,
-    retrieve_repo_chunks,
     should_retrieve,
 )
-from services.repo_ingest import validate_relative_file_path, validate_repo_path
 from services.searx import searx_search_sources
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-BOOCODE_CONTEXT_CHAR_BUDGET = int(os.environ.get("BOOCODE_CONTEXT_CHAR_BUDGET", "40000"))
-BOOCODE_ATTACH_CHAR_BUDGET = int(os.environ.get("BOOCODE_ATTACH_CHAR_BUDGET", "20000"))
-
-BOOCODE_ARCHITECT_PREAMBLE = """\
-You are a read-only code architect. You review codebases and draft precise prompts
-for a separate coding agent (OpenCode) to execute. You do NOT edit files.
-
-When the user asks for a change:
-1. One-paragraph plan
-2. OpenCode-ready prompt inside a fenced ```prompt code block
-3. List of files to be touched (paths only, one per line)
-
-When citing code, reference file path + symbol name. Do not invent file contents
-not present in Repo Context.
-"""
-
-
-def _format_repo_chunks(chunks: list[dict[str, Any]]) -> str:
-    """Format repo chunks into the ## Repo Context block, capped at BOOCODE_CONTEXT_CHAR_BUDGET.
-
-    Drops the lowest-similarity chunks first if the formatted block would overflow.
-    """
-    if not chunks:
-        return ""
-
-    header = (
-        "## Repo Context\n"
-        "The following code fragments were retrieved from the repo bound to this DAW.\n"
-        "Cite chunks by file path. If a question cannot be answered from these fragments,\n"
-        "say so — do not fabricate file contents.\n"
-    )
-
-    ordered = sorted(chunks, key=lambda c: float(c.get("similarity") or 0.0), reverse=True)
-
-    rendered: list[str] = []
-    total = len(header)
-    for c in ordered:
-        path = c.get("path") or "?"
-        sym_name = c.get("symbol_name") or ""
-        lang = c.get("language") or ""
-        head_bits = [path]
-        if sym_name:
-            head_bits.append(sym_name)
-        head = ":".join(head_bits)
-        marker = f"[{head}" + (f" ({lang})" if lang else "") + "]"
-        body = c.get("content") or ""
-        piece = f"\n{marker}\n{body}\n"
-        if total + len(piece) > BOOCODE_CONTEXT_CHAR_BUDGET:
-            break
-        rendered.append(piece)
-        total += len(piece)
-
-    if not rendered:
-        return ""
-    return header + "".join(rendered)
-
-
-async def _render_boocode_attachments(
-    refs: list["BoocodeFileRef"],
-    repo_root_raw: str,
-    char_budget: int,
-) -> str:
-    """Render attached repo files as fenced code blocks, capped by count and chars.
-
-    Returns "" if no files rendered. Safe to call with any input —
-    invalid paths / binary / oversize files are skipped, not raised.
-    """
-    if not refs or not repo_root_raw:
-        return ""
-    try:
-        repo_root = validate_repo_path(repo_root_raw)
-    except ValueError:
-        return ""
-    if not repo_root:
-        return ""
-
-    rendered: list[str] = []
-    total = 0
-    for ref in refs[:4]:
-        try:
-            rel = validate_relative_file_path(ref.path)
-        except ValueError:
-            continue
-        raw = await _dubdrive_read_bytes(posixpath.join(repo_root, rel))
-        if raw is None or len(raw) > code_chunker.MAX_FILE_BYTES:
-            continue
-        if b"\x00" in raw[:4096]:
-            continue
-        try:
-            text = raw.decode("utf-8")
-        except UnicodeDecodeError:
-            text = raw.decode("latin-1", errors="replace")
-        start_line: int | None = None
-        end_line: int | None = None
-        if ref.line_start is not None and ref.line_end is not None:
-            lines = text.split("\n")
-            total_lines = len(lines)
-            if ref.line_start > total_lines:
-                # Out of range — skip this attachment rather than render empty.
-                continue
-            start_line = max(1, ref.line_start)
-            end_line = min(total_lines, ref.line_end)
-            text = "\n".join(lines[start_line - 1:end_line])
-        lang = code_chunker.resolve_language(rel) or ""
-        range_tag = f":{start_line}-{end_line}" if start_line is not None and end_line is not None else ""
-        header = f"\n\n[attached file: {rel}{range_tag}{f' ({lang})' if lang else ''}]\n"
-        fence_open = f"```{lang}\n"
-        fence_close = "\n```\n"
-        framing_len = len(header) + len(fence_open) + len(fence_close)
-        remaining = char_budget - total - framing_len
-        if remaining <= 0:
-            break
-        if len(text) > remaining:
-            trunc_marker = "\n[truncated]"
-            keep = max(0, remaining - len(trunc_marker))
-            text = text[:keep] + trunc_marker
-        piece = header + fence_open + text + fence_close
-        rendered.append(piece)
-        total += len(piece)
-        if total >= char_budget:
-            break
-
-    return "".join(rendered)
-
 
 async def _default_persona_id_for_mode(conn: asyncpg.Connection, mode: str) -> uuid.UUID | None:
-    """Default persona for new chat. Try the mode-specific default first
-    (is_default_<mode>), then fall back to is_default_booops so every chat
-    gets something sensible even if the user hasn't set a per-mode default.
-    """
-    if mode == "808notes":
-        pid = await conn.fetchval(
-            "SELECT id FROM personas WHERE is_default_808notes IS TRUE LIMIT 1",
-        )
-        if pid:
-            return pid
-    elif mode == "boocode":
-        pid = await conn.fetchval(
-            "SELECT id FROM personas WHERE is_default_boocode IS TRUE LIMIT 1",
-        )
-        if pid:
-            return pid
+    """Default persona for new chat."""
     return await conn.fetchval(
-        "SELECT id FROM personas WHERE is_default_booops IS TRUE LIMIT 1",
+        "SELECT id FROM personas WHERE is_default_808notes IS TRUE LIMIT 1",
     )
-
-
-
-
-
-
 
 
 _AUTO_MEMORY_TRIGGERS = (
@@ -234,15 +86,15 @@ def _first_auto_memory_sentence(text: str) -> str | None:
 
 
 async def _site_default_model(conn: asyncpg.Connection, mode: str) -> str:
-    key = "default_model_808notes" if mode == "808notes" else "default_model"
-    row = await conn.fetchrow("SELECT value FROM global_settings WHERE key = $1", key)
+    row = await conn.fetchrow(
+        "SELECT value FROM global_settings WHERE key = $1",
+        "default_model_808notes",
+    )
     if row and row["value"]:
         v = str(row["value"]).strip()
         if v:
             return v
-    return (
-        os.environ.get("DEFAULT_MODEL", "llama-gpu/qwen3.5-9b-exl3") or "llama-gpu/qwen3.5-9b-exl3"
-    ).strip()
+    return required_default_model()
 
 
 async def _assembled_system_prompt(
@@ -252,38 +104,23 @@ async def _assembled_system_prompt(
     user_query_for_rag: str | None = None,
     include_site_private: bool = True,
     session_skill_ids: list[str] | None = None,
-    boocode_files: list["BoocodeFileRef"] | None = None,
 ) -> tuple[str, dict[str, int] | None]:
-    """Persona → DAW prompt + daw_instructions + semantic memory facts → context files → custom instructions → RAG → mode_memory."""
-    mode = chat["mode"] if chat["mode"] in ("booops", "808notes") else "booops"
+    """Persona -> Workspace prompt + workspace instructions + semantic memory facts -> context files -> custom instructions -> RAG -> mode_memory."""
+    mode = _SCHEMA_MODE_VALUE
     pid = chat["persona_id"]
-    daw_id = chat["daw_id"]
-    daw_prompt = ""
-    daw_persona_id = None
-    daw_rag_mode_effective = "auto"
-    daw_table_mode = "booops"
-    daw_repo_path = ""
-    if daw_id is not None:
+    workspace_id = chat["daw_id"]
+    workspace_prompt = ""
+    workspace_persona_id = None
+    if workspace_id is not None:
         ws = await conn.fetchrow(
-            "SELECT system_prompt, persona_id, mode, rag_mode, repo_path FROM daws WHERE id = $1::uuid",
-            daw_id,
+            "SELECT system_prompt, persona_id, mode, rag_mode FROM daws WHERE id = $1::uuid",
+            workspace_id,
         )
         if ws:
-            daw_prompt = (ws["system_prompt"] or "").strip()
-            daw_persona_id = ws["persona_id"]
-            daw_table_mode = ws["mode"] if ws["mode"] in ("booops", "808notes", "boocode") else "booops"
-            daw_repo_path = (ws["repo_path"] or "").strip() if "repo_path" in ws.keys() else ""
-            if daw_table_mode == "boocode" and not daw_prompt:
-                daw_prompt = BOOCODE_ARCHITECT_PREAMBLE
-            if daw_table_mode == "808notes":
-                daw_rag_mode_effective = "always"
-            elif daw_table_mode == "boocode":
-                daw_rag_mode_effective = "always"
-            else:
-                rm = ws.get("rag_mode")
-                daw_rag_mode_effective = rm if rm in ("auto", "always", "off") else "auto"
+            workspace_prompt = (ws["system_prompt"] or "").strip()
+            workspace_persona_id = ws["persona_id"]
 
-    resolve_pid = pid if pid is not None else daw_persona_id
+    resolve_pid = pid if pid is not None else workspace_persona_id
 
     persona_prompt = ""
     if resolve_pid is not None:
@@ -295,102 +132,53 @@ async def _assembled_system_prompt(
             persona_prompt = (pr["system_prompt"] or "").strip()
 
     if not persona_prompt:
-        # `mode` here has been coerced to booops/808notes; the authoritative
-        # chat mode is `chat["mode"]`. Try the mode-specific default first,
-        # fall back to booops if none is set for this mode.
-        persona_mode = chat["mode"] if chat["mode"] in ("booops", "808notes", "boocode") else "booops"
-        d = None
-        if persona_mode == "808notes":
-            d = await conn.fetchrow(
-                "SELECT system_prompt FROM personas WHERE is_default_808notes IS TRUE LIMIT 1",
-            )
-        elif persona_mode == "boocode":
-            d = await conn.fetchrow(
-                "SELECT system_prompt FROM personas WHERE is_default_boocode IS TRUE LIMIT 1",
-            )
-        if not d:
-            d = await conn.fetchrow(
-                "SELECT system_prompt FROM personas WHERE is_default_booops IS TRUE LIMIT 1",
-            )
+        d = await conn.fetchrow(
+            "SELECT system_prompt FROM personas WHERE is_default_808notes IS TRUE LIMIT 1",
+        )
         if d:
             persona_prompt = (d["system_prompt"] or "").strip()
 
     parts: list[str] = []
-    daw_instr_count = 0
+    workspace_instr_count = 0
     mem_entries_count = 0
     rag_context_chars = 0
 
     if persona_prompt:
         parts.append(persona_prompt)
-    if daw_prompt:
-        parts.append(daw_prompt)
+    if workspace_prompt:
+        parts.append(workspace_prompt)
 
-    # Force-include: user-attached boocode files (prepended before ## Repo Context so
-    # they are seen first by the model; see 2026-04-22 Phase 4 plan Task 1).
-    boocode_prepend = ""
-    refs = list(boocode_files or [])
-    if refs and daw_table_mode == "boocode":
-        boocode_prepend = await _render_boocode_attachments(
-            refs,
-            daw_repo_path,
-            BOOCODE_ATTACH_CHAR_BUDGET,
-        )
-        if boocode_prepend:
-            logger.info("chat_boocode_attached chars=%s daw=%s", len(boocode_prepend), str(daw_id))
-
-    if (
-        daw_table_mode == "boocode"
-        and daw_id is not None
-        and user_query_for_rag
-        and str(user_query_for_rag).strip()
-        and chat.get("rag_enabled") is not False
-    ):
-        repo_chunks = await retrieve_repo_chunks(
-            conn,
-            str(daw_id),
-            str(user_query_for_rag).strip(),
-            top_k=20,
-        )
-        repo_block = ""
-        if repo_chunks:
-            repo_block = _format_repo_chunks(repo_chunks)
-        combined = boocode_prepend + repo_block
-        if combined:
-            parts.append(combined)
-    elif boocode_prepend:
-        parts.append(boocode_prepend)
-
-    if daw_id:
-        daw_instructions = await conn.fetch(
+    if workspace_id:
+        workspace_instructions = await conn.fetch(
             "SELECT content AS instruction FROM daw_instructions WHERE daw_id = $1::uuid ORDER BY created_at",
-            daw_id,
+            workspace_id,
         )
-        if daw_instructions:
-            daw_instr_count = len(daw_instructions)
-            instr_text = "\n".join([f"- {r['instruction']}" for r in daw_instructions])
-            parts.append(f"### DAW Instructions\n{instr_text}")
+        if workspace_instructions:
+            workspace_instr_count = len(workspace_instructions)
+            instr_text = "\n".join([f"- {r['instruction']}" for r in workspace_instructions])
+            parts.append(f"### Workspace Instructions\n{instr_text}")
 
-        daw_mem_rows = await conn.fetch(
+        workspace_mem_rows = await conn.fetch(
             "SELECT content FROM daw_memory WHERE daw_id = $1::uuid ORDER BY created_at ASC",
-            daw_id,
+            workspace_id,
         )
-        if daw_mem_rows:
-            mem_lines = "\n".join(f"- {r['content']}" for r in daw_mem_rows)
-            parts.append(f"[DAW Memory]\n{mem_lines}")
+        if workspace_mem_rows:
+            mem_lines = "\n".join(f"- {r['content']}" for r in workspace_mem_rows)
+            parts.append(f"[Workspace Memory]\n{mem_lines}")
 
-        # Skills injection: DAW skills + optional session skills (deduplicated)
+        # Skills injection: workspace skills + optional session skills (deduplicated)
         session_skill_set = set(session_skill_ids) if session_skill_ids else set()
-        if daw_id and not session_skill_set:
-            # Only fetch DAW skills if no session skills provided (session skills override DAW skills)
+        if workspace_id and not session_skill_set:
+            # Only fetch workspace skills if no session skills provided (session skills override workspace skills)
             skill_rows = await conn.fetch(
                 """
-                SELECT s.raw_content 
+                SELECT s.raw_content
                 FROM daw_skills ds
                 JOIN skills s ON s.id = ds.skill_id
                 WHERE ds.daw_id = $1::uuid AND ds.active = true
                 ORDER BY ds.added_at DESC
                 """,
-                daw_id,
+                workspace_id,
             )
             for sr in skill_rows:
                 if sr["raw_content"]:
@@ -408,21 +196,21 @@ async def _assembled_system_prompt(
                     if sr["raw_content"]:
                         parts.append(f"\n---\n## Active Skill\n{sr['raw_content']}")
 
-    if daw_id is not None and include_site_private and user_query_for_rag:
+    if workspace_id is not None and include_site_private and user_query_for_rag:
         memory_facts = await retrieve_memory_facts(str(user_query_for_rag), mode, conn)
         if memory_facts:
             mem_entries_count = len(memory_facts)
             bullets = "\n".join([f"- {f}" for f in memory_facts])
             parts.append(f"### Relevant Context\n{bullets}")
 
-    if daw_id is not None:
+    if workspace_id is not None:
         cf_rows = await conn.fetch(
             """
             SELECT filename, content FROM daw_context_files
             WHERE daw_id = $1::uuid
             ORDER BY sort_order ASC NULLS LAST, created_at ASC
             """,
-            daw_id,
+            workspace_id,
         )
         for cf in cf_rows:
             parts.append(f"[Context file: {cf['filename']}]\n{cf['content']}")
@@ -443,29 +231,10 @@ async def _assembled_system_prompt(
             parts.append(custom_instr)
 
     q_for_rag = str(user_query_for_rag or "").strip()
-    rag_disabled = daw_rag_mode_effective == "off"
-    use_intent_gate = daw_rag_mode_effective == "auto"
-    intent_allows = (await should_retrieve(q_for_rag, mode)) if (q_for_rag and use_intent_gate) else True
-    if (
-        daw_id is not None
-        and q_for_rag
-        and chat.get("rag_enabled") is not False
-        and not rag_disabled
-        and use_intent_gate
-        and not intent_allows
-    ):
-        logger.info(
-            "RAG skipped by intent gate query_words=%d mode=%s",
-            len(q_for_rag.split()),
-            mode,
-        )
-
     rag_ok = (
-        not rag_disabled
-        and bool(user_query_for_rag and str(user_query_for_rag).strip())
-        and daw_id is not None
+        bool(user_query_for_rag and str(user_query_for_rag).strip())
+        and workspace_id is not None
         and chat.get("rag_enabled") is not False
-        and (intent_allows if use_intent_gate else True)
     )
     sse_rag_meta: dict[str, int] | None = None
     if rag_ok:
@@ -477,15 +246,15 @@ async def _assembled_system_prompt(
             )
             source_ids = [str(r["source_id"]) for r in sel]
             if not source_ids:
-                daw_sources = await conn.fetch(
+                workspace_sources = await conn.fetch(
                     "SELECT id FROM sources WHERE daw_id = $1::uuid AND embedding_status = 'complete'",
-                    uuid.UUID(str(daw_id)),
+                    uuid.UUID(str(workspace_id)),
                 )
-                source_ids = [str(r["id"]) for r in daw_sources]
+                source_ids = [str(r["id"]) for r in workspace_sources]
             if source_ids:
                 rag_block, rag_n = await retrieve_context(
                     str(user_query_for_rag).strip(),
-                    str(daw_id),
+                    str(workspace_id),
                     source_ids,
                 )
                 if rag_block:
@@ -496,7 +265,7 @@ async def _assembled_system_prompt(
     assembled = "\n\n".join(parts)
 
     mem_text = ""
-    if daw_id is not None and include_site_private:
+    if workspace_id is not None and include_site_private:
         mem = await conn.fetchrow("SELECT content FROM mode_memory WHERE mode = $1", mode)
         mem_text = (mem["content"] or "").strip() if mem else ""
         if mem_text:
@@ -507,13 +276,13 @@ async def _assembled_system_prompt(
 
     preview = (assembled[:2000] + "…") if len(assembled) > 2000 else assembled
     logger.info(
-        "assembled prompt mode=%s daw_id=%s is_daw_chat=%s len=%d daw_instruction_rows=%d "
+        "assembled prompt mode=%s workspace_id=%s is_workspace_chat=%s len=%d workspace_instruction_rows=%d "
         "memory_entry_rows=%d mode_memory_len=%d rag_context_chars=%d preview=%s",
         mode,
-        str(daw_id) if daw_id else None,
-        daw_id is not None,
+        str(workspace_id) if workspace_id else None,
+        workspace_id is not None,
         len(assembled),
-        daw_instr_count,
+        workspace_instr_count,
         mem_entries_count,
         len(mem_text),
         rag_context_chars,
@@ -529,12 +298,12 @@ def _sse(data: str) -> bytes:
 
 
 def _inference_base() -> str:
-    return os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+    return os.environ.get("INFERENCE_URL", "http://localhost:8080").rstrip("/")
 
 
 def _openai_headers() -> dict[str, str]:
     h = {"Content-Type": "application/json"}
-    key = (os.environ.get("OPENAI_API_KEY") or os.environ.get("BIFROST_API_KEY") or "").strip()
+    key = (os.environ.get("OPENAI_API_KEY") or "").strip()
     if key:
         h["Authorization"] = f"Bearer {key}"
     return h
@@ -582,7 +351,7 @@ async def _openai_short_chat_title(model: str, user_message_text: str) -> str | 
         return None
 
 
-async def _stream_ollama(
+async def _stream_inference(
     model: str,
     messages: list[dict[str, str]],
 ) -> AsyncIterator[bytes]:
@@ -636,8 +405,7 @@ async def _stream_ollama(
 class ChatCreate(BaseModel):
     title: str | None = None
     model: str | None = Field(default=None)
-    daw_id: uuid.UUID | None = None
-    mode: str = "booops"
+    workspace_id: uuid.UUID | None = None
     web_search_enabled: bool | None = None
     persona_id: uuid.UUID | None = None
 
@@ -647,31 +415,13 @@ class ChatPatch(BaseModel):
     model: str | None = None
     web_search_enabled: bool | None = None
     persona_id: uuid.UUID | None = None
-    daw_id: uuid.UUID | None = None
-
-
-class BoocodeFileRef(BaseModel):
-    path: str = Field(..., min_length=1, max_length=4096)
-    line_start: int | None = Field(default=None, ge=1)
-    line_end: int | None = Field(default=None, ge=1)
-
-    @model_validator(mode="after")
-    def _validate_line_range(self) -> "BoocodeFileRef":
-        # Both-or-neither: if only one is set, treat as whole file (drop both).
-        if self.line_start is None or self.line_end is None:
-            self.line_start = None
-            self.line_end = None
-            return self
-        if self.line_end < self.line_start:
-            raise ValueError("line_end must be >= line_start")
-        return self
+    workspace_id: uuid.UUID | None = None
 
 
 class MessageCreate(BaseModel):
     content: str = Field(..., min_length=1)
     model: str | None = None
     session_skill_ids: list[str] | None = None
-    boocode_files: list[BoocodeFileRef] | None = None
 
 
 def _scrub_pg_text(value: str) -> str:
@@ -701,7 +451,7 @@ def _chat_row(r: asyncpg.Record) -> dict[str, Any]:
     return {
         "id": str(r["id"]),
         "title": r["title"],
-        "daw_id": str(r["daw_id"]) if r["daw_id"] else None,
+        "workspace_id": str(r["daw_id"]) if r["daw_id"] else None,
         "mode": r["mode"],
         "persona_id": str(r["persona_id"]) if r["persona_id"] else None,
         "model": r["model"],
@@ -732,18 +482,11 @@ def _message_row(r: asyncpg.Record) -> dict[str, Any]:
 @router.post("/")
 async def create_chat(body: ChatCreate, principal: dict[str, Any] = Depends(get_principal)):
     pool = await get_pool()
-    allowed_modes = ("booops", "808notes", "boocode")
-    mode = body.mode if body.mode in allowed_modes else "booops"
-    default_model = os.environ.get("DEFAULT_MODEL", "llama-gpu/qwen3.5-9b-exl3")
+    mode = _SCHEMA_MODE_VALUE
+    default_model = required_default_model()
     async with pool.acquire() as conn:
         await assert_persona_usable(conn, principal, body.persona_id)
-        await assert_daw_usable(conn, principal, body.daw_id)
-        if body.daw_id is not None:
-            daw_mode = await conn.fetchval(
-                "SELECT mode FROM daws WHERE id = $1::uuid", body.daw_id
-            )
-            if daw_mode in allowed_modes:
-                mode = daw_mode
+        await assert_workspace_usable(conn, principal, body.workspace_id)
         persona_id_for_insert = body.persona_id
         if persona_id_for_insert is None:
             persona_id_for_insert = await _default_persona_id_for_mode(conn, mode)
@@ -754,13 +497,7 @@ async def create_chat(body: ChatCreate, principal: dict[str, Any] = Depends(get_
                 COALESCE(
                     $4,
                     (SELECT NULLIF(TRIM(model), '') FROM daws WHERE id = $2::uuid),
-                    (SELECT value FROM global_settings WHERE key = (
-                        CASE
-                            WHEN $3::text = '808notes' THEN 'default_model_808notes'
-                            WHEN $3::text = 'boocode' THEN 'default_model_boocode'
-                            ELSE 'default_model'
-                        END
-                    ) LIMIT 1),
+                    (SELECT value FROM global_settings WHERE key = 'default_model_808notes' LIMIT 1),
                     $6
                 ),
                 COALESCE($5, FALSE),
@@ -771,14 +508,14 @@ async def create_chat(body: ChatCreate, principal: dict[str, Any] = Depends(get_
                 pruning_summary, message_count, is_main_chat, created_at, updated_at
             """,
             body.title,
-            body.daw_id,
+            body.workspace_id,
             mode,
             body.model,
             body.web_search_enabled,
             default_model,
             persona_id_for_insert,
             principal["user_id"],
-            body.daw_id is not None,
+            body.workspace_id is not None,
         )
     return _chat_row(row)
 
@@ -787,18 +524,17 @@ async def create_chat(body: ChatCreate, principal: dict[str, Any] = Depends(get_
 async def list_chats(
     limit: int = Query(30, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    mode: str = Query("booops"),
-    daw_id: uuid.UUID | None = Query(None, description="When set, only chats for this DAW workspace."),
+    workspace_id: uuid.UUID | None = Query(None, description="When set, only chats for this workspace."),
     principal: dict[str, Any] = Depends(get_principal),
 ):
     pool = await get_pool()
-    m = mode if mode in ("booops", "808notes", "boocode") else "booops"
+    m = _SCHEMA_MODE_VALUE
     cols = """
                 id, title, daw_id, mode, persona_id, model, web_search_enabled, rag_enabled,
                 pruning_summary, message_count, is_main_chat, created_at, updated_at
     """
     async with pool.acquire() as conn:
-        if daw_id is not None:
+        if workspace_id is not None:
             rows = await conn.fetch(
                 f"""
                 SELECT {cols}
@@ -810,12 +546,12 @@ async def list_chats(
                 limit,
                 offset,
                 m,
-                daw_id,
+                workspace_id,
             )
             total = await conn.fetchval(
                 "SELECT COUNT(*)::int FROM chats WHERE mode = $1 AND daw_id = $2::uuid",
                 m,
-                daw_id,
+                workspace_id,
             )
         else:
             rows = await conn.fetch(
@@ -837,14 +573,13 @@ async def list_chats(
     return {"items": [_chat_row(r) for r in rows], "total": total, "limit": limit, "offset": offset}
 
 
-@router.delete("/non-daw")
-async def delete_non_daw_chats(
-    mode: str = Query("booops"),
+@router.delete("/non-workspace")
+async def delete_non_workspace_chats(
     principal: dict[str, Any] = Depends(get_principal),
 ):
-    """Delete all chats in the given mode that are not tied to a DAW (daw_id IS NULL)."""
+    """Delete all chats not tied to a workspace (daw_id IS NULL)."""
     pool = await get_pool()
-    m = mode if mode in ("booops", "808notes", "boocode") else "booops"
+    m = _SCHEMA_MODE_VALUE
     async with pool.acquire() as conn:
         deleted = await conn.fetchval(
             """
@@ -985,12 +720,12 @@ async def patch_chat(
         new_model = data.get("model", row["model"])
         new_ws = data.get("web_search_enabled", row["web_search_enabled"])
         new_persona = row["persona_id"] if "persona_id" not in data else data["persona_id"]
-        new_daw = row["daw_id"] if "daw_id" not in data else data["daw_id"]
+        new_workspace = row["daw_id"] if "workspace_id" not in data else data["workspace_id"]
 
         if new_persona is not None:
             await assert_persona_usable(conn, principal, new_persona)
-        if new_daw is not None:
-            await assert_daw_usable(conn, principal, new_daw)
+        if new_workspace is not None:
+            await assert_workspace_usable(conn, principal, new_workspace)
 
         updated = await conn.fetchrow(
             """
@@ -1006,7 +741,7 @@ async def patch_chat(
             new_model,
             new_ws,
             new_persona,
-            new_daw,
+            new_workspace,
         )
     return _chat_row(updated)
 
@@ -1033,13 +768,13 @@ async def export_chat(
     request: Request,
     principal: dict[str, Any] = Depends(get_principal),
 ) -> dict:
-    """Save a chat's messages to /data/history/chats/<daw-slug>/<file-slug>.md.
+    """Save a chat's messages to /data/history/chats/<workspace-slug>/<file-slug>.md.
 
-    Requires the chat to be in a DAW (daw_id must not be NULL).
+    Requires the chat to be in a workspace (daw_id must not be NULL).
     Attempts an AI rename via _openai_short_chat_title; on failure the
     timestamp filename persists and ai_renamed=false is returned.
     """
-    from services.history import daw_dir, slugify
+    from services.history import workspace_dir, slugify
     from services.history_writer import render_chat_markdown, timestamp_slug
 
     pool = await get_pool()
@@ -1051,14 +786,14 @@ async def export_chat(
         if chat_row is None:
             raise HTTPException(status_code=404, detail="Chat not found")
         if chat_row["daw_id"] is None:
-            raise HTTPException(status_code=400, detail="chat must be in a DAW to export")
+            raise HTTPException(status_code=400, detail="chat must be in a workspace to export")
 
-        daw_row = await conn.fetchrow(
+        workspace_row = await conn.fetchrow(
             "SELECT name FROM daws WHERE id=$1::uuid",
             chat_row["daw_id"],
         )
-        if daw_row is None:
-            raise HTTPException(status_code=400, detail="DAW not found")
+        if workspace_row is None:
+            raise HTTPException(status_code=400, detail="Workspace not found")
 
         msg_rows = await conn.fetch(
             """
@@ -1070,7 +805,7 @@ async def export_chat(
             chat_id,
         )
 
-    daw_name: str = daw_row["name"]
+    workspace_name: str = workspace_row["name"]
     messages = [
         {
             "role": r["role"],
@@ -1090,7 +825,7 @@ async def export_chat(
     ts = timestamp_slug()
     initial_filename = f"{ts}.md"
 
-    target_dir = daw_dir("chats", daw_name)
+    target_dir = workspace_dir("chats", workspace_name)
     file_path = target_dir / initial_filename
     file_path.write_text(content, encoding="utf-8")
 
@@ -1098,7 +833,7 @@ async def export_chat(
     ai_renamed = False
     user_texts = [m["content"] for m in messages if m.get("role") == "user"]
     user_sample = "\n".join(user_texts)[:1000]
-    default_model = os.environ.get("DEFAULT_MODEL", "llama-gpu/qwen3.5-9b-exl3")
+    default_model = required_default_model()
     model_for_title = (chat_row["model"] or default_model or "").strip() or default_model
     if user_sample:
         try:
@@ -1127,12 +862,12 @@ async def export_chat(
             )
 
     logger.info(
-        "export_chat chat_id=%s daw=%s file=%s ai_renamed=%s",
-        str(chat_id), daw_name, file_path.name, ai_renamed,
+        "export_chat chat_id=%s workspace=%s file=%s ai_renamed=%s",
+        str(chat_id), workspace_name, file_path.name, ai_renamed,
     )
     return {
         "filename": file_path.name,
-        "daw_slug": slugify(daw_name),
+        "workspace_slug": slugify(workspace_name),
         "path": str(file_path),
         "ai_renamed": ai_renamed,
     }
@@ -1281,21 +1016,21 @@ async def append_message(
         if chat is None:
             raise HTTPException(status_code=404, detail="Chat not found")
 
-        daw_row = None
+        workspace_row = None
         if chat["daw_id"] is not None:
-            daw_row = await conn.fetchrow(
+            workspace_row = await conn.fetchrow(
                 "SELECT model FROM daws WHERE id = $1::uuid",
                 chat["daw_id"],
             )
-        daw_pins_model = bool(
-            daw_row is not None and daw_row["model"] and str(daw_row["model"]).strip()
+        workspace_pins_model = bool(
+            workspace_row is not None and workspace_row["model"] and str(workspace_row["model"]).strip()
         )
         chat_model = (body.model or chat["model"] or "").strip()
-        effective_model = str(daw_row["model"]).strip() if daw_pins_model else chat_model
+        effective_model = str(workspace_row["model"]).strip() if workspace_pins_model else chat_model
         if not effective_model:
             raise HTTPException(status_code=400, detail="No model set for chat")
 
-        if daw_pins_model or body.model is not None:
+        if workspace_pins_model or body.model is not None:
             await conn.execute(
                 "UPDATE chats SET model = $2, updated_at = NOW() WHERE id = $1::uuid",
                 chat_id,
@@ -1342,7 +1077,6 @@ async def append_message(
             user_query_for_rag=_scrub_pg_text(body.content.strip()),
             include_site_private=True,
             session_skill_ids=body.session_skill_ids,
-            boocode_files=body.boocode_files,
         )
 
         user_profile_block = ""
@@ -1375,7 +1109,7 @@ async def append_message(
         if bool(chat["web_search_enabled"]):
             sources_list, extra_search = await searx_search_sources(
                 user_message_text,
-                mode=str(chat["mode"] or "booops"),
+                mode=str(chat["mode"] or _SCHEMA_MODE_VALUE),
             )
         if sources_list:
             yield _sse(json.dumps({"type": "search_sources", "sources": sources_list}))
@@ -1413,12 +1147,12 @@ async def append_message(
         full: list[str] = []
         had_error = False
         logger.info(
-            "chat inference chat_id=%s model=%s daw_id=%s",
+            "chat inference chat_id=%s model=%s workspace_id=%s",
             str(chat_id),
             effective_model,
             str(chat["daw_id"]) if chat["daw_id"] else None,
         )
-        stream = _stream_ollama(
+        stream = _stream_inference(
             effective_model,
             api_messages,
         )
@@ -1508,7 +1242,7 @@ async def append_message(
 
         auto_mem = _first_auto_memory_sentence(assistant_text)
         if auto_mem:
-            chat_mode = chat["mode"] if chat["mode"] in ("booops", "808notes") else "booops"
+            chat_mode = _SCHEMA_MODE_VALUE
             async with p.acquire() as conn_mem:
                 mem_row = await conn_mem.fetchrow(
                     """

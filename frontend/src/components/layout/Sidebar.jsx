@@ -5,27 +5,18 @@ import {
   Brain,
   ChevronDown,
   ChevronLeft,
-  ChevronRight,
   FileStack,
   LayoutGrid,
-  List,
   MessageSquarePlus,
   MessagesSquare,
   PanelLeft,
-  Pin,
-  Plus,
-  RotateCcw,
-  Search,
   Settings,
-  TerminalSquare,
   User,
 } from 'lucide-react'
 
 import { applyBrandingCss, fetchBranding } from '@/api/branding.js'
-import { friendlyErr } from '@/lib/friendlyErr.js'
-import { deleteChat, exportChat, listChats, patchChat, patchRecentChatsListCache } from '@/api/chats.js'
-import { listDaws } from '@/api/daws.js'
-import * as terminalsApi from '@/api/terminals.js'
+import { deleteChat, listChats, patchChat, patchRecentChatsListCache } from '@/api/chats.js'
+import { listWorkspaces } from '@/api/workspaces.js'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -36,19 +27,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import {
-  PATH_808NOTES,
-  PATH_808NOTES_HOME,
-  PATH_BOOCODE,
-  PATH_BOOCODE_HOME,
-  PATH_BOOOPS,
-  PATH_BOOOPS_HOME,
-  boocodeDawPath,
-  booopsDawPath,
-  getBoolabHubHref,
-  isHttpUrl,
-  notes808DawPath,
-} from '@/routes/paths.js'
+import { PATH_HOME, workspacePath } from '@/routes/paths.js'
 import { useAppStore } from '@/store/index.js'
 import { cn } from '@/lib/utils'
 import { useLongPress } from '@/hooks/useLongPress.js'
@@ -57,51 +36,13 @@ import { useLongPress } from '@/hooks/useLongPress.js'
 // Subcomponents for long-press parity on touch devices
 // ---------------------------------------------------------------------------
 
-/** Single terminal session row — extracts useLongPress out of .map() */
-function TerminalRow({ session, daw, onActivate, onContextMenu }) {
-  const lp = useLongPress((e) => onContextMenu(e, session, daw))
-  return (
-    <button
-      type="button"
-      className="fs-nav flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-sm outline-none ring-sidebar-ring hover:bg-sidebar-accent/50 focus-visible:ring-2"
-      style={{ WebkitTouchCallout: 'none' }}
-      onClick={() => onActivate(session.id)}
-      onContextMenu={(e) => onContextMenu(e, session, daw)}
-      onTouchStart={lp.onTouchStart}
-      onTouchMove={lp.onTouchMove}
-      onTouchEnd={lp.onTouchEnd}
-      onTouchCancel={lp.onTouchCancel}
-    >
-      {session.pinned ? (
-        <Pin className="size-3.5 shrink-0 opacity-60" aria-hidden />
-      ) : (
-        <TerminalSquare className="size-3.5 shrink-0 opacity-60" aria-hidden />
-      )}
-      <span className="min-w-0 flex-1 truncate">
-        {session.label || session.machine_name || 'session'}
-      </span>
-      {session.device_count > 0 && (
-        <span className="flex items-center gap-1 shrink-0">
-          <span
-            className="size-1.5 rounded-full"
-            style={{ background: '#3cff7a' }}
-            aria-label="active"
-          />
-          {session.device_count > 1 && (
-            <span className="text-[10px] text-muted-foreground">{session.device_count}</span>
-          )}
-        </span>
-      )}
-    </button>
-  )
-}
-
 /** Single recent-chat row — extracts useLongPress out of .map() */
-function ChatRow({ chat, activeChatId, activeDawId, onSelect, onContextMenu, collapsed }) {
+function ChatRow({ chat, activeChatId, activeWorkspaceId, onSelect, onContextMenu, collapsed }) {
   const lp = useLongPress((e) => onContextMenu(e, chat))
   const isActive =
     chat.id === activeChatId &&
-    (activeDawId === undefined || String(activeDawId) === String(chat.daw_id))
+    (activeWorkspaceId === undefined ||
+      String(activeWorkspaceId) === String(chat.workspace_id))
   return (
     <Button
       type="button"
@@ -130,236 +71,6 @@ function ChatRow({ chat, activeChatId, activeDawId, onSelect, onContextMenu, col
 }
 
 // ---------------------------------------------------------------------------
-// BooCode per-DAW row with nested TERMINALS + CHATS subsections
-// ---------------------------------------------------------------------------
-function BoocodeDawRow({
-  daw,
-  isActive,
-  isExpanded,
-  onToggle,
-  isMobile,
-  onMobileClose,
-  navigate,
-  activeChatId,
-  setActiveDawId,
-  setActiveChatId,
-  hydrateFromChat,
-  onTerminalContextMenu,
-  onChatContextMenu,
-}) {
-  const { data: terminalsData } = useQuery({
-    queryKey: ['sidebar-terminals', daw.id],
-    queryFn: () => terminalsApi.list({ dawId: daw.id }),
-    enabled: isExpanded,
-    refetchInterval: isExpanded ? 15_000 : false,
-  })
-
-  const { data: chatsData } = useQuery({
-    queryKey: ['chats', 'sidebar-daw', daw.id],
-    queryFn: () => listChats({ limit: 5, mode: 'boocode', dawId: daw.id }),
-    enabled: isExpanded,
-    staleTime: 15_000,
-    refetchInterval: 30_000,
-  })
-
-  const sessions = useMemo(() => {
-    const raw = Array.isArray(terminalsData?.active) ? terminalsData.active : []
-    return [...raw].sort((a, b) => {
-      if (a.pinned && !b.pinned) return -1
-      if (!a.pinned && b.pinned) return 1
-      return new Date(a.created_at) - new Date(b.created_at)
-    })
-  }, [terminalsData])
-
-  const [chatsOpen, setChatsOpen] = useState(true)
-  const [terminalsOpen, setTerminalsOpen] = useState(true)
-
-  const chatList = useMemo(() => {
-    return Array.isArray(chatsData?.items) ? chatsData.items : []
-  }, [chatsData])
-
-  function openTerminal(sessionId) {
-    window.dispatchEvent(new CustomEvent('boocode:open-terminal', { detail: { sessionId } }))
-  }
-
-  function newTerminal() {
-    window.dispatchEvent(new CustomEvent('boocode:new-terminal', { detail: { dawId: daw.id } }))
-  }
-
-  function selectDawChat(c) {
-    setActiveChatId(c.id)
-    hydrateFromChat(c)
-    setActiveDawId(daw.id)
-    // AC-7: tell BoocodeCenterPane to switch primary to 'chat'
-    window.dispatchEvent(new CustomEvent('boocode:open-chat', { detail: { chatId: c.id } }))
-    navigate(boocodeDawPath(daw.id))
-    if (isMobile) onMobileClose()
-  }
-
-  return (
-    <div className="w-full">
-      {/* DAW row header */}
-      <div className="flex w-full items-center gap-1 rounded-md pr-1 hover:bg-sidebar-accent/30">
-        <button
-          type="button"
-          className="flex shrink-0 items-center justify-center rounded-sm p-1 text-muted-foreground outline-none ring-sidebar-ring hover:text-foreground focus-visible:ring-2"
-          onClick={onToggle}
-          aria-label={isExpanded ? 'Collapse' : 'Expand'}
-        >
-          <ChevronRight
-            className={cn(
-              'size-3.5 shrink-0 transition-transform duration-150',
-              isExpanded && 'rotate-90',
-            )}
-            aria-hidden
-          />
-        </button>
-        <Button
-          type="button"
-          variant={isActive ? 'secondary' : 'ghost'}
-          className="h-auto min-h-8 flex-1 justify-start gap-2 py-1.5 text-left font-normal"
-          asChild
-        >
-          <Link
-            to={`${PATH_BOOCODE}/daw/${daw.id}`}
-            onClick={() => {
-              if (isMobile) onMobileClose()
-            }}
-            onContextMenu={(e) => {
-              e.preventDefault()
-              navigate(`${PATH_BOOCODE}/daws/${daw.id}`)
-            }}
-          >
-            <span
-              className="size-2.5 shrink-0 rounded-full"
-              style={{ background: daw.color || '#7c3aed' }}
-              aria-hidden
-            />
-            <span className="fs-nav line-clamp-2">{daw.name}</span>
-          </Link>
-        </Button>
-      </div>
-
-      {/* Expanded nested sections */}
-      {isExpanded && (
-        <div className="ml-3 mt-0.5 flex flex-col gap-0.5 border-l border-sidebar-border pl-2">
-          {/* CHATS subsection — first */}
-          <div className="mt-1">
-            <button
-              type="button"
-              onClick={() => setChatsOpen((o) => !o)}
-              className="fs-nav flex w-full items-center gap-1 rounded-sm px-1 py-0.5 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground outline-none ring-sidebar-ring hover:text-foreground focus-visible:ring-2"
-              aria-expanded={chatsOpen}
-            >
-              <ChevronRight
-                className={cn('size-3 shrink-0 transition-transform duration-150', chatsOpen && 'rotate-90')}
-                aria-hidden
-              />
-              <span>Chats ({chatList.length})</span>
-            </button>
-            {chatsOpen && (
-              chatList.length === 0 ? (
-                <span className="fs-nav block px-1 py-1 text-xs text-muted-foreground">
-                  No chats yet
-                </span>
-              ) : (
-                chatList.map((c) => (
-                  <ChatRow
-                    key={c.id}
-                    chat={c}
-                    activeChatId={activeChatId}
-                    activeDawId={daw.id}
-                    onSelect={() => selectDawChat(c)}
-                    onContextMenu={onChatContextMenu}
-                    collapsed={false}
-                  />
-                ))
-              )
-            )}
-          </div>
-
-          {/* TERMINALS subsection — second */}
-          <div className="mt-1">
-            <button
-              type="button"
-              onClick={() => setTerminalsOpen((o) => !o)}
-              className="fs-nav flex w-full items-center gap-1 rounded-sm px-1 py-0.5 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground outline-none ring-sidebar-ring hover:text-foreground focus-visible:ring-2"
-              aria-expanded={terminalsOpen}
-            >
-              <ChevronRight
-                className={cn('size-3 shrink-0 transition-transform duration-150', terminalsOpen && 'rotate-90')}
-                aria-hidden
-              />
-              <span>Terminals ({sessions.length})</span>
-            </button>
-            {terminalsOpen && (
-              <>
-                {sessions.map((s) => (
-                  <TerminalRow
-                    key={s.id}
-                    session={s}
-                    daw={daw}
-                    onActivate={openTerminal}
-                    onContextMenu={onTerminalContextMenu}
-                  />
-                ))}
-                <button
-                  type="button"
-                  className="fs-nav flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-sm outline-none ring-sidebar-ring text-muted-foreground hover:bg-sidebar-accent/40 hover:text-foreground focus-visible:ring-2"
-                  onClick={newTerminal}
-                >
-                  <Plus className="size-3.5 shrink-0 opacity-70" aria-hidden />
-                  <span>new terminal</span>
-                </button>
-              </>
-            )}
-          </div>
-
-          {/* Recently Closed — link, always visible when DAW expanded */}
-          <div className="mt-1">
-            <button
-              type="button"
-              onClick={() => {
-                navigate(`${PATH_BOOCODE}/daws/${daw.id}#terminal-history`)
-                if (isMobile) onMobileClose()
-              }}
-              className="fs-nav flex w-full items-center gap-1 rounded-sm px-1 py-0.5 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground outline-none ring-sidebar-ring hover:text-foreground focus-visible:ring-2"
-            >
-              <RotateCcw className="size-3 shrink-0 opacity-60" aria-hidden />
-              <span>Recently Closed →</span>
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// localStorage helpers for per-DAW expand state
-// ---------------------------------------------------------------------------
-const DAW_EXPANDED_KEY = 'bb-sidebar-daw-expanded'
-
-function readDawExpandedMap() {
-  try {
-    const raw = localStorage.getItem(DAW_EXPANDED_KEY)
-    if (!raw) return {}
-    const parsed = JSON.parse(raw)
-    return parsed && typeof parsed === 'object' ? parsed : {}
-  } catch {
-    return {}
-  }
-}
-
-function writeDawExpandedMap(m) {
-  try {
-    localStorage.setItem(DAW_EXPANDED_KEY, JSON.stringify(m))
-  } catch {
-    /* quota / private mode — non-fatal */
-  }
-}
-
-// ---------------------------------------------------------------------------
 // localStorage helpers for section open/closed
 // ---------------------------------------------------------------------------
 function readSectionOpen(key, defaultOpen) {
@@ -372,16 +83,9 @@ function readSectionOpen(key, defaultOpen) {
   }
 }
 
-export function Sidebar({
-  mobileOpen,
-  onMobileOpenChange,
-  appMode = 'booops',
-  routeBase = PATH_BOOOPS,
-}) {
+export function Sidebar({ mobileOpen, onMobileOpenChange }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const boolabHubHref = getBoolabHubHref()
-  const boolabHubExternal = isHttpUrl(boolabHubHref)
   const [isMobile, setIsMobile] = useState(false)
 
   const [ctx, setCtx] = useState(null)
@@ -389,13 +93,6 @@ export function Sidebar({
   const [editTitle, setEditTitle] = useState('')
   const [pendingDelete, setPendingDelete] = useState(null)
   const [deleting, setDeleting] = useState(false)
-  const [savedToast, setSavedToast] = useState(null)
-  const savedToastTimerRef = useRef(null)
-  useEffect(() => () => {
-    if (savedToastTimerRef.current) {
-      clearTimeout(savedToastTimerRef.current)
-    }
-  }, [])
   const editInputRef = useRef(null)
 
   useEffect(() => {
@@ -449,74 +146,40 @@ export function Sidebar({
   const activeChatId = useAppStore((s) => s.activeChatId)
   const setActiveChatId = useAppStore((s) => s.setActiveChatId)
   const hydrateFromChat = useAppStore((s) => s.hydrateFromChat)
-  const activeDawId = useAppStore((s) => s.activeDawId)
-  const setActiveDawId = useAppStore((s) => s.setActiveDawId)
+  const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId)
+  const setActiveWorkspaceId = useAppStore((s) => s.setActiveWorkspaceId)
   const branding = useAppStore((s) => s.branding)
   const sidebarW = branding?.sidebarWidth ?? 260
 
-  const recentChatMode =
-    appMode === '808notes' ? '808notes' : appMode === 'boocode' ? 'boocode' : 'booops'
   const { data } = useQuery({
-    queryKey: ['chats', 'recent', recentChatMode, activeDawId ?? 'all'],
+    queryKey: ['chats', 'recent', activeWorkspaceId ?? 'all'],
     queryFn: () =>
       listChats({
         limit: 40,
-        mode: recentChatMode,
-        ...(activeDawId ? { dawId: activeDawId } : {}),
+        ...(activeWorkspaceId ? { workspaceId: activeWorkspaceId } : {}),
       }),
     staleTime: 15_000,
-    enabled: appMode === 'booops' || appMode === '808notes',
   })
 
   const { data: brandingRow } = useQuery({
-    queryKey: ['branding', appMode],
-    queryFn: () => fetchBranding(appMode),
+    queryKey: ['branding'],
+    queryFn: () => fetchBranding(),
     staleTime: 60_000,
-    enabled: appMode === 'booops' || appMode === '808notes' || appMode === 'boocode',
   })
 
-  const pinnedDawMode =
-    appMode === '808notes' ? '808notes' : appMode === 'boocode' ? 'boocode' : 'booops'
-  const { data: dawsListPack, isError: dawsListError } = useQuery({
-    queryKey: ['daws', `pinned-sidebar-${pinnedDawMode}`],
-    queryFn: () => listDaws(pinnedDawMode),
+  const { data: workspacesListPack, isError: workspacesListError } = useQuery({
+    queryKey: ['workspaces', 'pinned-sidebar'],
+    queryFn: () => listWorkspaces(),
     staleTime: 30_000,
-    enabled: appMode === 'booops' || appMode === '808notes' || appMode === 'boocode',
   })
 
-  const pinnedDaws = useMemo(() => {
-    const list = Array.isArray(dawsListPack?.items) ? dawsListPack.items : []
-    if (appMode === 'boocode') return list
-    if (appMode === '808notes') return list.filter((d) => d.pinned_808notes === true)
-    return list.filter((d) => d.pinned_booops === true)
-  }, [dawsListPack, appMode])
+  const pinnedWorkspaces = useMemo(() => {
+    const list = Array.isArray(workspacesListPack?.items) ? workspacesListPack.items : []
+    return list.filter((d) => d.pinned === true)
+  }, [workspacesListPack])
 
   const [pinnedOpen, setPinnedOpen] = useState(() => readSectionOpen('bb-sidebar-pinned-open', true))
   const [recentOpen, setRecentOpen] = useState(() => readSectionOpen('bb-sidebar-recent-open', true))
-
-  // Per-DAW expand state (BooCode only)
-  const [dawExpandedMap, setDawExpandedMap] = useState(() => readDawExpandedMap())
-
-  // Persist DAW-expanded map to localStorage whenever it changes
-  useEffect(() => {
-    writeDawExpandedMap(dawExpandedMap)
-  }, [dawExpandedMap])
-
-  // Auto-expand active DAW on navigation — "adjust during render" pattern
-  const [lastActiveDaw, setLastActiveDaw] = useState(activeDawId ?? null)
-  if ((activeDawId ?? null) !== lastActiveDaw) {
-    setLastActiveDaw(activeDawId ?? null)
-    if (appMode === 'boocode' && activeDawId) {
-      setDawExpandedMap((prev) => {
-        if (prev[activeDawId]) return prev
-        return { ...prev, [activeDawId]: true }
-      })
-    }
-  }
-
-  const toggleDawExpanded = useCallback((dawId) => {
-    setDawExpandedMap((prev) => ({ ...prev, [dawId]: !prev[dawId] }))
-  }, [])
 
   function togglePinnedOpen() {
     setPinnedOpen((o) => {
@@ -543,13 +206,9 @@ export function Sidebar({
   }
 
   useEffect(() => {
-    if (
-      !brandingRow ||
-      (appMode !== 'booops' && appMode !== '808notes' && appMode !== 'boocode')
-    )
-      return
-    applyBrandingCss(brandingRow, appMode)
-  }, [brandingRow, appMode])
+    if (!brandingRow) return
+    applyBrandingCss(brandingRow)
+  }, [brandingRow])
 
   useEffect(() => {
     if (data?.items) setChats(data.items)
@@ -557,73 +216,38 @@ export function Sidebar({
 
   const desktopCollapsed = !isMobile && !sidebarOpen
 
-  function notes808WorkspaceChatPath() {
-    if (appMode === 'boocode') {
-      if (activeDawId) return boocodeDawPath(activeDawId)
-      return PATH_BOOCODE_HOME
-    }
-    if (appMode === '808notes') {
-      if (activeDawId) return notes808DawPath(activeDawId)
-      return PATH_808NOTES_HOME
-    }
-    // booops
-    if (activeDawId) return booopsDawPath(activeDawId)
-    return PATH_BOOOPS_HOME
+  function workspaceChatPath() {
+    if (activeWorkspaceId) return workspacePath(activeWorkspaceId)
+    return PATH_HOME
   }
 
   function goHome() {
-    if (appMode === 'booops' || appMode === '808notes' || appMode === 'boocode') {
-      setActiveChatId(null)
-      setActiveDawId(null)
-    }
-    navigate(
-      appMode === '808notes'
-        ? PATH_808NOTES_HOME
-        : appMode === 'boocode'
-          ? PATH_BOOCODE_HOME
-          : PATH_BOOOPS_HOME,
-    )
+    setActiveChatId(null)
+    setActiveWorkspaceId(null)
+    navigate(PATH_HOME)
     if (isMobile) onMobileOpenChange(false)
   }
 
   function onNewChat() {
     setActiveChatId(null)
-    navigate(notes808WorkspaceChatPath())
+    navigate(workspaceChatPath())
     if (isMobile) onMobileOpenChange(false)
   }
 
-  const brandTitle =
-    branding?.title ||
-    (appMode === '808notes'
-      ? '808notes'
-      : appMode === 'boocode'
-        ? 'BooCode'
-        : 'BooOps')
+  const brandTitle = branding?.title || 'Workspace'
 
   function selectChat(id) {
     setActiveChatId(id)
     const row = chats.find((c) => c.id === id)
     if (row) hydrateFromChat(row)
-    navigate(notes808WorkspaceChatPath())
+    navigate(workspaceChatPath())
     if (isMobile) onMobileOpenChange(false)
-  }
-
-  function showSavedToast(msg) {
-    if (savedToastTimerRef.current) clearTimeout(savedToastTimerRef.current)
-    setSavedToast(msg)
-    savedToastTimerRef.current = setTimeout(() => setSavedToast(null), 3500)
   }
 
   function onChatContextMenu(e, chat) {
     e.preventDefault()
     e.stopPropagation()
     setCtx({ x: e.clientX, y: e.clientY, chat })
-  }
-
-  function onTerminalContextMenu(e, session, daw) {
-    e.preventDefault()
-    e.stopPropagation()
-    setCtx({ x: e.clientX, y: e.clientY, terminal: session, terminalDaw: daw })
   }
 
   async function commitRename(chatId) {
@@ -670,7 +294,7 @@ export function Sidebar({
       await queryClient.invalidateQueries({ queryKey: ['chats'] })
       if (activeChatId === chat.id) {
         setActiveChatId(null)
-        navigate(notes808WorkspaceChatPath())
+        navigate(workspaceChatPath())
       }
     } catch {
       await queryClient.invalidateQueries({ queryKey: ['chats'] })
@@ -707,13 +331,7 @@ export function Sidebar({
         <div className="border-b border-sidebar-border">
           {!desktopCollapsed ? (
             <Link
-              to={
-                appMode === '808notes'
-                  ? PATH_808NOTES_HOME
-                  : appMode === 'boocode'
-                    ? PATH_BOOCODE_HOME
-                    : PATH_BOOOPS_HOME
-              }
+              to={PATH_HOME}
               onClick={(e) => {
                 e.preventDefault()
                 goHome()
@@ -747,198 +365,98 @@ export function Sidebar({
         </div>
 
         <div className="flex flex-col gap-2 p-2">
-          {(appMode === 'booops' || appMode === '808notes' || appMode === 'boocode') && (
-            <>
-              <div className="flex gap-1">
-                <Button
-                  type="button"
-                  className={cn('fs-nav min-w-0 flex-1 justify-start gap-2', desktopCollapsed && 'px-0')}
-                  onClick={onNewChat}
-                  aria-label="New chat"
-                >
-                  <MessageSquarePlus className="size-4 shrink-0" />
-                  {!desktopCollapsed && <span>New chat</span>}
-                </Button>
-                {!isMobile && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className="h-9 w-9 shrink-0 border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent"
-                    onClick={() => setSidebarOpen(!sidebarOpen)}
-                    aria-label={desktopCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                  >
-                    {desktopCollapsed ? <PanelLeft className="size-4" /> : <ChevronLeft className="size-4" />}
-                  </Button>
-                )}
-              </div>
-              {appMode === 'booops' && (
-                <div
-                  className={cn(
-                    'fs-nav flex items-center gap-2 rounded-md border border-sidebar-border bg-card px-2 py-1.5 text-muted-foreground',
-                    desktopCollapsed && 'justify-center px-0',
-                  )}
-                >
-                  <Search className="size-4 shrink-0" />
-                  {!desktopCollapsed && <span className="truncate">Search (soon)</span>}
-                </div>
-              )}
-            </>
-          )}
+          <div className="flex gap-1">
+            <Button
+              type="button"
+              className={cn('fs-nav min-w-0 flex-1 justify-start gap-2', desktopCollapsed && 'px-0')}
+              onClick={onNewChat}
+              aria-label="New chat"
+            >
+              <MessageSquarePlus className="size-4 shrink-0" />
+              {!desktopCollapsed && <span>New chat</span>}
+            </Button>
+            {!isMobile && (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-9 w-9 shrink-0 border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent"
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                aria-label={desktopCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              >
+                {desktopCollapsed ? <PanelLeft className="size-4" /> : <ChevronLeft className="size-4" />}
+              </Button>
+            )}
+          </div>
         </div>
 
         <div className="mx-2 border-t border-sidebar-border" />
 
-        {appMode === 'booops' ? (
-          <>
-            <div className="flex flex-col gap-1 px-2 py-2">
-              <Button
-                type="button"
-                variant="ghost"
-                className={cn(
-                  'fs-nav h-9 w-full justify-start font-normal',
-                  desktopCollapsed && 'justify-center px-0',
-                )}
-                asChild
+        <div className="flex flex-col gap-1 px-2 py-2">
+          <Button
+            type="button"
+            variant="ghost"
+            className={cn(
+              'fs-nav h-9 w-full justify-start font-normal',
+              desktopCollapsed && 'justify-center px-0',
+            )}
+            asChild
+          >
+            <Link
+              to={PATH_HOME}
+              onClick={() => isMobile && onMobileOpenChange(false)}
+              aria-label="All workspaces"
+            >
+              {!desktopCollapsed ? (
+                <span className="fs-nav flex items-center gap-2">
+                  <LayoutGrid className="size-4 shrink-0 opacity-70" />
+                  All workspaces
+                </span>
+              ) : (
+                <LayoutGrid className="size-4" aria-hidden />
+              )}
+            </Link>
+          </Button>
+          {activeWorkspaceId ? (
+            <Button
+              type="button"
+              variant="ghost"
+              className={cn(
+                'fs-nav h-9 w-full justify-start font-normal',
+                desktopCollapsed && 'justify-center px-0',
+              )}
+              asChild
+            >
+              <Link
+                to={workspacePath(activeWorkspaceId, 'sources')}
+                onClick={() => isMobile && onMobileOpenChange(false)}
+                aria-label="Sources"
               >
-                <Link to={`${routeBase}/chats`} onClick={() => isMobile && onMobileOpenChange(false)}>
-                  {!desktopCollapsed ? (
-                    <span className="fs-nav flex items-center gap-2">
-                      <List className="size-4 shrink-0 opacity-70" />
-                      All chats
-                    </span>
-                  ) : (
-                    <List className="size-4" aria-hidden />
-                  )}
-                </Link>
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                className={cn(
-                  'fs-nav h-9 w-full justify-start font-normal',
-                  desktopCollapsed && 'justify-center px-0',
+                {!desktopCollapsed ? (
+                  <span className="fs-nav flex items-center gap-2">
+                    <FileStack className="size-4 shrink-0 opacity-70" />
+                    Sources
+                  </span>
+                ) : (
+                  <FileStack className="size-4" aria-hidden />
                 )}
-                asChild
-              >
-                <Link
-                  to={appMode === 'boocode' ? (routeBase || '/') : `${routeBase}/daws`}
-                  onClick={() => isMobile && onMobileOpenChange(false)}
-                >
-                  {!desktopCollapsed ? (
-                    <span className="fs-nav flex items-center gap-2">
-                      <LayoutGrid className="size-4 shrink-0 opacity-70" />
-                      DAWs
-                    </span>
-                  ) : (
-                    <LayoutGrid className="size-4" aria-hidden />
-                  )}
-                </Link>
-              </Button>
-            </div>
+              </Link>
+            </Button>
+          ) : null}
+        </div>
 
-            <div className="mx-2 border-t border-sidebar-border" />
-          </>
-        ) : appMode === 'boocode' ? (
-          <>
-            <div className="flex flex-col gap-1 px-2 py-2">
-              <Button
-                type="button"
-                variant="ghost"
-                className={cn(
-                  'fs-nav h-9 w-full justify-start font-normal',
-                  desktopCollapsed && 'justify-center px-0',
-                )}
-                asChild
-              >
-                <Link
-                  to={PATH_BOOCODE_HOME}
-                  onClick={() => isMobile && onMobileOpenChange(false)}
-                  aria-label="All DAWs"
-                >
-                  {!desktopCollapsed ? (
-                    <span className="fs-nav flex items-center gap-2">
-                      <LayoutGrid className="size-4 shrink-0 opacity-70" />
-                      All DAWs
-                    </span>
-                  ) : (
-                    <LayoutGrid className="size-4" aria-hidden />
-                  )}
-                </Link>
-              </Button>
-            </div>
-
-            <div className="mx-2 border-t border-sidebar-border" />
-          </>
-        ) : (
-          <>
-            <div className="flex flex-col gap-1 px-2 py-2">
-              <Button
-                type="button"
-                variant="ghost"
-                className={cn(
-                  'fs-nav h-9 w-full justify-start font-normal',
-                  desktopCollapsed && 'justify-center px-0',
-                )}
-                asChild
-              >
-                <Link
-                  to={PATH_808NOTES_HOME}
-                  onClick={() => isMobile && onMobileOpenChange(false)}
-                  aria-label="All DAWs"
-                >
-                  {!desktopCollapsed ? (
-                    <span className="fs-nav flex items-center gap-2">
-                      <LayoutGrid className="size-4 shrink-0 opacity-70" />
-                      All DAWs
-                    </span>
-                  ) : (
-                    <LayoutGrid className="size-4" aria-hidden />
-                  )}
-                </Link>
-              </Button>
-              {activeDawId ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className={cn(
-                    'fs-nav h-9 w-full justify-start font-normal',
-                    desktopCollapsed && 'justify-center px-0',
-                  )}
-                  asChild
-                >
-                  <Link
-                    to={notes808DawPath(activeDawId, 'sources')}
-                    onClick={() => isMobile && onMobileOpenChange(false)}
-                    aria-label="Sources"
-                  >
-                    {!desktopCollapsed ? (
-                      <span className="fs-nav flex items-center gap-2">
-                        <FileStack className="size-4 shrink-0 opacity-70" />
-                        Sources
-                      </span>
-                    ) : (
-                      <FileStack className="size-4" aria-hidden />
-                    )}
-                  </Link>
-                </Button>
-              ) : null}
-            </div>
-
-            <div className="mx-2 border-t border-sidebar-border" />
-          </>
-        )}
+        <div className="mx-2 border-t border-sidebar-border" />
 
         <ScrollArea className="min-h-0 flex-1 px-2">
           <div className="flex flex-col gap-1 pb-2">
-            {appMode === 'booops' && !desktopCollapsed && (
+            {!desktopCollapsed && (
               <>
                 <button
                   type="button"
                   onClick={togglePinnedOpen}
                   className="fs-nav flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left font-medium uppercase tracking-wide text-muted-foreground outline-none ring-sidebar-ring hover:bg-sidebar-accent/50 focus-visible:ring-2"
                 >
-                  <span>Pinned DAWs</span>
+                  <span>Pinned workspaces</span>
                   <ChevronDown
                     className={cn(
                       'size-4 shrink-0 transition-transform duration-150',
@@ -948,25 +466,25 @@ export function Sidebar({
                   />
                 </button>
                 <div className={cn(!pinnedOpen && 'h-0 overflow-hidden')}>
-                  {dawsListError || pinnedDaws.length === 0 ? (
-                    <span className="fs-nav block px-2 text-muted-foreground">No pinned DAWs</span>
+                  {workspacesListError || pinnedWorkspaces.length === 0 ? (
+                    <span className="fs-nav block px-2 text-muted-foreground">No pinned workspaces</span>
                   ) : (
-                    pinnedDaws.map((d) => (
+                    pinnedWorkspaces.map((d) => (
                       <Button
                         key={d.id}
                         type="button"
-                        variant="ghost"
+                        variant={String(d.id) === String(activeWorkspaceId) ? 'secondary' : 'ghost'}
                         className="h-auto min-h-9 w-full justify-start gap-2 py-2 text-left font-normal"
                         asChild
                       >
                         <Link
-                          to={`${PATH_BOOOPS}/daw/${d.id}`}
+                          to={workspacePath(d.id)}
                           onClick={() => {
                             if (isMobile) onMobileOpenChange(false)
                           }}
                           onContextMenu={(e) => {
                             e.preventDefault()
-                            navigate(`${PATH_BOOOPS}/daws/${d.id}`)
+                            navigate(`/workspaces/${d.id}`)
                           }}
                         >
                           <span
@@ -985,106 +503,7 @@ export function Sidebar({
               </>
             )}
 
-            {appMode === '808notes' && !desktopCollapsed && (
-              <>
-                <button
-                  type="button"
-                  onClick={togglePinnedOpen}
-                  className="fs-nav flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left font-medium uppercase tracking-wide text-muted-foreground outline-none ring-sidebar-ring hover:bg-sidebar-accent/50 focus-visible:ring-2"
-                >
-                  <span>Pinned DAWs</span>
-                  <ChevronDown
-                    className={cn(
-                      'size-4 shrink-0 transition-transform duration-150',
-                      !pinnedOpen && 'rotate-180',
-                    )}
-                    aria-hidden
-                  />
-                </button>
-                <div className={cn(!pinnedOpen && 'h-0 overflow-hidden')}>
-                  {dawsListError || pinnedDaws.length === 0 ? (
-                    <span className="fs-nav block px-2 text-muted-foreground">No pinned DAWs</span>
-                  ) : (
-                    pinnedDaws.map((d) => (
-                      <Button
-                        key={d.id}
-                        type="button"
-                        variant={String(d.id) === String(activeDawId) ? 'secondary' : 'ghost'}
-                        className="h-auto min-h-9 w-full justify-start gap-2 py-2 text-left font-normal"
-                        asChild
-                      >
-                        <Link
-                          to={notes808DawPath(d.id)}
-                          onClick={() => {
-                            if (isMobile) onMobileOpenChange(false)
-                          }}
-                          onContextMenu={(e) => {
-                            e.preventDefault()
-                            navigate(`${PATH_808NOTES}/daws/${d.id}`)
-                          }}
-                        >
-                          <span
-                            className="size-2.5 shrink-0 rounded-full"
-                            style={{ background: d.color || '#7c3aed' }}
-                            aria-hidden
-                          />
-                          <span className="fs-nav line-clamp-2">{d.name}</span>
-                        </Link>
-                      </Button>
-                    ))
-                  )}
-                </div>
-
-                <div className="mx-0 my-1 border-t border-sidebar-border" />
-              </>
-            )}
-
-            {appMode === 'boocode' && !desktopCollapsed && (
-              <>
-                <button
-                  type="button"
-                  onClick={togglePinnedOpen}
-                  className="fs-nav flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left font-medium uppercase tracking-wide text-muted-foreground outline-none ring-sidebar-ring hover:bg-sidebar-accent/50 focus-visible:ring-2"
-                >
-                  <span>DAWs</span>
-                  <ChevronDown
-                    className={cn(
-                      'size-4 shrink-0 transition-transform duration-150',
-                      !pinnedOpen && 'rotate-180',
-                    )}
-                    aria-hidden
-                  />
-                </button>
-                <div className={cn(!pinnedOpen && 'h-0 overflow-hidden')}>
-                  {dawsListError || pinnedDaws.length === 0 ? (
-                    <span className="fs-nav block px-2 text-muted-foreground">No DAWs</span>
-                  ) : (
-                    pinnedDaws.map((d) => (
-                      <BoocodeDawRow
-                        key={d.id}
-                        daw={d}
-                        isActive={String(d.id) === String(activeDawId)}
-                        isExpanded={Boolean(dawExpandedMap[d.id])}
-                        onToggle={() => toggleDawExpanded(d.id)}
-                        isMobile={isMobile}
-                        onMobileClose={() => onMobileOpenChange(false)}
-                        navigate={navigate}
-                        activeChatId={activeChatId}
-                        setActiveDawId={setActiveDawId}
-                        setActiveChatId={setActiveChatId}
-                        hydrateFromChat={hydrateFromChat}
-                        onTerminalContextMenu={onTerminalContextMenu}
-                        onChatContextMenu={onChatContextMenu}
-                      />
-                    ))
-                  )}
-                </div>
-
-                <div className="mx-0 my-1 border-t border-sidebar-border" />
-              </>
-            )}
-
-            {(appMode === 'booops' || appMode === '808notes') && !desktopCollapsed && (
+            {!desktopCollapsed && (
               <>
                 <button
                   type="button"
@@ -1136,49 +555,23 @@ export function Sidebar({
               </>
             )}
 
-            {appMode === 'booops' && desktopCollapsed && (
+            {desktopCollapsed && (
               <div className="flex flex-col items-center gap-1 pt-1">
-                {pinnedDaws.map((d) => (
+                {pinnedWorkspaces.map((d) => (
                   <Link
                     key={d.id}
-                    to={`${PATH_BOOOPS}/daw/${d.id}`}
+                    to={workspacePath(d.id)}
                     title={d.name}
                     onClick={() => {
                       if (isMobile) onMobileOpenChange(false)
                     }}
                     onContextMenu={(e) => {
                       e.preventDefault()
-                      navigate(`${PATH_BOOOPS}/daws/${d.id}`)
-                    }}
-                    className="flex h-9 w-full items-center justify-center rounded-md transition-colors hover:bg-sidebar-accent/50"
-                  >
-                    <span
-                      className="size-2.5 shrink-0 rounded-full"
-                      style={{ background: d.color || '#7c3aed' }}
-                      aria-hidden
-                    />
-                  </Link>
-                ))}
-              </div>
-            )}
-
-            {appMode === '808notes' && desktopCollapsed && (
-              <div className="flex flex-col items-center gap-1 pt-1">
-                {pinnedDaws.map((d) => (
-                  <Link
-                    key={d.id}
-                    to={notes808DawPath(d.id)}
-                    title={d.name}
-                    onClick={() => {
-                      if (isMobile) onMobileOpenChange(false)
-                    }}
-                    onContextMenu={(e) => {
-                      e.preventDefault()
-                      navigate(`${PATH_808NOTES}/daws/${d.id}`)
+                      navigate(`/workspaces/${d.id}`)
                     }}
                     className={cn(
                       'flex h-9 w-full items-center justify-center rounded-md hover:bg-sidebar-accent/50',
-                      String(d.id) === String(activeDawId) && 'bg-sidebar-accent/60',
+                      String(d.id) === String(activeWorkspaceId) && 'bg-sidebar-accent/60',
                     )}
                   >
                     <span
@@ -1191,36 +584,7 @@ export function Sidebar({
               </div>
             )}
 
-            {appMode === 'boocode' && desktopCollapsed && (
-              <div className="flex flex-col items-center gap-1 pt-1">
-                {pinnedDaws.map((d) => (
-                  <Link
-                    key={d.id}
-                    to={`${PATH_BOOCODE}/daw/${d.id}`}
-                    title={d.name}
-                    onClick={() => {
-                      if (isMobile) onMobileOpenChange(false)
-                    }}
-                    onContextMenu={(e) => {
-                      e.preventDefault()
-                      navigate(`${PATH_BOOCODE}/daws/${d.id}`)
-                    }}
-                    className={cn(
-                      'flex h-9 w-full items-center justify-center rounded-md hover:bg-sidebar-accent/50',
-                      String(d.id) === String(activeDawId) && 'bg-sidebar-accent/60',
-                    )}
-                  >
-                    <span
-                      className="size-2.5 shrink-0 rounded-full"
-                      style={{ background: d.color || '#7c3aed' }}
-                      aria-hidden
-                    />
-                  </Link>
-                ))}
-              </div>
-            )}
-
-            {(appMode === 'booops' || appMode === '808notes') && desktopCollapsed && (
+            {desktopCollapsed && (
               <div className="flex flex-col gap-1">
                 {chats.map((c) => (
                   <ChatRow
@@ -1238,7 +602,7 @@ export function Sidebar({
         </ScrollArea>
 
         <div className="mt-auto flex flex-col gap-1 border-t border-sidebar-border p-2">
-          {(appMode === 'booops' || appMode === '808notes' || appMode === 'boocode') && currentUser && (
+          {currentUser && (
             <Button
               type="button"
               variant="outline"
@@ -1249,7 +613,7 @@ export function Sidebar({
               asChild
             >
               <Link
-                to={`${routeBase}/profile`}
+                to="/profile"
                 onClick={() => isMobile && onMobileOpenChange(false)}
                 title="Profile"
                 aria-label="Profile"
@@ -1265,8 +629,8 @@ export function Sidebar({
               </Link>
             </Button>
           )}
-          {(appMode === 'booops' || appMode === '808notes' || appMode === 'boocode') && (() => {
-            const showAi = currentUser?.role === 'owner'
+          {(() => {
+            const showAi = true
             const showSettings = adminUi
             if (!showAi && !showSettings) return null
             const aiBtn = showAi ? (
@@ -1280,7 +644,7 @@ export function Sidebar({
                 )}
                 asChild
               >
-                <Link to={`${routeBase}/ai`} onClick={() => isMobile && onMobileOpenChange(false)} title="AI settings">
+                <Link to="/ai" onClick={() => isMobile && onMobileOpenChange(false)} title="AI settings">
                   {!desktopCollapsed ? (
                     <span className="fs-nav flex items-center justify-center gap-2">
                       <Brain className="size-4 shrink-0" />
@@ -1304,7 +668,7 @@ export function Sidebar({
                 asChild
               >
                 <Link
-                  to={`${routeBase}/settings`}
+                  to="/settings"
                   onClick={() => isMobile && onMobileOpenChange(false)}
                   title="Settings"
                   aria-label="Settings"
@@ -1332,33 +696,6 @@ export function Sidebar({
               </div>
             )
           })()}
-          <Button
-            type="button"
-            variant="outline"
-            className={cn(
-              'w-full border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent',
-              desktopCollapsed && 'px-0',
-            )}
-            asChild
-          >
-            {boolabHubExternal ? (
-              <a href={boolabHubHref} title="boolab">
-                {!desktopCollapsed ? (
-                  <span className="fs-nav">boolab</span>
-                ) : (
-                  <ChevronRight className="size-4" />
-                )}
-              </a>
-            ) : (
-              <Link to={boolabHubHref} title="boolab">
-                {!desktopCollapsed ? (
-                  <span className="fs-nav">boolab</span>
-                ) : (
-                  <ChevronRight className="size-4" />
-                )}
-              </Link>
-            )}
-          </Button>
         </div>
       </aside>
 
@@ -1374,92 +711,22 @@ export function Sidebar({
           onClick={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
         >
-          {ctx.terminal ? (
-            <>
-              <button
-                type="button"
-                role="menuitem"
-                className="fs-nav flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-left outline-none hover:bg-accent hover:text-accent-foreground"
-                onClick={async () => {
-                  const sid = ctx.terminal.id
-                  closeCtx()
-                  try {
-                    const res = await terminalsApi.exportTerminal(sid)
-                    await terminalsApi.del(sid)
-                    await queryClient.invalidateQueries({ queryKey: ['terminals'] })
-                    await queryClient.invalidateQueries({ queryKey: ['sidebar-terminals'] })
-                    showSavedToast(`Saved: ${res?.filename ?? 'terminal'}`)
-                  } catch (e) {
-                    showSavedToast(`Save failed: ${friendlyErr(e, 'export error')}`)
-                  }
-                }}
-              >
-                Save &amp; Close
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                className="fs-nav flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-left text-destructive outline-none hover:bg-destructive/10"
-                onClick={async () => {
-                  const sid = ctx.terminal.id
-                  closeCtx()
-                  try {
-                    await terminalsApi.del(sid)
-                    await queryClient.invalidateQueries({ queryKey: ['terminals'] })
-                    await queryClient.invalidateQueries({ queryKey: ['sidebar-terminals'] })
-                  } catch (e) {
-                    showSavedToast(`Close failed: ${friendlyErr(e, 'close error')}`)
-                  }
-                }}
-              >
-                Close
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                type="button"
-                role="menuitem"
-                className="fs-nav flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-left outline-none hover:bg-accent hover:text-accent-foreground"
-                onClick={() => startRename(ctx.chat)}
-              >
-                Rename
-              </button>
-              {appMode === 'boocode' && ctx.chat?.daw_id && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="fs-nav flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-left outline-none hover:bg-accent hover:text-accent-foreground"
-                  onClick={async () => {
-                    const cid = ctx.chat.id
-                    closeCtx()
-                    try {
-                      const res = await exportChat(cid)
-                      showSavedToast(`Saved: ${res?.filename ?? 'chat'}`)
-                    } catch (e) {
-                      showSavedToast(`Save failed: ${friendlyErr(e, 'export error')}`)
-                    }
-                  }}
-                >
-                  Save to file
-                </button>
-              )}
-              <button
-                type="button"
-                role="menuitem"
-                className="fs-nav flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-left text-destructive outline-none hover:bg-destructive/10"
-                onClick={() => requestDeleteChat(ctx.chat)}
-              >
-                Delete
-              </button>
-            </>
-          )}
-        </div>
-      )}
-
-      {savedToast && (
-        <div className="fixed bottom-4 left-1/2 z-[60] -translate-x-1/2 rounded-md border border-border bg-popover px-4 py-2 text-sm text-popover-foreground shadow-md">
-          {savedToast}
+          <button
+            type="button"
+            role="menuitem"
+            className="fs-nav flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-left outline-none hover:bg-accent hover:text-accent-foreground"
+            onClick={() => startRename(ctx.chat)}
+          >
+            Rename
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="fs-nav flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-left text-destructive outline-none hover:bg-destructive/10"
+            onClick={() => requestDeleteChat(ctx.chat)}
+          >
+            Delete
+          </button>
         </div>
       )}
 

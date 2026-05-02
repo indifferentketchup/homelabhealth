@@ -8,27 +8,24 @@ import uuid
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from auth_deps import get_principal, require_admin
+from deps import _SCHEMA_MODE_VALUE, get_principal, require_admin
 from db import get_pool
+from services.inference_defaults import required_default_model
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-def _norm_mode(m: str) -> str:
-    return m if m in ("booops", "808notes") else "booops"
-
-
 def _inference_base() -> str:
-    return os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+    return os.environ.get("INFERENCE_URL", "http://localhost:8080").rstrip("/")
 
 
 def _openai_headers() -> dict[str, str]:
     h = {"Content-Type": "application/json"}
-    key = (os.environ.get("OPENAI_API_KEY") or os.environ.get("BIFROST_API_KEY") or "").strip()
+    key = (os.environ.get("OPENAI_API_KEY") or "").strip()
     if key:
         h["Authorization"] = f"Bearer {key}"
     return h
@@ -48,16 +45,15 @@ class MemoryEntryPatch(BaseModel):
 
 
 @router.get("/")
-async def get_memory(mode: str = Query("booops"), _: dict = Depends(require_admin)):
-    m = _norm_mode(mode)
+async def get_memory(_: dict = Depends(require_admin)):
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             "SELECT mode, content, updated_at FROM mode_memory WHERE mode = $1",
-            m,
+            _SCHEMA_MODE_VALUE,
         )
     if row is None:
-        return {"mode": m, "content": "", "updated_at": None}
+        return {"mode": _SCHEMA_MODE_VALUE, "content": "", "updated_at": None}
     return {
         "mode": row["mode"],
         "content": row["content"] or "",
@@ -66,8 +62,7 @@ async def get_memory(mode: str = Query("booops"), _: dict = Depends(require_admi
 
 
 @router.put("/")
-async def put_memory(mode: str = Query("booops"), body: MemoryPut = Body(), _: dict = Depends(require_admin)):
-    m = _norm_mode(mode)
+async def put_memory(body: MemoryPut = Body(), _: dict = Depends(require_admin)):
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -77,7 +72,7 @@ async def put_memory(mode: str = Query("booops"), body: MemoryPut = Body(), _: d
             ON CONFLICT (mode) DO UPDATE SET content = EXCLUDED.content, updated_at = NOW()
             RETURNING mode, content, updated_at
             """,
-            m,
+            _SCHEMA_MODE_VALUE,
             body.content or "",
         )
     return {
@@ -87,9 +82,8 @@ async def put_memory(mode: str = Query("booops"), body: MemoryPut = Body(), _: d
 
 
 @router.post("/extract")
-async def extract_memory(mode: str = Query("booops"), _: dict = Depends(require_admin)):
-    m = _norm_mode(mode)
-    model = (os.environ.get("DEFAULT_MODEL") or "llama-gpu/qwen3.5-9b-exl3").strip()
+async def extract_memory(_: dict = Depends(require_admin)):
+    model = required_default_model()
     pool = await get_pool()
 
     async with pool.acquire() as conn:
@@ -101,14 +95,14 @@ async def extract_memory(mode: str = Query("booops"), _: dict = Depends(require_
             ORDER BY c.updated_at DESC NULLS LAST, c.created_at DESC
             LIMIT 1
             """,
-            m,
+            _SCHEMA_MODE_VALUE,
         )
         if chat_id is None:
             raise HTTPException(status_code=400, detail="No chats exist for this mode")
 
         mem_row = await conn.fetchrow(
             "SELECT content FROM mode_memory WHERE mode = $1",
-            m,
+            _SCHEMA_MODE_VALUE,
         )
         current_memory = (mem_row["content"] or "") if mem_row else ""
 
@@ -182,7 +176,7 @@ async def extract_memory(mode: str = Query("booops"), _: dict = Depends(require_
             ON CONFLICT (mode) DO UPDATE SET content = EXCLUDED.content, updated_at = NOW()
             RETURNING content, updated_at
             """,
-            m,
+            _SCHEMA_MODE_VALUE,
             updated,
         )
 
@@ -244,8 +238,7 @@ async def embed_all_memories(principal: dict[str, Any] = Depends(get_principal))
 
 
 @router.get("/entries/")
-async def list_memory_entries(mode: str = Query("booops"), _: dict = Depends(require_admin)):
-    m = _norm_mode(mode)
+async def list_memory_entries(_: dict = Depends(require_admin)):
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
@@ -256,7 +249,7 @@ async def list_memory_entries(mode: str = Query("booops"), _: dict = Depends(req
             WHERE mode = $1 AND is_deleted = FALSE
             ORDER BY created_at DESC NULLS LAST, id DESC
             """,
-            m,
+            _SCHEMA_MODE_VALUE,
         )
     return [_memory_entry_row(r) for r in rows]
 
@@ -264,10 +257,8 @@ async def list_memory_entries(mode: str = Query("booops"), _: dict = Depends(req
 @router.post("/entries/")
 async def create_memory_entry(
     body: MemoryEntryCreate,
-    mode: str = Query("booops"),
     _: dict = Depends(require_admin),
 ):
-    m = _norm_mode(mode)
     src = (body.source or "manual").strip().lower()
     if src not in ("manual", "auto"):
         raise HTTPException(status_code=400, detail="source must be manual or auto")
@@ -281,7 +272,7 @@ async def create_memory_entry(
             """,
             body.content.strip(),
             src,
-            m,
+            _SCHEMA_MODE_VALUE,
         )
     return _memory_entry_row(row)
 

@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ChevronLeft, File, Folder, Loader2, X } from 'lucide-react'
 
-import { dubdriveLs, dubdriveRead, dubignoreAppend } from '@/api/dubdrive.js'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
+
+// File browser is currently inert -- generic file source not wired yet.
+async function fileSourceLs(_path) { return [] }
+async function fileSourceRead(_path) { return '' }
+async function fileSourceIgnore(_root, _name, _type) { /* no-op */ }
 
 const DEFAULT_ROOT = '/HomeLabRepos'
 
@@ -73,7 +77,7 @@ export function FileBrowserPanel({ isOpen, onClose, onFileSelect, rootPath, vari
     setLoading(true)
     setError(null)
     try {
-      const data = await dubdriveLs(currentPath.replace(/\/+$/, ''))
+      const data = await fileSourceLs(currentPath.replace(/\/+$/, ''))
       const rows = Array.isArray(data) ? data : []
       const base = currentPath.endsWith('/') ? currentPath : `${currentPath}/`
       const normalized = rows
@@ -148,7 +152,7 @@ export function FileBrowserPanel({ isOpen, onClose, onFileSelect, rootPath, vari
     }
     setReading(true)
     try {
-      const content = await dubdriveRead(entry.path)
+      const content = await fileSourceRead(entry.path)
       const text = typeof content === 'string' ? content : JSON.stringify(content, null, 2)
       onFileSelect?.(entry.name, entry.path, text)
     } catch (e) {
@@ -168,7 +172,7 @@ export function FileBrowserPanel({ isOpen, onClose, onFileSelect, rootPath, vari
     const entry = contextMenu.entry
     const entryType = entry.type === 'dir' ? 'dir' : 'name'
     try {
-      await dubignoreAppend(effectiveRoot, entry.name, entryType)
+      await fileSourceIgnore(effectiveRoot, entry.name, entryType)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }

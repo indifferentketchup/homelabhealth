@@ -1,10 +1,7 @@
 import { useEffect } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
-import { ModeSync } from '@/components/ModeSync.jsx'
-import { ModeRouter } from '@/components/ModeRouter.jsx'
-import { RootRedirect } from '@/components/RootRedirect.jsx'
-import { USE_LEGACY_PATH_PREFIX } from '@/routes/paths.js'
+import { BrowserRouter } from 'react-router-dom'
+import { AppRoutes } from '@/components/AppRoutes.jsx'
 import { useLayoutStore } from '@/store/layoutStore.js'
 import { useAppStore } from '@/store/index.js'
 
@@ -18,8 +15,7 @@ function LayoutBootstrap() {
   // exposes visualViewport). 100dvh stays static when the keyboard appears,
   // so we publish the keyboard height as --bc-keyboard-pad and consumers
   // (chat input padding, terminal pane, etc.) subtract it where needed.
-  // Lives at the App root so it works in every mode (booops, 808notes,
-  // boocode, boolab) — earlier this was scoped to BooCodeApp only.
+  // Lives at the App root so it works app-wide.
   useEffect(() => {
     if (typeof window === 'undefined' || !window.visualViewport) return
     const apply = () => {
@@ -64,19 +60,8 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <ModeSync>
-          <LayoutBootstrap />
-          <Routes>
-            {USE_LEGACY_PATH_PREFIX ? (
-              <>
-                <Route path="/" element={<RootRedirect />} />
-                <Route path="/*" element={<ModeRouter />} />
-              </>
-            ) : (
-              <Route path="/*" element={<ModeRouter />} />
-            )}
-          </Routes>
-        </ModeSync>
+        <LayoutBootstrap />
+        <AppRoutes />
       </BrowserRouter>
     </QueryClientProvider>
   )

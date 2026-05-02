@@ -1,0 +1,37 @@
+import { Routes, Route, Navigate } from 'react-router-dom'
+import {
+  WorkspaceLanding,
+  WorkspaceLayout,
+  WorkspaceChat,
+  WorkspaceSourcesPage,
+  WorkspaceAuxShell,
+} from '@/pages/workspace/WorkspaceView.jsx'
+import WorkspaceApp, { SettingsRoute } from '@/pages/workspace/WorkspaceApp.jsx'
+import WorkspacesPage from '@/pages/workspace/WorkspacesPage.jsx'
+import WorkspaceDetailPage from '@/pages/workspace/WorkspaceDetailPage.jsx'
+import AISettings from '@/pages/workspace/AISettings.jsx'
+import ProfilePage from '@/pages/workspace/ProfilePage.jsx'
+import { SkillsLibraryPage } from '@/pages/SkillsLibraryPage.jsx'
+
+export function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/" element={<WorkspaceApp />}>
+        <Route index element={<WorkspaceLanding />} />
+        <Route path="workspaces" element={<WorkspacesPage />} />
+        <Route path="workspaces/:id" element={<WorkspaceDetailPage />} />
+        <Route path="workspace/:workspaceId" element={<WorkspaceLayout />}>
+          <Route index element={<WorkspaceChat />} />
+          <Route path="sources" element={<WorkspaceSourcesPage />} />
+        </Route>
+        <Route element={<WorkspaceAuxShell />}>
+          <Route path="ai" element={<AISettings />} />
+          <Route path="settings" element={<SettingsRoute />} />
+          <Route path="profile" element={<ProfilePage />} />
+          <Route path="skills" element={<SkillsLibraryPage />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Route>
+    </Routes>
+  )
+}

@@ -20,23 +20,23 @@ export async function searchSkills(query) {
   return apiFetch('/api/skills/search', { method: 'POST', json: { query } })
 }
 
-export async function getDawSkills(dawId) {
-  return apiFetch(`/api/skills/daws/${dawId}`, { method: 'GET' })
+export async function getWorkspaceSkills(workspaceId) {
+  return apiFetch(`/api/skills/workspaces/${workspaceId}`, { method: 'GET' })
 }
 
-export async function addSkillToDaw(dawId, skillId, active = true) {
-  return apiFetch(`/api/skills/daws/${dawId}`, {
+export async function addSkillToWorkspace(workspaceId, skillId, active = true) {
+  return apiFetch(`/api/skills/workspaces/${workspaceId}`, {
     method: 'POST',
     json: { skill_id: skillId, active },
   })
 }
 
-export async function removeSkillFromDaw(dawId, skillId) {
-  return apiFetch(`/api/skills/daws/${dawId}/${skillId}`, { method: 'DELETE' })
+export async function removeSkillFromWorkspace(workspaceId, skillId) {
+  return apiFetch(`/api/skills/workspaces/${workspaceId}/${skillId}`, { method: 'DELETE' })
 }
 
-export async function toggleDawSkill(dawId, skillId, active) {
-  return apiFetch(`/api/skills/daws/${dawId}/${skillId}?active=${active}`, {
+export async function toggleWorkspaceSkill(workspaceId, skillId, active) {
+  return apiFetch(`/api/skills/workspaces/${workspaceId}/${skillId}?active=${active}`, {
     method: 'PATCH',
   })
 }

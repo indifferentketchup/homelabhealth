@@ -225,11 +225,6 @@ INSERT INTO global_settings (key, value) VALUES ('pruning_threshold', '40')
 ON CONFLICT (key) DO NOTHING;
 
 INSERT INTO global_settings (key, value) VALUES ('ollama_hidden_models', '[]') ON CONFLICT (key) DO NOTHING;
-INSERT INTO global_settings (key, value) VALUES ('default_model', 'qwen3.5:9b') ON CONFLICT (key) DO NOTHING;
-INSERT INTO global_settings (key, value) VALUES ('ollama_hidden_models_808notes', '[]') ON CONFLICT (key) DO NOTHING;
-INSERT INTO global_settings (key, value) VALUES ('default_model_808notes', 'qwen3.5:9b') ON CONFLICT (key) DO NOTHING;
-INSERT INTO global_settings (key, value) VALUES ('ollama_hidden_models_boocode', '[]') ON CONFLICT (key) DO NOTHING;
-INSERT INTO global_settings (key, value) VALUES ('default_model_boocode', 'qwen3.5:9b') ON CONFLICT (key) DO NOTHING;
 
 INSERT INTO global_settings (key, value) VALUES
   ('rag_similarity_threshold', '0.35'),
@@ -238,72 +233,16 @@ INSERT INTO global_settings (key, value) VALUES
   ('rag_min_words_for_intent', '8')
 ON CONFLICT (key) DO NOTHING;
 
-UPDATE global_settings SET value = 'qwen3.5:9b' WHERE key = 'default_model' AND value = 'qwen3.5:35b';
+-- Personas: ensure columns + unique-default indexes exist (idempotent).
+ALTER TABLE personas ADD COLUMN IF NOT EXISTS avatar_emoji TEXT DEFAULT '🤖';
+ALTER TABLE personas ADD COLUMN IF NOT EXISTS is_default_booops BOOLEAN DEFAULT FALSE;
+ALTER TABLE personas ADD COLUMN IF NOT EXISTS is_default_808notes BOOLEAN DEFAULT FALSE;
+ALTER TABLE personas ADD COLUMN IF NOT EXISTS is_default_boocode BOOLEAN DEFAULT FALSE;
+ALTER TABLE personas ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
--- Personas: global list (no personas.mode); one default per app via partial unique indexes
-DO $personas_global$
-BEGIN
-  ALTER TABLE personas ADD COLUMN IF NOT EXISTS avatar_emoji TEXT DEFAULT '🤖';
-  UPDATE personas SET avatar_emoji = COALESCE(NULLIF(trim(avatar_emoji), ''), '🤖') WHERE avatar_emoji IS NULL;
-  ALTER TABLE personas ADD COLUMN IF NOT EXISTS is_default_booops BOOLEAN DEFAULT FALSE;
-  ALTER TABLE personas ADD COLUMN IF NOT EXISTS is_default_808notes BOOLEAN DEFAULT FALSE;
-  ALTER TABLE personas ADD COLUMN IF NOT EXISTS is_default_boocode BOOLEAN DEFAULT FALSE;
-  ALTER TABLE personas ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
-
-  IF EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'personas' AND column_name = 'is_default'
-  ) THEN
-    UPDATE personas SET is_default_booops = TRUE
-    WHERE id = (
-      SELECT id FROM personas WHERE is_default IS TRUE ORDER BY created_at ASC NULLS LAST LIMIT 1
-    )
-    AND NOT EXISTS (SELECT 1 FROM personas WHERE is_default_booops IS TRUE);
-    ALTER TABLE personas DROP COLUMN is_default;
-  END IF;
-
-  DROP INDEX IF EXISTS personas_one_default_per_mode;
-  DROP INDEX IF EXISTS personas_one_default_global;
-
-  DROP INDEX IF EXISTS personas_one_default_booops_idx;
-  DROP INDEX IF EXISTS personas_one_default_808notes_idx;
-  DROP INDEX IF EXISTS personas_one_default_boocode_idx;
-
-  IF NOT EXISTS (SELECT 1 FROM personas WHERE name = 'BooOps') THEN
-    INSERT INTO personas (name, system_prompt, avatar_emoji, is_default_booops, is_default_808notes)
-    VALUES (
-      'BooOps',
-      'You are BooOps, a generalist AI assistant. You are direct, pragmatic, and science-first. You help with anything — coding, writing, research, problem-solving. No fluff, no filler. Get to the point.',
-      '🤖',
-      TRUE,
-      FALSE
-    );
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM personas WHERE name = '808notes') THEN
-    INSERT INTO personas (name, system_prompt, avatar_emoji, is_default_booops, is_default_808notes)
-    VALUES (
-      '808notes',
-      'You are 808notes, a school-focused AI assistant. You are pragmatic and efficient. You help with academic writing, research, course assignments, and study tasks. Prioritize clarity and correctness. No padding.',
-      '🎵',
-      FALSE,
-      TRUE
-    );
-  END IF;
-
-  UPDATE personas SET system_prompt = 'You are BooOps, a generalist AI assistant. You are direct, pragmatic, and science-first. You help with anything — coding, writing, research, problem-solving. No fluff, no filler. Get to the point.'
-  WHERE name = 'BooOps';
-  UPDATE personas SET system_prompt = 'You are 808notes, a school-focused AI assistant. You are pragmatic and efficient. You help with academic writing, research, course assignments, and study tasks. Prioritize clarity and correctness. No padding.'
-  WHERE name = '808notes';
-
-  UPDATE personas SET is_default_booops = FALSE;
-  UPDATE personas SET is_default_808notes = FALSE;
-  UPDATE personas SET is_default_booops = TRUE WHERE name = 'BooOps';
-  UPDATE personas SET is_default_808notes = TRUE WHERE name = '808notes';
-  CREATE UNIQUE INDEX IF NOT EXISTS personas_one_default_booops_idx ON personas ((1)) WHERE is_default_booops = TRUE;
-  CREATE UNIQUE INDEX IF NOT EXISTS personas_one_default_808notes_idx ON personas ((1)) WHERE is_default_808notes = TRUE;
-  CREATE UNIQUE INDEX IF NOT EXISTS personas_one_default_boocode_idx ON personas ((1)) WHERE is_default_boocode = TRUE;
-END
-$personas_global$;
+CREATE UNIQUE INDEX IF NOT EXISTS personas_one_default_booops_idx ON personas ((1)) WHERE is_default_booops = TRUE;
+CREATE UNIQUE INDEX IF NOT EXISTS personas_one_default_808notes_idx ON personas ((1)) WHERE is_default_808notes = TRUE;
+CREATE UNIQUE INDEX IF NOT EXISTS personas_one_default_boocode_idx ON personas ((1)) WHERE is_default_boocode = TRUE;
 
 -- Phase 3: one markdown blob per mode (separate from memory_entries)
 CREATE TABLE IF NOT EXISTS mode_memory (
@@ -313,9 +252,6 @@ CREATE TABLE IF NOT EXISTS mode_memory (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-INSERT INTO mode_memory (mode, content) VALUES ('booops', '') ON CONFLICT (mode) DO NOTHING;
-INSERT INTO mode_memory (mode, content) VALUES ('808notes', '') ON CONFLICT (mode) DO NOTHING;
-
 -- Live DBs that already have mode_memory with mode as PK: add id only; keep PRIMARY KEY on mode.
 ALTER TABLE mode_memory ADD COLUMN IF NOT EXISTS id SERIAL;
 
@@ -323,7 +259,7 @@ ALTER TABLE mode_memory ADD COLUMN IF NOT EXISTS id SERIAL;
 ALTER TABLE custom_instructions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 UPDATE custom_instructions SET updated_at = COALESCE(updated_at, created_at, NOW()) WHERE updated_at IS NULL;
 
--- Merge ai_workspaces into daws (columns + check; safe on repeated apply_schema)
+-- daws: mode/system_prompt/persona_id columns (idempotent)
 ALTER TABLE daws ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT 'booops';
 ALTER TABLE daws ADD COLUMN IF NOT EXISTS system_prompt TEXT NOT NULL DEFAULT '';
 ALTER TABLE daws ADD COLUMN IF NOT EXISTS persona_id UUID REFERENCES personas(id) ON DELETE SET NULL;
@@ -336,49 +272,7 @@ EXCEPTION
 END
 $daw_mode_chk$;
 
--- One-time migration when legacy ai_workspaces still exists (skipped after table is dropped)
-DO $merge_ai_ws$
-BEGIN
-    IF EXISTS (
-        SELECT 1 FROM information_schema.tables
-        WHERE table_schema = 'public' AND table_name = 'ai_workspaces'
-    ) THEN
-        INSERT INTO daws (id, name, description, system_prompt, persona_id, mode, created_at, updated_at)
-        SELECT id, name, '', system_prompt, persona_id, mode, created_at, NOW()
-        FROM ai_workspaces
-        ON CONFLICT (id) DO NOTHING;
-        UPDATE chats
-        SET daw_id = ai_workspace_id
-        WHERE ai_workspace_id IS NOT NULL AND daw_id IS NULL;
-        ALTER TABLE chats DROP COLUMN IF EXISTS ai_workspace_id;
-        DROP TABLE IF EXISTS ai_workspaces CASCADE;
-    END IF;
-END
-$merge_ai_ws$;
-
-DROP INDEX IF EXISTS ai_workspaces_mode_idx;
-DROP INDEX IF EXISTS chats_ai_workspace_id_idx;
-
 CREATE INDEX IF NOT EXISTS daws_mode_idx ON daws(mode);
-
--- Default 808notes notebook so SourcesPanel can attach uploads without an empty DAW list
-INSERT INTO daws (name, description, system_prompt, mode, pinned_808notes, sort_order)
-SELECT 'Main notebook', 'Default notebook for 808notes uploads and RAG.', '', '808notes', TRUE, 0
-WHERE NOT EXISTS (SELECT 1 FROM daws WHERE mode = '808notes' LIMIT 1);
-
-UPDATE daws
-SET icon_url = REPLACE(icon_url, '/api/project-daws/', '/api/daws/')
-WHERE icon_url IS NOT NULL AND icon_url LIKE '%/api/project-daws/%';
-
--- Strip legacy base64 data URLs from booops branding (assets now live on disk + URL)
-UPDATE branding_config
-SET config = config - 'bannerUrl' - 'logoUrl' - 'faviconUrl'
-WHERE mode = 'booops'
-  AND (
-    config->>'bannerUrl' LIKE 'data:%'
-    OR config->>'logoUrl' LIKE 'data:%'
-    OR config->>'faviconUrl' LIKE 'data:%'
-  );
 
 -- memory_entries: scope by app mode + soft delete (prompt assembly filters is_deleted)
 ALTER TABLE memory_entries ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT 'booops';
@@ -433,7 +327,6 @@ ALTER TABLE daws ADD COLUMN IF NOT EXISTS model TEXT;
 
 -- Phase 06: per-DAW RAG mode (auto / always / off). 808notes DAWs use always.
 ALTER TABLE daws ADD COLUMN IF NOT EXISTS rag_mode TEXT NOT NULL DEFAULT 'auto';
-UPDATE daws SET rag_mode = 'always' WHERE mode = '808notes';
 
 
 
@@ -460,12 +353,6 @@ CREATE TABLE IF NOT EXISTS searxng_config (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
-
-INSERT INTO searxng_config (mode, safe_search, image_proxy, enabled_engines, autocomplete)
-VALUES
-    ('booops', 0, FALSE, '', ''),
-    ('808notes', 0, FALSE, '', '')
-ON CONFLICT (mode) DO NOTHING;
 
 -- Auth & user tiers (owner env / members table / guests by IP)
 CREATE TABLE IF NOT EXISTS users (
@@ -536,10 +423,6 @@ ALTER TABLE daws ADD CONSTRAINT daws_repo_sync_status_check
 ALTER TABLE searxng_config DROP CONSTRAINT IF EXISTS searxng_config_mode_check;
 ALTER TABLE searxng_config ADD CONSTRAINT searxng_config_mode_check
     CHECK (mode IN ('booops', '808notes', 'boocode'));
-
-INSERT INTO searxng_config (mode, safe_search, image_proxy, enabled_engines, autocomplete)
-VALUES ('boocode', 0, FALSE, '', '')
-ON CONFLICT (mode) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS repo_files (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

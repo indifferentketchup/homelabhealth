@@ -177,14 +177,6 @@ export function UserProfileMenu({ profilePath, placement, onAfterNavigate }) {
           >
             Account Settings
           </button>
-          <button
-            type="button"
-            role="menuitem"
-            className="fs-nav flex w-full cursor-default items-center rounded-sm px-2 py-2 text-left text-sm text-destructive outline-none hover:bg-destructive/10"
-            onClick={onLogOut}
-          >
-            Log Out
-          </button>
         </ProfileDropdownPanel>
       )}
     </div>

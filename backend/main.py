@@ -1,8 +1,7 @@
-"""boolab API — Phase 0: health, CORS, DB pool, schema on startup."""
+"""homelabhealth API: health, CORS, DB pool, schema on startup."""
 
 from __future__ import annotations
 
-import asyncio
 import os
 from contextlib import asynccontextmanager
 
@@ -13,28 +12,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from db import apply_schema, close_pool, get_pool, init_pool
 from seed_assets import seed_default_assets
 from seed_users import ensure_super_admin
-from services.auto_sync import auto_sync_loop
-from services.terminal_sweep import sweep_loop as terminal_sweep_loop
 from routers import (
-    auth,
     branding,
     chats,
     custom_instructions,
-    daw_context_files,
-    daw_memory,
-    daws,
+    workspace_context_files,
+    workspace_memory,
+    workspaces,
     memory,
-    ollama,
+    inference,
     personas,
+    profile,
     search,
     searxng,
     settings,
     skills,
-    terminals,
 )
-from routers.boocode import router as boocode_router
-from routers.dubdrive import router as dubdrive_router
-from routers.dubdrive_sync import router as dubdrive_sync_router
 from routers.history import router as history_router
 from routers.notes import router as notes_router
 from routers.sources import router as sources_router
@@ -62,21 +55,13 @@ async def lifespan(_app: FastAPI):
     await apply_schema()
     await seed_default_assets()
     await ensure_super_admin()
-    auto_sync_task = asyncio.create_task(auto_sync_loop(), name="boocode_auto_sync")
-    terminal_sweep_task = asyncio.create_task(terminal_sweep_loop(), name="terminal_sweep")
     try:
         yield
     finally:
-        for task in (auto_sync_task, terminal_sweep_task):
-            task.cancel()
-            try:
-                await task
-            except (asyncio.CancelledError, Exception):
-                pass
         await close_pool()
 
 
-app = FastAPI(title="boolab API", lifespan=lifespan)
+app = FastAPI(title="homelabhealth API", lifespan=lifespan)
 
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -119,28 +104,22 @@ async def api_health():
     return {"status": "ok"}
 
 
-api.include_router(auth.router, prefix="/auth", tags=["auth"])
-api.include_router(ollama.router, prefix="/ollama", tags=["ollama"])
+api.include_router(profile.router, prefix="/profile", tags=["profile"])
+api.include_router(inference.router, prefix="/inference", tags=["inference"])
 api.include_router(chats.router, prefix="/chats", tags=["chats"])
 api.include_router(branding.router, prefix="/branding", tags=["branding"])
 api.include_router(personas.router, prefix="/personas", tags=["personas"])
 api.include_router(memory.router, prefix="/memory", tags=["memory"])
-api.include_router(daws.router, prefix="/daws", tags=["daws"])
-api.include_router(daw_memory.router)
-api.include_router(daw_context_files.router, prefix="/daw-context-files", tags=["daw-context-files"])
+api.include_router(workspaces.router, prefix="/workspaces", tags=["workspaces"])
+api.include_router(workspace_memory.router)
+api.include_router(workspace_context_files.router, prefix="/workspace-context-files", tags=["workspace-context-files"])
 api.include_router(custom_instructions.router, prefix="/custom-instructions", tags=["custom-instructions"])
 api.include_router(settings.router, prefix="/settings", tags=["settings"])
 api.include_router(search.router, prefix="/search", tags=["search"])
 api.include_router(searxng.router, prefix="/searxng", tags=["searxng"])
 api.include_router(notes_router, tags=["notes"])
 api.include_router(sources_router, tags=["sources"])
-api.include_router(dubdrive_router, prefix="/dubdrive", tags=["dubdrive"])
-api.include_router(dubdrive_sync_router)
-api.include_router(boocode_router)
 api.include_router(history_router, prefix="/history", tags=["history"])
 api.include_router(skills.router, prefix="/skills", tags=["skills"])
-api.include_router(terminals.router, prefix="/terminals", tags=["terminals"])
 
 app.include_router(api)
-# WS endpoint lives outside /api (spec: /ws/terminals/:id).
-app.include_router(terminals.ws_router)

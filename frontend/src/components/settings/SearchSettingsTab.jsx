@@ -33,10 +33,7 @@ const AUTOCOMPLETE_OPTIONS = [
 const selectClass =
   'h-9 w-full max-w-md rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2'
 
-/**
- * @param {{ mode: 'booops' | '808notes' | 'boocode' }} props
- */
-export default function SearchSettingsTab({ mode }) {
+export default function SearchSettingsTab() {
   const [config, setConfig] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saveMsg, setSaveMsg] = useState(null)
@@ -49,7 +46,7 @@ export default function SearchSettingsTab({ mode }) {
     setSaveErr(null)
     ;(async () => {
       try {
-        const data = await fetchSearxngConfig(mode)
+        const data = await fetchSearxngConfig()
         if (!cancelled) setConfig(data)
       } catch (e) {
         if (!cancelled) {
@@ -63,7 +60,7 @@ export default function SearchSettingsTab({ mode }) {
     return () => {
       cancelled = true
     }
-  }, [mode])
+  }, [])
 
   const handleEngineToggle = (engine) => {
     if (!config) return
@@ -81,7 +78,7 @@ export default function SearchSettingsTab({ mode }) {
     setSaveMsg(null)
     setSaveErr(null)
     try {
-      await patchSearxngConfig(mode, {
+      await patchSearxngConfig({
         safe_search: config.safe_search,
         image_proxy: config.image_proxy,
         enabled_engines: config.enabled_engines,
@@ -120,8 +117,7 @@ export default function SearchSettingsTab({ mode }) {
       <div>
         <h2 className="fs-heading font-semibold uppercase tracking-wide text-muted-foreground">Search (SearXNG)</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Applies to web search in <span className="text-foreground">{mode === '808notes' ? '808notes' : mode === 'boocode' ? 'BooCode' : 'BooOps'}</span>
-          . BooLab sends safe search, engines, and related flags on each request. Optionally set{' '}
+          Applies to web search. The app sends safe search, engines, and related flags on each request. Optionally set{' '}
           <span className="font-mono text-xs text-foreground">SEARXNG_SETTINGS_YML</span> on the API to mirror toggles into
           SearXNG&apos;s config file.
         </p>

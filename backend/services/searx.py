@@ -11,8 +11,6 @@ from db import get_pool
 
 
 async def _load_runtime_config(mode: str) -> dict[str, Any] | None:
-    if not mode or mode not in ("booops", "808notes"):
-        return None
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(

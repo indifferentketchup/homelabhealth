@@ -1,4 +1,4 @@
-"""Skills API: Library, DAW attachments, URL fetching, SearXNG search."""
+"""Skills API: Library, workspace attachments, URL fetching, SearXNG search."""
 
 import ipaddress
 import os
@@ -10,9 +10,9 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from auth_deps import require_owner
+from deps import require_owner
 
-_BLOCKED_HOSTS = {"localhost", "boolab_db", "boolab_api", "boolab_ui", "booops_ui", "notes808_ui"}
+_BLOCKED_HOSTS = {"localhost", "boolab_db", "boolab_api", "notes808_ui"}
 
 
 def _assert_safe_url(url: str) -> None:
@@ -56,7 +56,7 @@ class SkillSearch(BaseModel):
     query: str = Field(..., min_length=1, max_length=255)
 
 
-class DawSkillAttach(BaseModel):
+class WorkspaceSkillAttach(BaseModel):
     skill_id: str = Field(..., min_length=1)
     active: bool | None = True
 
@@ -135,7 +135,7 @@ async def delete_skill(skill_id: str, principal: dict[str, Any] = Depends(requir
 async def fetch_skill_from_url(payload: SkillFetch, principal: dict[str, Any] = Depends(require_owner)):
     """Fetch skill content from URL, detecting skills.sh pattern. Returns parsed content without saving."""
     import httpx
-    
+
     url = payload.url.strip()
     if not re.match(r"^https?://", url):
         url = f"https://{url}"
@@ -155,12 +155,12 @@ async def fetch_skill_from_url(payload: SkillFetch, principal: dict[str, Any] = 
             content = resp.text
         except httpx.HTTPError as e:
             raise HTTPException(status_code=400, detail=f"Failed to fetch URL: {e}")
-    
+
     # Parse skill metadata from markdown frontmatter or comments
     # Expected format: # Skill Name\nDescription... or <!-- name: X -->\n<!-- description: Y -->
     name = "Untitled Skill"
     description = None
-    
+
     lines = content.split("\n")
     if lines:
         first_line = lines[0].strip()
@@ -170,7 +170,7 @@ async def fetch_skill_from_url(payload: SkillFetch, principal: dict[str, Any] = 
             second_line = lines[1].strip()
             if second_line and not second_line.startswith("#"):
                 description = second_line
-    
+
     return {
         "name": name,
         "description": description,
@@ -194,7 +194,7 @@ async def search_skills(payload: SkillSearch, principal: dict[str, Any] = Depend
             data = resp.json()
         except httpx.HTTPError as e:
             raise HTTPException(status_code=502, detail=f"SearXNG error: {e}")
-    
+
     results = []
     for result in data.get("results", [])[:10]:
         title = result.get("title", "")
@@ -209,13 +209,13 @@ async def search_skills(payload: SkillSearch, principal: dict[str, Any] = Depend
             "snippet": snippet,
             "engine": result.get("engine", "unknown"),
         })
-    
+
     return {"results": results}
 
 
-@router.get("/daws/{daw_id}", response_model=list[dict[str, Any]])
-async def list_daw_skills(daw_id: str, principal: dict[str, Any] = Depends(require_owner)):
-    """List all skills attached to a DAW (active and inactive)."""
+@router.get("/workspaces/{workspace_id}", response_model=list[dict[str, Any]])
+async def list_workspace_skills(workspace_id: str, principal: dict[str, Any] = Depends(require_owner)):
+    """List all skills attached to a workspace (active and inactive)."""
     from db import get_pool
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -227,7 +227,7 @@ async def list_daw_skills(daw_id: str, principal: dict[str, Any] = Depends(requi
             WHERE ds.daw_id = $1::uuid
             ORDER BY ds.added_at DESC
             """,
-            daw_id,
+            workspace_id,
         )
     return [
         {
@@ -243,9 +243,9 @@ async def list_daw_skills(daw_id: str, principal: dict[str, Any] = Depends(requi
     ]
 
 
-@router.post("/daws/{daw_id}", response_model=dict[str, Any])
-async def attach_skill_to_daw(daw_id: str, payload: DawSkillAttach, principal: dict[str, Any] = Depends(require_owner)):
-    """Attach a skill to a DAW."""
+@router.post("/workspaces/{workspace_id}", response_model=dict[str, Any])
+async def attach_skill_to_workspace(workspace_id: str, payload: WorkspaceSkillAttach, principal: dict[str, Any] = Depends(require_owner)):
+    """Attach a skill to a workspace."""
     from db import get_pool
     pool = await get_pool()
     active = payload.active if payload.active is not None else True
@@ -256,11 +256,11 @@ async def attach_skill_to_daw(daw_id: str, payload: DawSkillAttach, principal: d
         if not skill_exists:
             raise HTTPException(status_code=404, detail="Skill not found")
 
-        daw_exists = await conn.fetchval(
-            "SELECT id FROM daws WHERE id = $1::uuid", daw_id
+        workspace_exists = await conn.fetchval(
+            "SELECT id FROM daws WHERE id = $1::uuid", workspace_id
         )
-        if not daw_exists:
-            raise HTTPException(status_code=404, detail="DAW not found")
+        if not workspace_exists:
+            raise HTTPException(status_code=404, detail="Workspace not found")
 
         await conn.execute(
             """
@@ -268,7 +268,7 @@ async def attach_skill_to_daw(daw_id: str, payload: DawSkillAttach, principal: d
             VALUES ($1::uuid, $2::uuid, $3)
             ON CONFLICT (daw_id, skill_id) DO UPDATE SET active = EXCLUDED.active, added_at = NOW()
             """,
-            daw_id,
+            workspace_id,
             payload.skill_id,
             active,
         )
@@ -280,7 +280,7 @@ async def attach_skill_to_daw(daw_id: str, payload: DawSkillAttach, principal: d
             JOIN skills s ON s.id = ds.skill_id
             WHERE ds.daw_id = $1::uuid AND ds.skill_id = $2::uuid
             """,
-            daw_id,
+            workspace_id,
             payload.skill_id,
         )
 
@@ -294,9 +294,9 @@ async def attach_skill_to_daw(daw_id: str, payload: DawSkillAttach, principal: d
     }
 
 
-@router.delete("/daws/{daw_id}/{skill_id}")
-async def detach_skill_from_daw(daw_id: str, skill_id: str, principal: dict[str, Any] = Depends(require_owner)):
-    """Remove a skill from a DAW."""
+@router.delete("/workspaces/{workspace_id}/{skill_id}")
+async def detach_skill_from_workspace(workspace_id: str, skill_id: str, principal: dict[str, Any] = Depends(require_owner)):
+    """Remove a skill from a workspace."""
     from db import get_pool
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -306,17 +306,17 @@ async def detach_skill_from_daw(daw_id: str, skill_id: str, principal: dict[str,
             WHERE daw_id = $1::uuid AND skill_id = $2::uuid
             RETURNING skill_id
             """,
-            daw_id,
+            workspace_id,
             skill_id,
         )
         if result is None:
-            raise HTTPException(status_code=404, detail="Skill not attached to this DAW")
+            raise HTTPException(status_code=404, detail="Skill not attached to this workspace")
     return {"deleted": str(result)}
 
 
-@router.patch("/daws/{daw_id}/{skill_id}", response_model=dict[str, Any])
-async def toggle_daw_skill(daw_id: str, skill_id: str, active: bool | None = None, principal: dict[str, Any] = Depends(require_owner)):
-    """Toggle active status of a skill on a DAW."""
+@router.patch("/workspaces/{workspace_id}/{skill_id}", response_model=dict[str, Any])
+async def toggle_workspace_skill(workspace_id: str, skill_id: str, active: bool | None = None, principal: dict[str, Any] = Depends(require_owner)):
+    """Toggle active status of a skill on a workspace."""
     from db import get_pool
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -327,12 +327,12 @@ async def toggle_daw_skill(daw_id: str, skill_id: str, active: bool | None = Non
             WHERE daw_id = $1::uuid AND skill_id = $2::uuid
             RETURNING active
             """,
-            daw_id,
+            workspace_id,
             skill_id,
             active,
         )
         if updated is None:
-            raise HTTPException(status_code=404, detail="Skill not attached to this DAW")
+            raise HTTPException(status_code=404, detail="Skill not attached to this workspace")
 
         row = await conn.fetchrow(
             """
@@ -341,7 +341,7 @@ async def toggle_daw_skill(daw_id: str, skill_id: str, active: bool | None = Non
             JOIN skills s ON s.id = ds.skill_id
             WHERE ds.daw_id = $1::uuid AND ds.skill_id = $2::uuid
             """,
-            daw_id,
+            workspace_id,
             skill_id,
         )
 

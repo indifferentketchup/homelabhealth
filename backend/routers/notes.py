@@ -1,4 +1,4 @@
-"""808notes per-DAW notes (Phase 6 vertical slice)."""
+"""Per-workspace notes."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from auth_deps import get_principal
+from deps import get_principal
 from db import get_pool
 
 router = APIRouter(prefix="/notes", tags=["notes"])
@@ -35,7 +35,7 @@ def _default_title_from_content(content: str) -> str:
 def _note_row_dict(r: Any) -> dict[str, Any]:
     return {
         "id": str(r["id"]),
-        "daw_id": str(r["daw_id"]),
+        "workspace_id": str(r["daw_id"]),
         "group_id": str(r["group_id"]) if r.get("group_id") else None,
         "title": r["title"],
         "content": r["content"],
@@ -59,16 +59,16 @@ class NoteUpdate(BaseModel):
     content: str | None = None
 
 
-@router.get("/{daw_id}")
+@router.get("/{workspace_id}")
 async def list_notes(
-    daw_id: uuid.UUID,
+    workspace_id: uuid.UUID,
     _: dict = Depends(get_principal),
 ) -> list[dict[str, Any]]:
     pool = await get_pool()
     async with pool.acquire() as conn:
-        daw_exists = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", daw_id)
-        if not daw_exists:
-            raise HTTPException(404, "DAW not found")
+        workspace_exists = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", workspace_id)
+        if not workspace_exists:
+            raise HTTPException(404, "Workspace not found")
         rows = await conn.fetch(
             """
             SELECT id, title, content, source_type, created_at, updated_at
@@ -76,7 +76,7 @@ async def list_notes(
             WHERE daw_id = $1::uuid
             ORDER BY updated_at DESC
             """,
-            daw_id,
+            workspace_id,
         )
     out: list[dict[str, Any]] = []
     for r in rows:
@@ -93,9 +93,9 @@ async def list_notes(
     return out
 
 
-@router.post("/{daw_id}")
+@router.post("/{workspace_id}")
 async def create_note(
-    daw_id: uuid.UUID,
+    workspace_id: uuid.UUID,
     body: NoteCreate,
     _: dict = Depends(get_principal),
 ) -> dict[str, Any]:
@@ -107,9 +107,9 @@ async def create_note(
         title = _default_title_from_content(body.content)
     pool = await get_pool()
     async with pool.acquire() as conn:
-        daw_exists = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", daw_id)
-        if not daw_exists:
-            raise HTTPException(404, "DAW not found")
+        workspace_exists = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", workspace_id)
+        if not workspace_exists:
+            raise HTTPException(404, "Workspace not found")
         row = await conn.fetchrow(
             """
             INSERT INTO notes (daw_id, title, content, source_type, message_id)
@@ -117,7 +117,7 @@ async def create_note(
             RETURNING id, daw_id, group_id, title, content, source_type, message_id,
                       converted_to_source_id, created_at, updated_at
             """,
-            daw_id,
+            workspace_id,
             title,
             body.content,
             st,

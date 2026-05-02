@@ -5,7 +5,7 @@ export const getGlobalSettings = () => apiFetch('/api/settings/global')
 export const patchGlobalSettings = (body) =>
   apiFetch('/api/settings/global', { method: 'PATCH', json: body })
 
-export const getOllamaConfig = () => apiFetch('/api/settings/ollama')
+export const getModelServerConfig = () => apiFetch('/api/settings/inference')
 
-export const patchOllamaConfig = (body) =>
-  apiFetch('/api/settings/ollama', { method: 'PATCH', json: body })
+export const patchModelServerConfig = (body) =>
+  apiFetch('/api/settings/inference', { method: 'PATCH', json: body })
