@@ -1,4 +1,4 @@
-# Frontend only — all traffic to one boolab API (Postgres + Chroma stay with that API).
+# Frontend only — all traffic to one API container (DB stays with the API).
 # Prerequisite: API reachable at BOOLAB_API_UPSTREAM (host:port, no http:// prefix).
 #
 # Examples:
