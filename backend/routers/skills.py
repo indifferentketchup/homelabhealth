@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from deps import require_owner
 
-_BLOCKED_HOSTS = {"localhost", "boolab_db", "boolab_api", "notes808_ui"}
+_BLOCKED_HOSTS = {"localhost", "hlh_db", "hlh_api", "hlh_ui"}
 
 
 def _assert_safe_url(url: str) -> None:

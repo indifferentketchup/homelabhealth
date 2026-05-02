@@ -1,49 +1,52 @@
 # Shared data + API only. Start UIs separately with docker-compose.ui.yml (or full docker-compose.yml).
+name: homelabhealth
+
 services:
-  boolab_db:
-    image: postgres:16-alpine
-    container_name: boolab_db
+  hlh_db:
+    image: pgvector/pgvector:pg16
+    container_name: hlh_db
     environment:
       POSTGRES_USER: boolab
       POSTGRES_PASSWORD: boolab
       POSTGRES_DB: boolab
     volumes:
-      - boolab_db_data:/var/lib/postgresql/data
+      - hlh_db_data:/var/lib/postgresql/data
     networks:
-      - boolab_net
+      - hlh_default
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U boolab -d boolab']
       interval: 5s
       timeout: 5s
       retries: 5
 
-  boolab_api:
+  hlh_api:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: boolab_api
+    container_name: hlh_api
     env_file:
       - .env
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://boolab:boolab@boolab_db:5432/boolab}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://boolab:boolab@hlh_db:5432/boolab}
     depends_on:
-      boolab_db:
+      hlh_db:
         condition: service_healthy
     ports:
-      - "${BOOLAB_PORT_API:-9300}:8000"
+      - "${BOOLAB_PORT_API:-9400}:8000"
     volumes:
-      - boolab_uploads:/data/uploads
-      - boolab_branding:/data/branding
-      - /opt/boolab/history:/data/history
+      - hlh_uploads:/data/uploads
+      - hlh_branding:/data/branding
+      - hlh_history:/data/history
     networks:
-      - boolab_net
+      - hlh_default
 
 networks:
-  boolab_net:
-    name: boolab_net
+  hlh_default:
+    name: hlh_default
     driver: bridge
 
 volumes:
-  boolab_db_data:
-  boolab_uploads:
-  boolab_branding:
+  hlh_db_data:
+  hlh_uploads:
+  hlh_branding:
+  hlh_history:
