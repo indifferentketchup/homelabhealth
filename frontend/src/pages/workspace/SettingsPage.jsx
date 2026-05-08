@@ -136,7 +136,7 @@ export default function SettingsPage({ onClose }) {
   )
 
   async function saveGlobalToApi(partial) {
-    const out = await useLayoutStore.getState().saveLayout(partial)
+    await useLayoutStore.getState().saveLayout(partial)
     try {
       localStorage.removeItem('workspace_layout')
     } catch {
