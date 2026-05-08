@@ -1,7 +1,7 @@
 """Slug + path helpers for exported chat history files.
 
 Host path: /data/history/  (bind-mounted from docker-compose.yml)
-Container path: /data/history/    (default, overridable via BOOLAB_HISTORY_DIR env)
+Container path: /data/history/    (default, overridable via HLH_HISTORY_DIR env)
 
 Layout:
     /data/history/
@@ -19,7 +19,7 @@ import os
 import re
 from pathlib import Path
 
-HISTORY_ENV = "BOOLAB_HISTORY_DIR"
+HISTORY_ENV = "HLH_HISTORY_DIR"
 DEFAULT_HISTORY_DIR = "/data/history"
 
 VALID_KINDS = ("chats",)

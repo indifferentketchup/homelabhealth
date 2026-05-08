@@ -168,14 +168,14 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
     return list.filter((d) => d.pinned === true)
   }, [workspacesListPack])
 
-  const [pinnedOpen, setPinnedOpen] = useState(() => readSectionOpen('bb-sidebar-pinned-open', true))
-  const [recentOpen, setRecentOpen] = useState(() => readSectionOpen('bb-sidebar-recent-open', true))
+  const [pinnedOpen, setPinnedOpen] = useState(() => readSectionOpen('hlh-sidebar-pinned-open', true))
+  const [recentOpen, setRecentOpen] = useState(() => readSectionOpen('hlh-sidebar-recent-open', true))
 
   function togglePinnedOpen() {
     setPinnedOpen((o) => {
       const n = !o
       try {
-        localStorage.setItem('bb-sidebar-pinned-open', String(n))
+        localStorage.setItem('hlh-sidebar-pinned-open', String(n))
       } catch {
         /* ignore */
       }
@@ -187,7 +187,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
     setRecentOpen((o) => {
       const n = !o
       try {
-        localStorage.setItem('bb-sidebar-recent-open', String(n))
+        localStorage.setItem('hlh-sidebar-recent-open', String(n))
       } catch {
         /* ignore */
       }
