@@ -87,7 +87,7 @@ async def embed_batch(texts: list[str]) -> list[list[float]]:
 
 
 async def embed_query(text: str) -> list[float]:
-    """Embed a search query. Harrier requires an instruction prefix on queries; documents stay raw."""
+    """Embed a search query. The configured embedding model may require an instruction prefix on queries; documents stay raw."""
     cleaned = _clean(text)
     prefixed = f"Instruct: {EMBEDDING_QUERY_INSTRUCTION}\nQuery: {cleaned}"
     try:

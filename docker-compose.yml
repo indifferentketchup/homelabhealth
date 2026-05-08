@@ -34,7 +34,7 @@ services:
       hlh_db:
         condition: service_healthy
     ports:
-      - "${BOOLAB_PORT_API:-9400}:8000"
+      - "${HLH_PORT_API:-9400}:8000"
     volumes:
       - hlh_uploads:/data/uploads
       - hlh_branding:/data/branding
@@ -49,13 +49,12 @@ services:
       args:
         VITE_OG_TITLE: "homelabhealth"
         VITE_OG_DESCRIPTION: "Open up your DAW: Digital AI Workspace."
-        VITE_PUBLIC_808NOTES_URL: ${VITE_PUBLIC_808NOTES_URL:-http://${BOOLAB_PUBLIC_HOST:-127.0.0.1}:9402}
     container_name: hlh_ui
     restart: unless-stopped
     environment:
-      BOOLAB_API_UPSTREAM: ${BOOLAB_API_UPSTREAM:-hlh_api:8000}
+      HLH_API_UPSTREAM: ${HLH_API_UPSTREAM:-hlh_api:8000}
     ports:
-      - "${BOOLAB_PORT_808NOTES:-9402}:80"
+      - "${HLH_PORT_UI:-9402}:80"
     networks:
       - hlh_default
 

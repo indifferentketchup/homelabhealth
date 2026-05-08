@@ -15,7 +15,7 @@ export default defineConfig(({ mode }) => {
   const feEnv = loadEnv(mode, __dirname, '')
   const env = { ...rootEnv, ...feEnv }
   const apiProxyTarget =
-    (env.BOOLAB_VITE_API_PROXY || '').trim() || 'http://127.0.0.1:9300'
+    (env.HLH_VITE_API_PROXY || '').trim() || 'http://127.0.0.1:9300'
 
   return {
     envDir: __dirname,
