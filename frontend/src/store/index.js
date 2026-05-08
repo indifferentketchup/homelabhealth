@@ -31,13 +31,13 @@ function loadUserProfileFromStorage() {
 }
 
 /** Default persona, looked up from a personas list. */
-export function defaultPersona(personas) {
+function defaultPersona(personas) {
   const list = Array.isArray(personas) ? personas : []
   return list.find((x) => x.is_default_808notes) ?? null
 }
 
 /** Map API persona row → store display fields (also used after AI settings refetch). */
-export function personaFieldsFromRecord(p) {
+function personaFieldsFromRecord(p) {
   if (!p) {
     return {
       personaDisplayName: 'Assistant',
@@ -116,9 +116,6 @@ export const useAppStore = create((set, get) => ({
   activeChatId: null,
   setActiveChatId: (id) => set({ activeChatId: id }),
 
-  messages: [],
-  setMessages: (messages) => set({ messages: Array.isArray(messages) ? messages : [] }),
-
   selectedModel: null,
   setSelectedModel: (model) => set({ selectedModel: model }),
 
@@ -132,8 +129,6 @@ export const useAppStore = create((set, get) => ({
   personaDisplayName: 'Assistant',
   personaIconUrl: null,
   personaEmoji: '🤖',
-  setPersonaIconUrl: (url) => set({ personaIconUrl: url ?? null }),
-  setPersonaEmoji: (emoji) => set({ personaEmoji: emoji || '🤖' }),
 
   /** Default persona for new chats (initialized from API default) */
   activePersonaId: null,
@@ -183,13 +178,6 @@ export const useAppStore = create((set, get) => ({
 
   sidebarOpen: true,
   setSidebarOpen: (open) => set({ sidebarOpen: Boolean(open) }),
-
-  settingsOpen: false,
-  setSettingsOpen: (open) => set({ settingsOpen: Boolean(open) }),
-
-  /** Merged branding (for layout tokens e.g. sidebar width); updated when CSS is applied */
-  branding: null,
-  setBranding: (branding) => set({ branding }),
 
   /** Local-only user profile (localStorage) */
   userProfile: loadUserProfileFromStorage(),

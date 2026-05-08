@@ -1,5 +1,3 @@
-import { useAppStore } from '@/store/index.js'
-
 const LAYOUT_KEY = 'workspace_layout'
 
 /** While Settings layout sliders are dragged, merged over persisted prefs until save or close. */
@@ -19,7 +17,7 @@ export function clearWorkspaceLayoutLiveDraft() {
   applyWorkspaceLayoutToDom()
 }
 
-export function readWorkspaceLayout() {
+function readWorkspaceLayout() {
   try {
     const raw = localStorage.getItem(LAYOUT_KEY)
     if (!raw) return null
@@ -28,14 +26,6 @@ export function readWorkspaceLayout() {
   } catch {
     return null
   }
-}
-
-export function writeWorkspaceLayout(partial) {
-  const prev = readWorkspaceLayout() || {}
-  const next = { ...prev, ...partial }
-  localStorage.setItem(LAYOUT_KEY, JSON.stringify(next))
-  window.dispatchEvent(new CustomEvent('workspace-layout'))
-  return next
 }
 
 /**
@@ -63,19 +53,4 @@ export function applyWorkspaceLayoutToDom() {
     const v = Math.round(layout.sourcesPanelWidth)
     root.style.setProperty('--sources-panel-width', `${v}px`)
   }
-
-  const cur = useAppStore.getState().branding
-  if (!cur || typeof cur !== 'object') return
-
-  const b = { ...cur }
-  if (typeof layout.chatMaxWidth === 'number' && Number.isFinite(layout.chatMaxWidth)) {
-    b.chatMaxWidth = Math.round(layout.chatMaxWidth)
-  }
-  if (typeof layout.sidebarWidth === 'number' && Number.isFinite(layout.sidebarWidth)) {
-    b.sidebarWidth = Math.round(layout.sidebarWidth)
-  }
-  if (typeof layout.sourcesPanelWidth === 'number' && Number.isFinite(layout.sourcesPanelWidth)) {
-    b.sourcesPanelWidth = Math.round(layout.sourcesPanelWidth)
-  }
-  useAppStore.getState().setBranding(b)
 }

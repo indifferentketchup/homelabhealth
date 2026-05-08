@@ -71,13 +71,8 @@ function normalizeWorkspaceUuid(raw) {
 }
 
 export function ChatView({
-  compactEmptyState = false,
-  modelBarProps = {},
-  hidePersonaInChatInput = false,
   /** When set (e.g. `/workspace/:id`), used if Zustand `activeWorkspaceId` is stale so new chats still attach to the workspace. */
   workspaceId: workspaceIdProp = null,
-  /** When true, skip the desktop-only model bar row (e.g. parent renders `ModelSelectorBar` in a full-width header). */
-  hideDesktopModelBar = false,
 }) {
   const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
@@ -361,41 +356,25 @@ export function ChatView({
   if (!activeChatId) {
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-background">
-        {!hideDesktopModelBar ? (
-          <div className="hidden shrink-0 justify-center border-b border-border py-2 md:flex">
-            <ModelSelectorBar {...modelBarProps} />
-          </div>
-        ) : null}
+        <div className="hidden shrink-0 justify-center border-b border-border py-2 md:flex">
+          <ModelSelectorBar />
+        </div>
         <div
-          className={cn(
-            'flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-8',
-            compactEmptyState ? 'justify-end' : 'items-center justify-center gap-8',
-            // On mobile, lift content down toward the lower half of the
-            // visible area. Desktop keeps true vertical center.
-            !compactEmptyState && 'pt-[20vh] md:pt-0',
-          )}
+          className="flex min-h-0 flex-1 flex-col overflow-y-auto items-center justify-center gap-8 px-4 py-8 pt-[20vh] md:pt-0"
           style={{
-            // Reserve space at the bottom for the position:fixed input + the
-            // keyboard inset. Without this, the centered persona block (logo
-            // + name) drops into the same vertical band as the fixed input
-            // and they visually collide. Desktop picks `0px` since
-            // safe-area-inset-bottom is 0 there and there's no
-            // --bc-keyboard-pad fixed-input drama.
             paddingBottom:
               'max(0px, calc(120px + max(env(safe-area-inset-bottom, 0px), var(--bc-keyboard-pad, 0px))))',
           }}
         >
-          {!compactEmptyState && (
-            <div className="flex w-full flex-col items-center gap-4" style={{ maxWidth: chatMaxW }}>
-              <PersonaMark
-                iconUrl={personaIconUrl}
-                emoji={personaEmoji}
-                fallbackLetter={personaDisplayName?.slice(0, 1) || 'A'}
-              />
-              <h1 className="fs-heading text-center font-semibold tracking-tight text-foreground">{personaDisplayName}</h1>
-            </div>
-          )}
-          <div className={cn('bc-chat-anchor w-full px-4', compactEmptyState && 'mt-auto')}>
+          <div className="flex w-full flex-col items-center gap-4" style={{ maxWidth: chatMaxW }}>
+            <PersonaMark
+              iconUrl={personaIconUrl}
+              emoji={personaEmoji}
+              fallbackLetter={personaDisplayName?.slice(0, 1) || 'A'}
+            />
+            <h1 className="fs-heading text-center font-semibold tracking-tight text-foreground">{personaDisplayName}</h1>
+          </div>
+          <div className="bc-chat-anchor w-full px-4">
             {sendError ? (
               <div className="mb-2 flex items-center justify-center gap-2" role="alert">
                 <p className="text-sm text-destructive">{sendError}</p>
@@ -420,7 +399,6 @@ export function ChatView({
               onStop={abort}
               activeChatId={null}
               chatMaxW={chatMaxW}
-              hidePersonaInMenu={hidePersonaInChatInput}
             />
           </div>
         </div>
@@ -430,11 +408,9 @@ export function ChatView({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
-      {!hideDesktopModelBar ? (
-        <div className="hidden shrink-0 justify-center border-b border-border py-2 md:flex">
-          <ModelSelectorBar {...modelBarProps} />
-        </div>
-      ) : null}
+      <div className="hidden shrink-0 justify-center border-b border-border py-2 md:flex">
+        <ModelSelectorBar />
+      </div>
       <div className="mx-auto flex min-h-0 w-full flex-1 flex-col" style={{ maxWidth: chatMaxW }}>
         <div className="bc-chat-messages-mobile min-h-0 flex-1">
           {isLoading && !busy ? (
@@ -486,7 +462,6 @@ export function ChatView({
             onStop={abort}
             activeChatId={activeChatId}
             chatMaxW={chatMaxW}
-            hidePersonaInMenu={hidePersonaInChatInput}
           />
         </div>
       </div>

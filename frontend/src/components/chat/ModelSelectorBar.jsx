@@ -59,12 +59,7 @@ function FixedDropdownPanel({ rect, children, className, minWidthPx }) {
   )
 }
 
-export function ModelSelectorBar({
-  className,
-  hidePersona = false,
-  /** When true, omit Workspace picker UI. Reserved for bar extensions. */
-  hideWorkspace: _hideWorkspace = false,
-}) {
+export function ModelSelectorBar({ className }) {
   const queryClient = useQueryClient()
 
   const [modelOpen, setModelOpen] = useState(false)
@@ -302,12 +297,8 @@ export function ModelSelectorBar({
 
   const displayName = (modelLocked ? workspacePinnedModel : selectedModel) || 'Select model'
 
-  const showModelPicker = true
-  const showPersonaPicker = true
-
   return (
     <div className={cn('flex min-w-0 flex-wrap items-center justify-center gap-2', className)}>
-      {showModelPicker && (
       <div ref={modelWrapRef} className="relative">
         <span ref={modelBtnRef} className="inline-flex">
           <Button
@@ -379,10 +370,8 @@ export function ModelSelectorBar({
           </FixedDropdownPanel>
         )}
       </div>
-      )}
 
-      {!hidePersona && showPersonaPicker && (
-        <div ref={personaWrapRef} className="relative">
+      <div ref={personaWrapRef} className="relative">
           <span ref={personaBtnRef} className="inline-flex">
             <Button
               type="button"
@@ -439,7 +428,6 @@ export function ModelSelectorBar({
             </FixedDropdownPanel>
           )}
         </div>
-      )}
     </div>
   )
 }

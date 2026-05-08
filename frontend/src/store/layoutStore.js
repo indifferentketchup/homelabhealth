@@ -30,14 +30,7 @@ export const useLayoutStore = create((set, get) => ({
     set(picked)
   },
 
-  setSidebarWidth: (val) => set({ sidebarWidth: val }),
-  setChatMaxWidth: (val) => set({ chatMaxWidth: val }),
   setFontSize: (val) => set({ fontSize: val }),
-  setFsNav: (val) => set({ fsNav: val }),
-  setFsChat: (val) => set({ fsChat: val }),
-  setFsInput: (val) => set({ fsInput: val }),
-  setFsHeading: (val) => set({ fsHeading: val }),
-  setFsCode: (val) => set({ fsCode: val }),
 
   async loadLayout() {
     try {
