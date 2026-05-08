@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, Outlet, matchPath, useLocation, useNavigate } from 'react-router-dom'
-import { FileStack, Loader2, Menu } from 'lucide-react'
+import { FileStack, Menu } from 'lucide-react'
 
-import { fetchBranding } from '@/api/branding.js'
 import { getModelSettings } from '@/api/inference.js'
 import { listPersonas } from '@/api/personas.js'
 import { ModelSelectorBar } from '@/components/chat/ModelSelectorBar.jsx'
@@ -15,6 +14,7 @@ import { applyWorkspaceLayoutToDom, clearWorkspaceLayoutLiveDraft } from '@/lib/
 import { PATH_HOME, workspacePath } from '@/routes/paths.js'
 import SettingsPage from '@/pages/workspace/SettingsPage.jsx'
 import { useAppStore } from '@/store/index.js'
+import { useLayoutStore } from '@/store/layoutStore.js'
 
 import { SourcesPanel } from './SourcesPanel.jsx'
 
@@ -44,8 +44,7 @@ export default function WorkspaceApp() {
   const [mobileSourcesOpen, setMobileSourcesOpen] = useState(false)
   const activeChatId = useAppStore((s) => s.activeChatId)
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId)
-  const branding = useAppStore((s) => s.branding)
-  const sourcesRailW = branding?.sidebarWidth ?? 260
+  const sourcesRailW = useLayoutStore((s) => s.sidebarWidth) || 260
   const setActiveWorkspaceId = useAppStore((s) => s.setActiveWorkspaceId)
   const setActiveChatId = useAppStore((s) => s.setActiveChatId)
   const setPersonas = useAppStore((s) => s.setPersonas)
@@ -126,21 +125,14 @@ export default function WorkspaceApp() {
     return () => document.removeEventListener('keydown', onKey)
   }, [mobileSourcesOpen])
 
-  const { isPending: brandingPending } = useQuery({
-    queryKey: ['branding'],
-    queryFn: () => fetchBranding(),
-    staleTime: 60_000,
-    retry: false,
-  })
-
-  if (brandingPending) {
-    return (
-      <div className="flex min-h-[100dvh] items-center justify-center gap-2 bg-background text-muted-foreground">
-        <Loader2 className="size-4 animate-spin" />
-        Loading…
-      </div>
-    )
-  }
+  useEffect(() => {
+    void useLayoutStore
+      .getState()
+      .loadLayout()
+      .then((data) => {
+        if (data) applyWorkspaceLayoutToDom()
+      })
+  }, [])
 
   return (
     <TooltipProvider>

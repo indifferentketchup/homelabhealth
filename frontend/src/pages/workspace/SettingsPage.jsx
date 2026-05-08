@@ -4,13 +4,6 @@ import { X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import { deleteNonWorkspaceChats } from '@/api/chats.js'
-import {
-  FONT_BODY_OPTIONS,
-  FONT_BODY_STACKS,
-  FONT_MONO_OPTIONS,
-  applyThemeCss,
-  layoutApiToBrandingPatch,
-} from '@/api/branding.js'
 import SearchSettingsTab from '@/components/settings/SearchSettingsTab.jsx'
 import { Button } from '@/components/ui/button'
 import { clearWorkspaceLayoutLiveDraft, setWorkspaceLayoutLiveDraft } from '@/lib/workspaceLayout.js'
@@ -64,9 +57,6 @@ function FontSizeRow({ label, value, onChange }) {
     </div>
   )
 }
-
-const selectClass =
-  'h-9 w-full rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2'
 
 function layoutDraftToApiPayload(draft) {
   const out = { ...draft }
@@ -128,7 +118,6 @@ export default function SettingsPage({ onClose }) {
   }, [])
 
   const applyLiveGlobal = useCallback((draft) => {
-    applyThemeCss(layoutApiToBrandingPatch(draft))
     setWorkspaceLayoutLiveDraft({
       sidebarWidth: draft.sidebarWidth,
       chatMaxWidth: draft.chatMaxWidth,
@@ -154,17 +143,11 @@ export default function SettingsPage({ onClose }) {
       /* ignore */
     }
     clearWorkspaceLayoutLiveDraft()
-    if (out) applyThemeCss(layoutApiToBrandingPatch(out))
   }
 
   async function saveTypography() {
     const base = clampTypographyFs(globalDraft.fontSize)
-    const bodyName = FONT_BODY_OPTIONS.includes(globalDraft.fontBody) ? globalDraft.fontBody : 'Rajdhani'
-    const monoName = FONT_MONO_OPTIONS.includes(globalDraft.fontMono) ? globalDraft.fontMono : 'Fira Code'
     await saveGlobalToApi({
-      fontBody: bodyName,
-      fontMono: monoName,
-      fontFamily: FONT_BODY_STACKS[bodyName] || FONT_BODY_STACKS.Rajdhani,
       fontSize: base,
       fsNav: clampTypographyFs(globalDraft.fsNav),
       fsChat: clampTypographyFs(globalDraft.fsChat),
@@ -183,7 +166,7 @@ export default function SettingsPage({ onClose }) {
     setGlobalDraft(layoutDraftToApiPayload({ ...useLayoutStore.getState() }))
   }
 
-  const fontSizeBase = clampTypographyFs(globalDraft.fontSize ?? globalDraft.fontSizeBase ?? 15)
+  const fontSizeBase = clampTypographyFs(globalDraft.fontSize ?? 15)
   const sidebarWidth = Number(globalDraft.sidebarWidth) || 260
   const chatMaxWidth = Number(globalDraft.chatMaxWidth) || 1200
 
@@ -256,48 +239,6 @@ export default function SettingsPage({ onClose }) {
             <section className="mx-auto w-full max-w-2xl space-y-6">
               <h2 className="fs-heading font-semibold uppercase tracking-wide text-muted-foreground">Typography (global)</h2>
               <p className="text-sm text-muted-foreground">Applies to the workspace.</p>
-
-              <div className="space-y-3">
-                <h3 className="text-sm font-medium text-foreground">Font family</h3>
-                <label className="flex flex-col gap-1 text-sm">
-                  <span className="text-muted-foreground">Body font</span>
-                  <select
-                    className={selectClass}
-                    value={
-                      FONT_BODY_OPTIONS.includes(globalDraft.fontBody) ? globalDraft.fontBody : 'Rajdhani'
-                    }
-                    onChange={(e) => {
-                      const fontBody = e.target.value
-                      updateGlobalDraft({
-                        fontBody,
-                        fontFamily: FONT_BODY_STACKS[fontBody] ?? globalDraft.fontFamily,
-                      })
-                    }}
-                  >
-                    {FONT_BODY_OPTIONS.map((name) => (
-                      <option key={name} value={name}>
-                        {name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="flex flex-col gap-1 text-sm">
-                  <span className="text-muted-foreground">Mono font</span>
-                  <select
-                    className={selectClass}
-                    value={
-                      FONT_MONO_OPTIONS.includes(globalDraft.fontMono) ? globalDraft.fontMono : 'Fira Code'
-                    }
-                    onChange={(e) => updateGlobalDraft({ fontMono: e.target.value })}
-                  >
-                    {FONT_MONO_OPTIONS.map((name) => (
-                      <option key={name} value={name}>
-                        {name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
 
               <div className="space-y-3">
                 <h3 className="text-sm font-medium text-foreground">Font sizes</h3>
