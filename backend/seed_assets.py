@@ -18,7 +18,7 @@ async def seed_default_assets() -> None:
             return
         await conn.execute(
             """
-            INSERT INTO personas (name, system_prompt, avatar_emoji, is_default_808notes)
+            INSERT INTO personas (name, system_prompt, avatar_emoji, is_default)
             VALUES ($1::text, $2::text, $3::text, TRUE)
             """,
             "Assistant",

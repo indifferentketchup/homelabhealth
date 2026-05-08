@@ -1,4 +1,4 @@
--- boolab — full schema (DB_SCHEMA.md). Table order respects foreign keys.
+-- homelabhealth — full schema. Table order respects foreign keys. Applied idempotently on every startup.
 
 CREATE TABLE IF NOT EXISTS daws (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -580,4 +580,93 @@ CREATE TABLE IF NOT EXISTS message_tokens (
 CREATE INDEX IF NOT EXISTS idx_messages_inflight
     ON messages(status)
     WHERE status IN ('pending','streaming');
+
+-- ============================================================
+-- Strip-initial cleanup (2026-05-07)
+-- All operations idempotent. Safe to re-run.
+-- ============================================================
+
+-- Drop unused tables (verified zero readers/writers)
+DROP TABLE IF EXISTS branding_config CASCADE;
+DROP TABLE IF EXISTS terminal_machines CASCADE;
+DROP TABLE IF EXISTS terminal_sessions CASCADE;
+DROP TABLE IF EXISTS terminal_audit CASCADE;
+DROP TABLE IF EXISTS repo_files CASCADE;
+DROP TABLE IF EXISTS repo_chunks CASCADE;
+DROP TABLE IF EXISTS message_tokens CASCADE;
+DROP TABLE IF EXISTS workspace_skills CASCADE;
+DROP TABLE IF EXISTS daw_skills CASCADE;
+DROP TABLE IF EXISTS skills CASCADE;
+
+-- Drop dead columns on messages (persistent-streaming feature, never written)
+ALTER TABLE messages DROP COLUMN IF EXISTS status;
+ALTER TABLE messages DROP COLUMN IF EXISTS last_seq;
+ALTER TABLE messages DROP COLUMN IF EXISTS error;
+ALTER TABLE messages DROP COLUMN IF EXISTS started_at;
+ALTER TABLE messages DROP COLUMN IF EXISTS finished_at;
+DROP INDEX IF EXISTS idx_messages_inflight;
+
+-- Drop dubdrive_* columns on daws (stripped feature)
+ALTER TABLE daws DROP COLUMN IF EXISTS dubdrive_sync_folder;
+ALTER TABLE daws DROP COLUMN IF EXISTS dubdrive_sync_enabled;
+ALTER TABLE daws DROP COLUMN IF EXISTS dubdrive_last_synced_at;
+
+-- Drop repo_* columns on daws (stripped feature)
+ALTER TABLE daws DROP COLUMN IF EXISTS repo_path;
+ALTER TABLE daws DROP COLUMN IF EXISTS repo_branch;
+ALTER TABLE daws DROP COLUMN IF EXISTS repo_auto_sync;
+ALTER TABLE daws DROP COLUMN IF EXISTS repo_sync_status;
+ALTER TABLE daws DROP COLUMN IF EXISTS repo_last_synced_at;
+ALTER TABLE daws DROP COLUMN IF EXISTS repo_file_count;
+ALTER TABLE daws DROP COLUMN IF EXISTS repo_chunk_count;
+
+-- Drop pinned_booops on daws (only 808notes was used)
+ALTER TABLE daws DROP COLUMN IF EXISTS pinned_booops;
+
+-- Drop default_model on personas (always NULL, never read)
+ALTER TABLE personas DROP COLUMN IF EXISTS default_model;
+
+-- Drop password_hash (single-user app, placeholder '')
+ALTER TABLE users DROP COLUMN IF EXISTS password_hash;
+
+-- Persona is_default consolidation:
+--   Was: is_default_808notes / is_default_booops / is_default_boocode (multi-mode)
+--   Now: single is_default boolean
+ALTER TABLE personas ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Backfill is_default from is_default_808notes (the only flag that was used)
+UPDATE personas
+SET is_default = COALESCE(is_default_808notes, FALSE)
+WHERE is_default = FALSE
+  AND is_default_808notes IS TRUE;
+
+ALTER TABLE personas DROP COLUMN IF EXISTS is_default_808notes;
+ALTER TABLE personas DROP COLUMN IF EXISTS is_default_booops;
+ALTER TABLE personas DROP COLUMN IF EXISTS is_default_boocode;
+DROP INDEX IF EXISTS idx_personas_default_808notes;
+DROP INDEX IF EXISTS idx_personas_default_booops;
+DROP INDEX IF EXISTS idx_personas_default_boocode;
+
+-- Single-default uniqueness (partial index allows multiple FALSE)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_personas_default_one
+    ON personas (is_default)
+    WHERE is_default IS TRUE;
+
+-- Drop mode column from auxiliary-tag tables (stripped multi-mode design).
+-- Note: mode_memory and searxng_config KEEP their mode column - it's their
+-- primary key (not an auxiliary tag). Code in memory.py and services/searx.py
+-- still reads/writes those tables using the _SCHEMA_MODE_VALUE constant.
+ALTER TABLE chats DROP COLUMN IF EXISTS mode;
+ALTER TABLE daws DROP COLUMN IF EXISTS mode;
+ALTER TABLE personas DROP COLUMN IF EXISTS mode;
+ALTER TABLE memory_entries DROP COLUMN IF EXISTS mode;
+
+-- Drop mode CHECK constraints (names may vary; check pg_constraint if these don't exist)
+ALTER TABLE chats DROP CONSTRAINT IF EXISTS chats_mode_check;
+ALTER TABLE daws DROP CONSTRAINT IF EXISTS daws_mode_check;
+ALTER TABLE personas DROP CONSTRAINT IF EXISTS personas_mode_check;
+ALTER TABLE memory_entries DROP CONSTRAINT IF EXISTS memory_entries_mode_check;
+
+-- Drop dead seed rows in global_settings
+DELETE FROM global_settings WHERE key IN ('rag_intent_gate_enabled', 'rag_min_words_for_intent');
 

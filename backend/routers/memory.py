@@ -91,14 +91,12 @@ async def extract_memory(_: dict = Depends(require_admin)):
             """
             SELECT c.id
             FROM chats c
-            WHERE c.mode = $1
             ORDER BY c.updated_at DESC NULLS LAST, c.created_at DESC
             LIMIT 1
             """,
-            _SCHEMA_MODE_VALUE,
         )
         if chat_id is None:
-            raise HTTPException(status_code=400, detail="No chats exist for this mode")
+            raise HTTPException(status_code=400, detail="No chats exist")
 
         mem_row = await conn.fetchrow(
             "SELECT content FROM mode_memory WHERE mode = $1",
@@ -246,10 +244,9 @@ async def list_memory_entries(_: dict = Depends(require_admin)):
             SELECT id, content, source, created_at, updated_at,
                    embedded_at, (embedding IS NOT NULL) AS has_embedding
             FROM memory_entries
-            WHERE mode = $1 AND is_deleted = FALSE
+            WHERE is_deleted = FALSE
             ORDER BY created_at DESC NULLS LAST, id DESC
             """,
-            _SCHEMA_MODE_VALUE,
         )
     return [_memory_entry_row(r) for r in rows]
 
@@ -266,13 +263,12 @@ async def create_memory_entry(
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            INSERT INTO memory_entries (content, source, mode)
-            VALUES ($1, $2, $3)
+            INSERT INTO memory_entries (content, source)
+            VALUES ($1, $2)
             RETURNING id, content, source, created_at, updated_at
             """,
             body.content.strip(),
             src,
-            _SCHEMA_MODE_VALUE,
         )
     return _memory_entry_row(row)
 

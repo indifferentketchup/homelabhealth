@@ -132,7 +132,7 @@ async def _rerank_infinity(query: str, passages: list[dict]) -> list[dict] | Non
     return out
 
 
-async def retrieve_memory_facts(query: str, mode: str, conn: Any) -> list[str]:
+async def retrieve_memory_facts(query: str, conn: Any) -> list[str]:
     """
     Top-K memory facts for the query via pgvector cosine distance (same operator as source_chunks).
     Returns empty list if embedding fails or no matches.
@@ -150,14 +150,12 @@ async def retrieve_memory_facts(query: str, mode: str, conn: Any) -> list[str]:
             FROM memory_entries
             WHERE is_deleted = false
               AND embedding IS NOT NULL
-              AND mode = $3
               AND (1 - (embedding <=> $1::vector)) >= $2
             ORDER BY embedding <=> $1::vector
-            LIMIT $4
+            LIMIT $3
             """,
             format_vector(emb),
             float(settings["memory_similarity_threshold"]),
-            mode,
             MEMORY_TOP_K,
         )
         return [r["content"] for r in rows]
