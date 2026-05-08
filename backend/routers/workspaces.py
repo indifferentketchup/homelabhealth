@@ -17,6 +17,17 @@ from db import get_pool
 router = APIRouter()
 
 BRANDING_WORKSPACE_ICONS = Path("/data/branding/daw_icons")
+
+# Common SELECT used by single-workspace fetch/return paths (create, get, patch, pin, upload-icon).
+# list_workspaces uses a wider variant that includes repo_* columns.
+DAWS_SELECT = """
+    SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
+        d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
+        d.model, d.rag_mode,
+        d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
+    FROM daws d
+    LEFT JOIN personas p ON p.id = d.persona_id
+"""
 ALLOWED_ICON_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 
 
@@ -172,15 +183,7 @@ async def create_workspace(body: WorkspaceCreate, principal: dict[str, Any] = De
             principal["user_id"],
         )
         prow = await conn.fetchrow(
-            """
-            SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
-                d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
-                d.model, d.rag_mode,
-                d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
-            FROM daws d
-            LEFT JOIN personas p ON p.id = d.persona_id
-            WHERE d.id = $1::uuid
-            """,
+            DAWS_SELECT + "WHERE d.id = $1::uuid",
             row["id"],
         )
     return _row(prow)
@@ -283,15 +286,7 @@ async def upload_workspace_icon(
             icon_url,
         )
         prow = await conn.fetchrow(
-            """
-            SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
-                d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
-                d.model, d.rag_mode,
-                d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
-            FROM daws d
-            LEFT JOIN personas p ON p.id = d.persona_id
-            WHERE d.id = $1::uuid
-            """,
+            DAWS_SELECT + "WHERE d.id = $1::uuid",
             workspace_id,
         )
     return _row(prow)
@@ -328,15 +323,7 @@ async def patch_workspace_pin(
             body.pinned,
         )
         prow = await conn.fetchrow(
-            """
-            SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
-                d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
-                d.model, d.rag_mode,
-                d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
-            FROM daws d
-            LEFT JOIN personas p ON p.id = d.persona_id
-            WHERE d.id = $1::uuid
-            """,
+            DAWS_SELECT + "WHERE d.id = $1::uuid",
             workspace_id,
         )
         if prow is None:
@@ -349,15 +336,7 @@ async def get_workspace(workspace_id: uuid.UUID, _: dict[str, Any] = Depends(get
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            """
-            SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
-                d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
-                d.model, d.rag_mode,
-                d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
-            FROM daws d
-            LEFT JOIN personas p ON p.id = d.persona_id
-            WHERE d.id = $1::uuid
-            """,
+            DAWS_SELECT + "WHERE d.id = $1::uuid",
             workspace_id,
         )
     if row is None:
@@ -388,15 +367,7 @@ async def patch_workspace(
             raise HTTPException(status_code=404, detail="Workspace not found")
         if not data:
             prow = await conn.fetchrow(
-                """
-                SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
-                    d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
-                    d.model, d.rag_mode,
-                    d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
-                FROM daws d
-                LEFT JOIN personas p ON p.id = d.persona_id
-                WHERE d.id = $1::uuid
-                """,
+                DAWS_SELECT + "WHERE d.id = $1::uuid",
                 workspace_id,
             )
             return _row(prow)
@@ -452,15 +423,7 @@ async def patch_workspace(
             new_rag,
         )
         prow = await conn.fetchrow(
-            """
-            SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
-                d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
-                d.model, d.rag_mode,
-                d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
-            FROM daws d
-            LEFT JOIN personas p ON p.id = d.persona_id
-            WHERE d.id = $1::uuid
-            """,
+            DAWS_SELECT + "WHERE d.id = $1::uuid",
             workspace_id,
         )
     return _row(prow)
