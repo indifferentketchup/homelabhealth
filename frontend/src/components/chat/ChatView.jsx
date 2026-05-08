@@ -3,12 +3,12 @@ import { flushSync } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 
-import { fetchBranding } from '@/api/branding.js'
 import { createChat, forkChat, getChat, listMessages, patchRecentChatsListCache } from '@/api/chats.js'
 import { createNote } from '@/api/notes.js'
 import { useStream } from '@/hooks/useStream.js'
 import { cn } from '@/lib/utils.js'
 import { useAppStore } from '@/store/index.js'
+import { useLayoutStore } from '@/store/layoutStore.js'
 
 import { PersonaMark } from './PersonaMark.jsx'
 import { ChatInput } from './ChatInput.jsx'
@@ -83,13 +83,7 @@ export function ChatView({
   const [searchParams] = useSearchParams()
   const workspaceFromQuery = normalizeWorkspaceUuid(searchParams.get('workspace'))
   const resolvedWorkspaceId = normalizeWorkspaceUuid(workspaceIdProp) || workspaceFromQuery
-  const storeBranding = useAppStore((s) => s.branding)
-  const { data: branding } = useQuery({
-    queryKey: ['branding'],
-    queryFn: () => fetchBranding(),
-    staleTime: 60_000,
-  })
-  const chatMaxW = storeBranding?.chatMaxWidth ?? branding?.chatMaxWidth ?? 1200
+  const chatMaxW = useLayoutStore((s) => s.chatMaxWidth) || 1200
   const activeChatId = useAppStore((s) => s.activeChatId)
   const selectedModel = useAppStore((s) => s.selectedModel)
   const webSearchEnabled = useAppStore((s) => s.webSearchEnabled)
@@ -134,18 +128,6 @@ export function ChatView({
   const [draft, setDraft] = useState('')
   const [streamText, setStreamText] = useState('')
   const [sendError, setSendError] = useState(null)
-
-  useEffect(() => {
-    function onAttachChatFile(e) {
-      const { filename, content } = e.detail || {}
-      if (filename == null || content == null) return
-      const body = typeof content === 'string' ? content : JSON.stringify(content, null, 2)
-      const block = `**\`${filename}\`**\n\`\`\`\n${body}\n\`\`\``
-      setDraft((d) => (d?.trim() ? `${d}\n\n${block}` : block))
-    }
-    window.addEventListener('homelabhealth:attach-chat-file', onAttachChatFile)
-    return () => window.removeEventListener('homelabhealth:attach-chat-file', onAttachChatFile)
-  }, [])
 
   const { consumeStream, abort } = useStream()
   const [pendingSend, setPendingSend] = useState(false)
