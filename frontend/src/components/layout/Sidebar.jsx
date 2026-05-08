@@ -14,7 +14,6 @@ import {
   User,
 } from 'lucide-react'
 
-import { applyBrandingCss, fetchBranding } from '@/api/branding.js'
 import { deleteChat, listChats, patchChat, patchRecentChatsListCache } from '@/api/chats.js'
 import { listWorkspaces } from '@/api/workspaces.js'
 import { Button } from '@/components/ui/button'
@@ -27,8 +26,10 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { APP_TITLE } from '@/config/identity.js'
 import { PATH_HOME, workspacePath } from '@/routes/paths.js'
 import { useAppStore } from '@/store/index.js'
+import { useLayoutStore } from '@/store/layoutStore.js'
 import { cn } from '@/lib/utils'
 import { useLongPress } from '@/hooks/useLongPress.js'
 
@@ -37,12 +38,9 @@ import { useLongPress } from '@/hooks/useLongPress.js'
 // ---------------------------------------------------------------------------
 
 /** Single recent-chat row — extracts useLongPress out of .map() */
-function ChatRow({ chat, activeChatId, activeWorkspaceId, onSelect, onContextMenu, collapsed }) {
+function ChatRow({ chat, activeChatId, onSelect, onContextMenu, collapsed }) {
   const lp = useLongPress((e) => onContextMenu(e, chat))
-  const isActive =
-    chat.id === activeChatId &&
-    (activeWorkspaceId === undefined ||
-      String(activeWorkspaceId) === String(chat.workspace_id))
+  const isActive = chat.id === activeChatId
   return (
     <Button
       type="button"
@@ -137,7 +135,6 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
   }, [ctx, closeCtx])
 
   const currentUser = useAppStore((s) => s.currentUser)
-  const adminUi = true
 
   const sidebarOpen = useAppStore((s) => s.sidebarOpen)
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen)
@@ -148,8 +145,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
   const hydrateFromChat = useAppStore((s) => s.hydrateFromChat)
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId)
   const setActiveWorkspaceId = useAppStore((s) => s.setActiveWorkspaceId)
-  const branding = useAppStore((s) => s.branding)
-  const sidebarW = branding?.sidebarWidth ?? 260
+  const sidebarW = useLayoutStore((s) => s.sidebarWidth) || 260
 
   const { data } = useQuery({
     queryKey: ['chats', 'recent', activeWorkspaceId ?? 'all'],
@@ -159,12 +155,6 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
         ...(activeWorkspaceId ? { workspaceId: activeWorkspaceId } : {}),
       }),
     staleTime: 15_000,
-  })
-
-  const { data: brandingRow } = useQuery({
-    queryKey: ['branding'],
-    queryFn: () => fetchBranding(),
-    staleTime: 60_000,
   })
 
   const { data: workspacesListPack, isError: workspacesListError } = useQuery({
@@ -206,11 +196,6 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
   }
 
   useEffect(() => {
-    if (!brandingRow) return
-    applyBrandingCss(brandingRow)
-  }, [brandingRow])
-
-  useEffect(() => {
     if (data?.items) setChats(data.items)
   }, [data, setChats])
 
@@ -234,7 +219,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
     if (isMobile) onMobileOpenChange(false)
   }
 
-  const brandTitle = branding?.title || 'Workspace'
+  const brandTitle = APP_TITLE
 
   function selectChat(id) {
     setActiveChatId(id)
@@ -336,28 +321,13 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
                 e.preventDefault()
                 goHome()
               }}
-              className={cn(
-                'block w-full shrink-0 outline-none ring-sidebar-ring focus-visible:ring-2',
-                !branding?.bannerUrl && 'p-2',
-              )}
+              className="block w-full shrink-0 p-2 outline-none ring-sidebar-ring focus-visible:ring-2"
             >
-              {branding?.bannerUrl ? (
-                <div
-                  className={cn('relative w-full overflow-hidden aspect-[3/1]')}
-                >
-                  <img
-                    src={branding.bannerUrl}
-                    alt={brandTitle}
-                    className="h-full w-full object-fill"
-                  />
-                </div>
-              ) : (
-                <div className="flex min-h-16 w-full items-center justify-center overflow-hidden rounded-md border border-sidebar-border bg-card px-2">
-                  <span className="fs-nav truncate text-center font-semibold uppercase tracking-wide text-muted-foreground">
-                    {brandTitle}
-                  </span>
-                </div>
-              )}
+              <div className="flex min-h-16 w-full items-center justify-center overflow-hidden rounded-md border border-sidebar-border bg-card px-2">
+                <span className="fs-nav truncate text-center font-semibold uppercase tracking-wide text-muted-foreground">
+                  {brandTitle}
+                </span>
+              </div>
             </Link>
           ) : (
             <div className="h-2 shrink-0" aria-hidden />
@@ -489,7 +459,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
                         >
                           <span
                             className="size-2.5 shrink-0 rounded-full"
-                            style={{ background: d.color || '#7c3aed' }}
+                            style={{ background: d.color || '#8FAE92' }}
                             aria-hidden
                           />
                           <span className="fs-nav line-clamp-2">{d.name}</span>
@@ -576,7 +546,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
                   >
                     <span
                       className="size-2.5 shrink-0 rounded-full"
-                      style={{ background: d.color || '#7c3aed' }}
+                      style={{ background: d.color || '#8FAE92' }}
                       aria-hidden
                     />
                   </Link>
@@ -629,73 +599,59 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
               </Link>
             </Button>
           )}
-          {(() => {
-            const showAi = true
-            const showSettings = adminUi
-            if (!showAi && !showSettings) return null
-            const aiBtn = showAi ? (
+          {desktopCollapsed ? (
+            <>
               <Button
-                key="ai"
                 type="button"
                 variant="outline"
-                className={cn(
-                  'border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent',
-                  desktopCollapsed ? 'w-full px-0' : 'min-w-0 flex-1',
-                )}
+                className="w-full border-sidebar-border bg-card px-0 text-foreground hover:bg-sidebar-accent"
                 asChild
               >
                 <Link to="/ai" onClick={() => isMobile && onMobileOpenChange(false)} title="AI settings">
-                  {!desktopCollapsed ? (
-                    <span className="fs-nav flex items-center justify-center gap-2">
-                      <Brain className="size-4 shrink-0" />
-                      AI
-                    </span>
-                  ) : (
-                    <Brain className="size-4" />
-                  )}
+                  <Brain className="size-4" />
                 </Link>
               </Button>
-            ) : null
-            const settingsBtn = showSettings ? (
               <Button
-                key="settings"
                 type="button"
                 variant="outline"
-                className={cn(
-                  'border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent',
-                  desktopCollapsed ? 'w-full px-0' : 'min-w-0 flex-1',
-                )}
+                className="w-full border-sidebar-border bg-card px-0 text-foreground hover:bg-sidebar-accent"
                 asChild
               >
-                <Link
-                  to="/settings"
-                  onClick={() => isMobile && onMobileOpenChange(false)}
-                  title="Settings"
-                  aria-label="Settings"
-                >
-                  {!desktopCollapsed ? (
-                    <span className="fs-nav flex items-center justify-center gap-2">
-                      <Settings className="size-4 shrink-0" />
-                      Settings
-                    </span>
-                  ) : (
-                    <Settings className="size-4" />
-                  )}
+                <Link to="/settings" onClick={() => isMobile && onMobileOpenChange(false)} title="Settings" aria-label="Settings">
+                  <Settings className="size-4" />
                 </Link>
               </Button>
-            ) : null
-            return desktopCollapsed ? (
-              <>
-                {aiBtn}
-                {settingsBtn}
-              </>
-            ) : (
-              <div className="flex gap-1">
-                {aiBtn}
-                {settingsBtn}
-              </div>
-            )
-          })()}
+            </>
+          ) : (
+            <div className="flex gap-1">
+              <Button
+                type="button"
+                variant="outline"
+                className="min-w-0 flex-1 border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent"
+                asChild
+              >
+                <Link to="/ai" onClick={() => isMobile && onMobileOpenChange(false)} title="AI settings">
+                  <span className="fs-nav flex items-center justify-center gap-2">
+                    <Brain className="size-4 shrink-0" />
+                    AI
+                  </span>
+                </Link>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="min-w-0 flex-1 border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent"
+                asChild
+              >
+                <Link to="/settings" onClick={() => isMobile && onMobileOpenChange(false)} title="Settings" aria-label="Settings">
+                  <span className="fs-nav flex items-center justify-center gap-2">
+                    <Settings className="size-4 shrink-0" />
+                    Settings
+                  </span>
+                </Link>
+              </Button>
+            </div>
+          )}
         </div>
       </aside>
 
