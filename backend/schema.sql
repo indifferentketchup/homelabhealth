@@ -619,6 +619,7 @@ ALTER TABLE daws DROP COLUMN IF EXISTS repo_sync_status;
 ALTER TABLE daws DROP COLUMN IF EXISTS repo_last_synced_at;
 ALTER TABLE daws DROP COLUMN IF EXISTS repo_file_count;
 ALTER TABLE daws DROP COLUMN IF EXISTS repo_chunk_count;
+ALTER TABLE daws DROP COLUMN IF EXISTS repo_sync_error;
 
 -- Drop pinned_booops on daws (only 808notes was used)
 ALTER TABLE daws DROP COLUMN IF EXISTS pinned_booops;
