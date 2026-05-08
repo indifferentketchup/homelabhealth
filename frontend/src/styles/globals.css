@@ -10,6 +10,8 @@ input, textarea, select {
 
 /**
  * Workspace palette + shadcn token bridge.
+ * Soft healthcare: cream + sage primary + dusty rose secondary.
+ * Dark mode triggers via `class="dark"` on <html> (set by main.jsx).
  */
 
 :root {
@@ -27,22 +29,30 @@ input, textarea, select {
   --sources-panel-width: 22rem;
   font-size: var(--font-size-base);
 
-  --accent: #7c3aed;
-  --accent-workspace: #7c3aed;
-  --accent-bright: #a855f7;
-  --accent-dim: #3d1a7c;
-  --accent-2: #c084fc;
-  --accent-3: #e879f9;
-  --bg: #080808;
-  --bg-panel: #0f0a1a;
-  --bg-card: #130d20;
-  --bg-hover: #1a1030;
-  --text: #f0f0f0;
-  --text-dim: #9d8fbb;
-  --text-muted: #4a3d6b;
-  --border: #1e1530;
-  --border-bright: #2d2050;
-  --glow: 0 0 20px rgba(124, 58, 237, 0.3);
+  /* Light palette (soft healthcare cream) */
+  --accent: #6E8C70;
+  --accent-workspace: #6E8C70;
+  --accent-bright: #5A7A5C;
+  --accent-dim: #DCE6DD;
+  --accent-2: #2C4A6B;
+  --accent-3: #D48BA0;
+  --bg: #F8F5F0;
+  --bg-panel: #F4ECE6;
+  --bg-card: #FFFFFF;
+  --bg-hover: #F5DCE3;
+  --text: #2A3548;
+  --text-dim: #6B7589;
+  --text-muted: #6B7589;
+  --border: #E5DAD0;
+  --border-bright: #D6C5B8;
+  --glow: 0 0 20px rgba(110, 140, 112, 0.15);
+
+  /* Spec-name aliases (USAGE INTENT: accent=sage CTA, secondary=pink badges, tertiary=navy headers) */
+  --accent-hover: var(--accent-bright);
+  --accent-soft: var(--accent-dim);
+  --secondary-hover: #C27889;
+  --secondary-soft: var(--bg-hover);
+  --tertiary: var(--accent-2);
 
   --background: var(--bg);
   --foreground: var(--text);
@@ -51,26 +61,84 @@ input, textarea, select {
   --popover: var(--bg-panel);
   --popover-foreground: var(--text);
   --primary: var(--accent);
-  --primary-foreground: #f0f0f0;
-  --secondary: var(--bg-hover);
-  --secondary-foreground: var(--text);
+  --primary-foreground: #FFFFFF;
+  --secondary: var(--accent-3);
+  --secondary-foreground: #FFFFFF;
   --muted: var(--bg-panel);
   --muted-foreground: var(--text-dim);
-  --accent-foreground: #f0f0f0;
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: #f0f0f0;
+  --accent-foreground: #FFFFFF;
+  --destructive: #B85450;
+  --destructive-foreground: #FFFFFF;
   --input: var(--border-bright);
   --ring: var(--accent);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  --chart-1: #6E8C70;
+  --chart-2: #D48BA0;
+  --chart-3: #2C4A6B;
+  --chart-4: #C8924C;
+  --chart-5: #B85450;
   --sidebar: var(--bg-panel);
   --sidebar-foreground: var(--text);
   --sidebar-primary: var(--accent);
-  --sidebar-primary-foreground: #f0f0f0;
-  --sidebar-accent: var(--bg-hover);
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: var(--accent-dim);
+  --sidebar-accent-foreground: var(--text);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--accent);
+}
+
+.dark {
+  /* Dark palette (deep navy + lighter sage + lighter dusty rose) */
+  --accent: #8FAE92;
+  --accent-workspace: #8FAE92;
+  --accent-bright: #A3BFA6;
+  --accent-dim: #2A3D2D;
+  --accent-2: #7A9AC0;
+  --accent-3: #E4A5B8;
+  --bg: #14182A;
+  --bg-panel: #252A45;
+  --bg-card: #1C2138;
+  --bg-hover: #3D2832;
+  --text: #ECE5DC;
+  --text-dim: #8E97AE;
+  --text-muted: #8E97AE;
+  --border: #2D3550;
+  --border-bright: #3D4660;
+  --glow: 0 0 20px rgba(143, 174, 146, 0.25);
+
+  /* Spec-name aliases (dark mode) */
+  --accent-hover: var(--accent-bright);
+  --accent-soft: var(--accent-dim);
+  --secondary-hover: #EDB8C7;
+  --secondary-soft: var(--bg-hover);
+  --tertiary: var(--accent-2);
+
+  --background: var(--bg);
+  --foreground: var(--text);
+  --card: var(--bg-card);
+  --card-foreground: var(--text);
+  --popover: var(--bg-panel);
+  --popover-foreground: var(--text);
+  --primary: var(--accent);
+  --primary-foreground: #14182A;
+  --secondary: var(--accent-3);
+  --secondary-foreground: #14182A;
+  --muted: var(--bg-panel);
+  --muted-foreground: var(--text-dim);
+  --accent-foreground: #14182A;
+  --destructive: #D67975;
+  --destructive-foreground: #ECE5DC;
+  --input: var(--border-bright);
+  --ring: var(--accent);
+  --chart-1: #8FAE92;
+  --chart-2: #E4A5B8;
+  --chart-3: #7A9AC0;
+  --chart-4: #D6A266;
+  --chart-5: #D67975;
+  --sidebar: var(--bg-panel);
+  --sidebar-foreground: var(--text);
+  --sidebar-primary: var(--accent);
+  --sidebar-primary-foreground: #14182A;
+  --sidebar-accent: var(--accent-dim);
   --sidebar-accent-foreground: var(--text);
   --sidebar-border: var(--border);
   --sidebar-ring: var(--accent);
@@ -197,4 +265,3 @@ main {
     padding-bottom: calc(102px + max(env(safe-area-inset-bottom, 0px), var(--bc-keyboard-pad, 0px)));
   }
 }
-
