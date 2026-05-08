@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 from typing import Any
 
@@ -68,20 +67,11 @@ async def _openai_summarize(
     return (msg.get("content") or "").strip()
 
 
-def _estimate_tokens_from_messages(rows: list[Any]) -> int:
-    total_chars = 0
-    for r in rows:
-        total_chars += len(r["content"] or "")
-    return max(total_chars // 4, 0)
-
-
 async def summarize_and_compress(
     chat_id: str,
     pool: asyncpg.Pool | None = None,
-    *,
-    max_context_tokens: int | None = None,
 ) -> None:
-    """If message_count >= threshold or estimated tokens exceed context, summarize and delete old turns."""
+    """If message_count >= threshold, summarize and delete old turns."""
     own_pool = pool is None
     if own_pool:
         pool = await get_pool()
@@ -120,12 +110,7 @@ async def summarize_and_compress(
             chat_id,
         )
 
-        est_tokens = _estimate_tokens_from_messages(rows)
-        token_budget = int(max_context_tokens) if max_context_tokens and max_context_tokens > 0 else 0
-        over_tokens = bool(token_budget and est_tokens > int(token_budget * 0.72))
-        over_msgs = actual >= threshold
-
-        if actual < threshold and not over_tokens:
+        if actual < threshold:
             if chat["message_count"] != actual:
                 await conn.execute(
                     "UPDATE chats SET message_count = $2, updated_at = NOW() WHERE id = $1::uuid",

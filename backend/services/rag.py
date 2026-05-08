@@ -24,8 +24,6 @@ _DEFAULTS: dict[str, float | int | bool] = {
     "rag_similarity_threshold": float(os.environ.get("RAG_SIMILARITY_THRESHOLD", "0.35")),
     "memory_similarity_threshold": float(os.environ.get("MEMORY_SIMILARITY_THRESHOLD", "0.45")),
     "rag_rerank_score_min": float(os.environ.get("RAG_RERANK_SCORE_MIN", "0.05")),
-    "rag_intent_gate_enabled": os.environ.get("RAG_INTENT_GATE_ENABLED", "true").lower() == "true",
-    "rag_min_words_for_intent": int(os.environ.get("RAG_MIN_WORDS_FOR_INTENT", "4")),
 }
 
 MEMORY_TOP_K = 3
@@ -81,13 +79,6 @@ async def _load_rag_settings() -> dict[str, Any]:
     return out
 
 
-def invalidate_rag_settings_cache() -> None:
-    """Call from the settings PATCH endpoint after updating any RAG key."""
-    global _settings_cache, _settings_cache_at
-    _settings_cache = {}
-    _settings_cache_at = 0.0
-
-
 _RANKER: Any = None
 
 
@@ -139,15 +130,6 @@ async def _rerank_infinity(query: str, passages: list[dict]) -> list[dict] | Non
         logger.warning("infinity-rerank returned no usable results; falling back")
         return None
     return out
-
-
-async def should_retrieve(query: str, mode: str) -> bool:
-    """
-    Returns True if RAG retrieval should run for this query.
-    Always retrieves; relevance filtering happens post-retrieval via the
-    similarity and rerank-score thresholds.
-    """
-    return True
 
 
 async def retrieve_memory_facts(query: str, mode: str, conn: Any) -> list[str]:

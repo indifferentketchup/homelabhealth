@@ -9,7 +9,7 @@ from typing import Any, AsyncIterator
 
 import asyncpg
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -25,7 +25,6 @@ from services.pruning import summarize_and_compress
 from services.rag import (
     retrieve_context,
     retrieve_memory_facts,
-    should_retrieve,
 )
 from services.searx import searx_search_sources
 
@@ -33,7 +32,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-async def _default_persona_id_for_mode(conn: asyncpg.Connection, mode: str) -> uuid.UUID | None:
+async def _default_persona_id_for_mode(conn: asyncpg.Connection) -> uuid.UUID | None:
     """Default persona for new chat."""
     return await conn.fetchval(
         "SELECT id FROM personas WHERE is_default_808notes IS TRUE LIMIT 1",
@@ -83,18 +82,6 @@ def _first_auto_memory_sentence(text: str) -> str | None:
             break
     snippet = s[start:end].strip()
     return snippet or None
-
-
-async def _site_default_model(conn: asyncpg.Connection, mode: str) -> str:
-    row = await conn.fetchrow(
-        "SELECT value FROM global_settings WHERE key = $1",
-        "default_model_808notes",
-    )
-    if row and row["value"]:
-        v = str(row["value"]).strip()
-        if v:
-            return v
-    return required_default_model()
 
 
 async def _assembled_system_prompt(
@@ -457,7 +444,7 @@ async def create_chat(body: ChatCreate, principal: dict[str, Any] = Depends(get_
         await assert_workspace_usable(conn, principal, body.workspace_id)
         persona_id_for_insert = body.persona_id
         if persona_id_for_insert is None:
-            persona_id_for_insert = await _default_persona_id_for_mode(conn, mode)
+            persona_id_for_insert = await _default_persona_id_for_mode(conn)
         row = await conn.fetchrow(
             """
             INSERT INTO chats (title, daw_id, mode, model, web_search_enabled, rag_enabled, persona_id, owner_id)
@@ -733,7 +720,6 @@ async def delete_chat(chat_id: uuid.UUID, principal: dict[str, Any] = Depends(ge
 @router.post("/{chat_id}/export")
 async def export_chat(
     chat_id: uuid.UUID,
-    request: Request,
     principal: dict[str, Any] = Depends(get_principal),
 ) -> dict:
     """Save a chat's messages to /data/history/chats/<workspace-slug>/<file-slug>.md.
@@ -1209,7 +1195,6 @@ async def append_message(
 
         auto_mem = _first_auto_memory_sentence(assistant_text)
         if auto_mem:
-            chat_mode = _SCHEMA_MODE_VALUE
             async with p.acquire() as conn_mem:
                 mem_row = await conn_mem.fetchrow(
                     """
@@ -1218,7 +1203,7 @@ async def append_message(
                     RETURNING id
                     """,
                     auto_mem,
-                    chat_mode,
+                    _SCHEMA_MODE_VALUE,
                 )
                 if mem_row:
                     try:
