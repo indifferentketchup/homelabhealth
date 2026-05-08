@@ -33,7 +33,7 @@ function loadUserProfileFromStorage() {
 /** Default persona, looked up from a personas list. */
 function defaultPersona(personas) {
   const list = Array.isArray(personas) ? personas : []
-  return list.find((x) => x.is_default_808notes) ?? null
+  return list.find((x) => x.is_default) ?? null
 }
 
 /** Map API persona row → store display fields (also used after AI settings refetch). */
