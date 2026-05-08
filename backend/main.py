@@ -13,7 +13,6 @@ from db import apply_schema, close_pool, get_pool, init_pool
 from seed_assets import seed_default_assets
 from seed_users import ensure_super_admin
 from routers import (
-    branding,
     chats,
     custom_instructions,
     workspace_context_files,
@@ -26,7 +25,6 @@ from routers import (
     search,
     searxng,
     settings,
-    skills,
 )
 from routers.history import router as history_router
 from routers.notes import router as notes_router
@@ -107,7 +105,6 @@ async def api_health():
 api.include_router(profile.router, prefix="/profile", tags=["profile"])
 api.include_router(inference.router, prefix="/inference", tags=["inference"])
 api.include_router(chats.router, prefix="/chats", tags=["chats"])
-api.include_router(branding.router, prefix="/branding", tags=["branding"])
 api.include_router(personas.router, prefix="/personas", tags=["personas"])
 api.include_router(memory.router, prefix="/memory", tags=["memory"])
 api.include_router(workspaces.router, prefix="/workspaces", tags=["workspaces"])
@@ -120,6 +117,6 @@ api.include_router(searxng.router, prefix="/searxng", tags=["searxng"])
 api.include_router(notes_router, tags=["notes"])
 api.include_router(sources_router, tags=["sources"])
 api.include_router(history_router, prefix="/history", tags=["history"])
-api.include_router(skills.router, prefix="/skills", tags=["skills"])
+
 
 app.include_router(api)

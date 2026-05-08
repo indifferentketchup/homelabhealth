@@ -11,7 +11,6 @@ import WorkspacesPage from '@/pages/workspace/WorkspacesPage.jsx'
 import WorkspaceDetailPage from '@/pages/workspace/WorkspaceDetailPage.jsx'
 import AISettings from '@/pages/workspace/AISettings.jsx'
 import ProfilePage from '@/pages/workspace/ProfilePage.jsx'
-import { SkillsLibraryPage } from '@/pages/SkillsLibraryPage.jsx'
 
 export function AppRoutes() {
   return (
@@ -28,7 +27,6 @@ export function AppRoutes() {
           <Route path="ai" element={<AISettings />} />
           <Route path="settings" element={<SettingsRoute />} />
           <Route path="profile" element={<ProfilePage />} />
-          <Route path="skills" element={<SkillsLibraryPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
