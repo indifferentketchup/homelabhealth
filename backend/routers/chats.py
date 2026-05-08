@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 async def _default_persona_id_for_mode(conn: asyncpg.Connection) -> uuid.UUID | None:
     """Default persona for new chat."""
     return await conn.fetchval(
-        "SELECT id FROM personas WHERE is_default_808notes IS TRUE LIMIT 1",
+        "SELECT id FROM personas WHERE is_default IS TRUE LIMIT 1",
     )
 
 
@@ -99,7 +99,7 @@ async def _assembled_system_prompt(
     workspace_persona_id = None
     if workspace_id is not None:
         ws = await conn.fetchrow(
-            "SELECT system_prompt, persona_id, mode, rag_mode FROM daws WHERE id = $1::uuid",
+            "SELECT system_prompt, persona_id, rag_mode FROM daws WHERE id = $1::uuid",
             workspace_id,
         )
         if ws:
@@ -119,7 +119,7 @@ async def _assembled_system_prompt(
 
     if not persona_prompt:
         d = await conn.fetchrow(
-            "SELECT system_prompt FROM personas WHERE is_default_808notes IS TRUE LIMIT 1",
+            "SELECT system_prompt FROM personas WHERE is_default IS TRUE LIMIT 1",
         )
         if d:
             persona_prompt = (d["system_prompt"] or "").strip()
@@ -153,7 +153,7 @@ async def _assembled_system_prompt(
             parts.append(f"[Workspace Memory]\n{mem_lines}")
 
     if workspace_id is not None and include_site_private and user_query_for_rag:
-        memory_facts = await retrieve_memory_facts(str(user_query_for_rag), mode, conn)
+        memory_facts = await retrieve_memory_facts(str(user_query_for_rag), conn)
         if memory_facts:
             mem_entries_count = len(memory_facts)
             bullets = "\n".join([f"- {f}" for f in memory_facts])
@@ -407,7 +407,6 @@ def _chat_row(r: asyncpg.Record) -> dict[str, Any]:
         "id": str(r["id"]),
         "title": r["title"],
         "workspace_id": str(r["daw_id"]) if r["daw_id"] else None,
-        "mode": r["mode"],
         "persona_id": str(r["persona_id"]) if r["persona_id"] else None,
         "model": r["model"],
         "web_search_enabled": r["web_search_enabled"],
@@ -437,7 +436,6 @@ def _message_row(r: asyncpg.Record) -> dict[str, Any]:
 @router.post("/")
 async def create_chat(body: ChatCreate, principal: dict[str, Any] = Depends(get_principal)):
     pool = await get_pool()
-    mode = _SCHEMA_MODE_VALUE
     default_model = required_default_model()
     async with pool.acquire() as conn:
         await assert_persona_usable(conn, principal, body.persona_id)
@@ -447,24 +445,23 @@ async def create_chat(body: ChatCreate, principal: dict[str, Any] = Depends(get_
             persona_id_for_insert = await _default_persona_id_for_mode(conn)
         row = await conn.fetchrow(
             """
-            INSERT INTO chats (title, daw_id, mode, model, web_search_enabled, rag_enabled, persona_id, owner_id)
-            VALUES ($1, $2, $3,
+            INSERT INTO chats (title, daw_id, model, web_search_enabled, rag_enabled, persona_id, owner_id)
+            VALUES ($1, $2,
                 COALESCE(
-                    $4,
+                    $3,
                     (SELECT NULLIF(TRIM(model), '') FROM daws WHERE id = $2::uuid),
                     (SELECT value FROM global_settings WHERE key = 'default_model_808notes' LIMIT 1),
-                    $6
+                    $5
                 ),
-                COALESCE($5, FALSE),
-                $9,
-                $7,
-                $8)
-            RETURNING id, title, daw_id, mode, persona_id, model, web_search_enabled, rag_enabled,
+                COALESCE($4, FALSE),
+                $8,
+                $6,
+                $7)
+            RETURNING id, title, daw_id, persona_id, model, web_search_enabled, rag_enabled,
                 pruning_summary, message_count, is_main_chat, created_at, updated_at
             """,
             body.title,
             body.workspace_id,
-            mode,
             body.model,
             body.web_search_enabled,
             default_model,
@@ -483,9 +480,8 @@ async def list_chats(
     principal: dict[str, Any] = Depends(get_principal),
 ):
     pool = await get_pool()
-    m = _SCHEMA_MODE_VALUE
     cols = """
-                id, title, daw_id, mode, persona_id, model, web_search_enabled, rag_enabled,
+                id, title, daw_id, persona_id, model, web_search_enabled, rag_enabled,
                 pruning_summary, message_count, is_main_chat, created_at, updated_at
     """
     async with pool.acquire() as conn:
@@ -494,18 +490,16 @@ async def list_chats(
                 f"""
                 SELECT {cols}
                 FROM chats
-                WHERE mode = $3 AND daw_id = $4::uuid
+                WHERE daw_id = $3::uuid
                 ORDER BY updated_at DESC NULLS LAST, created_at DESC
                 LIMIT $1 OFFSET $2
                 """,
                 limit,
                 offset,
-                m,
                 workspace_id,
             )
             total = await conn.fetchval(
-                "SELECT COUNT(*)::int FROM chats WHERE mode = $1 AND daw_id = $2::uuid",
-                m,
+                "SELECT COUNT(*)::int FROM chats WHERE daw_id = $1::uuid",
                 workspace_id,
             )
         else:
@@ -513,17 +507,14 @@ async def list_chats(
                 f"""
                 SELECT {cols}
                 FROM chats
-                WHERE mode = $3
                 ORDER BY updated_at DESC NULLS LAST, created_at DESC
                 LIMIT $1 OFFSET $2
                 """,
                 limit,
                 offset,
-                m,
             )
             total = await conn.fetchval(
-                "SELECT COUNT(*)::int FROM chats WHERE mode = $1",
-                m,
+                "SELECT COUNT(*)::int FROM chats",
             )
     return {"items": [_chat_row(r) for r in rows], "total": total, "limit": limit, "offset": offset}
 
@@ -534,20 +525,18 @@ async def delete_non_workspace_chats(
 ):
     """Delete all chats not tied to a workspace (daw_id IS NULL)."""
     pool = await get_pool()
-    m = _SCHEMA_MODE_VALUE
     async with pool.acquire() as conn:
         deleted = await conn.fetchval(
             """
             WITH deleted AS (
                 DELETE FROM chats
-                WHERE mode = $1 AND daw_id IS NULL
+                WHERE daw_id IS NULL
                 RETURNING 1
             )
             SELECT COUNT(*)::int FROM deleted
             """,
-            m,
         )
-    return {"deleted": int(deleted or 0), "mode": m}
+    return {"deleted": int(deleted or 0)}
 
 
 @router.get("/{chat_id}")
@@ -556,7 +545,7 @@ async def get_chat(chat_id: uuid.UUID, principal: dict[str, Any] = Depends(get_p
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            SELECT id, title, daw_id, mode, persona_id, model, web_search_enabled, rag_enabled,
+            SELECT id, title, daw_id, persona_id, model, web_search_enabled, rag_enabled,
                 pruning_summary, message_count, is_main_chat, created_at, updated_at
             FROM chats
             WHERE id = $1::uuid
@@ -660,7 +649,7 @@ async def patch_chat(
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            SELECT id, title, daw_id, mode, persona_id, model, web_search_enabled, rag_enabled,
+            SELECT id, title, daw_id, persona_id, model, web_search_enabled, rag_enabled,
                 pruning_summary, message_count, is_main_chat, created_at, updated_at
             FROM chats
             WHERE id = $1::uuid
@@ -688,7 +677,7 @@ async def patch_chat(
             SET title = $2, model = $3, web_search_enabled = $4,
                 persona_id = $5, daw_id = $6, updated_at = NOW()
             WHERE id = $1::uuid
-            RETURNING id, title, daw_id, mode, persona_id, model, web_search_enabled, rag_enabled,
+            RETURNING id, title, daw_id, persona_id, model, web_search_enabled, rag_enabled,
                 pruning_summary, message_count, is_main_chat, created_at, updated_at
             """,
             chat_id,
@@ -860,7 +849,7 @@ async def fork_chat_at_message(
         async with conn.transaction():
             src = await conn.fetchrow(
                 """
-                SELECT id, title, mode, model, persona_id, daw_id,
+                SELECT id, title, model, persona_id, daw_id,
                     web_search_enabled, rag_enabled
                 FROM chats
                 WHERE id = $1::uuid
@@ -904,17 +893,16 @@ async def fork_chat_at_message(
             new_chat = await conn.fetchrow(
                 """
                 INSERT INTO chats (
-                    title, daw_id, mode, model, persona_id,
+                    title, daw_id, model, persona_id,
                     web_search_enabled, rag_enabled, message_count,
                     owner_id
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                RETURNING id, title, daw_id, mode, persona_id, model, web_search_enabled, rag_enabled,
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                RETURNING id, title, daw_id, persona_id, model, web_search_enabled, rag_enabled,
                     pruning_summary, message_count, is_main_chat, created_at, updated_at
                 """,
                 fork_title,
                 src["daw_id"],
-                src["mode"],
                 src["model"],
                 src["persona_id"],
                 src["web_search_enabled"],
@@ -960,7 +948,7 @@ async def append_message(
     async with pool.acquire() as conn:
         chat = await conn.fetchrow(
             """
-            SELECT id, title, model, pruning_summary, mode, persona_id, web_search_enabled, daw_id,
+            SELECT id, title, model, pruning_summary, persona_id, web_search_enabled, daw_id,
                 message_count, rag_enabled
             FROM chats
             WHERE id = $1::uuid
@@ -1062,7 +1050,7 @@ async def append_message(
         if bool(chat["web_search_enabled"]):
             sources_list, extra_search = await searx_search_sources(
                 user_message_text,
-                mode=str(chat["mode"] or _SCHEMA_MODE_VALUE),
+                mode=_SCHEMA_MODE_VALUE,
             )
         if sources_list:
             yield _sse(json.dumps({"type": "search_sources", "sources": sources_list}))
@@ -1198,12 +1186,11 @@ async def append_message(
             async with p.acquire() as conn_mem:
                 mem_row = await conn_mem.fetchrow(
                     """
-                    INSERT INTO memory_entries (content, source, mode)
-                    VALUES ($1, 'auto', $2)
+                    INSERT INTO memory_entries (content, source)
+                    VALUES ($1, 'auto')
                     RETURNING id
                     """,
                     auto_mem,
-                    _SCHEMA_MODE_VALUE,
                 )
                 if mem_row:
                     try:

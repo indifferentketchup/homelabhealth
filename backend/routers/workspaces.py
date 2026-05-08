@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from deps import _SCHEMA_MODE_VALUE, get_principal
+from deps import get_principal
 from db import get_pool
 
 router = APIRouter()
@@ -22,7 +22,7 @@ BRANDING_WORKSPACE_ICONS = Path("/data/branding/daw_icons")
 # list_workspaces uses a wider variant that includes repo_* columns.
 DAWS_SELECT = """
     SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
-        d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
+        d.pinned_808notes, d.system_prompt, d.persona_id,
         d.model, d.rag_mode,
         d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
     FROM daws d
@@ -79,7 +79,6 @@ def _row(r: Any) -> dict[str, Any]:
         "system_prompt": r["system_prompt"] or "",
         "persona_id": str(r["persona_id"]) if r["persona_id"] else None,
         "persona_name": pn,
-        "mode": r["mode"],
         "color": r["color"] or "#7c3aed",
         "shared": bool(r["shared"]),
         "sort_order": int(r["sort_order"] or 0),
@@ -89,15 +88,6 @@ def _row(r: Any) -> dict[str, Any]:
         "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
         "updated_at": r["updated_at"].isoformat() if r.get("updated_at") else None,
         "owner_id": str(r["owner_id"]) if r.get("owner_id") else None,
-        "repo_path": r.get("repo_path"),
-        "repo_branch": r.get("repo_branch") or "main",
-        "repo_auto_sync": bool(r.get("repo_auto_sync")),
-        "repo_sync_status": r.get("repo_sync_status") or "idle",
-        "repo_last_synced_at": r["repo_last_synced_at"].isoformat()
-        if r.get("repo_last_synced_at")
-        else None,
-        "repo_file_count": int(r.get("repo_file_count") or 0),
-        "repo_chunk_count": int(r.get("repo_chunk_count") or 0),
         "rag_mode": cast(
             Literal["auto", "always", "off"],
             "always",
@@ -134,10 +124,8 @@ async def list_workspaces(
     pool = await get_pool()
     sel = """
                 SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
-                    d.pinned_808notes, d.system_prompt, d.persona_id, d.mode,
+                    d.pinned_808notes, d.system_prompt, d.persona_id,
                     d.model, d.rag_mode,
-                    d.repo_path, d.repo_branch, d.repo_auto_sync, d.repo_sync_status,
-                    d.repo_last_synced_at, d.repo_file_count, d.repo_chunk_count,
                     d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
                 FROM daws d
                 LEFT JOIN personas p ON p.id = d.persona_id
@@ -159,22 +147,16 @@ async def create_workspace(body: WorkspaceCreate, principal: dict[str, Any] = De
         row = await conn.fetchrow(
             """
             INSERT INTO daws (
-                name, description, system_prompt, persona_id, mode, color, shared, sort_order,
+                name, description, system_prompt, persona_id, color, shared, sort_order,
                 model, rag_mode, owner_id
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-            RETURNING id, name, description, icon_url, color, shared, sort_order,
-                pinned_808notes, system_prompt, persona_id, mode,
-                model, rag_mode,
-                repo_path, repo_branch, repo_auto_sync, repo_sync_status,
-                repo_last_synced_at, repo_file_count, repo_chunk_count,
-                created_at, updated_at, owner_id
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            RETURNING id
             """,
             body.name.strip(),
             body.description,
             body.system_prompt or "",
             body.persona_id,
-            _SCHEMA_MODE_VALUE,
             body.color or "#7c3aed",
             body.shared,
             body.sort_order,
@@ -356,7 +338,7 @@ async def patch_workspace(
         row = await conn.fetchrow(
             """
             SELECT id, name, description, icon_url, color, shared, sort_order,
-                pinned_808notes, system_prompt, persona_id, mode,
+                pinned_808notes, system_prompt, persona_id,
                 model, rag_mode,
                 created_at, updated_at, owner_id
             FROM daws WHERE id = $1::uuid
@@ -376,7 +358,6 @@ async def patch_workspace(
         new_desc = data.get("description", row["description"])
         new_sp = data.get("system_prompt", row["system_prompt"])
         new_pid = row["persona_id"] if "persona_id" not in data else data["persona_id"]
-        new_mode = row["mode"]
         new_color = data.get("color", row["color"])
         new_shared = data.get("shared", row["shared"])
         new_sort = data.get("sort_order", row["sort_order"])
@@ -404,9 +385,9 @@ async def patch_workspace(
         await conn.execute(
             """
             UPDATE daws
-            SET name = $2, description = $3, system_prompt = $4, persona_id = $5, mode = $6,
-                color = $7, shared = $8, sort_order = $9, icon_url = $10, model = $11,
-                rag_mode = $12, updated_at = NOW()
+            SET name = $2, description = $3, system_prompt = $4, persona_id = $5,
+                color = $6, shared = $7, sort_order = $8, icon_url = $9, model = $10,
+                rag_mode = $11, updated_at = NOW()
             WHERE id = $1::uuid
             """,
             workspace_id,
@@ -414,7 +395,6 @@ async def patch_workspace(
             new_desc,
             new_sp,
             new_pid,
-            new_mode,
             new_color,
             new_shared,
             new_sort,
