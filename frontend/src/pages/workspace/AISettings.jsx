@@ -165,7 +165,7 @@ export default function AISettings() {
   const queryClient = useQueryClient()
   const setPersonas = useAppStore((s) => s.setPersonas)
   const setActivePersonaId = useAppStore((s) => s.setActivePersonaId)
-  const currentDefaultKey = 'is_default_808notes'
+  const currentDefaultKey = 'is_default'
   const [tab, setTab] = useState('personas')
 
   const { data: personaPack } = useQuery({
@@ -662,7 +662,7 @@ export default function AISettings() {
                             title={hasEmb ? 'Has vector embedding' : 'No embedding yet'}
                           >
                             <span
-                              className={cn('size-2 shrink-0 rounded-full', hasEmb ? 'bg-emerald-600' : 'bg-muted-foreground/45')}
+                              className={cn('size-2 shrink-0 rounded-full', hasEmb ? 'bg-primary' : 'bg-muted-foreground/45')}
                               aria-hidden
                             />
                             <span className="sr-only">{hasEmb ? 'Embedded' : 'Not embedded'}</span>

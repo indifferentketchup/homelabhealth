@@ -108,7 +108,7 @@ export function ModelSelectorBar({ className }) {
   })
   const personas = personaPack?.items ?? []
   const defaultPersona = useMemo(() => {
-    return personas.find((p) => p.is_default_808notes) ?? null
+    return personas.find((p) => p.is_default) ?? null
   }, [personas])
 
   const { data: chat } = useQuery({
