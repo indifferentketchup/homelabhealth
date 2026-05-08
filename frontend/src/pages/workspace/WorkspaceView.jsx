@@ -1,31 +1,30 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Outlet, useNavigate, useParams } from 'react-router-dom'
 import { Layers, Pin } from 'lucide-react'
 import * as LucideIcons from 'lucide-react'
 
-import { fetchBranding, patchBranding } from '@/api/branding.js'
 import { createWorkspace, deleteWorkspace, listWorkspaces, pinWorkspace } from '@/api/workspaces.js'
 import { deleteSource, listSources, uploadSource } from '@/api/sources.js'
 import { getChatSourceSelection, setChatSourceSelection } from '@/api/chats.js'
 import { ChatView } from '@/components/chat/ChatView.jsx'
-import { FileViewerPanel } from '@/components/chat/FileViewerPanel.jsx'
-import { FileBrowserPanel } from '@/components/FileBrowserPanel.jsx'
 import { Button } from '@/components/ui/button'
+import { APP_GLYPH, APP_TAGLINE, APP_TITLE } from '@/config/identity.js'
 import { workspacePath } from '@/routes/paths.js'
 import { cn } from '@/lib/utils.js'
 import { useAppStore } from '@/store/index.js'
+import { useLayoutStore } from '@/store/layoutStore.js'
 
 import { NotesPanel } from './NotesPanel.jsx'
 import { SourcesPanel } from './SourcesPanel.jsx'
 
-const { ChevronLeft, ChevronRight, FolderOpen, PanelRight } = LucideIcons
+const { ChevronLeft, ChevronRight, PanelRight } = LucideIcons
 
 function LandingLucide({ name, className, style }) {
   const C =
     LucideIcons[name] && typeof LucideIcons[name] === 'function'
       ? LucideIcons[name]
-      : LucideIcons.Music2
+      : LucideIcons.Stethoscope
   return <C className={className} style={style} aria-hidden />
 }
 
@@ -61,10 +60,6 @@ function readAccentCss() {
   }
 }
 
-function strTrim(v) {
-  return typeof v === 'string' ? v.trim() : ''
-}
-
 export function WorkspaceLanding() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -74,25 +69,6 @@ export function WorkspaceLanding() {
   const [newDesc, setNewDesc] = useState('')
   const [newEmoji, setNewEmoji] = useState('🎛️')
   const [deleteId, setDeleteId] = useState(null)
-
-  /**
-   * Hero copy: `fetchBranding` snapshot (q) then Zustand (s). Store wins for live edits; if
-   * subtitle/title are empty in the store (e.g. stale merge), keep API values so Settings saves win.
-   */
-  const storeBranding = useAppStore((s) => s.branding)
-  const { data: brandingFromQuery } = useQuery({
-    queryKey: ['branding'],
-    queryFn: () => fetchBranding(),
-    staleTime: 60_000,
-  })
-  const branding = useMemo(() => {
-    const q = brandingFromQuery && typeof brandingFromQuery === 'object' ? brandingFromQuery : {}
-    const s = storeBranding && typeof storeBranding === 'object' ? storeBranding : {}
-    const merged = { ...q, ...s }
-    if (!strTrim(merged.subtitle) && strTrim(q.subtitle)) merged.subtitle = q.subtitle
-    if (!strTrim(merged.title) && strTrim(q.title)) merged.title = q.title
-    return patchBranding(null, merged)
-  }, [brandingFromQuery, storeBranding])
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['workspaces', 'landing'],
@@ -139,39 +115,26 @@ export function WorkspaceLanding() {
     },
   })
 
-  const hubTitle = (typeof branding?.title === 'string' && branding.title.trim()) || 'Workspace'
-  /** From Settings → Branding → Subtitle / slogan (`subtitle` in API; `tagline` kept for older rows). */
-  const hubTagline =
-    (typeof branding?.subtitle === 'string' && branding.subtitle.trim()) ||
-    (typeof branding?.tagline === 'string' && branding.tagline.trim()) ||
-    ''
-  const glyphName = branding?.appGlyphIcon || 'Music2'
-  const logoUrl = typeof branding?.logoUrl === 'string' ? branding.logoUrl.trim() : ''
-
   return (
     <div ref={layoutRef} className="workspace-landing flex min-h-0 flex-1 flex-col overflow-auto">
       <div className="workspace-landing__shell">
         <header className="workspace-landing__hero">
           <div className="workspace-landing__hero-row">
             <div className="workspace-landing__logo-box">
-              {logoUrl ? (
-                <img src={logoUrl} alt="" loading="lazy" className="workspace-landing__logo-img" />
-              ) : (
-                <div className="workspace-landing__logo-glyph">
-                  <LandingLucide
-                    name={glyphName}
-                    className="workspace-landing__logo-icon"
-                    style={{
-                      color: 'var(--accent)',
-                      filter: 'drop-shadow(0 0 10px color-mix(in srgb, var(--accent) 50%, transparent))',
-                    }}
-                  />
-                </div>
-              )}
+              <div className="workspace-landing__logo-glyph">
+                <LandingLucide
+                  name={APP_GLYPH}
+                  className="workspace-landing__logo-icon"
+                  style={{
+                    color: 'var(--accent)',
+                    filter: 'drop-shadow(0 0 10px color-mix(in srgb, var(--accent) 50%, transparent))',
+                  }}
+                />
+              </div>
             </div>
             <div className="workspace-landing__hero-text min-w-0 flex-1">
-              <h1 className="workspace-landing__hub-title">{hubTitle}</h1>
-              {hubTagline ? <p className="workspace-landing__hub-tagline">{hubTagline}</p> : null}
+              <h1 className="workspace-landing__hub-title">{APP_TITLE}</h1>
+              {APP_TAGLINE ? <p className="workspace-landing__hub-tagline">{APP_TAGLINE}</p> : null}
             </div>
           </div>
           <p className="workspace-landing__intro text-muted-foreground">
@@ -375,14 +338,9 @@ export function WorkspaceLayout() {
 export function WorkspaceChat() {
   const { workspaceId } = useParams()
   const activeChatId = useAppStore((s) => s.activeChatId)
-  const branding = useAppStore((s) => s.branding)
-  const sidebarW = branding?.sidebarWidth ?? 260
-  const [fileBrowseOpen, setFileBrowseOpen] = useState(false)
-  const [viewerFile, setViewerFile] = useState(null)
+  const sidebarW = useLayoutStore((s) => s.sidebarWidth) || 260
   const [filesPanelExpanded, setFilesPanelExpanded] = useState(true)
-  const filesRailCollapsed = !filesPanelExpanded && !viewerFile
-
-  const fileBrowseRoot = undefined
+  const filesRailCollapsed = !filesPanelExpanded
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
@@ -396,70 +354,29 @@ export function WorkspaceChat() {
         )}
         style={!filesRailCollapsed ? { width: sidebarW } : undefined}
       >
-        {viewerFile ? (
-          <FileViewerPanel
-            file={viewerFile}
-            onClose={() => setViewerFile(null)}
-            onAttachLines={({ filename, content }) => {
-              window.dispatchEvent(
-                new CustomEvent('homelabhealth:attach-chat-file', { detail: { filename, content } }),
-              )
-            }}
-          />
-        ) : (
+        <div className="flex shrink-0 flex-col gap-2 border-b border-sidebar-border p-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="h-9 w-9 shrink-0 self-end border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent"
+            onClick={() => setFilesPanelExpanded((v) => !v)}
+            aria-label={filesRailCollapsed ? 'Expand workspace panel' : 'Collapse workspace panel'}
+          >
+            {filesRailCollapsed ? <PanelRight className="size-4" /> : <ChevronRight className="size-4" />}
+          </Button>
+        </div>
+        {!filesRailCollapsed ? (
           <>
-            <div className="flex shrink-0 flex-col gap-2 border-b border-sidebar-border p-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className="h-9 w-9 shrink-0 self-end border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent"
-                onClick={() => setFilesPanelExpanded((v) => !v)}
-                aria-label={filesRailCollapsed ? 'Expand workspace panel' : 'Collapse workspace panel'}
-              >
-                {filesRailCollapsed ? <PanelRight className="size-4" /> : <ChevronRight className="size-4" />}
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                size={filesRailCollapsed ? 'icon' : 'sm'}
-                className={cn(
-                  'fs-nav shrink-0 border-sidebar-border',
-                  filesRailCollapsed ? 'mx-auto h-9 w-9' : 'h-9 w-full justify-start gap-2 px-2',
-                )}
-                onClick={() => setFileBrowseOpen(true)}
-                aria-label="Browse files"
-              >
-                <FolderOpen className="size-4 shrink-0" />
-                {!filesRailCollapsed ? <span>Browse files</span> : null}
-              </Button>
+            <div className="flex min-h-0 flex-[3] flex-col overflow-hidden">
+              <SourcesPanel chatId={activeChatId} workspaceId={workspaceId} />
             </div>
-            {!filesRailCollapsed ? (
-              <>
-                <div className="flex min-h-0 flex-[3] flex-col overflow-hidden">
-                  <SourcesPanel chatId={activeChatId} workspaceId={workspaceId} />
-                </div>
-                <div className="flex min-h-0 flex-[2] flex-col overflow-hidden border-t border-sidebar-border">
-                  <NotesPanel workspaceId={workspaceId} />
-                </div>
-              </>
-            ) : null}
+            <div className="flex min-h-0 flex-[2] flex-col overflow-hidden border-t border-sidebar-border">
+              <NotesPanel workspaceId={workspaceId} />
+            </div>
           </>
-        )}
+        ) : null}
       </div>
-      <FileBrowserPanel
-        variant="dock"
-        isOpen={fileBrowseOpen}
-        onClose={() => setFileBrowseOpen(false)}
-        rootPath={fileBrowseRoot}
-        onFileSelect={(filename, path, content) => {
-          window.dispatchEvent(
-            new CustomEvent('homelabhealth:attach-chat-file', { detail: { filename, content } }),
-          )
-          setViewerFile({ filename, path })
-          setFileBrowseOpen(false)
-        }}
-      />
     </div>
   )
 }
@@ -668,8 +585,7 @@ export function WorkspaceSourcesPage() {
 export function WorkspaceAuxShell() {
   const activeChatId = useAppStore((s) => s.activeChatId)
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId)
-  const branding = useAppStore((s) => s.branding)
-  const sidebarW = branding?.sidebarWidth ?? 260
+  const sidebarW = useLayoutStore((s) => s.sidebarWidth) || 260
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background md:flex-row">
