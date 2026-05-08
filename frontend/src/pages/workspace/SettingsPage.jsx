@@ -1,28 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import * as LucideIcons from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
-import { apiFetch } from '@/api/index.js'
 import { deleteNonWorkspaceChats } from '@/api/chats.js'
 import {
-  DEFAULT_BRANDING,
   FONT_BODY_OPTIONS,
   FONT_BODY_STACKS,
   FONT_MONO_OPTIONS,
-  applyBrandingCss,
-  deleteBrandingAsset,
-  fetchBranding,
-  layoutApiToBrandingPatchSansTheme,
-  mergeBrandingWithGlobalLayout,
-  patchBranding,
-  patchBrandingApi,
-  uploadBrandingAsset,
+  applyThemeCss,
+  layoutApiToBrandingPatch,
 } from '@/api/branding.js'
 import SearchSettingsTab from '@/components/settings/SearchSettingsTab.jsx'
-import { SkillsLibraryPage } from '@/pages/SkillsLibraryPage.jsx'
 import { Button } from '@/components/ui/button'
 import { clearWorkspaceLayoutLiveDraft, setWorkspaceLayoutLiveDraft } from '@/lib/workspaceLayout.js'
 import { cn } from '@/lib/utils'
@@ -30,52 +19,11 @@ import { PATH_HOME } from '@/routes/paths.js'
 import { useAppStore } from '@/store/index.js'
 import { useLayoutStore } from '@/store/layoutStore.js'
 
-const COLOR_KEYS = [
-  ['accentColor', 'Accent'],
-  ['accentCyan', 'Accent cyan'],
-  ['accentPurple', 'Accent purple'],
-  ['bgColor', 'Background'],
-  ['bgPanel', 'Panel'],
-  ['bgCard', 'Card'],
-  ['textColor', 'Text'],
-  ['textDim', 'Text dim'],
-  ['borderColor', 'Border'],
-]
-
 const TABS = [
-  { id: 'branding', label: 'Branding' },
-  { id: 'colors', label: 'Colors' },
   { id: 'typography', label: 'Typography' },
   { id: 'layout', label: 'Layout' },
   { id: 'search', label: 'Search' },
-  { id: 'skills', label: 'Skills' },
 ]
-
-/** Lucide export names — right-click branding cards to pick. Invalid names fall back. */
-const GLYPH_PICKER_ICONS = [
-  'Bot',
-  'Music2',
-  'Sparkles',
-  'MessageSquare',
-  'Headphones',
-  'Mic2',
-  'Cpu',
-  'Heart',
-  'Star',
-  'Zap',
-  'Wand2',
-  'LayoutGrid',
-  'Library',
-  'Radio',
-]
-
-function lucideGlyphComponent(name, fallback) {
-  const pick = (n) => {
-    const C = LucideIcons[n]
-    return C && typeof C === 'function' ? C : null
-  }
-  return pick(name) || pick(fallback) || LucideIcons.Circle
-}
 
 function clampTypographyFs(n, lo = 10, hi = 24) {
   const v = typeof n === 'number' ? n : Number(n)
@@ -135,9 +83,6 @@ export default function SettingsPage({ onClose }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const settingsTabs = useMemo(() => TABS, [])
-  const [brandingSaveError, setBrandingSaveError] = useState(null)
-  const [glyphMenu, setGlyphMenu] = useState(null)
-  const glyphMenuRef = useRef(null)
   const [tab, setTabState] = useState(() => {
     try {
       const v = localStorage.getItem('homelabhealth-settings-tab')
@@ -145,7 +90,7 @@ export default function SettingsPage({ onClose }) {
     } catch {
       /* ignore */
     }
-    return 'branding'
+    return 'typography'
   })
 
   const setTab = useCallback((id) => {
@@ -182,21 +127,13 @@ export default function SettingsPage({ onClose }) {
       })
   }, [])
 
-  const applyLiveGlobal = useCallback(
-    (draft) => {
-      const row =
-        useAppStore.getState().branding ?? queryClient.getQueryData(['branding'])
-      if (!row || typeof row !== 'object') return
-      const patch = layoutApiToBrandingPatchSansTheme(draft)
-      const merged = patchBranding(row, patch)
-      applyBrandingCss(merged)
-      setWorkspaceLayoutLiveDraft({
-        sidebarWidth: draft.sidebarWidth,
-        chatMaxWidth: draft.chatMaxWidth,
-      })
-    },
-    [queryClient],
-  )
+  const applyLiveGlobal = useCallback((draft) => {
+    applyThemeCss(layoutApiToBrandingPatch(draft))
+    setWorkspaceLayoutLiveDraft({
+      sidebarWidth: draft.sidebarWidth,
+      chatMaxWidth: draft.chatMaxWidth,
+    })
+  }, [])
 
   const updateGlobalDraft = useCallback(
     (patch) => {
@@ -209,164 +146,15 @@ export default function SettingsPage({ onClose }) {
     [applyLiveGlobal],
   )
 
-  const { data: brandingConfigRow } = useQuery({
-    queryKey: ['branding', 'config'],
-    queryFn: () => apiFetch('/api/branding/'),
-    staleTime: 60_000,
-  })
-
-  const brandingDefaults = useMemo(() => DEFAULT_BRANDING, [])
-
-  const [localBranding, setLocalBranding] = useState(() => ({ ...DEFAULT_BRANDING }))
-  useEffect(() => {
-    setLocalBranding({ ...DEFAULT_BRANDING })
-  }, [])
-
-  useEffect(() => {
-    if (brandingConfigRow && typeof brandingConfigRow === 'object') {
-      setLocalBranding(patchBranding(null, brandingConfigRow))
-    }
-  }, [brandingConfigRow])
-
-  const pushBrandingPreview = useCallback(
-    (next) => {
-      const merged = patchBranding(null, next)
-      const layoutPayload = layoutDraftToApiPayload({ ...useLayoutStore.getState() })
-      const withLayout = mergeBrandingWithGlobalLayout(merged, layoutPayload, { stripTheme: true })
-      const finalized = patchBranding(null, withLayout)
-      applyBrandingCss(finalized)
-      queryClient.setQueryData(['branding'], finalized)
-    },
-    [queryClient],
-  )
-
-  const updateBrandingField = useCallback(
-    (patch) => {
-      setLocalBranding((prev) => {
-        const next = { ...prev, ...patch }
-        pushBrandingPreview(next)
-        return next
-      })
-    },
-    [pushBrandingPreview],
-  )
-
-  const persistAppGlyphIcon = useCallback(
-    async (lucideName) => {
-      setGlyphMenu(null)
-      try {
-        const out = await patchBrandingApi({ appGlyphIcon: lucideName })
-        const merged = patchBranding(null, out)
-        queryClient.setQueryData(['branding', 'config'], merged)
-
-        const layoutPayload = layoutDraftToApiPayload({ ...useLayoutStore.getState() })
-        const withLayout = mergeBrandingWithGlobalLayout(merged, layoutPayload, { stripTheme: true })
-        const finalized = patchBranding(null, withLayout)
-        applyBrandingCss(finalized)
-        useAppStore.getState().setBranding(finalized)
-        queryClient.setQueryData(['branding'], finalized)
-
-        setLocalBranding(merged)
-      } catch {
-        /* silent */
-      }
-    },
-    [queryClient],
-  )
-
-  useEffect(() => {
-    if (!glyphMenu) return
-    const onDown = (e) => {
-      if (glyphMenuRef.current?.contains(e.target)) return
-      setGlyphMenu(null)
-    }
-    const onKey = (e) => {
-      if (e.key === 'Escape') setGlyphMenu(null)
-    }
-    document.addEventListener('pointerdown', onDown, true)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('pointerdown', onDown, true)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [glyphMenu])
-
-  async function saveBrandingMeta() {
-    setBrandingSaveError(null)
-    const body = {
-      title: localBranding.title ?? '',
-      subtitle: localBranding.subtitle ?? '',
-    }
-    try {
-      const out = await patchBrandingApi(body)
-      const merged = patchBranding(null, out)
-      setLocalBranding(merged)
-      pushBrandingPreview(merged)
-      await queryClient.invalidateQueries({ queryKey: ['branding', 'config'] })
-      await queryClient.invalidateQueries({ queryKey: ['branding'] })
-
-      try {
-        await fetchBranding()
-      } catch {
-        /* Store already updated by pushBrandingPreview */
-      }
-      setGlobalDraft(layoutDraftToApiPayload({ ...useLayoutStore.getState() }))
-
-      const snap = useAppStore.getState().branding
-      if (snap && typeof snap === 'object') {
-        queryClient.setQueryData(['branding'], snap)
-      }
-    } catch (e) {
-      const msg = e && typeof e === 'object' && 'message' in e ? String(e.message) : String(e)
-      setBrandingSaveError(msg || 'Could not save branding.')
-    }
-  }
-
-  async function onAssetPick(slot, e) {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file || !file.type.startsWith('image/')) return
-    try {
-      const result = await uploadBrandingAsset(slot, file)
-      const key = `${slot}Url`
-      if (result && typeof result[key] === 'string') updateBrandingField({ [key]: result[key] })
-    } catch {
-      /* silent */
-    }
-  }
-
-  async function onRemoveAsset(slot) {
-    try {
-      await deleteBrandingAsset(slot)
-      updateBrandingField({ [`${slot}Url`]: '' })
-    } catch {
-      /* silent */
-    }
-  }
-
   async function saveGlobalToApi(partial) {
-    await useLayoutStore.getState().saveLayout(partial)
+    const out = await useLayoutStore.getState().saveLayout(partial)
     try {
       localStorage.removeItem('workspace_layout')
     } catch {
       /* ignore */
     }
     clearWorkspaceLayoutLiveDraft()
-    await queryClient.invalidateQueries({ queryKey: ['branding'] })
-    await fetchBranding()
-  }
-
-  async function saveColors() {
-    const body = Object.fromEntries(
-      COLOR_KEYS.map(([k]) => [k, localBranding[k] ?? brandingDefaults[k]]),
-    )
-    const out = await patchBrandingApi(body)
-    const merged = patchBranding(null, out)
-    setLocalBranding(merged)
-    pushBrandingPreview(merged)
-    await queryClient.invalidateQueries({ queryKey: ['branding', 'config'] })
-    await queryClient.invalidateQueries({ queryKey: ['branding'] })
-    await fetchBranding()
+    if (out) applyThemeCss(layoutApiToBrandingPatch(out))
   }
 
   async function saveTypography() {
@@ -440,36 +228,6 @@ export default function SettingsPage({ onClose }) {
         ) : null}
       </div>
 
-      {glyphMenu
-        ? createPortal(
-            <div
-              ref={glyphMenuRef}
-              className="fixed z-[200] max-h-[min(70vh,22rem)] min-w-44 overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
-              style={{ left: glyphMenu.x, top: glyphMenu.y }}
-              role="menu"
-              aria-label="Choose app icon"
-            >
-              <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">App icon</div>
-              {GLYPH_PICKER_ICONS.map((name) => {
-                const G = lucideGlyphComponent(name, 'Circle')
-                return (
-                  <button
-                    key={name}
-                    type="button"
-                    role="menuitem"
-                    className="relative flex w-full cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
-                    onClick={() => void persistAppGlyphIcon(name)}
-                  >
-                    <G className="size-4 shrink-0" aria-hidden />
-                    <span>{name}</span>
-                  </button>
-                )
-              })}
-            </div>,
-            document.body,
-          )
-        : null}
-
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="shrink-0 overflow-x-auto border-b border-border" role="tablist" aria-label="Settings sections">
           <div className="flex flex-row">
@@ -494,115 +252,6 @@ export default function SettingsPage({ onClose }) {
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6">
-          {tab === 'branding' && (
-            <section className="mx-auto w-full max-w-2xl space-y-3">
-              <h2 className="fs-heading font-semibold uppercase tracking-wide text-muted-foreground">
-                Branding
-              </h2>
-              <label className="flex flex-col gap-1 text-sm">
-                <span className="text-muted-foreground">Title</span>
-                <input
-                  value={localBranding.title ?? ''}
-                  onChange={(e) => updateBrandingField({ title: e.target.value })}
-                  className="h-9 rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2"
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-sm">
-                <span className="text-muted-foreground">Slogan (landing)</span>
-                <span className="text-xs text-muted-foreground">
-                  Shown under the title on the home page. Save branding to apply.
-                </span>
-                <input
-                  value={localBranding.subtitle ?? ''}
-                  onChange={(e) => updateBrandingField({ subtitle: e.target.value })}
-                  className="h-9 rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2"
-                  placeholder="// your line here"
-                />
-              </label>
-              <div className="flex flex-col gap-2 text-sm">
-                <span className="text-muted-foreground">Banner</span>
-                <input type="file" accept="image/*" className="text-xs" onChange={(e) => void onAssetPick('banner', e)} />
-                {localBranding.bannerUrl ? (
-                  <div className="flex flex-wrap items-start gap-2">
-                    <img src={localBranding.bannerUrl} alt="" className="max-h-24 rounded-md border border-border object-contain" />
-                    <Button type="button" variant="outline" size="sm" onClick={() => void onRemoveAsset('banner')}>
-                      Remove
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
-              <div className="flex flex-col gap-2 text-sm">
-                <span className="text-muted-foreground">Logo</span>
-                <input type="file" accept="image/*" className="text-xs" onChange={(e) => void onAssetPick('logo', e)} />
-                {localBranding.logoUrl ? (
-                  <div className="flex flex-wrap items-start gap-2">
-                    <img src={localBranding.logoUrl} alt="" className="max-h-16 w-auto rounded-md border border-border object-contain" />
-                    <Button type="button" variant="outline" size="sm" onClick={() => void onRemoveAsset('logo')}>
-                      Remove
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
-              <div className="flex flex-col gap-2 text-sm">
-                <span className="text-muted-foreground">Favicon</span>
-                <input type="file" accept="image/*" className="text-xs" onChange={(e) => void onAssetPick('favicon', e)} />
-                {localBranding.faviconUrl ? (
-                  <div className="flex flex-wrap items-start gap-2">
-                    <img src={localBranding.faviconUrl} alt="" className="size-8 rounded border border-border object-contain" />
-                    <Button type="button" variant="outline" size="sm" onClick={() => void onRemoveAsset('favicon')}>
-                      Remove
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
-              <Button type="button" size="sm" onClick={() => void saveBrandingMeta()}>
-                Save branding
-              </Button>
-              {brandingSaveError ? (
-                <p className="text-sm text-destructive" role="alert">
-                  {brandingSaveError}
-                </p>
-              ) : null}
-            </section>
-          )}
-
-          {tab === 'colors' && (
-            <section className="mx-auto w-full max-w-2xl space-y-3">
-              <h2 className="fs-heading font-semibold uppercase tracking-wide text-muted-foreground">
-                Colors
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                Theme tokens for the workspace. Typography and layout below stay shared.
-              </p>
-              <div className="flex flex-col gap-3">
-                {COLOR_KEYS.map(([key, label]) => (
-                  <label key={key} className="flex items-center gap-2 text-sm">
-                    <span className="w-28 shrink-0 text-muted-foreground">{label}</span>
-                    <input
-                      type="color"
-                      value={
-                        /^#[0-9A-Fa-f]{6}$/.test(String(localBranding[key] || ''))
-                          ? localBranding[key]
-                          : brandingDefaults[key] || '#000000'
-                      }
-                      onChange={(e) => updateBrandingField({ [key]: e.target.value })}
-                      className="h-9 w-12 cursor-pointer rounded border border-border bg-background"
-                    />
-                    <input
-                      value={localBranding[key] ?? ''}
-                      onChange={(e) => updateBrandingField({ [key]: e.target.value })}
-                      className="h-9 min-w-0 flex-1 rounded-md border border-border bg-background px-2 font-mono text-xs text-foreground outline-none ring-ring focus-visible:ring-2"
-                      placeholder="#000000"
-                    />
-                  </label>
-                ))}
-              </div>
-              <Button type="button" size="sm" onClick={() => void saveColors()}>
-                Save colors
-              </Button>
-            </section>
-          )}
-
           {tab === 'typography' && (
             <section className="mx-auto w-full max-w-2xl space-y-6">
               <h2 className="fs-heading font-semibold uppercase tracking-wide text-muted-foreground">Typography (global)</h2>
@@ -735,8 +384,6 @@ export default function SettingsPage({ onClose }) {
           )}
 
           {tab === 'search' && <SearchSettingsTab />}
-
-          {tab === 'skills' && <SkillsLibraryPage />}
         </div>
       </div>
     </div>

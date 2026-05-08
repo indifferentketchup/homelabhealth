@@ -103,7 +103,6 @@ async def _assembled_system_prompt(
     *,
     user_query_for_rag: str | None = None,
     include_site_private: bool = True,
-    session_skill_ids: list[str] | None = None,
 ) -> tuple[str, dict[str, int] | None]:
     """Persona -> Workspace prompt + workspace instructions + semantic memory facts -> context files -> custom instructions -> RAG -> mode_memory."""
     mode = _SCHEMA_MODE_VALUE
@@ -165,36 +164,6 @@ async def _assembled_system_prompt(
         if workspace_mem_rows:
             mem_lines = "\n".join(f"- {r['content']}" for r in workspace_mem_rows)
             parts.append(f"[Workspace Memory]\n{mem_lines}")
-
-        # Skills injection: workspace skills + optional session skills (deduplicated)
-        session_skill_set = set(session_skill_ids) if session_skill_ids else set()
-        if workspace_id and not session_skill_set:
-            # Only fetch workspace skills if no session skills provided (session skills override workspace skills)
-            skill_rows = await conn.fetch(
-                """
-                SELECT s.raw_content
-                FROM daw_skills ds
-                JOIN skills s ON s.id = ds.skill_id
-                WHERE ds.daw_id = $1::uuid AND ds.active = true
-                ORDER BY ds.added_at DESC
-                """,
-                workspace_id,
-            )
-            for sr in skill_rows:
-                if sr["raw_content"]:
-                    parts.append(f"\n---\n## Active Skill\n{sr['raw_content']}")
-        elif session_skill_set:
-            # Fetch session skills only
-            if session_skill_set:
-                skill_rows = await conn.fetch(
-                    """
-                    SELECT id, raw_content FROM skills WHERE id = ANY($1::uuid[])
-                    """,
-                    list(session_skill_set),
-                )
-                for sr in skill_rows:
-                    if sr["raw_content"]:
-                        parts.append(f"\n---\n## Active Skill\n{sr['raw_content']}")
 
     if workspace_id is not None and include_site_private and user_query_for_rag:
         memory_facts = await retrieve_memory_facts(str(user_query_for_rag), mode, conn)
@@ -421,7 +390,6 @@ class ChatPatch(BaseModel):
 class MessageCreate(BaseModel):
     content: str = Field(..., min_length=1)
     model: str | None = None
-    session_skill_ids: list[str] | None = None
 
 
 def _scrub_pg_text(value: str) -> str:
@@ -1076,7 +1044,6 @@ async def append_message(
             chat,
             user_query_for_rag=_scrub_pg_text(body.content.strip()),
             include_site_private=True,
-            session_skill_ids=body.session_skill_ids,
         )
 
         user_profile_block = ""

@@ -21,17 +21,8 @@ import {
   uploadWorkspaceIcon,
 } from '@/api/workspaces.js'
 import { fetchModels, getModelSettings } from '@/api/inference.js'
-import {
-  listSkills,
-  getWorkspaceSkills,
-  addSkillToWorkspace,
-  removeSkillFromWorkspace,
-  toggleWorkspaceSkill,
-} from '@/api/skills'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
-import { Plus, X } from 'lucide-react'
 
 function EmbeddableSwitch({ embeddable, disabled, onToggle }) {
   return (
@@ -67,7 +58,7 @@ export default function WorkspaceDetailPage() {
   const [nameEditing, setNameEditing] = useState(false)
   const [detailName, setDetailName] = useState('')
   const [detailDesc, setDetailDesc] = useState('')
-  const [detailColor, setDetailColor] = useState('#7c3aed')
+  const [detailColor, setDetailColor] = useState('#8FAE92')
   const [inferModel, setInferModel] = useState('')
   const [ragMode, setRagMode] = useState('auto')
   const [instrDraft, setInstrDraft] = useState('')
@@ -75,7 +66,6 @@ export default function WorkspaceDetailPage() {
   const [pinnedFlag, setPinnedFlag] = useState(false)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [clearing, setClearing] = useState(false)
-  const [skillsAddDialogOpen, setSkillsAddDialogOpen] = useState(false)
   const invalidateWorkspace = () => {
     queryClient.invalidateQueries({ queryKey: ['workspaces'] })
   }
@@ -117,7 +107,7 @@ export default function WorkspaceDetailPage() {
     setNameEdit(workspace.name || '')
     setDetailName(workspace.name || '')
     setDetailDesc(workspace.description || '')
-    setDetailColor(workspace.color || '#7c3aed')
+    setDetailColor(workspace.color || '#8FAE92')
     setInferModel((workspace.model && String(workspace.model).trim()) || '')
     const rm = workspace.rag_mode
     setRagMode(rm === 'always' || rm === 'off' || rm === 'auto' ? rm : 'auto')
@@ -162,43 +152,6 @@ export default function WorkspaceDetailPage() {
   })
   const memoryRows = Array.isArray(workspaceMemoryList) ? workspaceMemoryList : []
 
-  const { data: workspaceSkillsList = [] } = useQuery({
-    queryKey: ['workspaces', id, 'skills'],
-    queryFn: () => getWorkspaceSkills(id),
-    enabled: Boolean(id),
-    staleTime: 15_000,
-  })
-
-  const { data: allSkills = [] } = useQuery({
-    queryKey: ['skills'],
-    queryFn: listSkills,
-    staleTime: 30_000,
-  })
-
-  const attachSkillMutation = useMutation({
-    mutationFn: ({ skillId, active }) => addSkillToWorkspace(id, skillId, active),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['workspaces', id, 'skills'] })
-    },
-  })
-
-  const detachSkillMutation = useMutation({
-    mutationFn: (skillId) => removeSkillFromWorkspace(id, skillId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['workspaces', id, 'skills'] })
-    },
-  })
-
-  const toggleSkillMutation = useMutation({
-    mutationFn: ({ skillId, active }) => toggleWorkspaceSkill(id, skillId, active),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['workspaces', id, 'skills'] })
-    },
-  })
-
-  const attachedSkillIds = new Set(workspaceSkillsList.map((s) => s.id))
-  const unattachedSkills = allSkills.filter((s) => !attachedSkillIds.has(s.id))
-
   function formatMemoryDate(iso) {
     if (!iso) return ''
     const d = new Date(iso)
@@ -211,7 +164,7 @@ export default function WorkspaceDetailPage() {
       updateWorkspace(id, {
         name: detailName.trim() || 'Untitled',
         description: detailDesc.trim() || null,
-        color: detailColor || '#7c3aed',
+        color: detailColor || '#8FAE92',
         pinned: pinnedFlag,
       }),
     onSuccess: () => invalidateWorkspace(),
@@ -312,7 +265,7 @@ export default function WorkspaceDetailPage() {
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <span
             className="size-3 shrink-0 rounded-full"
-            style={{ background: workspace?.color || '#7c3aed' }}
+            style={{ background: workspace?.color || '#8FAE92' }}
             aria-hidden
           />
           {nameEditing ? (
@@ -622,108 +575,6 @@ export default function WorkspaceDetailPage() {
                   </Button>
                 </div>
               </div>
-            </section>
-
-            <section className="rounded-lg border border-border bg-card p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-sm font-medium text-foreground">Skills</h2>
-                <Button type="button" size="sm" onClick={() => setSkillsAddDialogOpen(true)}>
-                  <Plus className="mr-1 h-3 w-3" />
-                  Add from Library
-                </Button>
-              </div>
-              <p className="mb-3 text-xs text-muted-foreground">
-                AI skills attached to this workspace are injected into every conversation.
-              </p>
-              {workspaceSkillsList.length === 0 ? (
-                <p className="mb-3 text-sm text-muted-foreground">No skills attached yet.</p>
-              ) : (
-                <ul className="mb-4 flex flex-col gap-2">
-                  {workspaceSkillsList.map((skill) => (
-                    <li
-                      key={skill.id}
-                      className="flex items-start justify-between gap-3 rounded-md border border-border/60 px-3 py-2"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-sm text-foreground">{skill.name}</span>
-                          {skill.active && (
-                            <span className="h-5 rounded bg-primary px-1.5 text-[10px] font-semibold uppercase text-primary-foreground">
-                              Active
-                            </span>
-                          )}
-                        </div>
-                        {skill.description && (
-                          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{skill.description}</p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => toggleSkillMutation.mutate({ skillId: skill.id, active: !skill.active })}
-                          disabled={toggleSkillMutation.isPending}
-                          title={skill.active ? 'Deactivate' : 'Activate'}
-                        >
-                          {skill.active ? '✓' : '○'}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => detachSkillMutation.mutate(skill.id)}
-                          disabled={detachSkillMutation.isPending}
-                          title="Remove"
-                        >
-                          <X className="h-3.5 w-3.5 text-destructive" />
-                        </Button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              <Dialog open={skillsAddDialogOpen} onOpenChange={setSkillsAddDialogOpen}>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Add Skill to Workspace</DialogTitle>
-                    <DialogDescription>
-                      Choose a skill from your library to attach to this workspace.
-                    </DialogDescription>
-                  </DialogHeader>
-                  {unattachedSkills.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No skills available in library.</p>
-                  ) : (
-                    <div className="max-h-64 overflow-y-auto space-y-2">
-                      {unattachedSkills.map((skill) => (
-                        <div
-                          key={skill.id}
-                          className="flex items-start justify-between gap-2 rounded-md border border-border p-2 hover:bg-muted/50"
-                        >
-                          <div className="min-w-0 flex-1">
-                            <div className="font-medium text-sm">{skill.name}</div>
-                            {skill.description && (
-                              <div className="line-clamp-2 text-xs text-muted-foreground">{skill.description}</div>
-                            )}
-                          </div>
-                          <Button
-                            type="button"
-                            size="sm"
-                            onClick={() => {
-                              attachSkillMutation.mutate({ skillId: skill.id, active: true })
-                              setSkillsAddDialogOpen(false)
-                            }}
-                            disabled={attachSkillMutation.isPending}
-                          >
-                            Add
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </DialogContent>
-              </Dialog>
             </section>
 
             <section className="rounded-lg border border-border bg-card p-4">
