@@ -32,6 +32,11 @@ export default {
           DEFAULT: 'var(--accent)',
           foreground: 'var(--accent-foreground)',
         },
+        'accent-hover': 'var(--accent-hover)',
+        'accent-soft': 'var(--accent-soft)',
+        'secondary-hover': 'var(--secondary-hover)',
+        'secondary-soft': 'var(--secondary-soft)',
+        tertiary: 'var(--tertiary)',
         popover: {
           DEFAULT: 'var(--popover)',
           foreground: 'var(--popover-foreground)',

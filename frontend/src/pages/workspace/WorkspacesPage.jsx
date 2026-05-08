@@ -8,13 +8,13 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 function hexWithAlpha(color, alphaHex) {
-  const raw = (color || '#7c3aed').replace(/^#/, '')
-  const six = raw.length >= 6 ? raw.slice(0, 6) : '7c3aed'
+  const raw = (color || '#8FAE92').replace(/^#/, '')
+  const six = raw.length >= 6 ? raw.slice(0, 6) : '8FAE92'
   return `#${six}${alphaHex}`
 }
 
 function WorkspaceIcon({ workspace }) {
-  const color = workspace.color || '#7c3aed'
+  const color = workspace.color || '#8FAE92'
   const letter = (workspace.name || '?').trim().slice(0, 1).toUpperCase() || '?'
   if (workspace.icon_url) {
     return (
@@ -42,7 +42,7 @@ export default function WorkspacesPage() {
   const [showNew, setShowNew] = useState(false)
   const [newName, setNewName] = useState('')
   const [newDesc, setNewDesc] = useState('')
-  const [newColor, setNewColor] = useState('#7c3aed')
+  const [newColor, setNewColor] = useState('#8FAE92')
   const [deleteId, setDeleteId] = useState(null)
 
   const { data, isLoading, isError } = useQuery({
@@ -61,14 +61,14 @@ export default function WorkspacesPage() {
       createWorkspace({
         name: newName.trim() || 'Untitled',
         description: newDesc.trim() || null,
-        color: newColor || '#7c3aed',
+        color: newColor || '#8FAE92',
       }),
     onSuccess: () => {
       invalidate()
       setShowNew(false)
       setNewName('')
       setNewDesc('')
-      setNewColor('#7c3aed')
+      setNewColor('#8FAE92')
     },
   })
 

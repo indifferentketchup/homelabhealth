@@ -14,11 +14,11 @@ function EmbeddingStatusDot({ status }) {
   const s = status ?? ''
   const cls =
     s === 'complete'
-      ? 'bg-green-500'
+      ? 'bg-primary'
       : s === 'error'
-        ? 'bg-red-500'
+        ? 'bg-destructive'
         : s === 'pending' || s === 'processing'
-          ? 'bg-amber-400'
+          ? 'bg-amber-500'
           : 'bg-muted-foreground/60'
   return (
     <span
