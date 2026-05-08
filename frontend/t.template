@@ -1,3 +1,0 @@
-    set $boolab_upstream "${BOOLAB_API_UPSTREAM}";
-    proxy_pass http://$boolab_upstream/api/;
-    proxy_set_header Host $host;
