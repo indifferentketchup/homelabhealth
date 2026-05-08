@@ -14,7 +14,7 @@ from pathlib import Path
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from deps import get_principal
@@ -125,7 +125,7 @@ async def read_history(
 
 
 @router.post("/{kind}/rename")
-async def rename_history(kind: str, body: RenameBody, request: Request, principal: dict[str, Any] = Depends(get_principal)) -> dict:
+async def rename_history(kind: str, body: RenameBody, principal: dict[str, Any] = Depends(get_principal)) -> dict:
     _ensure_kind(kind)
     name = await _workspace_name(body.workspace_id)
     try:
@@ -200,7 +200,7 @@ async def rename_history(kind: str, body: RenameBody, request: Request, principa
 
 
 @router.delete("/{kind}")
-async def delete_history(kind: str, body: DeleteBody, request: Request, principal: dict[str, Any] = Depends(get_principal)) -> dict:
+async def delete_history(kind: str, body: DeleteBody, principal: dict[str, Any] = Depends(get_principal)) -> dict:
     _ensure_kind(kind)
     name = await _workspace_name(body.workspace_id)
     try:

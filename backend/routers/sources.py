@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
-from deps import get_principal, require_admin
+from deps import get_principal
 from db import get_pool
 from services.chunking import chunk_text, parse_source_bytes
 from services.embeddings import EmbeddingError, embed_batch, format_vector
@@ -187,10 +187,6 @@ async def upload_source(
         existing = await conn.fetchval("SELECT id FROM sources WHERE content_hash = $1 LIMIT 1", h)
         if existing:
             return {"source_id": str(existing), "status": "already_exists"}
-
-        workspace = await conn.fetchval("SELECT id FROM daws WHERE id = $1::uuid", workspace_id)
-        if not workspace:
-            raise HTTPException(404, "Workspace not found")
 
         source_id = uuid.uuid4()
         name = (file.filename or "upload").strip() or "upload"

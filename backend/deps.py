@@ -47,10 +47,6 @@ async def require_admin() -> dict[str, Any]:
     return await get_principal()
 
 
-def principal_can_access_chat(principal: dict[str, Any], row: asyncpg.Record) -> bool:
-    return True
-
-
 async def assert_persona_usable(
     conn: asyncpg.Connection,
     principal: dict[str, Any],
@@ -81,54 +77,3 @@ async def assert_workspace_usable(
         raise HTTPException(status_code=400, detail="workspace_id not found")
 
 
-def persona_row_visible(principal: dict[str, Any], owner_id: Any) -> bool:
-    return True
-
-
-def workspace_row_visible(principal: dict[str, Any], owner_id: Any) -> bool:
-    return True
-
-
-async def fetch_workspace_if_visible(
-    conn: asyncpg.Connection,
-    principal: dict[str, Any],
-    workspace_id: uuid.UUID,
-) -> asyncpg.Record:
-    row = await conn.fetchrow(
-        "SELECT id, owner_id FROM daws WHERE id = $1::uuid",
-        workspace_id,
-    )
-    if row is None:
-        raise HTTPException(status_code=404, detail="Workspace not found")
-    return row
-
-
-async def assert_persona_mutable(
-    conn: asyncpg.Connection,
-    principal: dict[str, Any],
-    persona_id: uuid.UUID,
-) -> asyncpg.Record:
-    row = await conn.fetchrow(
-        """
-        SELECT id, owner_id, is_default_808notes
-        FROM personas WHERE id = $1::uuid
-        """,
-        persona_id,
-    )
-    if row is None:
-        raise HTTPException(status_code=404, detail="Persona not found")
-    return row
-
-
-async def assert_workspace_mutable(
-    conn: asyncpg.Connection,
-    principal: dict[str, Any],
-    workspace_id: uuid.UUID,
-) -> asyncpg.Record:
-    row = await conn.fetchrow(
-        "SELECT id, owner_id, mode FROM daws WHERE id = $1::uuid",
-        workspace_id,
-    )
-    if row is None:
-        raise HTTPException(status_code=404, detail="Workspace not found")
-    return row

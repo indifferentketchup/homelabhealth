@@ -98,46 +98,6 @@ async def patch_ui_layout(
 
 _MODEL_SERVER_KEYS = ("flash_attention", "max_loaded_models", "keep_alive")
 
-_GLOBAL_SETTING_KEYS = ()
-
-
-class GlobalSettingsBody(BaseModel):
-    pass
-
-
-def _global_settings_from_map(m: dict[str, str]) -> dict[str, Any]:
-    return {}
-
-
-async def _fetch_global_settings_payload(conn: Any) -> dict[str, Any]:
-    rows = await conn.fetch(
-        "SELECT key, value FROM global_settings WHERE key = ANY($1::text[])",
-        list(_GLOBAL_SETTING_KEYS),
-    )
-    kv = {r["key"]: r["value"] for r in rows}
-    return _global_settings_from_map(kv)
-
-
-@router.get("/global")
-async def get_global_settings(_: dict = Depends(require_admin)) -> dict[str, Any]:
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        return await _fetch_global_settings_payload(conn)
-
-
-@router.patch("/global")
-async def patch_global_settings(
-    body: GlobalSettingsBody,
-    _: dict = Depends(require_admin),
-) -> dict[str, Any]:
-    data = body.model_dump(exclude_unset=True)
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        if not data:
-            return await _fetch_global_settings_payload(conn)
-
-        return await _fetch_global_settings_payload(conn)
-
 
 def _parse_flash_attention(raw: str | None) -> bool:
     if not raw:

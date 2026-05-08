@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 import os
-import re
 from pathlib import Path
 
 import asyncpg
 import sqlparse
 
 _pool: asyncpg.Pool | None = None
-
-_COLLECTION_RE = re.compile(r"[^a-zA-Z0-9_]+")
 
 
 def normalize_database_url(url: str) -> str:
