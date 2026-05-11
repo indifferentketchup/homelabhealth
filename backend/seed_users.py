@@ -26,8 +26,8 @@ async def ensure_super_admin() -> None:
             return
         await conn.execute(
             """
-            INSERT INTO users (username, password_hash, role, display_name, avatar_emoji, bio)
-            VALUES ($1, '', 'owner', $1, '👤', '')
+            INSERT INTO users (username, role, display_name, avatar_emoji, bio)
+            VALUES ($1, 'owner', $1, '👤', '')
             """,
             SUPER_ADMIN_USERNAME,
         )
