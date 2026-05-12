@@ -448,7 +448,7 @@ async def create_chat(body: ChatCreate, principal: dict[str, Any] = Depends(get_
                 COALESCE(
                     $3,
                     (SELECT NULLIF(TRIM(model), '') FROM daws WHERE id = $2::uuid),
-                    (SELECT value FROM global_settings WHERE key = 'default_model_808notes' LIMIT 1),
+                    (SELECT value FROM global_settings WHERE key = 'default_model' LIMIT 1),
                     $5
                 ),
                 COALESCE($4, FALSE),

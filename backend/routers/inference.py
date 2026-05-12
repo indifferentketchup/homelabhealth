@@ -64,7 +64,7 @@ def _parse_hidden_models(raw: str | None) -> list[str]:
 
 
 def _model_settings_keys() -> tuple[str, str]:
-    return "default_model_808notes", "ollama_hidden_models_808notes"
+    return "default_model", "ollama_hidden_models"
 
 
 async def _model_settings_payload(conn: Any) -> dict[str, Any]:
