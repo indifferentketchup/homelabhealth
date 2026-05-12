@@ -186,7 +186,6 @@ async def _assembled_system_prompt(
         if custom_instr:
             parts.append(custom_instr)
 
-    q_for_rag = str(user_query_for_rag or "").strip()
     rag_ok = (
         bool(user_query_for_rag and str(user_query_for_rag).strip())
         and workspace_id is not None
@@ -210,7 +209,6 @@ async def _assembled_system_prompt(
             if source_ids:
                 rag_block, rag_n = await retrieve_context(
                     str(user_query_for_rag).strip(),
-                    str(workspace_id),
                     source_ids,
                 )
                 if rag_block:

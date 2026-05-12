@@ -22,10 +22,8 @@ from db import get_pool
 from services.history import (
     VALID_KINDS,
     workspace_dir,
-    history_root,
     safe_path,
     slugify,
-    validate_filename,
 )
 from services.inference_defaults import required_default_model
 
