@@ -164,8 +164,7 @@ async def retrieve_memory_facts(query: str, conn: Any) -> list[str]:
         return []
 
 
-async def retrieve_context(query: str, workspace_id: str, source_ids: list[str]) -> tuple[str, int]:
-    del workspace_id  # retained for call-site compatibility; scope is source_ids only
+async def retrieve_context(query: str, source_ids: list[str]) -> tuple[str, int]:
     if not query.strip() or not source_ids:
         return "", 0
 
