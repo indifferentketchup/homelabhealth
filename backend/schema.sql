@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS daws (
     color TEXT DEFAULT '#7c3aed',
     shared BOOLEAN DEFAULT FALSE,
     sort_order INTEGER DEFAULT 0,
-    pinned_808notes BOOLEAN DEFAULT FALSE,
+    pinned BOOLEAN DEFAULT FALSE,
     model TEXT,
     rag_mode TEXT NOT NULL DEFAULT 'auto',
     system_prompt TEXT NOT NULL DEFAULT '',
@@ -310,3 +310,34 @@ CREATE TABLE IF NOT EXISTS daw_memory (
 );
 
 CREATE INDEX IF NOT EXISTS daw_memory_daw_id_idx ON daw_memory(daw_id);
+
+-- Phase-2 PR β2: coordinated renames (idempotent on already-migrated DBs and fresh DBs).
+
+-- 1. daws.pinned_808notes -> daws.pinned
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name='daws' AND column_name='pinned_808notes')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                     WHERE table_name='daws' AND column_name='pinned') THEN
+    ALTER TABLE daws RENAME COLUMN pinned_808notes TO pinned;
+  END IF;
+END $$;
+
+-- 2. global_settings key 'default_model_808notes' -> 'default_model'
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM global_settings WHERE key='default_model_808notes') THEN
+    DELETE FROM global_settings WHERE key='default_model';
+    UPDATE global_settings SET key='default_model' WHERE key='default_model_808notes';
+  END IF;
+END $$;
+
+-- 3. global_settings key 'ollama_hidden_models_808notes' -> 'ollama_hidden_models'
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM global_settings WHERE key='ollama_hidden_models_808notes') THEN
+    DELETE FROM global_settings WHERE key='ollama_hidden_models';
+    UPDATE global_settings SET key='ollama_hidden_models' WHERE key='ollama_hidden_models_808notes';
+  END IF;
+END $$;

@@ -22,7 +22,7 @@ BRANDING_WORKSPACE_ICONS = Path("/data/branding/daw_icons")
 # list_workspaces uses a wider variant that includes repo_* columns.
 DAWS_SELECT = """
     SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
-        d.pinned_808notes, d.system_prompt, d.persona_id,
+        d.pinned, d.system_prompt, d.persona_id,
         d.model, d.rag_mode,
         d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
     FROM daws d
@@ -82,7 +82,7 @@ def _row(r: Any) -> dict[str, Any]:
         "color": r["color"] or "#7c3aed",
         "shared": bool(r["shared"]),
         "sort_order": int(r["sort_order"] or 0),
-        "pinned": bool(r["pinned_808notes"]),
+        "pinned": bool(r["pinned"]),
         "icon_url": r["icon_url"],
         "model": (str(m).strip() if m else None) or None,
         "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
@@ -124,7 +124,7 @@ async def list_workspaces(
     pool = await get_pool()
     sel = """
                 SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
-                    d.pinned_808notes, d.system_prompt, d.persona_id,
+                    d.pinned, d.system_prompt, d.persona_id,
                     d.model, d.rag_mode,
                     d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
                 FROM daws d
@@ -298,7 +298,7 @@ async def patch_workspace_pin(
             raise HTTPException(status_code=404, detail="Workspace not found")
         await conn.execute(
             """
-            UPDATE daws SET pinned_808notes = $2, updated_at = NOW()
+            UPDATE daws SET pinned = $2, updated_at = NOW()
             WHERE id = $1::uuid
             """,
             workspace_id,
@@ -338,7 +338,7 @@ async def patch_workspace(
         row = await conn.fetchrow(
             """
             SELECT id, name, description, icon_url, color, shared, sort_order,
-                pinned_808notes, system_prompt, persona_id,
+                pinned, system_prompt, persona_id,
                 model, rag_mode,
                 created_at, updated_at, owner_id
             FROM daws WHERE id = $1::uuid
