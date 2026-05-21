@@ -1,20 +1,30 @@
-.env
-.env.local
+# Python
 __pycache__/
 *.py[cod]
 .venv/
+
+# Node / Vite
 frontend/node_modules/
 frontend/dist/
+
+# Env / secrets
+.env
+.env.local
+
+# Logs
 *.log
-Docs/
+
+# Backups / dumps / migration artifacts
 backups/
-.worktrees/
 *.bak*
-
-.superpowers/
-
-/history/
-.dubignore
-.env.boolab-reference
 *.dump
 pre-*-migration-*
+
+# Agent / IDE state
+CLAUDE.md
+.superpowers/
+.worktrees/
+
+# Repo-internal (not for distribution)
+docs/
+/history/
