@@ -7,15 +7,15 @@ services:
     container_name: hlh_db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: boolab
-      POSTGRES_PASSWORD: boolab
-      POSTGRES_DB: boolab
+      POSTGRES_USER: hlh
+      POSTGRES_PASSWORD: hlh
+      POSTGRES_DB: hlh
     volumes:
       - hlh_db_data:/var/lib/postgresql/data
     networks:
       - hlh_default
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U boolab -d boolab']
+      test: ['CMD-SHELL', 'pg_isready -U hlh -d hlh']
       interval: 5s
       timeout: 5s
       retries: 5
@@ -29,7 +29,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://boolab:boolab@hlh_db:5432/boolab}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://hlh:hlh@hlh_db:5432/hlh}
     depends_on:
       hlh_db:
         condition: service_healthy
