@@ -34,7 +34,7 @@ services:
       hlh_db:
         condition: service_healthy
     ports:
-      - "${HLH_PORT_API:-9300}:8000"
+      - "${HLH_PORT_API:-9600}:8000"
     volumes:
       - hlh_uploads:/data/uploads
       - hlh_branding:/data/branding
@@ -54,7 +54,7 @@ services:
     environment:
       HLH_API_UPSTREAM: ${HLH_API_UPSTREAM:-hlh_api:8000}
     ports:
-      - "${HLH_PORT_UI:-9304}:80"
+      - "${HLH_PORT_UI:-9604}:80"
     networks:
       - hlh_default
 

@@ -1,5 +1,7 @@
 -- HomeLab Health — full schema (DB_SCHEMA.md). Table order respects foreign keys.
 
+CREATE EXTENSION IF NOT EXISTS vector;
+
 CREATE TABLE IF NOT EXISTS workspaces (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
@@ -214,8 +216,6 @@ CREATE TABLE IF NOT EXISTS global_settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
-
-CREATE EXTENSION IF NOT EXISTS vector;
 
 -- Indexes
 CREATE INDEX IF NOT EXISTS chats_workspace_id_idx ON chats(workspace_id);
