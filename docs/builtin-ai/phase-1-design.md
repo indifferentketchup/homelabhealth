@@ -271,3 +271,22 @@ Regression: all prior 236 assertions stay green.
 - **Disk pre-flight check** — wizard could refuse a tier if disk_free_gb < expected_bytes. Phase 1 reports the download size on Pull click; no hard gate.
 - **Multi-machine inference** — if operator has a separate GPU box, they pick `external` tier and point at it. Bundled-AI is single-host only.
 - **MedGemma license acceptance flow** — currently surfaced as an error after a 401. Future polish: detect gated repos at registry-seed time and require acceptance in the wizard before pull-for-tier is offered.
+
+---
+
+## Phase 1 — As shipped
+
+Phase 1 landed on branch `feat/phase-1-chat-sidecar` in 7 commits (`371594d` schema → `15264c0` E2E test). Final verification: **393 assertions PASS** — 381 across 12 regression verify scripts plus 12 in the new `verify_phase1_e2e.py`. The shipped surface matches the design above with the deviations and gaps recorded below — kept in-spec so what's-in-the-box and what's-still-open are both visible.
+
+### Deviations from the design
+
+**Qwen3 1.7B quant is Q8_0, not Q4_K_M.** The design specifies Q4_K_M for the `cpu-min` chat tier, but the official `Qwen/Qwen3-1.7B-GGUF` HuggingFace repo only ships Q8_0. Picked the available quant — ~1.8 GB on disk instead of the design's ~1.2 GB target, still well within the cpu-min 2 GB RAM ceiling. Reflected in `MODEL_REGISTRY['chat']['cpu-min']` (`backend/services/model_puller.py`), `.env.example` default, `docker-compose.yml` default command, and the `cpu-min` tier card in `SystemTab.jsx`. Operator can override at runtime.
+
+### Known gaps (deferred)
+
+| Gap | Detail | Future tidy |
+|---|---|---|
+| MedGemma filenames are unverified placeholders | `MODEL_REGISTRY` carries `medgemma-4b-it-Q4_K_M.gguf`, `medgemma-4b-it-Q8_0.gguf`, `medgemma-27b-text-it-Q4_K_M.gguf`, and `medgemma-27b-it-Q4_K_M.gguf` straight from the design. Each repo is gated, so a real pull needs `HF_TOKEN` + license acceptance — none were smoke-tested during Phase 1. Operator hits a clear 404 with retry instructions if any filename is wrong. | Confirm each Phase 1 chat tier's GGUF filename and pin a revision before public release. |
+| `hlh_chat` image tag is unpinned | `docker-compose.yml` uses the floating `ghcr.io/ggml-org/llama.cpp:server`. Pinning deferred until the model file format / API contract is stable for this stack. | Pin to a specific build (`server-bNNNN`) once the format/API is stable. |
+| No sha256 pinning in `MODEL_REGISTRY` | `ModelSpec.sha256` is `None` for every Phase 1 entry. The puller correctly verifies integrity when a value is set; values were not collected in Phase 1. | Add expected sha256s alongside the filename pins above. |
+| No container hardening on `hlh_chat` | Runs on the default bridge network with no `read_only`, `tmpfs`, `cap_drop`, `no-new-privileges`, `mem_limit`, or non-root `user`. Phase 1 prioritized happy-path round-trip. | Hardening pass: split inference onto an internal-only network; add `read_only: true` + `tmpfs: /tmp`, `cap_drop: [ALL]`, `no-new-privileges:true`, per-tier `mem_limit`, `user: 1000:1000`. |
