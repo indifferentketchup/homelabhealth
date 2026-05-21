@@ -3,7 +3,6 @@
 import uuid
 
 import json
-import os
 import logging
 from typing import Any, AsyncIterator
 
@@ -19,7 +18,11 @@ from deps import (
     get_principal,
 )
 from db import get_pool
-from services.inference_defaults import required_default_model
+from services.provider_client import (
+    Provider,
+    build_headers,
+    resolve_provider_for_workspace,
+)
 from services.pruning import summarize_and_compress
 from services.rag import (
     retrieve_context,
@@ -246,18 +249,6 @@ def _sse(data: str) -> bytes:
     return f"data: {data}\n\n".encode("utf-8")
 
 
-def _inference_base() -> str:
-    return os.environ.get("INFERENCE_URL", "http://localhost:8080").rstrip("/")
-
-
-def _openai_headers() -> dict[str, str]:
-    h = {"Content-Type": "application/json"}
-    key = (os.environ.get("OPENAI_API_KEY") or "").strip()
-    if key:
-        h["Authorization"] = f"Bearer {key}"
-    return h
-
-
 def _clean_auto_title(raw: str) -> str:
     t = (raw or "").strip()
     while len(t) >= 2 and t[0] in "\"'" and t[0] == t[-1]:
@@ -265,9 +256,10 @@ def _clean_auto_title(raw: str) -> str:
     return (t.strip(" \"'") or "")[:60]
 
 
-async def _openai_short_chat_title(model: str, user_message_text: str) -> str | None:
+async def _openai_short_chat_title(
+    provider: Provider, model: str, user_message_text: str
+) -> str | None:
     """Non-streaming title via OpenAI-compatible /v1/chat/completions; returns None on failure."""
-    base = _inference_base()
     excerpt = (user_message_text or "")[:300]
     prompt = (
         "Generate a short chat title (4-6 words, no punctuation, no quotes) for a conversation "
@@ -282,9 +274,9 @@ async def _openai_short_chat_title(model: str, user_message_text: str) -> str | 
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
             r = await client.post(
-                f"{base}/v1/chat/completions",
+                f"{provider.base_url}/v1/chat/completions",
                 json=payload,
-                headers=_openai_headers(),
+                headers=build_headers(provider),
             )
             if r.status_code >= 400:
                 return None
@@ -301,23 +293,23 @@ async def _openai_short_chat_title(model: str, user_message_text: str) -> str | 
 
 
 async def _stream_inference(
+    provider: Provider,
     model: str,
     messages: list[dict[str, str]],
 ) -> AsyncIterator[bytes]:
-    base = _inference_base()
     payload: dict[str, Any] = {
         "model": model,
         "messages": messages,
         "stream": True,
     }
-    logger.info("openai /v1/chat/completions model=%s", model)
+    logger.info("openai /v1/chat/completions provider=%s model=%s", provider.name, model)
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:
             async with client.stream(
                 "POST",
-                f"{base}/v1/chat/completions",
+                f"{provider.base_url}/v1/chat/completions",
                 json=payload,
-                headers=_openai_headers(),
+                headers=build_headers(provider),
             ) as resp:
                 if resp.status_code >= 400:
                     text = await resp.aread()
@@ -429,13 +421,16 @@ def _message_row(r: asyncpg.Record) -> dict[str, Any]:
 @router.post("/")
 async def create_chat(body: ChatCreate, principal: dict[str, Any] = Depends(get_principal)):
     pool = await get_pool()
-    default_model = required_default_model()
     async with pool.acquire() as conn:
         await assert_persona_usable(conn, principal, body.persona_id)
         await assert_workspace_usable(conn, principal, body.workspace_id)
         persona_id_for_insert = body.persona_id
         if persona_id_for_insert is None:
             persona_id_for_insert = await _default_persona_id_for_mode(conn)
+        # Model resolution post-providers: explicit body.model first, then
+        # workspace.model, then the legacy global_settings.default_model entry.
+        # No env-var fallback. If all three are NULL, the row stores NULL and
+        # send-time resolves the model via the workspace.
         row = await conn.fetchrow(
             """
             INSERT INTO chats (title, workspace_id, model, web_search_enabled, rag_enabled, persona_id, owner_id)
@@ -443,13 +438,12 @@ async def create_chat(body: ChatCreate, principal: dict[str, Any] = Depends(get_
                 COALESCE(
                     $3,
                     (SELECT NULLIF(TRIM(model), '') FROM workspaces WHERE id = $2::uuid),
-                    (SELECT value FROM global_settings WHERE key = 'default_model' LIMIT 1),
-                    $5
+                    (SELECT value FROM global_settings WHERE key = 'default_model' LIMIT 1)
                 ),
                 COALESCE($4, FALSE),
-                $8,
-                $6,
-                $7)
+                $7,
+                $5,
+                $6)
             RETURNING id, title, workspace_id, persona_id, model, web_search_enabled, rag_enabled,
                 pruning_summary, message_count, is_main_chat, created_at, updated_at
             """,
@@ -457,7 +451,6 @@ async def create_chat(body: ChatCreate, principal: dict[str, Any] = Depends(get_
             body.workspace_id,
             body.model,
             body.web_search_enabled,
-            default_model,
             persona_id_for_insert,
             principal["user_id"],
             body.workspace_id is not None,
@@ -766,16 +759,28 @@ async def export_chat(
     file_path.write_text(content, encoding="utf-8")
 
     # AI rename: derive a descriptive filename from the first user messages.
+    # Requires the chat's workspace to have a provider configured; otherwise
+    # the timestamp filename persists (ai_renamed=false).
     ai_renamed = False
     user_texts = [m["content"] for m in messages if m.get("role") == "user"]
     user_sample = "\n".join(user_texts)[:1000]
-    default_model = required_default_model()
-    model_for_title = (chat_row["model"] or default_model or "").strip() or default_model
-    if user_sample:
+    provider_for_title: Provider | None = None
+    model_for_title: str = ""
+    if user_sample and chat_row["workspace_id"] is not None:
+        try:
+            provider_for_title, model_for_title = await resolve_provider_for_workspace(
+                chat_row["workspace_id"]
+            )
+        except HTTPException as e:
+            logger.info(
+                "export_chat ai_rename skipped chat_id=%s: %s", str(chat_id), e.detail
+            )
+    if user_sample and provider_for_title is not None:
         try:
             ai_title = await _openai_short_chat_title(
-                model=model_for_title,
-                user_message_text=user_sample,
+                provider_for_title,
+                model_for_title,
+                user_sample,
             )
             if ai_title:
                 slug = slugify(ai_title, max_len=60)
@@ -951,21 +956,23 @@ async def append_message(
         if chat is None:
             raise HTTPException(status_code=404, detail="Chat not found")
 
-        workspace_row = None
-        if chat["workspace_id"] is not None:
-            workspace_row = await conn.fetchrow(
-                "SELECT model FROM workspaces WHERE id = $1::uuid",
-                chat["workspace_id"],
+        # Provider resolution: every chat send must go through the workspace's
+        # configured provider. Workspaces without a provider raise the exact
+        # spec message. Chats without a workspace can't have a provider either.
+        if chat["workspace_id"] is None:
+            raise HTTPException(
+                status_code=400,
+                detail="No provider configured for this workspace. Open Settings → Workspace to pick one.",
             )
-        workspace_pins_model = bool(
-            workspace_row is not None and workspace_row["model"] and str(workspace_row["model"]).strip()
-        )
-        chat_model = (body.model or chat["model"] or "").strip()
-        effective_model = str(workspace_row["model"]).strip() if workspace_pins_model else chat_model
-        if not effective_model:
-            raise HTTPException(status_code=400, detail="No model set for chat")
+        provider, ws_model = await resolve_provider_for_workspace(chat["workspace_id"])
+        # The workspace pins (provider_id, model) together via CHECK constraint,
+        # so ws_model is always non-empty here. body.model and chat.model are
+        # ignored once we're past the resolver — workspace owns the truth.
+        effective_model = ws_model
 
-        if workspace_pins_model or body.model is not None:
+        # Keep chat.model in sync with the resolved model (purely informational;
+        # send-time always re-resolves via the workspace).
+        if (chat["model"] or "") != effective_model:
             await conn.execute(
                 "UPDATE chats SET model = $2, updated_at = NOW() WHERE id = $1::uuid",
                 chat_id,
@@ -1086,6 +1093,7 @@ async def append_message(
             str(chat["workspace_id"]) if chat["workspace_id"] else None,
         )
         stream = _stream_inference(
+            provider,
             effective_model,
             api_messages,
         )
@@ -1152,7 +1160,7 @@ async def append_message(
         if first_exchange_for_auto_title and assistant_text and not has_custom_title:
             new_title: str | None = None
             try:
-                new_title = await _openai_short_chat_title(effective_model, user_message_text)
+                new_title = await _openai_short_chat_title(provider, effective_model, user_message_text)
             except Exception:
                 new_title = None
             if not new_title:

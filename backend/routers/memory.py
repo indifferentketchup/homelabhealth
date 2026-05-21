@@ -1,9 +1,11 @@
-"""Per-mode memory blob (markdown) + OpenAI-compatible extraction."""
+"""Per-mode memory blob (markdown) + OpenAI-compatible extraction.
+
+Inference for extraction is routed via the most-recent chat's workspace provider.
+"""
 
 from __future__ import annotations
 
 import logging
-import os
 import uuid
 from typing import Any
 
@@ -13,22 +15,10 @@ from pydantic import BaseModel, Field
 
 from deps import get_principal, require_admin
 from db import get_pool
-from services.inference_defaults import required_default_model
+from services.provider_client import build_headers, resolve_provider_for_workspace
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-
-def _inference_base() -> str:
-    return os.environ.get("INFERENCE_URL", "http://localhost:8080").rstrip("/")
-
-
-def _openai_headers() -> dict[str, str]:
-    h = {"Content-Type": "application/json"}
-    key = (os.environ.get("OPENAI_API_KEY") or "").strip()
-    if key:
-        h["Authorization"] = f"Bearer {key}"
-    return h
 
 
 class MemoryPut(BaseModel):
@@ -80,21 +70,26 @@ async def put_memory(body: MemoryPut = Body(), _: dict = Depends(require_admin))
 
 @router.post("/extract")
 async def extract_memory(_: dict = Depends(require_admin)):
-    model = required_default_model()
     pool = await get_pool()
 
     async with pool.acquire() as conn:
-        chat_id = await conn.fetchval(
+        chat_row = await conn.fetchrow(
             """
-            SELECT c.id
+            SELECT c.id, c.workspace_id
             FROM chats c
             ORDER BY c.updated_at DESC NULLS LAST, c.created_at DESC
             LIMIT 1
             """,
         )
-        if chat_id is None:
+        if chat_row is None:
             raise HTTPException(status_code=400, detail="No chats exist")
+        if chat_row["workspace_id"] is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Most recent chat is not in a workspace; cannot resolve provider for memory extraction",
+            )
 
+        chat_id = chat_row["id"]
         mem_row = await conn.fetchrow(
             "SELECT content FROM mode_memory LIMIT 1",
         )
@@ -115,6 +110,10 @@ async def extract_memory(_: dict = Depends(require_admin)):
             chat_id,
         )
 
+    # resolve_provider_for_workspace raises HTTPException(400) with the exact
+    # spec message if the workspace has no provider configured.
+    provider, model = await resolve_provider_for_workspace(chat_row["workspace_id"])
+
     lines: list[str] = []
     for r in msg_rows:
         role = r["role"]
@@ -133,7 +132,6 @@ async def extract_memory(_: dict = Depends(require_admin)):
         f"Recent conversation:\n{messages_text}"
     )
 
-    base = _inference_base()
     payload: dict[str, Any] = {
         "model": model,
         "messages": [{"role": "user", "content": user_prompt}],
@@ -142,9 +140,9 @@ async def extract_memory(_: dict = Depends(require_admin)):
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
             resp = await client.post(
-                f"{base}/v1/chat/completions",
+                f"{provider.base_url}/v1/chat/completions",
                 json=payload,
-                headers=_openai_headers(),
+                headers=build_headers(provider),
             )
             if resp.status_code >= 400:
                 raise HTTPException(

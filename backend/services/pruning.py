@@ -1,15 +1,24 @@
-"""Summarize-and-compress chat history when message count exceeds threshold."""
+"""Summarize-and-compress chat history when message count exceeds threshold.
+
+Inference is routed via the chat's workspace provider (resolved per call).
+No env-var URL / API_KEY / DEFAULT_MODEL fallbacks — if the workspace has no
+provider configured, summarization silently no-ops (same as any other
+upstream failure).
+"""
 
 from __future__ import annotations
 
-import os
+import logging
 from typing import Any
 
 import asyncpg
 import httpx
+from fastapi import HTTPException
 
 from db import get_pool
-from services.inference_defaults import required_default_model
+from services.provider_client import build_headers, resolve_provider_for_workspace
+
+logger = logging.getLogger(__name__)
 
 
 async def _get_setting(conn: asyncpg.Connection, key: str, default: str) -> str:
@@ -20,23 +29,12 @@ async def _get_setting(conn: asyncpg.Connection, key: str, default: str) -> str:
     return row["value"] if row else default
 
 
-def _inference_base() -> str:
-    return os.environ.get("INFERENCE_URL", "http://localhost:8080").rstrip("/")
-
-
-def _openai_headers() -> dict[str, str]:
-    h = {"Content-Type": "application/json"}
-    key = (os.environ.get("OPENAI_API_KEY") or "").strip()
-    if key:
-        h["Authorization"] = f"Bearer {key}"
-    return h
-
-
 async def _openai_summarize(
+    base_url: str,
+    headers: dict[str, str],
     model: str,
     text: str,
 ) -> str:
-    base = _inference_base()
     payload: dict[str, Any] = {
         "model": model,
         "stream": False,
@@ -54,9 +52,9 @@ async def _openai_summarize(
     }
     async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
         r = await client.post(
-            f"{base}/v1/chat/completions",
+            f"{base_url}/v1/chat/completions",
             json=payload,
-            headers=_openai_headers(),
+            headers=headers,
         )
         r.raise_for_status()
         data: dict[str, Any] = r.json()
@@ -85,7 +83,7 @@ async def summarize_and_compress(
 
         chat = await conn.fetchrow(
             """
-            SELECT id, pruning_summary, message_count
+            SELECT id, workspace_id, pruning_summary, message_count
             FROM chats
             WHERE id = $1::uuid
             """,
@@ -131,10 +129,22 @@ async def summarize_and_compress(
         prev = chat["pruning_summary"] or ""
         bundle = f"Previous summary:\n{prev}\n\nMessages to compress:\n{transcript}" if prev else transcript
 
-        default_model = (await _get_setting(conn, "default_model", "") or "").strip() or required_default_model()
+        # Resolve provider via the chat's workspace. If unconfigured, skip
+        # silently — pruning is best-effort and shouldn't fail the user's send.
+        workspace_id = chat["workspace_id"]
+        if workspace_id is None:
+            return
         try:
-            summary = await _openai_summarize(default_model, bundle)
-        except Exception:
+            provider, model = await resolve_provider_for_workspace(workspace_id)
+        except HTTPException as e:
+            logger.info("pruning skipped chat_id=%s: %s", chat_id, e.detail)
+            return
+        try:
+            summary = await _openai_summarize(
+                provider.base_url, build_headers(provider), model, bundle
+            )
+        except Exception as e:
+            logger.warning("pruning summarize failed chat_id=%s: %s", chat_id, e)
             return
 
         if not summary:

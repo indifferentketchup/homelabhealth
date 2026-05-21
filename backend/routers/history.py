@@ -25,7 +25,7 @@ from services.history import (
     safe_path,
     slugify,
 )
-from services.inference_defaults import required_default_model
+from services.provider_client import resolve_provider_for_workspace
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -146,8 +146,16 @@ async def rename_history(kind: str, body: RenameBody, principal: dict[str, Any] 
             try:
                 text = old_path.read_text(encoding="utf-8", errors="replace")
                 sample = text[:4000]
-                default_model = required_default_model()
-                proposed = await _openai_short_chat_title(model=default_model, user_message_text=sample)
+                # Resolve via the workspace whose history file we're renaming.
+                # If the workspace has no provider configured, the resolver
+                # raises HTTPException(400) with the spec message; we surface
+                # it as 503 to match the existing "ai rename unavailable" UX.
+                provider, model = await resolve_provider_for_workspace(body.workspace_id)
+                proposed = await _openai_short_chat_title(
+                    provider, model, user_message_text=sample
+                )
+            except HTTPException:
+                raise
             except Exception as e:
                 logger.warning("ai rename failed kind=%s file=%s err=%s", kind, body.old, e)
         if not proposed:

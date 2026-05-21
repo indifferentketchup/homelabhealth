@@ -1,39 +1,31 @@
-"""OpenAI-compatible inference proxy: model list, streaming chat (SSE), settings."""
+"""OpenAI-compatible inference proxy: model list, streaming chat (SSE), settings.
+
+Post-providers: every chat goes through the workspace's configured provider.
+`/api/inference/models` proxies a chosen provider's `/v1/models`; `/api/inference/chat`
+requires a workspace_id and resolves the provider/headers via the resolver.
+"""
 
 from __future__ import annotations
 
 import json
-import os
+import uuid
 from typing import Any, AsyncIterator
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from deps import require_admin
 from db import get_pool
+from services.provider_client import (
+    Provider,
+    build_headers,
+    resolve_provider,
+    resolve_provider_for_workspace,
+)
 
 router = APIRouter()
-
-
-def _default_model() -> str:
-    v = (os.environ.get("DEFAULT_MODEL") or "").strip()
-    if not v:
-        raise RuntimeError("DEFAULT_MODEL env var is required")
-    return v
-
-
-def _inference_base() -> str:
-    return os.environ.get("INFERENCE_URL", "http://localhost:8080").rstrip("/")
-
-
-def _openai_headers() -> dict[str, str]:
-    h = {"Content-Type": "application/json"}
-    key = (os.environ.get("OPENAI_API_KEY") or "").strip()
-    if key:
-        h["Authorization"] = f"Bearer {key}"
-    return h
 
 
 def _sse(data: str) -> bytes:
@@ -72,7 +64,7 @@ async def _model_settings_payload(conn: Any) -> dict[str, Any]:
     default_row = await conn.fetchrow("SELECT value FROM global_settings WHERE key = $1", dk)
     hidden_row = await conn.fetchrow("SELECT value FROM global_settings WHERE key = $1", hk)
     raw = (default_row["value"] if default_row else None) or ""
-    default_model = str(raw).strip() or _default_model()
+    default_model = str(raw).strip()  # empty string = no global default; UI shows "unset"
     hidden_models = _parse_hidden_models(hidden_row["value"] if hidden_row else "[]")
     return {"default_model": default_model, "hidden_models": hidden_models}
 
@@ -83,11 +75,17 @@ class ModelSettingsPatch(BaseModel):
 
 
 @router.get("/models")
-async def list_models():
-    base = _inference_base()
+async def list_models(
+    provider_id: uuid.UUID = Query(..., description="Provider whose /v1/models to proxy"),
+    _: dict = Depends(require_admin),
+):
+    provider = await resolve_provider(provider_id)
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
-            r = await client.get(f"{base}/v1/models", headers=_openai_headers())
+            r = await client.get(
+                f"{provider.base_url}/v1/models",
+                headers=build_headers(provider),
+            )
             r.raise_for_status()
     except httpx.HTTPError as e:
         raise HTTPException(status_code=502, detail=f"Inference backend unreachable: {e}") from e
@@ -116,8 +114,10 @@ async def patch_model_settings(
         return await _model_settings_payload(conn)
 
 
-async def _stream_openai_chat_completions(body: dict[str, Any]) -> AsyncIterator[bytes]:
-    base = _inference_base()
+async def _stream_openai_chat_completions(
+    provider: Provider,
+    body: dict[str, Any],
+) -> AsyncIterator[bytes]:
     model = body.get("model")
     messages = body.get("messages")
     if not model or not isinstance(messages, list):
@@ -129,9 +129,9 @@ async def _stream_openai_chat_completions(body: dict[str, Any]) -> AsyncIterator
         async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:
             async with client.stream(
                 "POST",
-                f"{base}/v1/chat/completions",
+                f"{provider.base_url}/v1/chat/completions",
                 json=payload,
-                headers=_openai_headers(),
+                headers=build_headers(provider),
             ) as resp:
                 if resp.status_code >= 400:
                     text = await resp.aread()
@@ -168,20 +168,31 @@ async def _stream_openai_chat_completions(body: dict[str, Any]) -> AsyncIterator
 
 
 @router.post("/chat")
-async def chat_proxy(request: Request, _owner: dict = Depends(require_admin)):
+async def chat_proxy(
+    request: Request,
+    workspace_id: uuid.UUID = Query(
+        ..., description="Workspace whose provider routes this chat"
+    ),
+    _owner: dict = Depends(require_admin),
+):
     try:
         body = await request.json()
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON body") from None
     if not isinstance(body, dict):
         raise HTTPException(status_code=400, detail="Body must be a JSON object")
-    if not body.get("model"):
-        raise HTTPException(status_code=400, detail="model is required")
     if not body.get("messages"):
         raise HTTPException(status_code=400, detail="messages is required")
 
+    # Resolve provider via the workspace; spec error string propagates from the resolver.
+    provider, ws_model = await resolve_provider_for_workspace(workspace_id)
+    # Caller may override the model (e.g. UI picks a different model from the
+    # same provider). If absent, fall back to the workspace pin.
+    if not body.get("model"):
+        body["model"] = ws_model
+
     return StreamingResponse(
-        _stream_openai_chat_completions(body),
+        _stream_openai_chat_completions(provider, body),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
