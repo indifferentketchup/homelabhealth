@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 
 from db import get_pool
 from deps import require_admin
+from services import bundled_providers
 from services.sysinfo import ALL_TIERS, collect, recommend_tier
 
 router = APIRouter()
@@ -128,8 +129,12 @@ async def put_profile(
             body.tier,
             body.tier_source,
         )
-    if row is None:
-        raise HTTPException(status_code=503, detail="system_profile row missing")
+        if row is None:
+            raise HTTPException(status_code=503, detail="system_profile row missing")
+        # Phase 1: now that setup_complete=true and we have a tier, seed the
+        # bundled-chat provider so the operator can immediately bind workspaces
+        # to it. Idempotent + no-op on external tier (see bundled_providers).
+        await bundled_providers.ensure_bundled_chat_provider(conn)
     return _profile_response(row)
 
 

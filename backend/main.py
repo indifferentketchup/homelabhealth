@@ -29,7 +29,7 @@ from routers import (
     settings,
     system,
 )
-from services import model_puller
+from services import bundled_providers, model_puller
 from routers.history import router as history_router
 from routers.notes import router as notes_router
 from routers.sources import router as sources_router
@@ -86,6 +86,9 @@ async def lifespan(_app: FastAPI):
     pool = await get_pool()
     async with pool.acquire() as conn:
         seeded = await model_puller.seed_registry(conn)
+        # If setup_complete=true AND tier != external, ensure the bundled-chat
+        # provider row exists. No-op otherwise (silent).
+        await bundled_providers.ensure_bundled_chat_provider(conn)
     logger.info("model_puller: seeded %d bundled_models rows", seeded)
     try:
         yield

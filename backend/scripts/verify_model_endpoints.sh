@@ -178,12 +178,63 @@ check "body has 'cancel_requested' boolean" \
 # boundary in services/model_puller.py).
 
 # ──────────────────────────────────────────────────────────────────────────────
+# 6. Bundled-chat provider auto-seed (Phase 1.F): PUT a tier and confirm
+#    /api/providers now contains the bundled-chat row.
+# ──────────────────────────────────────────────────────────────────────────────
+section "Bundled-chat auto-seed via PUT /api/system/profile"
+
+# Snapshot pre-state — drop any leftover bundled-chat row from prior runs.
+docker exec hlh_db psql -U hlh -d hlh -c \
+    "DELETE FROM providers WHERE name = 'bundled-chat';" >/dev/null
+
+# 6.1: PUT a non-external tier; expect bundled-chat to appear in /api/providers.
+c PUT /system/profile '{"tier":"cpu-std","tier_source":"manual"}'
+last_archive put_cpu_std
+check "PUT /system/profile (cpu-std) returns 200" "[ \"\$(last_code)\" = '200' ]"
+
+c GET /providers
+last_archive providers_after_save
+check "GET /api/providers includes bundled-chat" \
+    "python3 -c \"import json; d=json.load(open('$TMP/providers_after_save.json')); assert any(it['name']=='bundled-chat' and it['enabled']==True and 'hlh_chat' in it['base_url'] for it in d['items'])\""
+
+BUNDLED_ID_1=$(python3 -c "import json; d=json.load(open('$TMP/providers_after_save.json')); print(next(it['id'] for it in d['items'] if it['name']=='bundled-chat'))")
+echo "  (bundled-chat id = $BUNDLED_ID_1)"
+
+# 6.2: PUT a different non-external tier; bundled-chat should still exist (same id, no duplicates).
+c PUT /system/profile '{"tier":"gpu-8gb","tier_source":"manual"}'
+last_archive put_gpu_8gb
+check "PUT /system/profile (gpu-8gb) returns 200" "[ \"\$(last_code)\" = '200' ]"
+
+c GET /providers
+last_archive providers_after_retier
+check "bundled-chat row count is still exactly 1" \
+    "python3 -c \"import json; d=json.load(open('$TMP/providers_after_retier.json')); n=sum(1 for it in d['items'] if it['name']=='bundled-chat'); assert n==1, f'got {n} bundled-chat rows'\""
+BUNDLED_ID_2=$(python3 -c "import json; d=json.load(open('$TMP/providers_after_retier.json')); print(next(it['id'] for it in d['items'] if it['name']=='bundled-chat'))")
+check "bundled-chat retains same uuid across tier changes" "[ \"$BUNDLED_ID_1\" = \"$BUNDLED_ID_2\" ]"
+
+# 6.3: PUT external tier; ensure_bundled_chat_provider is a no-op — row stays unchanged.
+c PUT /system/profile '{"tier":"external","tier_source":"manual"}'
+last_archive put_external
+check "PUT /system/profile (external) returns 200" "[ \"\$(last_code)\" = '200' ]"
+
+c GET /providers
+last_archive providers_after_external
+check "bundled-chat row still present on external tier (no-op behavior)" \
+    "python3 -c \"import json; d=json.load(open('$TMP/providers_after_external.json')); assert any(it['name']=='bundled-chat' for it in d['items'])\""
+
+# Reset DB so the next consumer sees fresh-first-boot state (per established convention).
+docker exec hlh_db psql -U hlh -d hlh -c \
+    "UPDATE system_profile SET tier='external', tier_source='manual', sysinfo_json='{}'::jsonb, detected_at=NULL, chosen_at=NOW(), setup_complete=FALSE WHERE id=1;" >/dev/null
+docker exec hlh_db psql -U hlh -d hlh -c \
+    "DELETE FROM providers WHERE name = 'bundled-chat';" >/dev/null
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Cleanup
 # ──────────────────────────────────────────────────────────────────────────────
 section "Final cleanup"
 docker exec hlh_db psql -U hlh -d hlh -c \
     "DELETE FROM bundled_models WHERE tier = '$TEST_TIER';" >/dev/null
-printf "  (test row removed)\n"
+printf "  (test row + tier state reset)\n"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Summary.
