@@ -1,6 +1,6 @@
--- homelabhealth — canonical schema (post-strip). Table order respects foreign keys. Applied idempotently on every startup.
+-- HomeLab Health — full schema (DB_SCHEMA.md). Table order respects foreign keys.
 
-CREATE TABLE IF NOT EXISTS daws (
+CREATE TABLE IF NOT EXISTS workspaces (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
     description TEXT,
@@ -39,9 +39,9 @@ ALTER TABLE personas ADD COLUMN IF NOT EXISTS avatar_emoji TEXT DEFAULT '🤖';
 ALTER TABLE personas ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
 -- Single-default uniqueness (partial index allows multiple FALSE).
-CREATE UNIQUE INDEX IF NOT EXISTS idx_personas_default_one
-    ON personas (is_default)
-    WHERE is_default IS TRUE;
+CREATE UNIQUE INDEX IF NOT EXISTS personas_one_default_idx
+    ON personas ((1))
+    WHERE is_default = TRUE;
 
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -55,8 +55,8 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 -- FK back-references now that users and personas exist
-ALTER TABLE daws ADD COLUMN IF NOT EXISTS persona_id UUID REFERENCES personas(id) ON DELETE SET NULL;
-ALTER TABLE daws ADD COLUMN IF NOT EXISTS owner_id UUID REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS persona_id UUID REFERENCES personas(id) ON DELETE SET NULL;
+ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS owner_id UUID REFERENCES users(id) ON DELETE CASCADE;
 ALTER TABLE personas ADD COLUMN IF NOT EXISTS owner_id UUID REFERENCES users(id) ON DELETE CASCADE;
 
 UPDATE users SET display_name = username WHERE display_name IS NULL OR btrim(display_name) = '';
@@ -65,25 +65,25 @@ UPDATE users SET avatar_emoji = COALESCE(NULLIF(trim(avatar_emoji), ''), '👤')
 
 CREATE TABLE IF NOT EXISTS source_groups (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    daw_id UUID REFERENCES daws(id) ON DELETE CASCADE,
+    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     sort_order INTEGER DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE (daw_id, name)
+    UNIQUE (workspace_id, name)
 );
 
 CREATE TABLE IF NOT EXISTS note_groups (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    daw_id UUID REFERENCES daws(id) ON DELETE CASCADE,
+    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     sort_order INTEGER DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE (daw_id, name)
+    UNIQUE (workspace_id, name)
 );
 
-CREATE TABLE IF NOT EXISTS daw_context_files (
+CREATE TABLE IF NOT EXISTS workspace_context_files (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    daw_id UUID REFERENCES daws(id) ON DELETE CASCADE,
+    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
     filename TEXT NOT NULL,
     content TEXT NOT NULL,
     file_url TEXT,
@@ -92,9 +92,9 @@ CREATE TABLE IF NOT EXISTS daw_context_files (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS daw_instructions (
+CREATE TABLE IF NOT EXISTS workspace_instructions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    daw_id UUID REFERENCES daws(id) ON DELETE CASCADE,
+    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
     content TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS daw_instructions (
 CREATE TABLE IF NOT EXISTS chats (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title TEXT,
-    daw_id UUID REFERENCES daws(id) ON DELETE SET NULL,
+    workspace_id UUID REFERENCES workspaces(id) ON DELETE SET NULL,
     persona_id UUID REFERENCES personas(id) ON DELETE SET NULL,
     model TEXT NOT NULL DEFAULT 'qwen3.5:9b',
     web_search_enabled BOOLEAN DEFAULT FALSE,
@@ -130,7 +130,7 @@ CREATE TABLE IF NOT EXISTS messages (
 
 CREATE TABLE IF NOT EXISTS sources (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    daw_id UUID REFERENCES daws(id) ON DELETE CASCADE,
+    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
     group_id UUID REFERENCES source_groups(id) ON DELETE SET NULL,
     name TEXT NOT NULL,
     source_type TEXT NOT NULL CHECK (source_type IN (
@@ -161,7 +161,7 @@ CREATE TABLE IF NOT EXISTS chat_source_selections (
 
 CREATE TABLE IF NOT EXISTS notes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    daw_id UUID REFERENCES daws(id) ON DELETE CASCADE,
+    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
     group_id UUID REFERENCES note_groups(id) ON DELETE SET NULL,
     title TEXT,
     content TEXT NOT NULL,
@@ -202,11 +202,9 @@ CREATE TABLE IF NOT EXISTS memory_entries (
 
 CREATE TABLE IF NOT EXISTS custom_instructions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    scope TEXT NOT NULL CHECK (scope IN ('global', 'booops', '808notes')),
     content TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE (scope)
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 ALTER TABLE custom_instructions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
@@ -220,16 +218,16 @@ CREATE TABLE IF NOT EXISTS global_settings (
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- Indexes
-CREATE INDEX IF NOT EXISTS chats_daw_id_idx ON chats(daw_id);
+CREATE INDEX IF NOT EXISTS chats_workspace_id_idx ON chats(workspace_id);
 CREATE INDEX IF NOT EXISTS chats_updated_at_idx ON chats(updated_at DESC);
 CREATE INDEX IF NOT EXISTS chats_owner_id_idx ON chats(owner_id);
 CREATE INDEX IF NOT EXISTS messages_chat_id_idx ON messages(chat_id);
 CREATE INDEX IF NOT EXISTS messages_created_at_idx ON messages(created_at);
-CREATE INDEX IF NOT EXISTS sources_daw_id_idx ON sources(daw_id);
+CREATE INDEX IF NOT EXISTS sources_workspace_id_idx ON sources(workspace_id);
 CREATE INDEX IF NOT EXISTS sources_embedding_status_idx ON sources(embedding_status);
-CREATE INDEX IF NOT EXISTS notes_daw_id_idx ON notes(daw_id);
+CREATE INDEX IF NOT EXISTS notes_workspace_id_idx ON notes(workspace_id);
 CREATE INDEX IF NOT EXISTS personas_owner_id_idx ON personas(owner_id);
-CREATE INDEX IF NOT EXISTS daws_owner_id_idx ON daws(owner_id);
+CREATE INDEX IF NOT EXISTS workspaces_owner_id_idx ON workspaces(owner_id);
 
 -- Global settings seed
 INSERT INTO global_settings (key, value) VALUES ('pruning_threshold', '40')
@@ -242,18 +240,16 @@ INSERT INTO global_settings (key, value) VALUES
   ('memory_similarity_threshold', '0.45')
 ON CONFLICT (key) DO NOTHING;
 
--- Phase 3: one markdown blob per mode (separate from memory_entries)
+-- Single markdown blob for freeform notes; enforced as singleton.
 CREATE TABLE IF NOT EXISTS mode_memory (
     id SERIAL PRIMARY KEY,
-    mode TEXT UNIQUE NOT NULL,
     content TEXT NOT NULL DEFAULT '',
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Live DBs that already have mode_memory with mode as PK: add id only; keep PRIMARY KEY on mode.
-ALTER TABLE mode_memory ADD COLUMN IF NOT EXISTS id SERIAL;
+CREATE UNIQUE INDEX IF NOT EXISTS mode_memory_singleton_idx ON mode_memory ((1));
 
--- Phase 5: RAG chunk storage + upload metadata
+-- RAG chunk storage + upload metadata
 CREATE TABLE IF NOT EXISTS source_chunks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     source_id UUID NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
@@ -273,7 +269,7 @@ CREATE INDEX IF NOT EXISTS source_chunks_embedding_hnsw
 CREATE INDEX IF NOT EXISTS memory_entries_embedding_hnsw
     ON memory_entries USING hnsw (embedding vector_cosine_ops);
 
--- Ollama host hints (applied when syncing env / restarting Ollama on sam-desktop)
+-- Ollama host hints
 CREATE TABLE IF NOT EXISTS ollama_config (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -285,10 +281,9 @@ INSERT INTO ollama_config (key, value) VALUES
     ('keep_alive', '30m')
 ON CONFLICT (key) DO NOTHING;
 
--- SearXNG settings per app mode (API applies on each search; optional YAML sync via SEARXNG_SETTINGS_YML)
+-- SearXNG search settings (singleton row; enforced via unique index on constant expression)
 CREATE TABLE IF NOT EXISTS searxng_config (
     id SERIAL PRIMARY KEY,
-    mode TEXT NOT NULL UNIQUE CHECK (mode IN ('booops', '808notes', 'boocode')),
     safe_search INTEGER NOT NULL DEFAULT 0 CHECK (safe_search IN (0, 1, 2)),
     image_proxy BOOLEAN NOT NULL DEFAULT FALSE,
     enabled_engines TEXT NOT NULL DEFAULT '',
@@ -297,47 +292,18 @@ CREATE TABLE IF NOT EXISTS searxng_config (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- BooCode Phase 4: widen searxng_config.mode to include boocode (idempotent on existing DBs).
-ALTER TABLE searxng_config DROP CONSTRAINT IF EXISTS searxng_config_mode_check;
-ALTER TABLE searxng_config ADD CONSTRAINT searxng_config_mode_check
-    CHECK (mode IN ('booops', '808notes', 'boocode'));
+CREATE UNIQUE INDEX IF NOT EXISTS searxng_config_singleton_idx ON searxng_config ((1));
 
-CREATE TABLE IF NOT EXISTS daw_memory (
+-- Drop legacy constraint from old multi-mode schema if present on existing DBs.
+ALTER TABLE searxng_config DROP CONSTRAINT IF EXISTS searxng_config_mode_check;
+
+CREATE TABLE IF NOT EXISTS workspace_memory (
     id SERIAL PRIMARY KEY,
-    daw_id UUID NOT NULL REFERENCES daws(id) ON DELETE CASCADE,
+    workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
     content TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS daw_memory_daw_id_idx ON daw_memory(daw_id);
+CREATE INDEX IF NOT EXISTS workspace_memory_workspace_id_idx ON workspace_memory(workspace_id);
 
--- Phase-2 PR β2: coordinated renames (idempotent on already-migrated DBs and fresh DBs).
-
--- 1. daws.pinned_808notes -> daws.pinned
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.columns
-             WHERE table_name='daws' AND column_name='pinned_808notes')
-     AND NOT EXISTS (SELECT 1 FROM information_schema.columns
-                     WHERE table_name='daws' AND column_name='pinned') THEN
-    ALTER TABLE daws RENAME COLUMN pinned_808notes TO pinned;
-  END IF;
-END $$;
-
--- 2. global_settings key 'default_model_808notes' -> 'default_model'
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM global_settings WHERE key='default_model_808notes') THEN
-    DELETE FROM global_settings WHERE key='default_model';
-    UPDATE global_settings SET key='default_model' WHERE key='default_model_808notes';
-  END IF;
-END $$;
-
--- 3. global_settings key 'ollama_hidden_models_808notes' -> 'ollama_hidden_models'
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM global_settings WHERE key='ollama_hidden_models_808notes') THEN
-    DELETE FROM global_settings WHERE key='ollama_hidden_models';
-    UPDATE global_settings SET key='ollama_hidden_models' WHERE key='ollama_hidden_models_808notes';
-  END IF;
-END $$;
+CREATE UNIQUE INDEX IF NOT EXISTS custom_instructions_singleton_idx ON custom_instructions ((1));
