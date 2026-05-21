@@ -23,7 +23,7 @@ BRANDING_WORKSPACE_ICONS = Path("/data/branding/daw_icons")
 DAWS_SELECT = """
     SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
         d.pinned, d.system_prompt, d.persona_id,
-        d.model, d.rag_mode,
+        d.model, d.rag_mode, d.provider_id,
         d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
     FROM workspaces d
     LEFT JOIN personas p ON p.id = d.persona_id
@@ -58,6 +58,7 @@ class WorkspaceUpdate(BaseModel):
     sort_order: int | None = None
     icon_url: str | None = None
     workspace_model: str | None = Field(default=None, alias="model")
+    provider_id: uuid.UUID | None = None
     rag_mode: Literal["auto", "always", "off"] | None = None
 
 
@@ -72,6 +73,7 @@ class WorkspaceInstructionsBody(BaseModel):
 def _row(r: Any) -> dict[str, Any]:
     pn = r.get("persona_name")
     m = r.get("model")
+    pid = r.get("provider_id")
     return {
         "id": str(r["id"]),
         "name": r["name"],
@@ -85,6 +87,7 @@ def _row(r: Any) -> dict[str, Any]:
         "pinned": bool(r["pinned"]),
         "icon_url": r["icon_url"],
         "model": (str(m).strip() if m else None) or None,
+        "provider_id": str(pid) if pid else None,
         "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
         "updated_at": r["updated_at"].isoformat() if r.get("updated_at") else None,
         "owner_id": str(r["owner_id"]) if r.get("owner_id") else None,
@@ -339,7 +342,7 @@ async def patch_workspace(
             """
             SELECT id, name, description, icon_url, color, shared, sort_order,
                 pinned, system_prompt, persona_id,
-                model, rag_mode,
+                model, rag_mode, provider_id,
                 created_at, updated_at, owner_id
             FROM workspaces WHERE id = $1::uuid
             """,
@@ -367,6 +370,18 @@ async def patch_workspace(
         else:
             raw_rm = row["model"]
             new_model = None if raw_rm is None or str(raw_rm).strip() == "" else str(raw_rm).strip()
+        # provider_id: same exclude_unset semantics — absent = preserve.
+        if "provider_id" in data:
+            new_provider_id = data["provider_id"]  # uuid.UUID | None
+        else:
+            new_provider_id = row["provider_id"]
+        # Validate the (provider_id, model) pair before hitting the DB so we
+        # return a clean 400 instead of a CheckViolationError.
+        if (new_provider_id is None) != (new_model is None):
+            raise HTTPException(
+                status_code=400,
+                detail="provider_id and model must both be set or both null",
+            )
         new_rag: Literal["auto", "always", "off"] = "always"
         new_icon = row["icon_url"]
         if "icon_url" in data:
@@ -387,7 +402,7 @@ async def patch_workspace(
             UPDATE workspaces
             SET name = $2, description = $3, system_prompt = $4, persona_id = $5,
                 color = $6, shared = $7, sort_order = $8, icon_url = $9, model = $10,
-                rag_mode = $11, updated_at = NOW()
+                rag_mode = $11, provider_id = $12, updated_at = NOW()
             WHERE id = $1::uuid
             """,
             workspace_id,
@@ -401,6 +416,7 @@ async def patch_workspace(
             new_icon,
             new_model,
             new_rag,
+            new_provider_id,
         )
         prow = await conn.fetchrow(
             DAWS_SELECT + "WHERE d.id = $1::uuid",
