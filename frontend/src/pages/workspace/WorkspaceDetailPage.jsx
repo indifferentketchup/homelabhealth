@@ -20,7 +20,7 @@ import {
   uploadContextFile,
   uploadWorkspaceIcon,
 } from '@/api/workspaces.js'
-import { fetchModels, getModelSettings } from '@/api/inference.js'
+import { listProviders, listProviderModels } from '@/api/providers.js'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -59,7 +59,12 @@ export default function WorkspaceDetailPage() {
   const [detailName, setDetailName] = useState('')
   const [detailDesc, setDetailDesc] = useState('')
   const [detailColor, setDetailColor] = useState('#8FAE92')
+  const [inferProviderId, setInferProviderId] = useState('')
   const [inferModel, setInferModel] = useState('')
+  const [providerModels, setProviderModels] = useState([])
+  const [providerModelsState, setProviderModelsState] = useState({ loading: false, error: null })
+  const [inferSaveErr, setInferSaveErr] = useState(null)
+  const [inferSaveMsg, setInferSaveMsg] = useState(null)
   const [ragMode, setRagMode] = useState('auto')
   const [instrDraft, setInstrDraft] = useState('')
   const [memoryDraft, setMemoryDraft] = useState('')
@@ -77,30 +82,16 @@ export default function WorkspaceDetailPage() {
     staleTime: 15_000,
   })
 
-  const { data: modelsData } = useQuery({
-    queryKey: ['inference', 'models'],
-    queryFn: fetchModels,
-    staleTime: 60_000,
+  // Providers list for the dropdown; only enabled ones are pickable.
+  const { data: providersPack } = useQuery({
+    queryKey: ['providers'],
+    queryFn: () => listProviders(),
+    staleTime: 30_000,
   })
-
-  const { data: modelSettings } = useQuery({
-    queryKey: ['inference', 'settings'],
-    queryFn: () => getModelSettings(),
-    staleTime: 60_000,
-  })
-
-  const hiddenNames = useMemo(
-    () => new Set(Array.isArray(modelSettings?.hidden_models) ? modelSettings.hidden_models : []),
-    [modelSettings],
+  const enabledProviders = useMemo(
+    () => (providersPack?.items ?? []).filter((p) => p.enabled),
+    [providersPack],
   )
-
-  const inferModelOptions = useMemo(() => {
-    const raw = Array.isArray(modelsData?.data) ? modelsData.data : []
-    return raw
-      .map((m) => (typeof m?.id === 'string' ? m.id : ''))
-      .filter((mid) => mid && !hiddenNames.has(mid))
-      .sort((a, b) => a.localeCompare(b))
-  }, [modelsData, hiddenNames])
 
   useEffect(() => {
     if (!workspace) return
@@ -108,11 +99,48 @@ export default function WorkspaceDetailPage() {
     setDetailName(workspace.name || '')
     setDetailDesc(workspace.description || '')
     setDetailColor(workspace.color || '#8FAE92')
+    setInferProviderId(workspace.provider_id || '')
     setInferModel((workspace.model && String(workspace.model).trim()) || '')
     const rm = workspace.rag_mode
     setRagMode(rm === 'always' || rm === 'off' || rm === 'auto' ? rm : 'auto')
     setPinnedFlag(Boolean(workspace.pinned))
   }, [workspace])
+
+  // Populate the model dropdown from the chosen provider's /v1/models.
+  useEffect(() => {
+    if (!inferProviderId) {
+      setProviderModels([])
+      setProviderModelsState({ loading: false, error: null })
+      return
+    }
+    let cancelled = false
+    setProviderModelsState({ loading: true, error: null })
+    ;(async () => {
+      try {
+        const data = await listProviderModels(inferProviderId)
+        if (cancelled) return
+        const ids = (data?.data ?? [])
+          .map((m) => (typeof m?.id === 'string' ? m.id : null))
+          .filter((s) => !!s)
+          .sort((a, b) => a.localeCompare(b))
+        setProviderModels(ids)
+        setProviderModelsState({ loading: false, error: null })
+        // Clear stale model selection if it's not in the new list.
+        setInferModel((current) => (current && !ids.includes(current) ? '' : current))
+      } catch (e) {
+        if (!cancelled) {
+          setProviderModels([])
+          setProviderModelsState({
+            loading: false,
+            error: e instanceof Error ? e.message : 'Failed to load models',
+          })
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [inferProviderId])
 
   useEffect(() => {
     const hash = (typeof window !== 'undefined' && window.location.hash) || ''
@@ -230,14 +258,46 @@ export default function WorkspaceDetailPage() {
 
   const saveInferMut = useMutation({
     mutationFn: () => {
+      // Spec: provider_id + model are paired (CHECK constraint). Send both
+      // together as either (uuid, string) or (null, null). The backend
+      // returns 400 if the pair is mismatched; surface that inline.
+      const pid = inferProviderId.trim() || null
+      const mdl = inferModel.trim() || null
       const payload = {
-        model: inferModel.trim() || null,
+        provider_id: pid,
+        model: mdl,
         rag_mode: ragMode,
       }
       return updateWorkspace(id, payload)
     },
-    onSuccess: () => invalidateWorkspace(),
+    onSuccess: () => {
+      setInferSaveErr(null)
+      setInferSaveMsg(
+        inferProviderId && inferModel
+          ? 'Inference settings saved.'
+          : 'Provider + model cleared. Chat send will surface the "no provider configured" message until you re-bind.',
+      )
+      invalidateWorkspace()
+    },
+    onError: (e) => {
+      const raw = e instanceof Error ? e.message : 'Save failed'
+      let pretty = raw
+      try {
+        const parsed = JSON.parse(raw)
+        if (parsed?.detail) pretty = String(parsed.detail)
+      } catch {
+        /* not JSON */
+      }
+      setInferSaveErr(pretty)
+      setInferSaveMsg(null)
+    },
   })
+
+  useEffect(() => {
+    if (!inferSaveMsg) return
+    const t = window.setTimeout(() => setInferSaveMsg(null), 5000)
+    return () => window.clearTimeout(t)
+  }, [inferSaveMsg])
 
   const clearEmbeddingsMut = useMutation({
     mutationFn: () => clearWorkspaceEmbeddings(id),
@@ -361,26 +421,77 @@ export default function WorkspaceDetailPage() {
             </section>
 
             <section className="rounded-lg border border-border bg-card p-4">
-              <h2 className="mb-3 text-sm font-medium text-foreground">Model and generation</h2>
+              <h2 className="mb-3 text-sm font-medium text-foreground">Provider, model, and generation</h2>
               <p className="mb-3 text-xs text-muted-foreground">
-                Optional pinned model for this workspace. Leave as &quot;Global default&quot; to use the model picker.
+                Every chat in this workspace routes through the provider and model below. Clear both to disable chat for
+                this workspace (you&apos;ll see the &quot;No provider configured for this workspace&quot; message on send).
               </p>
+
+              {inferSaveErr ? (
+                <p data-testid="workspace-infer-save-error" className="mb-3 text-sm text-destructive">
+                  {inferSaveErr}
+                </p>
+              ) : null}
+              {inferSaveMsg ? <p className="mb-3 text-sm text-foreground">{inferSaveMsg}</p> : null}
+
               <div className="flex flex-col gap-4 text-sm">
                 <label className="flex flex-col gap-1">
-                  <span className="text-muted-foreground">Model</span>
+                  <span className="text-muted-foreground">Provider</span>
                   <select
-                    value={inferModel}
-                    onChange={(e) => setInferModel(e.target.value)}
-                    className="h-9 rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2"
+                    id="workspace-provider"
+                    value={inferProviderId}
+                    onChange={(e) => {
+                      setInferProviderId(e.target.value)
+                      setInferModel('')
+                    }}
+                    disabled={saveInferMut.isPending}
+                    className="h-9 rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <option value="">Global default (model picker)</option>
-                    {inferModelOptions.map((name) => (
-                      <option key={name} value={name}>
-                        {name}
+                    <option value="">— none (chat disabled) —</option>
+                    {enabledProviders.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
                       </option>
                     ))}
                   </select>
+                  {enabledProviders.length === 0 ? (
+                    <span className="text-xs text-muted-foreground">
+                      No enabled providers. Add one in Settings → Providers.
+                    </span>
+                  ) : null}
                 </label>
+
+                <label className="flex flex-col gap-1">
+                  <span className="text-muted-foreground">Model</span>
+                  <select
+                    id="workspace-model"
+                    value={inferModel}
+                    onChange={(e) => setInferModel(e.target.value)}
+                    disabled={saveInferMut.isPending || !inferProviderId || providerModelsState.loading}
+                    className="h-9 rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <option value="">
+                      {!inferProviderId
+                        ? '— pick a provider first —'
+                        : providerModelsState.loading
+                          ? 'Loading models…'
+                          : providerModelsState.error
+                            ? '— failed to load models —'
+                            : providerModels.length === 0
+                              ? '— no models reported by provider —'
+                              : '— pick a model —'}
+                    </option>
+                    {providerModels.map((mid) => (
+                      <option key={mid} value={mid}>
+                        {mid}
+                      </option>
+                    ))}
+                  </select>
+                  {providerModelsState.error ? (
+                    <span className="text-xs text-destructive">{providerModelsState.error}</span>
+                  ) : null}
+                </label>
+
                 <label className="flex flex-col gap-1">
                   <span className="text-muted-foreground">RAG Mode</span>
                   <select
@@ -394,9 +505,31 @@ export default function WorkspaceDetailPage() {
                     <option value="off">Off</option>
                   </select>
                 </label>
-                <Button type="button" size="sm" onClick={() => saveInferMut.mutate()} disabled={saveInferMut.isPending}>
-                  Save inference settings
-                </Button>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => saveInferMut.mutate()}
+                    disabled={saveInferMut.isPending}
+                  >
+                    {saveInferMut.isPending ? 'Saving…' : 'Save inference settings'}
+                  </Button>
+                  {(inferProviderId || inferModel) && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setInferProviderId('')
+                        setInferModel('')
+                      }}
+                      disabled={saveInferMut.isPending}
+                    >
+                      Clear (then Save)
+                    </Button>
+                  )}
+                </div>
               </div>
             </section>
 
