@@ -1,4 +1,13 @@
-"""Embedding helpers — infinity-emb backend (OpenAI-compatible /embeddings)."""
+"""Embedding helpers — provider-resolved per call (no env-var URL/MODEL).
+
+The active embedding provider + model live in `global_settings`
+(`embedding_provider_id`, `embedding_model`). If either is absent, every
+call raises `EmbeddingError("Embedding model not configured. Set one in
+Settings → Embedding.")`.
+
+Pipeline-shape env vars (EMBEDDING_DIM, EMBEDDING_BATCH_SIZE,
+EMBEDDING_TIMEOUT, EMBEDDING_QUERY_INSTRUCTION) stay as runtime tuning.
+"""
 from __future__ import annotations
 
 import logging
@@ -8,8 +17,6 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-EMBEDDING_URL = os.environ.get("EMBEDDING_URL", "http://localhost:7997")
-EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "BAAI/bge-m3")
 EMBEDDING_DIM = int(os.environ.get("EMBEDDING_DIM", "1024"))
 EMBEDDING_BATCH_SIZE = int(os.environ.get("EMBEDDING_BATCH_SIZE", "32"))
 EMBEDDING_TIMEOUT = float(os.environ.get("EMBEDDING_TIMEOUT", "120"))
@@ -27,10 +34,17 @@ def _clean(text: str) -> str:
     return text.replace("\x00", "")
 
 
-async def _post(client: httpx.AsyncClient, inputs: list[str]) -> list[list[float]]:
+async def _post(
+    client: httpx.AsyncClient,
+    base_url: str,
+    headers: dict[str, str],
+    model: str,
+    inputs: list[str],
+) -> list[list[float]]:
     r = await client.post(
-        f"{EMBEDDING_URL}/embeddings",
-        json={"model": EMBEDDING_MODEL, "input": inputs},
+        f"{base_url}/v1/embeddings",
+        json={"model": model, "input": inputs},
+        headers=headers,
     )
     r.raise_for_status()
     data = r.json().get("data") or []
@@ -47,12 +61,24 @@ async def _post(client: httpx.AsyncClient, inputs: list[str]) -> list[list[float
     return out
 
 
+async def _resolve() -> tuple[str, str, dict[str, str]]:
+    """Resolve (base_url, model, headers) for the active embedding provider.
+
+    Imported lazily to avoid a top-level cycle (provider_client raises
+    EmbeddingError from this module).
+    """
+    from services.provider_client import build_headers, resolve_embedding_provider
+    provider, model = await resolve_embedding_provider()
+    return provider.base_url, model, build_headers(provider)
+
+
 async def embed_text(text: str) -> list[float]:
     """Embed a single string. Raises EmbeddingError on failure."""
     cleaned = _clean(text)
+    base_url, model, headers = await _resolve()
     try:
         async with httpx.AsyncClient(timeout=EMBEDDING_TIMEOUT) as client:
-            result = await _post(client, [cleaned])
+            result = await _post(client, base_url, headers, model, [cleaned])
     except EmbeddingError:
         raise
     except Exception as e:
@@ -71,12 +97,13 @@ async def embed_batch(texts: list[str]) -> list[list[float]]:
     if not texts:
         return []
     cleaned = [_clean(t) for t in texts]
+    base_url, model, headers = await _resolve()
     out: list[list[float]] = []
     try:
         async with httpx.AsyncClient(timeout=EMBEDDING_TIMEOUT) as client:
             for start in range(0, len(cleaned), EMBEDDING_BATCH_SIZE):
                 sub = cleaned[start : start + EMBEDDING_BATCH_SIZE]
-                out.extend(await _post(client, sub))
+                out.extend(await _post(client, base_url, headers, model, sub))
     except EmbeddingError:
         raise
     except Exception as e:
@@ -90,9 +117,10 @@ async def embed_query(text: str) -> list[float]:
     """Embed a search query. The configured embedding model may require an instruction prefix on queries; documents stay raw."""
     cleaned = _clean(text)
     prefixed = f"Instruct: {EMBEDDING_QUERY_INSTRUCTION}\nQuery: {cleaned}"
+    base_url, model, headers = await _resolve()
     try:
         async with httpx.AsyncClient(timeout=EMBEDDING_TIMEOUT) as client:
-            result = await _post(client, [prefixed])
+            result = await _post(client, base_url, headers, model, [prefixed])
     except EmbeddingError:
         raise
     except Exception as e:

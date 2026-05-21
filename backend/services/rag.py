@@ -15,8 +15,9 @@ from services.embeddings import EmbeddingError, embed_query, format_vector
 
 logger = logging.getLogger(__name__)
 
-RERANKER_URL = os.environ.get("RERANKER_URL", "http://localhost:7998").rstrip("/")
-RERANKER_MODEL = os.environ.get("RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
+# Reranker URL + model come from the active reranker provider in global_settings;
+# RERANKER_URL / RERANKER_MODEL env vars were removed in the 2026-05-21 providers cutover.
+# RERANKER_TIMEOUT stays as runtime tuning.
 RERANKER_TIMEOUT = float(os.environ.get("RERANKER_TIMEOUT", "15"))
 
 # Env-var defaults — used only as a fallback if a DB setting is absent/unparseable.
@@ -96,40 +97,60 @@ async def _rerank_infinity(query: str, passages: list[dict]) -> list[dict] | Non
     Rerank via the GPU-backed infinity-rerank service. Returns the passages
     sorted by relevance with a `score` field attached, or None on any failure
     so the caller can fall back to flashrank → similarity order.
+
+    Resolves provider + model from global_settings.reranker_provider_id /
+    reranker_model. If unset, returns None (caller uses flashrank).
+
+    Soft-fails on ANY exception (DB unreachable, key-decrypt failure, malformed
+    config, network error, parser error) — a misconfigured reranker must not
+    take down RAG-enabled chat turns. The outer try/except is intentionally
+    broad and is the load-bearing safety net here.
     """
     if not passages:
         return passages
     try:
+        # Lazy import: avoids any circular risk and keeps top-level imports clean.
+        from services.provider_client import build_headers, resolve_reranker_provider
+
+        binding = await resolve_reranker_provider()
+        if binding is None:
+            return None  # No reranker provider configured → use flashrank fallback.
+        provider, model = binding
+
         async with httpx.AsyncClient(timeout=RERANKER_TIMEOUT) as client:
             r = await client.post(
-                f"{RERANKER_URL}/rerank",
+                f"{provider.base_url}/rerank",
                 json={
-                    "model": RERANKER_MODEL,
+                    "model": model,
                     "query": query,
                     "documents": [p["text"] for p in passages],
                     "return_documents": False,
                 },
+                headers=build_headers(provider),
             )
             r.raise_for_status()
             results = r.json().get("results") or []
-    except Exception as e:
-        logger.warning("infinity-rerank unreachable, will fall back: %s", e)
-        return None
 
-    out: list[dict] = []
-    for item in results:
-        idx = item.get("index")
-        if not isinstance(idx, int) or idx < 0 or idx >= len(passages):
-            continue
-        merged = dict(passages[idx])
-        score = item.get("relevance_score")
-        if isinstance(score, (int, float)):
-            merged["score"] = float(score)
-        out.append(merged)
-    if not out:
-        logger.warning("infinity-rerank returned no usable results; falling back")
+        out: list[dict] = []
+        for item in results:
+            idx = item.get("index")
+            if not isinstance(idx, int) or idx < 0 or idx >= len(passages):
+                continue
+            merged = dict(passages[idx])
+            score = item.get("relevance_score")
+            if isinstance(score, (int, float)):
+                merged["score"] = float(score)
+            out.append(merged)
+        if not out:
+            logger.warning("infinity-rerank returned no usable results; falling back")
+            return None
+        return out
+    except Exception as e:
+        # Catches: DB errors during resolve, RuntimeError from key decrypt,
+        # httpx network/timeout errors, raise_for_status, JSON parse errors,
+        # and anything else. RAG must degrade, not break.
+        logger.warning("infinity-rerank soft-failed (%s); falling back", e)
         return None
-    return out
 
 
 async def retrieve_memory_facts(query: str, conn: Any) -> list[str]:
