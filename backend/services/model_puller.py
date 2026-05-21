@@ -68,10 +68,14 @@ _GEMMA_LICENSE = "gemma"
 # role's tier map.
 MODEL_REGISTRY: dict[str, dict[str, ModelSpec | None]] = {
     "chat": {
+        # Design specified Q4_K_M but Qwen/Qwen3-1.7B-GGUF only ships Q8_0
+        # (~1.8 GB; still well within the cpu-min 2 GB RAM target).
+        # Note for Phase 1.H report: design-vs-reality deviation, picked the
+        # available quant; operator can override later.
         "cpu-min": ModelSpec(
             repo="Qwen/Qwen3-1.7B-GGUF",
-            filename="Qwen3-1.7B-Q4_K_M.gguf",
-            quant="Q4_K_M",
+            filename="Qwen3-1.7B-Q8_0.gguf",
+            quant="Q8_0",
             license="apache-2.0",
             license_url="https://huggingface.co/Qwen/Qwen3-1.7B-GGUF",
         ),
