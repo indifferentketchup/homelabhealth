@@ -10,16 +10,14 @@ import httpx
 from db import get_pool
 
 
-async def _load_runtime_config(mode: str) -> dict[str, Any] | None:
+async def _load_runtime_config() -> dict[str, Any] | None:
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
             SELECT safe_search, image_proxy, enabled_engines, autocomplete
-            FROM searxng_config
-            WHERE mode = $1
+            FROM searxng_config LIMIT 1
             """,
-            mode,
         )
     if not row:
         return None
@@ -35,8 +33,6 @@ async def _load_runtime_config(mode: str) -> dict[str, Any] | None:
 
 async def searx_search_sources(
     query: str,
-    *,
-    mode: str | None = None,
 ) -> tuple[list[dict[str, str]], str]:
     """
     Returns (sources_for_ui, markdown_block_for_model).
@@ -48,17 +44,16 @@ async def searx_search_sources(
         return [], ""
 
     params: dict[str, str | int] = {"q": q, "format": "json"}
-    if mode:
-        cfg = await _load_runtime_config(mode)
-        if cfg:
-            params["safesearch"] = max(0, min(2, int(cfg["safe_search"])))
-            eng = cfg.get("enabled_engines") or []
-            if eng:
-                params["engines"] = ",".join(eng)
-            params["image_proxy"] = "true" if cfg["image_proxy"] else "false"
-            ac = cfg.get("autocomplete") or ""
-            if ac:
-                params["autocomplete"] = ac
+    cfg = await _load_runtime_config()
+    if cfg:
+        params["safesearch"] = max(0, min(2, int(cfg["safe_search"])))
+        eng = cfg.get("enabled_engines") or []
+        if eng:
+            params["engines"] = ",".join(eng)
+        params["image_proxy"] = "true" if cfg["image_proxy"] else "false"
+        ac = cfg.get("autocomplete") or ""
+        if ac:
+            params["autocomplete"] = ac
 
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:

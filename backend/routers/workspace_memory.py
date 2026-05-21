@@ -33,7 +33,7 @@ class WorkspaceMemoryCreate(BaseModel):
 def _entry_row(r: Any) -> dict[str, Any]:
     return {
         "id": int(r["id"]),
-        "workspace_id": str(r["daw_id"]),
+        "workspace_id": str(r["workspace_id"]),
         "content": r["content"],
         "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
     }
@@ -46,14 +46,14 @@ async def list_workspace_memory(
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        workspace_ok = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", workspace_id)
+        workspace_ok = await conn.fetchval("SELECT 1 FROM workspaces WHERE id = $1::uuid", workspace_id)
         if workspace_ok is None:
             raise HTTPException(status_code=404, detail="Workspace not found")
         rows = await conn.fetch(
             """
-            SELECT id, daw_id, content, created_at
-            FROM daw_memory
-            WHERE daw_id = $1::uuid
+            SELECT id, workspace_id, content, created_at
+            FROM workspace_memory
+            WHERE workspace_id = $1::uuid
             ORDER BY created_at ASC
             """,
             workspace_id,
@@ -69,14 +69,14 @@ async def create_workspace_memory(
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        workspace_ok = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", workspace_id)
+        workspace_ok = await conn.fetchval("SELECT 1 FROM workspaces WHERE id = $1::uuid", workspace_id)
         if workspace_ok is None:
             raise HTTPException(status_code=404, detail="Workspace not found")
         row = await conn.fetchrow(
             """
-            INSERT INTO daw_memory (daw_id, content)
+            INSERT INTO workspace_memory (workspace_id, content)
             VALUES ($1::uuid, $2)
-            RETURNING id, daw_id, content, created_at
+            RETURNING id, workspace_id, content, created_at
             """,
             workspace_id,
             body.content,
@@ -93,13 +93,13 @@ async def delete_workspace_memory(
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        workspace_ok = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", workspace_id)
+        workspace_ok = await conn.fetchval("SELECT 1 FROM workspaces WHERE id = $1::uuid", workspace_id)
         if workspace_ok is None:
             raise HTTPException(status_code=404, detail="Workspace not found")
         result = await conn.execute(
             """
-            DELETE FROM daw_memory
-            WHERE id = $1 AND daw_id = $2::uuid
+            DELETE FROM workspace_memory
+            WHERE id = $1 AND workspace_id = $2::uuid
             """,
             entry_id,
             workspace_id,

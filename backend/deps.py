@@ -15,9 +15,6 @@ from fastapi import HTTPException
 
 from db import get_pool
 
-# Required by mode CHECK constraints on chats/daws/memory_entries/mode_memory.
-_SCHEMA_MODE_VALUE = "808notes"
-
 _owner_user_id: uuid.UUID | None = None
 
 
@@ -70,7 +67,7 @@ async def assert_workspace_usable(
     if workspace_id is None:
         return
     row = await conn.fetchrow(
-        "SELECT 1 FROM daws WHERE id = $1::uuid",
+        "SELECT 1 FROM workspaces WHERE id = $1::uuid",
         workspace_id,
     )
     if row is None:

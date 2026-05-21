@@ -1,4 +1,4 @@
-"""Global custom instructions (`custom_instructions` table, scope='global')."""
+"""Global custom instructions (singleton row in `custom_instructions` table)."""
 
 from __future__ import annotations
 
@@ -12,8 +12,6 @@ from db import get_pool
 
 router = APIRouter()
 
-GLOBAL_SCOPE = "global"
-
 
 class InstructionsBody(BaseModel):
     content: str = ""
@@ -21,7 +19,6 @@ class InstructionsBody(BaseModel):
 
 def _row(r: Any) -> dict[str, Any]:
     return {
-        "scope": r["scope"],
         "content": r["content"] or "",
         "updated_at": r["updated_at"].isoformat() if r.get("updated_at") else None,
     }
@@ -33,15 +30,13 @@ async def get_instructions(_: dict = Depends(require_admin)):
     async with pool.acquire() as conn:
         await conn.execute(
             """
-            INSERT INTO custom_instructions (scope, content)
-            VALUES ($1, '')
-            ON CONFLICT (scope) DO NOTHING
-            """,
-            GLOBAL_SCOPE,
+            INSERT INTO custom_instructions (content)
+            VALUES ('')
+            ON CONFLICT ((1)) DO NOTHING
+            """
         )
         row = await conn.fetchrow(
-            "SELECT scope, content, updated_at FROM custom_instructions WHERE scope = $1",
-            GLOBAL_SCOPE,
+            "SELECT content, updated_at FROM custom_instructions LIMIT 1"
         )
     return _row(row)
 
@@ -55,12 +50,12 @@ async def put_instructions(
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            INSERT INTO custom_instructions (scope, content, updated_at)
-            VALUES ($1, $2, NOW())
-            ON CONFLICT (scope) DO UPDATE SET content = EXCLUDED.content, updated_at = NOW()
-            RETURNING scope, content, updated_at
+            INSERT INTO custom_instructions (content, updated_at)
+            VALUES ($1, NOW())
+            ON CONFLICT ((1)) DO UPDATE
+                SET content = EXCLUDED.content, updated_at = NOW()
+            RETURNING content, updated_at
             """,
-            GLOBAL_SCOPE,
             body.content or "",
         )
     return _row(row)
@@ -70,16 +65,13 @@ async def put_instructions(
 async def clear_instructions(_: dict = Depends(require_admin)):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        await conn.execute(
-            """
-            INSERT INTO custom_instructions (scope, content, updated_at)
-            VALUES ($1, '', NOW())
-            ON CONFLICT (scope) DO UPDATE SET content = '', updated_at = NOW()
-            """,
-            GLOBAL_SCOPE,
-        )
         row = await conn.fetchrow(
-            "SELECT scope, content, updated_at FROM custom_instructions WHERE scope = $1",
-            GLOBAL_SCOPE,
+            """
+            INSERT INTO custom_instructions (content, updated_at)
+            VALUES ('', NOW())
+            ON CONFLICT ((1)) DO UPDATE
+                SET content = '', updated_at = NOW()
+            RETURNING content, updated_at
+            """
         )
     return _row(row)

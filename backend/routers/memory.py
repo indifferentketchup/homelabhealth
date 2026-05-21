@@ -11,7 +11,7 @@ import httpx
 from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from deps import _SCHEMA_MODE_VALUE, get_principal, require_admin
+from deps import get_principal, require_admin
 from db import get_pool
 from services.inference_defaults import required_default_model
 
@@ -49,13 +49,11 @@ async def get_memory(_: dict = Depends(require_admin)):
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT mode, content, updated_at FROM mode_memory WHERE mode = $1",
-            _SCHEMA_MODE_VALUE,
+            "SELECT content, updated_at FROM mode_memory LIMIT 1",
         )
     if row is None:
-        return {"mode": _SCHEMA_MODE_VALUE, "content": "", "updated_at": None}
+        return {"content": "", "updated_at": None}
     return {
-        "mode": row["mode"],
         "content": row["content"] or "",
         "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
     }
@@ -67,12 +65,11 @@ async def put_memory(body: MemoryPut = Body(), _: dict = Depends(require_admin))
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            INSERT INTO mode_memory (mode, content, updated_at)
-            VALUES ($1, $2, NOW())
-            ON CONFLICT (mode) DO UPDATE SET content = EXCLUDED.content, updated_at = NOW()
-            RETURNING mode, content, updated_at
+            INSERT INTO mode_memory (content, updated_at)
+            VALUES ($1, NOW())
+            ON CONFLICT ((1)) DO UPDATE SET content = EXCLUDED.content, updated_at = NOW()
+            RETURNING content, updated_at
             """,
-            _SCHEMA_MODE_VALUE,
             body.content or "",
         )
     return {
@@ -99,8 +96,7 @@ async def extract_memory(_: dict = Depends(require_admin)):
             raise HTTPException(status_code=400, detail="No chats exist")
 
         mem_row = await conn.fetchrow(
-            "SELECT content FROM mode_memory WHERE mode = $1",
-            _SCHEMA_MODE_VALUE,
+            "SELECT content FROM mode_memory LIMIT 1",
         )
         current_memory = (mem_row["content"] or "") if mem_row else ""
 
@@ -169,12 +165,11 @@ async def extract_memory(_: dict = Depends(require_admin)):
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            INSERT INTO mode_memory (mode, content, updated_at)
-            VALUES ($1, $2, NOW())
-            ON CONFLICT (mode) DO UPDATE SET content = EXCLUDED.content, updated_at = NOW()
+            INSERT INTO mode_memory (content, updated_at)
+            VALUES ($1, NOW())
+            ON CONFLICT ((1)) DO UPDATE SET content = EXCLUDED.content, updated_at = NOW()
             RETURNING content, updated_at
             """,
-            _SCHEMA_MODE_VALUE,
             updated,
         )
 

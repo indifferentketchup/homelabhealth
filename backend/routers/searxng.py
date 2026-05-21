@@ -10,7 +10,7 @@ import yaml
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from deps import _SCHEMA_MODE_VALUE, require_admin
+from deps import require_admin
 from db import get_pool
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,6 @@ class SearxngConfigUpdate(BaseModel):
 
 
 class SearxngConfigResponse(BaseModel):
-    mode: str
     safe_search: int
     image_proxy: bool
     enabled_engines: list[str] = Field(default_factory=list)
@@ -129,20 +128,17 @@ def _write_searxng_settings_yaml(
 
 @router.get("/", response_model=SearxngConfigResponse)
 async def get_searxng_config():
-    mode = _SCHEMA_MODE_VALUE
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
             SELECT safe_search, image_proxy, enabled_engines, autocomplete
-            FROM searxng_config WHERE mode = $1
+            FROM searxng_config LIMIT 1
             """,
-            mode,
         )
     if not row:
         raise HTTPException(status_code=404, detail="Config not found")
     return SearxngConfigResponse(
-        mode=mode,
         safe_search=int(row["safe_search"]),
         image_proxy=bool(row["image_proxy"]),
         enabled_engines=_split_engines(row["enabled_engines"]),
@@ -155,15 +151,13 @@ async def update_searxng_config(
     body: SearxngConfigUpdate,
     _owner: dict = Depends(require_admin),
 ):
-    mode = _SCHEMA_MODE_VALUE
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
             SELECT safe_search, image_proxy, enabled_engines, autocomplete
-            FROM searxng_config WHERE mode = $1
+            FROM searxng_config LIMIT 1
             """,
-            mode,
         )
         if not row:
             raise HTTPException(status_code=404, detail="Config not found")
@@ -187,14 +181,12 @@ async def update_searxng_config(
         await conn.execute(
             """
             UPDATE searxng_config
-            SET safe_search = $2,
-                image_proxy = $3,
-                enabled_engines = $4,
-                autocomplete = $5,
+            SET safe_search = $1,
+                image_proxy = $2,
+                enabled_engines = $3,
+                autocomplete = $4,
                 updated_at = NOW()
-            WHERE mode = $1
             """,
-            mode,
             safe_search,
             image_proxy,
             engines_csv,
@@ -211,7 +203,6 @@ async def update_searxng_config(
 
     return {
         "status": "updated",
-        "mode": mode,
         "safe_search": safe_search,
         "image_proxy": image_proxy,
         "enabled_engines": engines_list,

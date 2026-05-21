@@ -14,7 +14,6 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from deps import (
-    _SCHEMA_MODE_VALUE,
     assert_persona_usable,
     assert_workspace_usable,
     get_principal,
@@ -92,14 +91,13 @@ async def _assembled_system_prompt(
     include_site_private: bool = True,
 ) -> tuple[str, dict[str, int] | None]:
     """Persona -> Workspace prompt + workspace instructions + semantic memory facts -> context files -> custom instructions -> RAG -> mode_memory."""
-    mode = _SCHEMA_MODE_VALUE
     pid = chat["persona_id"]
-    workspace_id = chat["daw_id"]
+    workspace_id = chat["workspace_id"]
     workspace_prompt = ""
     workspace_persona_id = None
     if workspace_id is not None:
         ws = await conn.fetchrow(
-            "SELECT system_prompt, persona_id, rag_mode FROM daws WHERE id = $1::uuid",
+            "SELECT system_prompt, persona_id, rag_mode FROM workspaces WHERE id = $1::uuid",
             workspace_id,
         )
         if ws:
@@ -136,7 +134,7 @@ async def _assembled_system_prompt(
 
     if workspace_id:
         workspace_instructions = await conn.fetch(
-            "SELECT content AS instruction FROM daw_instructions WHERE daw_id = $1::uuid ORDER BY created_at",
+            "SELECT content AS instruction FROM workspace_instructions WHERE workspace_id = $1::uuid ORDER BY created_at",
             workspace_id,
         )
         if workspace_instructions:
@@ -145,7 +143,7 @@ async def _assembled_system_prompt(
             parts.append(f"### Workspace Instructions\n{instr_text}")
 
         workspace_mem_rows = await conn.fetch(
-            "SELECT content FROM daw_memory WHERE daw_id = $1::uuid ORDER BY created_at ASC",
+            "SELECT content FROM workspace_memory WHERE workspace_id = $1::uuid ORDER BY created_at ASC",
             workspace_id,
         )
         if workspace_mem_rows:
@@ -162,8 +160,8 @@ async def _assembled_system_prompt(
     if workspace_id is not None:
         cf_rows = await conn.fetch(
             """
-            SELECT filename, content FROM daw_context_files
-            WHERE daw_id = $1::uuid
+            SELECT filename, content FROM workspace_context_files
+            WHERE workspace_id = $1::uuid
             ORDER BY sort_order ASC NULLS LAST, created_at ASC
             """,
             workspace_id,
@@ -174,11 +172,9 @@ async def _assembled_system_prompt(
     if include_site_private:
         ci_rows = await conn.fetch(
             """
-            SELECT scope, content FROM custom_instructions
-            WHERE scope IN ('global', $1::text) AND btrim(content) <> ''
-            ORDER BY CASE WHEN scope = 'global' THEN 0 ELSE 1 END, scope ASC
+            SELECT content FROM custom_instructions
+            WHERE btrim(content) <> ''
             """,
-            mode,
         )
         custom_instr = "\n\n".join(
             (r["content"] or "").strip() for r in ci_rows if (r["content"] or "").strip()
@@ -202,7 +198,7 @@ async def _assembled_system_prompt(
             source_ids = [str(r["source_id"]) for r in sel]
             if not source_ids:
                 workspace_sources = await conn.fetch(
-                    "SELECT id FROM sources WHERE daw_id = $1::uuid AND embedding_status = 'complete'",
+                    "SELECT id FROM sources WHERE workspace_id = $1::uuid AND embedding_status = 'complete'",
                     uuid.UUID(str(workspace_id)),
                 )
                 source_ids = [str(r["id"]) for r in workspace_sources]
@@ -220,7 +216,7 @@ async def _assembled_system_prompt(
 
     mem_text = ""
     if workspace_id is not None and include_site_private:
-        mem = await conn.fetchrow("SELECT content FROM mode_memory WHERE mode = $1", mode)
+        mem = await conn.fetchrow("SELECT content FROM mode_memory LIMIT 1")
         mem_text = (mem["content"] or "").strip() if mem else ""
         if mem_text:
             if len(mem_text) > 2000:
@@ -230,9 +226,8 @@ async def _assembled_system_prompt(
 
     preview = (assembled[:2000] + "…") if len(assembled) > 2000 else assembled
     logger.info(
-        "assembled prompt mode=%s workspace_id=%s is_workspace_chat=%s len=%d workspace_instruction_rows=%d "
+        "assembled prompt workspace_id=%s is_workspace_chat=%s len=%d workspace_instruction_rows=%d "
         "memory_entry_rows=%d mode_memory_len=%d rag_context_chars=%d preview=%s",
-        mode,
         str(workspace_id) if workspace_id else None,
         workspace_id is not None,
         len(assembled),
@@ -404,7 +399,7 @@ def _chat_row(r: asyncpg.Record) -> dict[str, Any]:
     return {
         "id": str(r["id"]),
         "title": r["title"],
-        "workspace_id": str(r["daw_id"]) if r["daw_id"] else None,
+        "workspace_id": str(r["workspace_id"]) if r["workspace_id"] else None,
         "persona_id": str(r["persona_id"]) if r["persona_id"] else None,
         "model": r["model"],
         "web_search_enabled": r["web_search_enabled"],
@@ -443,11 +438,11 @@ async def create_chat(body: ChatCreate, principal: dict[str, Any] = Depends(get_
             persona_id_for_insert = await _default_persona_id_for_mode(conn)
         row = await conn.fetchrow(
             """
-            INSERT INTO chats (title, daw_id, model, web_search_enabled, rag_enabled, persona_id, owner_id)
+            INSERT INTO chats (title, workspace_id, model, web_search_enabled, rag_enabled, persona_id, owner_id)
             VALUES ($1, $2,
                 COALESCE(
                     $3,
-                    (SELECT NULLIF(TRIM(model), '') FROM daws WHERE id = $2::uuid),
+                    (SELECT NULLIF(TRIM(model), '') FROM workspaces WHERE id = $2::uuid),
                     (SELECT value FROM global_settings WHERE key = 'default_model' LIMIT 1),
                     $5
                 ),
@@ -455,7 +450,7 @@ async def create_chat(body: ChatCreate, principal: dict[str, Any] = Depends(get_
                 $8,
                 $6,
                 $7)
-            RETURNING id, title, daw_id, persona_id, model, web_search_enabled, rag_enabled,
+            RETURNING id, title, workspace_id, persona_id, model, web_search_enabled, rag_enabled,
                 pruning_summary, message_count, is_main_chat, created_at, updated_at
             """,
             body.title,
@@ -479,7 +474,7 @@ async def list_chats(
 ):
     pool = await get_pool()
     cols = """
-                id, title, daw_id, persona_id, model, web_search_enabled, rag_enabled,
+                id, title, workspace_id, persona_id, model, web_search_enabled, rag_enabled,
                 pruning_summary, message_count, is_main_chat, created_at, updated_at
     """
     async with pool.acquire() as conn:
@@ -488,7 +483,7 @@ async def list_chats(
                 f"""
                 SELECT {cols}
                 FROM chats
-                WHERE daw_id = $3::uuid
+                WHERE workspace_id = $3::uuid
                 ORDER BY updated_at DESC NULLS LAST, created_at DESC
                 LIMIT $1 OFFSET $2
                 """,
@@ -497,7 +492,7 @@ async def list_chats(
                 workspace_id,
             )
             total = await conn.fetchval(
-                "SELECT COUNT(*)::int FROM chats WHERE daw_id = $1::uuid",
+                "SELECT COUNT(*)::int FROM chats WHERE workspace_id = $1::uuid",
                 workspace_id,
             )
         else:
@@ -521,14 +516,14 @@ async def list_chats(
 async def delete_non_workspace_chats(
     principal: dict[str, Any] = Depends(get_principal),
 ):
-    """Delete all chats not tied to a workspace (daw_id IS NULL)."""
+    """Delete all chats not tied to a workspace (workspace_id IS NULL)."""
     pool = await get_pool()
     async with pool.acquire() as conn:
         deleted = await conn.fetchval(
             """
             WITH deleted AS (
                 DELETE FROM chats
-                WHERE daw_id IS NULL
+                WHERE workspace_id IS NULL
                 RETURNING 1
             )
             SELECT COUNT(*)::int FROM deleted
@@ -543,7 +538,7 @@ async def get_chat(chat_id: uuid.UUID, principal: dict[str, Any] = Depends(get_p
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            SELECT id, title, daw_id, persona_id, model, web_search_enabled, rag_enabled,
+            SELECT id, title, workspace_id, persona_id, model, web_search_enabled, rag_enabled,
                 pruning_summary, message_count, is_main_chat, created_at, updated_at
             FROM chats
             WHERE id = $1::uuid
@@ -647,7 +642,7 @@ async def patch_chat(
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            SELECT id, title, daw_id, persona_id, model, web_search_enabled, rag_enabled,
+            SELECT id, title, workspace_id, persona_id, model, web_search_enabled, rag_enabled,
                 pruning_summary, message_count, is_main_chat, created_at, updated_at
             FROM chats
             WHERE id = $1::uuid
@@ -662,7 +657,7 @@ async def patch_chat(
         new_model = data.get("model", row["model"])
         new_ws = data.get("web_search_enabled", row["web_search_enabled"])
         new_persona = row["persona_id"] if "persona_id" not in data else data["persona_id"]
-        new_workspace = row["daw_id"] if "workspace_id" not in data else data["workspace_id"]
+        new_workspace = row["workspace_id"] if "workspace_id" not in data else data["workspace_id"]
 
         if new_persona is not None:
             await assert_persona_usable(conn, principal, new_persona)
@@ -673,9 +668,9 @@ async def patch_chat(
             """
             UPDATE chats
             SET title = $2, model = $3, web_search_enabled = $4,
-                persona_id = $5, daw_id = $6, updated_at = NOW()
+                persona_id = $5, workspace_id = $6, updated_at = NOW()
             WHERE id = $1::uuid
-            RETURNING id, title, daw_id, persona_id, model, web_search_enabled, rag_enabled,
+            RETURNING id, title, workspace_id, persona_id, model, web_search_enabled, rag_enabled,
                 pruning_summary, message_count, is_main_chat, created_at, updated_at
             """,
             chat_id,
@@ -711,7 +706,7 @@ async def export_chat(
 ) -> dict:
     """Save a chat's messages to /data/history/chats/<workspace-slug>/<file-slug>.md.
 
-    Requires the chat to be in a workspace (daw_id must not be NULL).
+    Requires the chat to be in a workspace (workspace_id must not be NULL).
     Attempts an AI rename via _openai_short_chat_title; on failure the
     timestamp filename persists and ai_renamed=false is returned.
     """
@@ -721,17 +716,17 @@ async def export_chat(
     pool = await get_pool()
     async with pool.acquire() as conn:
         chat_row = await conn.fetchrow(
-            "SELECT id, title, daw_id, model, created_at FROM chats WHERE id=$1::uuid",
+            "SELECT id, title, workspace_id, model, created_at FROM chats WHERE id=$1::uuid",
             chat_id,
         )
         if chat_row is None:
             raise HTTPException(status_code=404, detail="Chat not found")
-        if chat_row["daw_id"] is None:
+        if chat_row["workspace_id"] is None:
             raise HTTPException(status_code=400, detail="chat must be in a workspace to export")
 
         workspace_row = await conn.fetchrow(
-            "SELECT name FROM daws WHERE id=$1::uuid",
-            chat_row["daw_id"],
+            "SELECT name FROM workspaces WHERE id=$1::uuid",
+            chat_row["workspace_id"],
         )
         if workspace_row is None:
             raise HTTPException(status_code=400, detail="Workspace not found")
@@ -847,7 +842,7 @@ async def fork_chat_at_message(
         async with conn.transaction():
             src = await conn.fetchrow(
                 """
-                SELECT id, title, model, persona_id, daw_id,
+                SELECT id, title, model, persona_id, workspace_id,
                     web_search_enabled, rag_enabled
                 FROM chats
                 WHERE id = $1::uuid
@@ -891,16 +886,16 @@ async def fork_chat_at_message(
             new_chat = await conn.fetchrow(
                 """
                 INSERT INTO chats (
-                    title, daw_id, model, persona_id,
+                    title, workspace_id, model, persona_id,
                     web_search_enabled, rag_enabled, message_count,
                     owner_id
                 )
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                RETURNING id, title, daw_id, persona_id, model, web_search_enabled, rag_enabled,
+                RETURNING id, title, workspace_id, persona_id, model, web_search_enabled, rag_enabled,
                     pruning_summary, message_count, is_main_chat, created_at, updated_at
                 """,
                 fork_title,
-                src["daw_id"],
+                src["workspace_id"],
                 src["model"],
                 src["persona_id"],
                 src["web_search_enabled"],
@@ -946,7 +941,7 @@ async def append_message(
     async with pool.acquire() as conn:
         chat = await conn.fetchrow(
             """
-            SELECT id, title, model, pruning_summary, persona_id, web_search_enabled, daw_id,
+            SELECT id, title, model, pruning_summary, persona_id, web_search_enabled, workspace_id,
                 message_count, rag_enabled
             FROM chats
             WHERE id = $1::uuid
@@ -957,10 +952,10 @@ async def append_message(
             raise HTTPException(status_code=404, detail="Chat not found")
 
         workspace_row = None
-        if chat["daw_id"] is not None:
+        if chat["workspace_id"] is not None:
             workspace_row = await conn.fetchrow(
-                "SELECT model FROM daws WHERE id = $1::uuid",
-                chat["daw_id"],
+                "SELECT model FROM workspaces WHERE id = $1::uuid",
+                chat["workspace_id"],
             )
         workspace_pins_model = bool(
             workspace_row is not None and workspace_row["model"] and str(workspace_row["model"]).strip()
@@ -1048,7 +1043,6 @@ async def append_message(
         if bool(chat["web_search_enabled"]):
             sources_list, extra_search = await searx_search_sources(
                 user_message_text,
-                mode=_SCHEMA_MODE_VALUE,
             )
         if sources_list:
             yield _sse(json.dumps({"type": "search_sources", "sources": sources_list}))
@@ -1089,7 +1083,7 @@ async def append_message(
             "chat inference chat_id=%s model=%s workspace_id=%s",
             str(chat_id),
             effective_model,
-            str(chat["daw_id"]) if chat["daw_id"] else None,
+            str(chat["workspace_id"]) if chat["workspace_id"] else None,
         )
         stream = _stream_inference(
             effective_model,

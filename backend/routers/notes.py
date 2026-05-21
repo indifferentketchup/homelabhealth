@@ -35,7 +35,7 @@ def _default_title_from_content(content: str) -> str:
 def _note_row_dict(r: Any) -> dict[str, Any]:
     return {
         "id": str(r["id"]),
-        "workspace_id": str(r["daw_id"]),
+        "workspace_id": str(r["workspace_id"]),
         "group_id": str(r["group_id"]) if r.get("group_id") else None,
         "title": r["title"],
         "content": r["content"],
@@ -66,14 +66,14 @@ async def list_notes(
 ) -> list[dict[str, Any]]:
     pool = await get_pool()
     async with pool.acquire() as conn:
-        workspace_exists = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", workspace_id)
+        workspace_exists = await conn.fetchval("SELECT 1 FROM workspaces WHERE id = $1::uuid", workspace_id)
         if not workspace_exists:
             raise HTTPException(404, "Workspace not found")
         rows = await conn.fetch(
             """
             SELECT id, title, content, source_type, created_at, updated_at
             FROM notes
-            WHERE daw_id = $1::uuid
+            WHERE workspace_id = $1::uuid
             ORDER BY updated_at DESC
             """,
             workspace_id,
@@ -107,14 +107,14 @@ async def create_note(
         title = _default_title_from_content(body.content)
     pool = await get_pool()
     async with pool.acquire() as conn:
-        workspace_exists = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", workspace_id)
+        workspace_exists = await conn.fetchval("SELECT 1 FROM workspaces WHERE id = $1::uuid", workspace_id)
         if not workspace_exists:
             raise HTTPException(404, "Workspace not found")
         row = await conn.fetchrow(
             """
-            INSERT INTO notes (daw_id, title, content, source_type, message_id)
+            INSERT INTO notes (workspace_id, title, content, source_type, message_id)
             VALUES ($1::uuid, $2, $3, $4, $5::uuid)
-            RETURNING id, daw_id, group_id, title, content, source_type, message_id,
+            RETURNING id, workspace_id, group_id, title, content, source_type, message_id,
                       converted_to_source_id, created_at, updated_at
             """,
             workspace_id,
@@ -137,7 +137,7 @@ async def update_note(
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT id, daw_id, title, content FROM notes WHERE id = $1::uuid",
+            "SELECT id, workspace_id, title, content FROM notes WHERE id = $1::uuid",
             note_id,
         )
         if row is None:
@@ -149,7 +149,7 @@ async def update_note(
             UPDATE notes
             SET title = $2, content = $3, updated_at = NOW()
             WHERE id = $1::uuid
-            RETURNING id, daw_id, group_id, title, content, source_type, message_id,
+            RETURNING id, workspace_id, group_id, title, content, source_type, message_id,
                       converted_to_source_id, created_at, updated_at
             """,
             note_id,
@@ -166,7 +166,7 @@ async def delete_note(
 ) -> dict[str, str]:
     pool = await get_pool()
     async with pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT id, daw_id FROM notes WHERE id = $1::uuid", note_id)
+        row = await conn.fetchrow("SELECT id, workspace_id FROM notes WHERE id = $1::uuid", note_id)
         if row is None:
             raise HTTPException(404, "Note not found")
         await conn.execute("DELETE FROM notes WHERE id = $1::uuid", note_id)
