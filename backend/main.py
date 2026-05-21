@@ -33,8 +33,32 @@ from routers.sources import router as sources_router
 
 import logging
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
+
+
+_DEPRECATED_ENV_VARS = (
+    "OPENAI_API_KEY",
+    "INFERENCE_URL",
+    "EMBEDDING_URL",
+    "RERANKER_URL",
+    "DEFAULT_MODEL",
+)
+
+
+def _warn_deprecated_env_vars() -> None:
+    """One-shot startup warning when any of the deprecated env vars are still
+    set after the 2026-05-21 providers cutover. Provider config now lives in
+    the DB; these env vars are ignored. Spec §7."""
+    set_vars = [v for v in _DEPRECATED_ENV_VARS if (os.environ.get(v) or "").strip()]
+    if set_vars:
+        logger.warning(
+            "Deprecated env vars set and ignored: %s. "
+            "Provider config now lives in Settings → Providers. "
+            "Remove these from your .env to silence this warning.",
+            ", ".join(set_vars),
+        )
 
 
 def _cors_origins() -> list[str]:
@@ -50,6 +74,7 @@ def _cors_origins() -> list[str]:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    _warn_deprecated_env_vars()
     await init_pool()
     await apply_schema()
     await seed_default_assets()
