@@ -4,6 +4,9 @@ import { X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import { deleteNonWorkspaceChats } from '@/api/chats.js'
+import EmbeddingTab from '@/components/settings/EmbeddingTab.jsx'
+import ProvidersTab from '@/components/settings/ProvidersTab.jsx'
+import RerankerTab from '@/components/settings/RerankerTab.jsx'
 import SearchSettingsTab from '@/components/settings/SearchSettingsTab.jsx'
 import { Button } from '@/components/ui/button'
 import { clearWorkspaceLayoutLiveDraft, setWorkspaceLayoutLiveDraft } from '@/lib/workspaceLayout.js'
@@ -15,6 +18,9 @@ import { useLayoutStore } from '@/store/layoutStore.js'
 const TABS = [
   { id: 'typography', label: 'Typography' },
   { id: 'layout', label: 'Layout' },
+  { id: 'providers', label: 'Providers' },
+  { id: 'embedding', label: 'Embedding' },
+  { id: 'reranker', label: 'Reranker' },
   { id: 'search', label: 'Search' },
 ]
 
@@ -323,6 +329,12 @@ export default function SettingsPage({ onClose }) {
               </div>
             </section>
           )}
+
+          {tab === 'providers' && <ProvidersTab />}
+
+          {tab === 'embedding' && <EmbeddingTab />}
+
+          {tab === 'reranker' && <RerankerTab />}
 
           {tab === 'search' && <SearchSettingsTab />}
         </div>
