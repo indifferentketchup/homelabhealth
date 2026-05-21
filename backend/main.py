@@ -40,7 +40,7 @@ def _cors_origins() -> list[str]:
     raw = [o.strip() for o in os.environ.get("FRONTEND_ORIGIN", "").split(",") if o.strip()]
     host = (os.environ.get("HLH_PUBLIC_HOST") or "").strip()
     if host:
-        port = os.environ.get("HLH_PORT_UI", "9304")
+        port = os.environ.get("HLH_PORT_UI", "9604")
         u = f"http://{host}:{port}"
         if u not in raw:
             raw.append(u)
