@@ -26,6 +26,7 @@ from routers import (
     search,
     searxng,
     settings,
+    system,
 )
 from routers.history import router as history_router
 from routers.notes import router as notes_router
@@ -130,6 +131,7 @@ async def api_health():
 
 api.include_router(profile.router, prefix="/profile", tags=["profile"])
 api.include_router(providers.router, prefix="/providers", tags=["providers"])
+api.include_router(system.router, prefix="/system", tags=["system"])
 api.include_router(inference.router, prefix="/inference", tags=["inference"])
 api.include_router(chats.router, prefix="/chats", tags=["chats"])
 api.include_router(personas.router, prefix="/personas", tags=["personas"])
