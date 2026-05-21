@@ -307,3 +307,61 @@ CREATE TABLE IF NOT EXISTS workspace_memory (
 CREATE INDEX IF NOT EXISTS workspace_memory_workspace_id_idx ON workspace_memory(workspace_id);
 
 CREATE UNIQUE INDEX IF NOT EXISTS custom_instructions_singleton_idx ON custom_instructions ((1));
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- Providers + per-workspace provider binding (added 2026-05-21).
+-- Replaces env-var-only OPENAI_API_KEY / *_URL config. See
+-- docs/superpowers/specs/2026-05-21-providers-and-api-keys-design.md
+-- ────────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS providers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL UNIQUE,
+    base_url TEXT NOT NULL,
+    api_key TEXT,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    last_verified_at TIMESTAMPTZ,
+    last_verified_status TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS providers_enabled_sort_idx
+    ON providers (enabled, sort_order, created_at);
+
+ALTER TABLE workspaces
+    ADD COLUMN IF NOT EXISTS provider_id UUID REFERENCES providers(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS workspaces_provider_id_idx
+    ON workspaces (provider_id);
+
+-- Pre-clean any rows that would violate the new CHECK constraint (drop-cold upgrade).
+-- Effectively a no-op on subsequent re-applies.
+UPDATE workspaces
+   SET model = NULL
+ WHERE provider_id IS NULL
+   AND model IS NOT NULL
+   AND model <> '';
+
+-- Guarded CHECK so re-running schema.sql doesn't error if already present.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conname = 'workspaces_provider_model_paired'
+    ) THEN
+        ALTER TABLE workspaces
+            ADD CONSTRAINT workspaces_provider_model_paired
+            CHECK ((provider_id IS NULL AND (model IS NULL OR model = ''))
+                OR (provider_id IS NOT NULL AND model IS NOT NULL AND model <> ''));
+    END IF;
+END $$;
+
+-- chats.model becomes nullable post-providers: the workspace's (provider_id, model)
+-- pair is the authoritative source for sends, so chat.model is now informational.
+-- Existing rows with the legacy hardcoded default 'qwen3.5:9b' are harmless —
+-- send-time always re-resolves via the workspace. Idempotent: re-running is a no-op
+-- once the column is already nullable / has no default.
+ALTER TABLE chats ALTER COLUMN model DROP NOT NULL;
+ALTER TABLE chats ALTER COLUMN model DROP DEFAULT;
