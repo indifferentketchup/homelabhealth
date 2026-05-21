@@ -365,3 +365,21 @@ END $$;
 -- once the column is already nullable / has no default.
 ALTER TABLE chats ALTER COLUMN model DROP NOT NULL;
 ALTER TABLE chats ALTER COLUMN model DROP DEFAULT;
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- Phase 0: bundled-AI hardware detect + tier picker (singleton).
+-- Spec: docs/hlh_phase0_design.md §Schema
+-- IF NOT EXISTS added to satisfy dispatch hard rule #7 (idempotent re-apply);
+-- design DDL is bare CREATE TABLE — flagged in 0.B report.
+-- ────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS system_profile (
+    id              INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    tier            TEXT NOT NULL DEFAULT 'external',
+    tier_source     TEXT NOT NULL CHECK (tier_source IN ('auto', 'manual')) DEFAULT 'manual',
+    sysinfo_json    JSONB NOT NULL DEFAULT '{}'::jsonb,
+    detected_at     TIMESTAMPTZ,
+    chosen_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    setup_complete  BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+INSERT INTO system_profile (id) VALUES (1) ON CONFLICT DO NOTHING;

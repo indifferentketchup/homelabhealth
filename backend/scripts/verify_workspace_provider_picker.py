@@ -44,6 +44,13 @@ _SQL_CLEANUP_WS_UNBIND = (
 )
 _SQL_CLEANUP_WS_DELETE = "DELETE FROM workspaces WHERE name LIKE 'step8-%';"
 _SQL_CLEANUP_PROVIDERS_DELETE = "DELETE FROM providers WHERE name LIKE 'step8-%';"
+# Phase 0+: this script navigates to /workspaces/{id}, which is gated by
+# RequireSetup. If setup_complete is FALSE, the gate redirects to /settings
+# before the selector waits resolve and the test times out. Every UI verify
+# script that navigates into gated routes owns its precondition.
+_SQL_SATISFY_SETUP_GATE = (
+    "UPDATE system_profile SET setup_complete = TRUE WHERE id = 1;"
+)
 
 
 def _psql(args: list[str]) -> str:
@@ -56,6 +63,7 @@ def cleanup_db() -> None:
     _psql(["-c", _SQL_CLEANUP_WS_UNBIND])
     _psql(["-c", _SQL_CLEANUP_WS_DELETE])
     _psql(["-c", _SQL_CLEANUP_PROVIDERS_DELETE])
+    _psql(["-c", _SQL_SATISFY_SETUP_GATE])
 
 
 def api_get(path: str) -> dict:
