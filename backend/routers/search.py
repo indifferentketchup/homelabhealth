@@ -5,7 +5,6 @@ from __future__ import annotations
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from deps import _SCHEMA_MODE_VALUE
 from services.searx import searx_search_sources
 
 router = APIRouter()
@@ -17,5 +16,5 @@ class SearchQuery(BaseModel):
 
 @router.post("/")
 async def search(body: SearchQuery):
-    sources, _ = await searx_search_sources(body.q, mode=_SCHEMA_MODE_VALUE)
+    sources, _ = await searx_search_sources(body.q)
     return {"sources": sources}

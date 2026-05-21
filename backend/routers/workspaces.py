@@ -1,4 +1,4 @@
-"""Workspaces (`daws` table): project cards, prompt context, icons, instructions, pins."""
+"""Workspaces (`workspaces` table): project cards, prompt context, icons, instructions, pins."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ DAWS_SELECT = """
         d.pinned, d.system_prompt, d.persona_id,
         d.model, d.rag_mode,
         d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
-    FROM daws d
+    FROM workspaces d
     LEFT JOIN personas p ON p.id = d.persona_id
 """
 ALLOWED_ICON_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
@@ -127,7 +127,7 @@ async def list_workspaces(
                     d.pinned, d.system_prompt, d.persona_id,
                     d.model, d.rag_mode,
                     d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
-                FROM daws d
+                FROM workspaces d
                 LEFT JOIN personas p ON p.id = d.persona_id
             """
     async with pool.acquire() as conn:
@@ -146,7 +146,7 @@ async def create_workspace(body: WorkspaceCreate, principal: dict[str, Any] = De
         rag_ins: Literal["auto", "always", "off"] = "always"
         row = await conn.fetchrow(
             """
-            INSERT INTO daws (
+            INSERT INTO workspaces (
                 name, description, system_prompt, persona_id, color, shared, sort_order,
                 model, rag_mode, owner_id
             )
@@ -178,13 +178,13 @@ async def get_workspace_instructions(
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        exists = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", workspace_id)
+        exists = await conn.fetchval("SELECT 1 FROM workspaces WHERE id = $1::uuid", workspace_id)
         if not exists:
             raise HTTPException(status_code=404, detail="Workspace not found")
         row = await conn.fetchrow(
             """
-            SELECT content FROM daw_instructions
-            WHERE daw_id = $1::uuid
+            SELECT content FROM workspace_instructions
+            WHERE workspace_id = $1::uuid
             ORDER BY updated_at DESC NULLS LAST, id DESC
             LIMIT 1
             """,
@@ -201,17 +201,17 @@ async def put_workspace_instructions(
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        exists = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", workspace_id)
+        exists = await conn.fetchval("SELECT 1 FROM workspaces WHERE id = $1::uuid", workspace_id)
         if not exists:
             raise HTTPException(status_code=404, detail="Workspace not found")
         existing = await conn.fetchrow(
-            "SELECT id FROM daw_instructions WHERE daw_id = $1::uuid LIMIT 1",
+            "SELECT id FROM workspace_instructions WHERE workspace_id = $1::uuid LIMIT 1",
             workspace_id,
         )
         if existing:
             await conn.execute(
                 """
-                UPDATE daw_instructions
+                UPDATE workspace_instructions
                 SET content = $2, updated_at = NOW()
                 WHERE id = $1::uuid
                 """,
@@ -221,7 +221,7 @@ async def put_workspace_instructions(
         else:
             await conn.execute(
                 """
-                INSERT INTO daw_instructions (daw_id, content)
+                INSERT INTO workspace_instructions (workspace_id, content)
                 VALUES ($1::uuid, $2)
                 """,
                 workspace_id,
@@ -238,7 +238,7 @@ async def upload_workspace_icon(
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        exists = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", workspace_id)
+        exists = await conn.fetchval("SELECT 1 FROM workspaces WHERE id = $1::uuid", workspace_id)
         if not exists:
             raise HTTPException(status_code=404, detail="Workspace not found")
 
@@ -261,7 +261,7 @@ async def upload_workspace_icon(
     async with pool.acquire() as conn:
         await conn.execute(
             """
-            UPDATE daws SET icon_url = $2, updated_at = NOW()
+            UPDATE workspaces SET icon_url = $2, updated_at = NOW()
             WHERE id = $1::uuid
             """,
             workspace_id,
@@ -293,12 +293,12 @@ async def patch_workspace_pin(
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        exists = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", workspace_id)
+        exists = await conn.fetchval("SELECT 1 FROM workspaces WHERE id = $1::uuid", workspace_id)
         if not exists:
             raise HTTPException(status_code=404, detail="Workspace not found")
         await conn.execute(
             """
-            UPDATE daws SET pinned = $2, updated_at = NOW()
+            UPDATE workspaces SET pinned = $2, updated_at = NOW()
             WHERE id = $1::uuid
             """,
             workspace_id,
@@ -341,7 +341,7 @@ async def patch_workspace(
                 pinned, system_prompt, persona_id,
                 model, rag_mode,
                 created_at, updated_at, owner_id
-            FROM daws WHERE id = $1::uuid
+            FROM workspaces WHERE id = $1::uuid
             """,
             workspace_id,
         )
@@ -384,7 +384,7 @@ async def patch_workspace(
 
         await conn.execute(
             """
-            UPDATE daws
+            UPDATE workspaces
             SET name = $2, description = $3, system_prompt = $4, persona_id = $5,
                 color = $6, shared = $7, sort_order = $8, icon_url = $9, model = $10,
                 rag_mode = $11, updated_at = NOW()
@@ -414,14 +414,14 @@ async def delete_workspace(workspace_id: uuid.UUID, _: dict[str, Any] = Depends(
     pool = await get_pool()
     async with pool.acquire() as conn:
         meta = await conn.fetchrow(
-            "SELECT id FROM daws WHERE id = $1::uuid",
+            "SELECT id FROM workspaces WHERE id = $1::uuid",
             workspace_id,
         )
         if meta is None:
             raise HTTPException(status_code=404, detail="Workspace not found")
     _delete_stored_icon(workspace_id)
     async with pool.acquire() as conn:
-        result = await conn.execute("DELETE FROM daws WHERE id = $1::uuid", workspace_id)
+        result = await conn.execute("DELETE FROM workspaces WHERE id = $1::uuid", workspace_id)
     if result == "DELETE 0":
         raise HTTPException(status_code=404, detail="Workspace not found")
     return {"ok": True}

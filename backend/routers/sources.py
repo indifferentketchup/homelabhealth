@@ -181,7 +181,7 @@ async def upload_source(
     h = _sha256(raw)
     pool = await get_pool()
     async with pool.acquire() as conn:
-        workspace_exists = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", workspace_id)
+        workspace_exists = await conn.fetchval("SELECT 1 FROM workspaces WHERE id = $1::uuid", workspace_id)
         if not workspace_exists:
             raise HTTPException(404, "Workspace not found")
         existing = await conn.fetchval("SELECT id FROM sources WHERE content_hash = $1 LIMIT 1", h)
@@ -193,7 +193,7 @@ async def upload_source(
         await conn.execute(
             """
             INSERT INTO sources (
-                id, daw_id, name, source_type, mime_type, file_size_bytes,
+                id, workspace_id, name, source_type, mime_type, file_size_bytes,
                 content_hash, embedding_status, updated_at
             )
             VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, 'processing', NOW())
@@ -218,14 +218,14 @@ async def list_sources(
 ) -> list[dict[str, Any]]:
     pool = await get_pool()
     async with pool.acquire() as conn:
-        workspace_exists = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", workspace_id)
+        workspace_exists = await conn.fetchval("SELECT 1 FROM workspaces WHERE id = $1::uuid", workspace_id)
         if not workspace_exists:
             raise HTTPException(404, "Workspace not found")
         rows = await conn.fetch(
             """
             SELECT id, name, chunk_count, embedding_status, created_at, source_type, mime_type
             FROM sources
-            WHERE daw_id = $1::uuid
+            WHERE workspace_id = $1::uuid
             ORDER BY created_at DESC
             """,
             workspace_id,
@@ -253,7 +253,7 @@ async def delete_source(
 ) -> dict[str, str]:
     pool = await get_pool()
     async with pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT id, daw_id FROM sources WHERE id = $1::uuid", source_id)
+        row = await conn.fetchrow("SELECT id, workspace_id FROM sources WHERE id = $1::uuid", source_id)
         if not row:
             raise HTTPException(404, "Source not found")
     async with pool.acquire() as conn:
@@ -270,13 +270,13 @@ async def clear_workspace_chunks(
     """Delete all chunks and reset embedding status for all sources in a workspace."""
     pool = await get_pool()
     async with pool.acquire() as conn:
-        workspace_exists = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", workspace_id)
+        workspace_exists = await conn.fetchval("SELECT 1 FROM workspaces WHERE id = $1::uuid", workspace_id)
         if not workspace_exists:
             raise HTTPException(404, "Workspace not found")
         result = await conn.fetchval(
             """
             DELETE FROM source_chunks
-            WHERE source_id IN (SELECT id FROM sources WHERE daw_id = $1::uuid)
+            WHERE source_id IN (SELECT id FROM sources WHERE workspace_id = $1::uuid)
             RETURNING id
             """,
             workspace_id,
@@ -286,7 +286,7 @@ async def clear_workspace_chunks(
             """
             UPDATE sources
             SET embedding_status = 'pending', chunk_count = 0, error_message = NULL, updated_at = NOW()
-            WHERE daw_id = $1::uuid
+            WHERE workspace_id = $1::uuid
             RETURNING id
             """,
             workspace_id,

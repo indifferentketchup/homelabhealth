@@ -1,4 +1,4 @@
-"""Context files attached to workspaces (`daw_context_files`)."""
+"""Context files attached to workspaces (`workspace_context_files`)."""
 
 from __future__ import annotations
 
@@ -76,7 +76,7 @@ def _row_list(r: Any) -> dict[str, Any]:
     content = r["content"] or ""
     return {
         "id": str(r["id"]),
-        "workspace_id": str(r["daw_id"]),
+        "workspace_id": str(r["workspace_id"]),
         "filename": r["filename"],
         "content_preview": _preview(content),
         "file_url": f"/api/workspace-context-files/{r['id']}/download",
@@ -98,14 +98,14 @@ async def list_context_files(
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        workspace_exists = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", workspace_id)
+        workspace_exists = await conn.fetchval("SELECT 1 FROM workspaces WHERE id = $1::uuid", workspace_id)
         if not workspace_exists:
             raise HTTPException(status_code=404, detail="Workspace not found")
         rows = await conn.fetch(
             """
-            SELECT id, daw_id, filename, content, file_url, embeddable, sort_order, created_at
-            FROM daw_context_files
-            WHERE daw_id = $1::uuid
+            SELECT id, workspace_id, filename, content, file_url, embeddable, sort_order, created_at
+            FROM workspace_context_files
+            WHERE workspace_id = $1::uuid
             ORDER BY sort_order ASC NULLS LAST, created_at ASC
             """,
             workspace_id,
@@ -128,7 +128,7 @@ async def upload_context_file(
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        workspace_exists = await conn.fetchval("SELECT 1 FROM daws WHERE id = $1::uuid", workspace_id)
+        workspace_exists = await conn.fetchval("SELECT 1 FROM workspaces WHERE id = $1::uuid", workspace_id)
         if not workspace_exists:
             raise HTTPException(status_code=404, detail="Workspace not found")
 
@@ -148,9 +148,9 @@ async def upload_context_file(
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            INSERT INTO daw_context_files (id, daw_id, filename, content, file_url, embeddable, sort_order)
+            INSERT INTO workspace_context_files (id, workspace_id, filename, content, file_url, embeddable, sort_order)
             VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, 0)
-            RETURNING id, daw_id, filename, content, file_url, embeddable, sort_order, created_at
+            RETURNING id, workspace_id, filename, content, file_url, embeddable, sort_order, created_at
             """,
             file_id,
             workspace_id,
@@ -173,8 +173,8 @@ async def patch_context_file(
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            SELECT id, daw_id, filename, content, file_url, embeddable, sort_order, created_at
-            FROM daw_context_files WHERE id = $1::uuid
+            SELECT id, workspace_id, filename, content, file_url, embeddable, sort_order, created_at
+            FROM workspace_context_files WHERE id = $1::uuid
             """,
             file_id,
         )
@@ -186,10 +186,10 @@ async def patch_context_file(
         new_sort = data.get("sort_order", row["sort_order"])
         updated = await conn.fetchrow(
             """
-            UPDATE daw_context_files
+            UPDATE workspace_context_files
             SET embeddable = $2, sort_order = $3
             WHERE id = $1::uuid
-            RETURNING id, daw_id, filename, content, file_url, embeddable, sort_order, created_at
+            RETURNING id, workspace_id, filename, content, file_url, embeddable, sort_order, created_at
             """,
             file_id,
             new_emb,
@@ -203,7 +203,7 @@ async def delete_context_file(file_id: uuid.UUID, _: dict = Depends(get_principa
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT daw_id FROM daw_context_files WHERE id = $1::uuid",
+            "SELECT workspace_id FROM workspace_context_files WHERE id = $1::uuid",
             file_id,
         )
         if row is None:
@@ -211,7 +211,7 @@ async def delete_context_file(file_id: uuid.UUID, _: dict = Depends(get_principa
     _delete_stored_file(file_id)
     async with pool.acquire() as conn:
         result = await conn.execute(
-            "DELETE FROM daw_context_files WHERE id = $1::uuid",
+            "DELETE FROM workspace_context_files WHERE id = $1::uuid",
             file_id,
         )
     if result == "DELETE 0":
@@ -227,7 +227,7 @@ async def download_context_file(
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT daw_id FROM daw_context_files WHERE id = $1::uuid",
+            "SELECT workspace_id FROM workspace_context_files WHERE id = $1::uuid",
             file_id,
         )
         if row is None:

@@ -49,7 +49,7 @@ async def _workspace_name(workspace_id: uuid.UUID) -> str:
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT name FROM daws WHERE id = $1::uuid", workspace_id,
+            "SELECT name FROM workspaces WHERE id = $1::uuid", workspace_id,
         )
     if not row or not row["name"]:
         raise HTTPException(status_code=404, detail="workspace not found")
