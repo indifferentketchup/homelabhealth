@@ -67,7 +67,7 @@ services:
     volumes:
       - hlh_models:/models:ro
     command: >
-      --model ${HLH_CHAT_MODEL_PATH:-/models/chat/cpu-min/Qwen3-1.7B-Q4_K_M.gguf}
+      --model ${HLH_CHAT_MODEL_PATH:-/models/chat/cpu-min/Qwen3-1.7B-Q8_0.gguf}
       --host 0.0.0.0
       --port ${HLH_CHAT_PORT:-9610}
       --n-gpu-layers ${HLH_CHAT_NGL:-0}

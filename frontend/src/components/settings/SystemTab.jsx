@@ -25,12 +25,12 @@ const TIERS = [
   {
     id: 'cpu-min',
     label: 'CPU — minimal',
-    chat: 'Qwen3 1.7B Q4_K_M',
+    chat: 'Qwen3 1.7B Q8_0',
     embed: 'bge-large-en-v1.5 Q4',
     rerank: 'flashrank',
     vision: '—',
     stt: 'whisper tiny',
-    footprint: '~2 GB RAM peak · ~1.2 GB disk',
+    footprint: '~2 GB RAM peak · ~1.8 GB disk',
     detect: '<16 GB RAM, no GPU',
   },
   {
