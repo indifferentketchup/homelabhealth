@@ -8,6 +8,7 @@ import EmbeddingTab from '@/components/settings/EmbeddingTab.jsx'
 import ProvidersTab from '@/components/settings/ProvidersTab.jsx'
 import RerankerTab from '@/components/settings/RerankerTab.jsx'
 import SearchSettingsTab from '@/components/settings/SearchSettingsTab.jsx'
+import SystemTab from '@/components/settings/SystemTab.jsx'
 import { Button } from '@/components/ui/button'
 import { clearWorkspaceLayoutLiveDraft, setWorkspaceLayoutLiveDraft } from '@/lib/workspaceLayout.js'
 import { cn } from '@/lib/utils'
@@ -18,6 +19,7 @@ import { useLayoutStore } from '@/store/layoutStore.js'
 const TABS = [
   { id: 'typography', label: 'Typography' },
   { id: 'layout', label: 'Layout' },
+  { id: 'system', label: 'System' },
   { id: 'providers', label: 'Providers' },
   { id: 'embedding', label: 'Embedding' },
   { id: 'reranker', label: 'Reranker' },
@@ -81,6 +83,12 @@ export default function SettingsPage({ onClose }) {
   const settingsTabs = useMemo(() => TABS, [])
   const [tab, setTabState] = useState(() => {
     try {
+      // ?tab=<id> wins over the localStorage cache — used by RequireSetup to
+      // force the System tab on first-boot redirects (/settings?tab=system).
+      if (typeof window !== 'undefined') {
+        const fromUrl = new URLSearchParams(window.location.search).get('tab')
+        if (fromUrl && settingsTabs.some((t) => t.id === fromUrl)) return fromUrl
+      }
       const v = localStorage.getItem('homelabhealth-settings-tab')
       if (v && settingsTabs.some((t) => t.id === v)) return v
     } catch {
@@ -329,6 +337,8 @@ export default function SettingsPage({ onClose }) {
               </div>
             </section>
           )}
+
+          {tab === 'system' && <SystemTab />}
 
           {tab === 'providers' && <ProvidersTab />}
 
