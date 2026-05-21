@@ -16,3 +16,5 @@ backups/
 /history/
 .dubignore
 .env.boolab-reference
+*.dump
+pre-*-migration-*
