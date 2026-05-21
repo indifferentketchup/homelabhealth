@@ -22,6 +22,7 @@ from routers import (
     inference,
     personas,
     profile,
+    providers,
     search,
     searxng,
     settings,
@@ -103,6 +104,7 @@ async def api_health():
 
 
 api.include_router(profile.router, prefix="/profile", tags=["profile"])
+api.include_router(providers.router, prefix="/providers", tags=["providers"])
 api.include_router(inference.router, prefix="/inference", tags=["inference"])
 api.include_router(chats.router, prefix="/chats", tags=["chats"])
 api.include_router(personas.router, prefix="/personas", tags=["personas"])
