@@ -131,10 +131,7 @@ async def put_profile(
         )
         if row is None:
             raise HTTPException(status_code=503, detail="system_profile row missing")
-        # Phase 1: now that setup_complete=true and we have a tier, seed the
-        # bundled-chat provider so the operator can immediately bind workspaces
-        # to it. Idempotent + no-op on external tier (see bundled_providers).
-        await bundled_providers.ensure_bundled_chat_provider(conn)
+        await bundled_providers.apply_bundled_bindings(conn, body.tier)
     return _profile_response(row)
 
 
