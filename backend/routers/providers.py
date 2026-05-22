@@ -449,7 +449,7 @@ async def test_provider(
             elif role == "rerank":
                 rr_model = await _resolve_rerank_model_via_conn()
                 r = await client.post(
-                    f"{base_url}/rerank",
+                    f"{base_url}/v1/rerank",
                     headers={**headers, "Content-Type": "application/json"},
                     json={"model": rr_model, "query": "test", "documents": ["a", "b"]},
                 )
