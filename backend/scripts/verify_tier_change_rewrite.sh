@@ -43,7 +43,7 @@ curl -sS -o /dev/null -X PUT "$API/api/system/profile" \
 MODEL=$(docker exec hlh_db psql -U hlh -d hlh -tAc \
   "SELECT model FROM workspaces WHERE id='$WS_ID';" | tr -d '[:space:]')
 echo "  model after cpu-min: $MODEL"
-[[ "$MODEL" == "Qwen3-1.7B-Q8_0.gguf" ]] && echo "  OK" || { echo "  FAIL: expected Qwen3-1.7B-Q8_0.gguf, got $MODEL"; exit 1; }
+[[ "$MODEL" == "Qwen3.5-0.8B-Q8_0.gguf" ]] && echo "  OK" || { echo "  FAIL: expected Qwen3.5-0.8B-Q8_0.gguf, got $MODEL"; exit 1; }
 
 echo "=== 3. Switch tier to cpu-std — workspace model should update again ==="
 curl -sS -o /dev/null -X PUT "$API/api/system/profile" \
@@ -51,7 +51,7 @@ curl -sS -o /dev/null -X PUT "$API/api/system/profile" \
 MODEL=$(docker exec hlh_db psql -U hlh -d hlh -tAc \
   "SELECT model FROM workspaces WHERE id='$WS_ID';" | tr -d '[:space:]')
 echo "  model after cpu-std: $MODEL"
-[[ "$MODEL" == "medgemma-4b-it-Q4_K_M.gguf" ]] && echo "  OK" || { echo "  FAIL: expected medgemma-4b-it-Q4_K_M.gguf, got $MODEL"; exit 1; }
+[[ "$MODEL" == "medgemma-1.5-4b-it-Q4_K_M.gguf" ]] && echo "  OK" || { echo "  FAIL: expected medgemma-1.5-4b-it-Q4_K_M.gguf, got $MODEL"; exit 1; }
 
 echo "=== 4. Override blown away on tier change ==="
 # Manually PATCH a custom model while staying on bundled chat
@@ -68,7 +68,7 @@ curl -sS -o /dev/null -X PUT "$API/api/system/profile" \
 MODEL=$(docker exec hlh_db psql -U hlh -d hlh -tAc \
   "SELECT model FROM workspaces WHERE id='$WS_ID';" | tr -d '[:space:]')
 echo "  model after tier switch (override should be gone): $MODEL"
-[[ "$MODEL" == "Qwen3-1.7B-Q8_0.gguf" ]] && echo "  OK override reset" || { echo "  FAIL: override not reset, got $MODEL"; exit 1; }
+[[ "$MODEL" == "Qwen3.5-0.8B-Q8_0.gguf" ]] && echo "  OK override reset" || { echo "  FAIL: override not reset, got $MODEL"; exit 1; }
 
 echo "=== 5. External tier is a no-op; switching back rebinds ==="
 # Switch to external — apply_bundled_bindings no-ops, workspace model stays as-is
@@ -87,6 +87,6 @@ curl -sS -o /dev/null -X PUT "$API/api/system/profile" \
 MODEL=$(docker exec hlh_db psql -U hlh -d hlh -tAc \
   "SELECT model FROM workspaces WHERE id='$WS_ID';" | tr -d '[:space:]')
 echo "  model after restore to cpu-std: $MODEL"
-[[ "$MODEL" == "medgemma-4b-it-Q4_K_M.gguf" ]] && echo "  OK" || { echo "  FAIL: tier restore didn't rebind, got $MODEL"; exit 1; }
+[[ "$MODEL" == "medgemma-1.5-4b-it-Q4_K_M.gguf" ]] && echo "  OK" || { echo "  FAIL: tier restore didn't rebind, got $MODEL"; exit 1; }
 
 echo "=== ALL CHECKS PASSED ==="
