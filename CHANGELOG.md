@@ -16,9 +16,30 @@ live under the `snapshot/` namespace.
 
 ## [Unreleased]
 
-Next-up per roadmap: **security + threat-model docs foundation**
-(SECURITY.md + THREATMODEL.md + safe-harbor + breach-response +
-README security-posture section). Will land as `v0.9.0`.
+_No entries yet._
+
+---
+
+## [v0.9.0] — 2026-05-22
+
+Security + threat-model docs foundation. No code path changes.
+
+### Docs
+- `SECURITY.md` added — posture statement, reporting instructions, in/out-of-scope items,
+  and links to related documents.
+- `THREATMODEL.md` added — trust boundaries, specific defenses with file and script citations,
+  open gaps, and out-of-scope items.
+- `docs/safe-harbor.md` added — disclaimer explaining what this project does and does not
+  authorize with respect to security research.
+- `docs/breach-response.md` added — operator playbook for isolating the host, snapshotting
+  evidence, rotating secrets, notifying affected parties, and recovering.
+- `README.md` — new `## Security posture` section inserted between `## Stack` and
+  `## License`, summarizing defenses, open gaps, and linking to the four new docs.
+- `CHANGELOG.md` — `[Unreleased]` stub renamed to `[v0.9.0]`; fresh empty `[Unreleased]`
+  section added above it.
+- `docs/roadmap.md` — active-work callout retargeted to `v0.10.0`; `v0.9.0` moved from
+  planned to shipped; C0 ship-to-friend gate ticked; AGPL-3.0 references on lines 26 and 678
+  corrected to MIT.
 
 ---
 

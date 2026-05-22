@@ -69,6 +69,25 @@ Single-user app — every request is treated as the owner. For real authenticati
 | Embeddings | OpenAI-compatible `/embeddings`; pgvector storage (1024 dim) |
 | Rerank | OpenAI-compatible `/rerank` with `flashrank` CPU fallback |
 
+## Security posture
+
+homelabhealth is a single-user homelab tool for personal medical records, MIT-licensed. It is not
+HIPAA-certified and has not been formally threat-modeled by a third party. Current major defenses:
+container hardening (`read_only`, `cap_drop: [ALL]`, `no-new-privileges`, internal inference
+network), bundled provider immutability (HTTP 403 on PATCH/DELETE), B0 safeguard preamble
+prepended to every assistant turn, and Fernet-encrypted provider secrets. Major open gaps: no
+audit logging (C4, v0.12.0), no output scanner (B1/C7, v0.15.0), search egress via SearXNG is
+user-discipline-bound with no PHI content scanner, and the C5 de-identification gate must land
+(v0.17.0) before any real medical record is ingested.
+
+- [`SECURITY.md`](SECURITY.md) — posture statement, reporting instructions, scope.
+- [`THREATMODEL.md`](THREATMODEL.md) — trust boundaries, defenses with file citations, open gaps.
+- [`docs/safe-harbor.md`](docs/safe-harbor.md) — what security research is and is not authorized.
+- [`docs/breach-response.md`](docs/breach-response.md) — operator playbook for suspected
+  compromise: isolate, snapshot, rotate, notify, document, recover.
+
+Last reviewed: 2026-05-22.
+
 ## License
 
 TBD
