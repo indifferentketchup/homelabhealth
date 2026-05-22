@@ -35,6 +35,10 @@ BUNDLED_RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
 # Per-tier chat model ids — bare filenames llama.cpp's server returns when
 # launched with --model <path>. Matches docker-compose.yml HLH_CHAT_MODEL_PATH
 # default + per-tier overrides.
+#
+# Note: 'apple-mlx' is intentionally absent — Apple MLX bundled inference is
+# Phase 6 deferred. apply_bundled_bindings treats it like 'external' and
+# no-ops; operators on Apple Silicon pick a chat provider manually.
 TIER_CHAT_MODELS = {
     "cpu-min": "Qwen3-1.7B-Q8_0.gguf",
     "cpu-std": "medgemma-4b-it-Q4_K_M.gguf",
@@ -123,8 +127,8 @@ async def apply_bundled_bindings(conn, tier: str) -> None:
 
     No-op when tier == 'external' (operator picks manually elsewhere).
     """
-    if tier == "external":
-        logger.info("apply_bundled_bindings: tier=external; no-op")
+    if tier in ("external", "apple-mlx"):
+        logger.info("apply_bundled_bindings: tier=%s; no-op (Apple MLX bundling is Phase 6)", tier)
         return
 
     ids = await ensure_bundled_providers(conn)
