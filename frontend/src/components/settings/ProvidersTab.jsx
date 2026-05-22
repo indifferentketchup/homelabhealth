@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
+import { ChevronDown, Lock } from 'lucide-react'
+
 import {
   createProvider,
   deleteProvider,
@@ -267,6 +269,115 @@ function DeleteConfirmDialog({ open, onOpenChange, provider, refs, onConfirm, bu
   )
 }
 
+const BUNDLE_GROUP_DISPLAY_NAMES = {
+  'homelab-health-ai': 'HomeLab Health AI',
+}
+
+function BundledGroupCard({ groupKey, rows, testResults, onTest }) {
+  const [open, setOpen] = useState(false)
+  const displayName = BUNDLE_GROUP_DISPLAY_NAMES[groupKey] ?? groupKey
+
+  return (
+    <div className="rounded-lg border border-border bg-card">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between px-4 py-3 text-left"
+      >
+        <div className="flex items-center gap-2">
+          <Lock className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm font-medium text-foreground">{displayName}</span>
+          <span className="text-xs text-muted-foreground">
+            ({rows.length} bundled sidecar{rows.length === 1 ? '' : 's'})
+          </span>
+        </div>
+        <ChevronDown
+          className={cn('h-4 w-4 text-muted-foreground transition-transform', open ? 'rotate-180' : '')}
+        />
+      </button>
+      {open ? (
+        <div className="space-y-2 border-t border-border p-3">
+          {rows.map((r) => {
+            const tr = testResults[r.id]
+            return (
+              <div key={r.id} className="rounded-md border border-border bg-background p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-sm font-medium text-foreground">{r.name}</span>
+                      {r.role ? (
+                        <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
+                          {r.role}
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mt-1 truncate font-mono text-xs text-muted-foreground">{r.base_url}</p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void onTest(r)}
+                      disabled={tr?.running}
+                    >
+                      {tr?.running ? 'Testing…' : 'Test'}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled
+                      title="Bundled by the homelabhealth stack — not editable"
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled
+                      title="Bundled by the homelabhealth stack — not deletable"
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+                {tr && !tr.running ? (
+                  <div
+                    className={cn(
+                      'mt-2 text-xs',
+                      tr.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
+                    )}
+                  >
+                    {tr.ok ? `ok — ${(tr.models ?? []).length} models` : tr.status}
+                    {tr.ok && tr.models?.length ? (
+                      <details className="mt-0.5">
+                        <summary className="cursor-pointer text-muted-foreground hover:text-foreground">show ids</summary>
+                        <ul className="mt-1 list-disc pl-5 font-mono text-[11px] text-muted-foreground">
+                          {tr.models.map((m) => (
+                            <li key={m}>{m}</li>
+                          ))}
+                        </ul>
+                      </details>
+                    ) : null}
+                  </div>
+                ) : null}
+                {!tr && r.last_verified_status ? (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Last verified: {r.last_verified_status}
+                    {r.last_verified_at ? ` · ${relativeTime(r.last_verified_at)}` : ''}
+                  </p>
+                ) : null}
+              </div>
+            )
+          })}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 export default function ProvidersTab() {
   const [items, setItems] = useState(null)
   const [error, setError] = useState(null)
@@ -361,91 +472,126 @@ export default function ProvidersTab() {
 
       {items == null ? (
         <p className="text-sm text-muted-foreground">Loading providers…</p>
-      ) : items.length === 0 ? (
-        <div className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-          No providers configured yet. Add one to start using inference, embeddings, or reranker.
-        </div>
-      ) : (
-        <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full table-auto text-sm">
-            <thead className="bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2 font-medium">Name</th>
-                <th className="px-3 py-2 font-medium">Base URL</th>
-                <th className="px-3 py-2 font-medium">Key</th>
-                <th className="px-3 py-2 font-medium">Enabled</th>
-                <th className="px-3 py-2 font-medium">Verified</th>
-                <th className="px-3 py-2 font-medium text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((p) => {
-                const tr = testResults[p.id]
-                return (
-                  <tr key={p.id} className="border-t border-border">
-                    <td className="px-3 py-2 font-medium text-foreground">{p.name}</td>
-                    <td className="px-3 py-2 font-mono text-xs text-muted-foreground" title={p.base_url}>
-                      {p.base_url.length > 40 ? `${p.base_url.slice(0, 40)}…` : p.base_url}
-                    </td>
-                    <td className="px-3 py-2">
-                      <span className={cn('rounded px-1.5 py-0.5 text-xs', p.api_key === '***' ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300' : 'bg-muted text-muted-foreground')}>
-                        {p.api_key === '***' ? 'set' : 'none'}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2">
-                      <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs">
-                        <input
-                          type="checkbox"
-                          checked={!!p.enabled}
-                          onChange={(e) => void onToggleEnabled(p, e.target.checked)}
-                          className="size-4 rounded border border-border bg-background text-primary"
-                        />
-                        {p.enabled ? 'enabled' : 'disabled'}
-                      </label>
-                    </td>
-                    <td className="px-3 py-2 text-xs">
-                      <div className="flex flex-col gap-0.5">
-                        <span className={cn('inline-block w-fit rounded px-1.5 py-0.5', statusBadgeClass(p.last_verified_status))}>
-                          {p.last_verified_status ?? 'never tested'}
-                        </span>
-                        <span className="text-muted-foreground">{relativeTime(p.last_verified_at)}</span>
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <div className="flex justify-end gap-1.5">
-                        <Button type="button" size="sm" variant="outline" onClick={() => openEdit(p)}>
-                          Edit
-                        </Button>
-                        <Button type="button" size="sm" variant="outline" onClick={() => void onTest(p)} disabled={tr?.running}>
-                          {tr?.running ? 'Testing…' : 'Test'}
-                        </Button>
-                        <Button type="button" size="sm" variant="destructive" onClick={() => setDeleting({ provider: p, refs: null, busy: false })}>
-                          Delete
-                        </Button>
-                      </div>
-                      {tr && !tr.running ? (
-                        <div className={cn('mt-1 text-left text-xs', tr.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400')}>
-                          {tr.ok ? `ok — ${(tr.models ?? []).length} models` : tr.status}
-                          {tr.ok && tr.models?.length ? (
-                            <details className="mt-0.5">
-                              <summary className="cursor-pointer text-muted-foreground hover:text-foreground">show ids</summary>
-                              <ul className="mt-1 list-disc pl-5 font-mono text-[11px] text-muted-foreground">
-                                {tr.models.map((m) => (
-                                  <li key={m}>{m}</li>
-                                ))}
-                              </ul>
-                            </details>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+      ) : (() => {
+        const bundled = items.filter((p) => p.bundle_group != null)
+        const external = items.filter((p) => p.bundle_group == null)
+        const bundledGroups = bundled.reduce((acc, p) => {
+          ;(acc[p.bundle_group] ??= []).push(p)
+          return acc
+        }, {})
+
+        const hasBundled = Object.keys(bundledGroups).length > 0
+        const hasExternal = external.length > 0
+        const hasAny = hasBundled || hasExternal
+
+        if (!hasAny) {
+          return (
+            <div className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+              No providers configured yet. Add one to start using inference, embeddings, or reranker.
+            </div>
+          )
+        }
+
+        return (
+          <>
+            {hasBundled ? (
+              <div className="space-y-2">
+                {Object.entries(bundledGroups).map(([groupKey, rows]) => (
+                  <BundledGroupCard
+                    key={groupKey}
+                    groupKey={groupKey}
+                    rows={rows}
+                    testResults={testResults}
+                    onTest={onTest}
+                  />
+                ))}
+              </div>
+            ) : null}
+
+            {hasExternal ? (
+              <div className="overflow-x-auto rounded-md border border-border">
+                <table className="w-full table-auto text-sm">
+                  <thead className="bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-2 font-medium">Name</th>
+                      <th className="px-3 py-2 font-medium">Base URL</th>
+                      <th className="px-3 py-2 font-medium">Key</th>
+                      <th className="px-3 py-2 font-medium">Enabled</th>
+                      <th className="px-3 py-2 font-medium">Verified</th>
+                      <th className="px-3 py-2 font-medium text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {external.map((p) => {
+                      const tr = testResults[p.id]
+                      return (
+                        <tr key={p.id} className="border-t border-border">
+                          <td className="px-3 py-2 font-medium text-foreground">{p.name}</td>
+                          <td className="px-3 py-2 font-mono text-xs text-muted-foreground" title={p.base_url}>
+                            {p.base_url.length > 40 ? `${p.base_url.slice(0, 40)}…` : p.base_url}
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className={cn('rounded px-1.5 py-0.5 text-xs', p.api_key === '***' ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300' : 'bg-muted text-muted-foreground')}>
+                              {p.api_key === '***' ? 'set' : 'none'}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2">
+                            <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs">
+                              <input
+                                type="checkbox"
+                                checked={!!p.enabled}
+                                onChange={(e) => void onToggleEnabled(p, e.target.checked)}
+                                className="size-4 rounded border border-border bg-background text-primary"
+                              />
+                              {p.enabled ? 'enabled' : 'disabled'}
+                            </label>
+                          </td>
+                          <td className="px-3 py-2 text-xs">
+                            <div className="flex flex-col gap-0.5">
+                              <span className={cn('inline-block w-fit rounded px-1.5 py-0.5', statusBadgeClass(p.last_verified_status))}>
+                                {p.last_verified_status ?? 'never tested'}
+                              </span>
+                              <span className="text-muted-foreground">{relativeTime(p.last_verified_at)}</span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <div className="flex justify-end gap-1.5">
+                              <Button type="button" size="sm" variant="outline" onClick={() => openEdit(p)}>
+                                Edit
+                              </Button>
+                              <Button type="button" size="sm" variant="outline" onClick={() => void onTest(p)} disabled={tr?.running}>
+                                {tr?.running ? 'Testing…' : 'Test'}
+                              </Button>
+                              <Button type="button" size="sm" variant="destructive" onClick={() => setDeleting({ provider: p, refs: null, busy: false })}>
+                                Delete
+                              </Button>
+                            </div>
+                            {tr && !tr.running ? (
+                              <div className={cn('mt-1 text-left text-xs', tr.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400')}>
+                                {tr.ok ? `ok — ${(tr.models ?? []).length} models` : tr.status}
+                                {tr.ok && tr.models?.length ? (
+                                  <details className="mt-0.5">
+                                    <summary className="cursor-pointer text-muted-foreground hover:text-foreground">show ids</summary>
+                                    <ul className="mt-1 list-disc pl-5 font-mono text-[11px] text-muted-foreground">
+                                      {tr.models.map((m) => (
+                                        <li key={m}>{m}</li>
+                                      ))}
+                                    </ul>
+                                  </details>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+          </>
+        )
+      })()}
 
       <ProviderFormDialog
         open={!!editing}
