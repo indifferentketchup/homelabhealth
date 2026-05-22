@@ -69,6 +69,13 @@ Track C — Security
 Trunk-merge gates documented in earlier roadmap revisions are
 **retired**. Gates now apply to non-Sam access only.
 
+**Active work (2026-05-22):** A1.5 finish + A1.7 + Phase 2.B
+visibility are spec'd as a single bundled-tail change in
+`docs/superpowers/specs/2026-05-22-a1.5-a1.7-bundled-tail-design.md`.
+~3 days estimated. After that lands, the next-up phase is C0 docs
+(captures the threat-model state from A7 search egress + the
+deferred C5 first-real-ingest gate).
+
 -----
 
 ## Track A — Built-in AI
@@ -147,7 +154,7 @@ Accelerated from the original Phase 2 plan. Spec: `docs/superpowers/specs/2026-0
 - Dark mode toggle (Settings → Sidebar) activates the existing `.dark` palette in globals.css via Zustand + localStorage + matchMedia.
 
 **Phase 2.B follow-ups:**
-- Extend `model_puller.MODEL_REGISTRY` for `embed` + `rerank` so the Models panel tracks bge-m3 + bge-reranker download progress (currently infinity pulls them itself, opaque to the UI).
+- **Spec for the Models-panel visibility piece:** `docs/superpowers/specs/2026-05-22-a1.5-a1.7-bundled-tail-design.md` §3. Uses a lighter status-synthesis approach (surface infinity's healthy/loading state via the existing providers list) instead of rewriting `model_puller` to handle multi-file HF repos.
 - Optionally pin `michaelf34/infinity` to a specific newer tag if 0.0.77-cpu becomes unsuitable.
 
 **Known limitations** (documented in spec §10):
@@ -155,10 +162,12 @@ Accelerated from the original Phase 2 plan. Spec: `docs/superpowers/specs/2026-0
 - Single embedding model across all tiers (bge-m3 is the only 1024-dim option supported by the schema).
 - Apple MLX tier treated as external (Phase 6 deferred — no bundled MLX inference yet).
 
-### A1.5 — Hardening + pinning — **partial**
+### A1.5 — Hardening + pinning — **partial; remaining work spec'd**
 
 Status: `is_bundled` delete guard shipped on main (`dcb1413`).
 Remaining work below is unshipped. Absorbs **C2 (docker hardening)**.
+
+**Spec for remaining work:** `docs/superpowers/specs/2026-05-22-a1.5-a1.7-bundled-tail-design.md` §1.
 
 **Shipped so far (`dcb1413`):**
 
@@ -240,11 +249,13 @@ tabs and the workspace picker). The backend `apply_bundled_bindings`
 helper can stay; it's idempotent and harmless if the UI lets
 operators override.
 
-### A1.7 — Operator pre-flight + first-launch ack
+### A1.7 — Operator pre-flight + first-launch ack — **spec'd**
 
 Single highest-leverage thing for the non-technical-friend
 deployment. Catches operator-error misconfiguration before any PHI
 is entered.
+
+**Spec:** `docs/superpowers/specs/2026-05-22-a1.5-a1.7-bundled-tail-design.md` §2.
 
 - `make doctor` (or `python -m hlh.doctor`) — pre-flight script.
   Checks:
