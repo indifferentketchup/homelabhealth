@@ -7,7 +7,7 @@ Phase numbering renumbers slightly so AI / Security / Safeguards each get
 their own track but interleave on a single dependency graph.
 
 Owner: Sam
-Last updated: 2026-05-22
+Last updated: 2026-05-22 (reconciliation pass)
 
 -----
 
@@ -35,33 +35,39 @@ sees zero of this until **everything** is at “shipped” status.
 ```
 Track A — Built-in AI
   A0 ✓ shipped on main
-  A1 ✓ shipped on main (pre-safeguards; B0 lands as follow-up)
-  A1.5 hardening + pinning ─┐
-  A1.7 pre-flight + ack     ├─▶ A2 ─▶ A3 ─▶ A4 ─▶ A5? ─▶ A6
-                            ┘   (A2 also gated by C5)
+  A1 ✓ shipped on main (f2c5039, v0.1.0-phase-1)
+  A1.5  partial — is_bundled delete guard shipped (dcb1413);
+                  hardening + pinning + network split remaining
+  A1.6 ✓ shipped on main — workspace auto-bind + settings lockdown
+  A1.7  pre-flight + first-launch ack (remaining)
+  A2 ✓ shipped on main (994c7e7) — ahead of C5 gate, no data ingested
+  A7 ✓ shipped on main — bundled search (hlh_search), off-roadmap addition
+  A3 ─▶ A4 ─▶ A5? ─▶ A6
 
 Track B — Safeguards
-  B0  system prompt baseline       (branch off main, lands ASAP)
-  B1  output scanner sidecar       (lands before external exposure)
-  B2  UI disclaimers + crisis card (first-launch modal folded into A1.7)
-  B3  audit-logged refusals        (depends on C4)
-  B4  red-team eval                (ongoing discipline)
+  B0 ✓ shipped on main (adba194)
+  B1                          (output scanner — gates non-Sam access)
+  B2                          (UI disclaimers + crisis card)
+  B3                          (audit-logged refusals + retry-with-warning)
+  B4                          (red-team eval, ongoing)
 
 Track C — Security
   C0  docs                    (independent, do anytime)
   C1  disk/backup hygiene     (independent, do anytime)
-  C2  docker hardening        (folds into A1.5)
+  C2  docker hardening        (folds into A1.5 — still pending)
   C3  synthetic data + logs   (must land before any non-Sam data)
   C4  audit logging           (must land before B3)
-  C5  de-id pipeline          (must land before A2 RAG goes live on real records)
+  C5  de-id pipeline          (must land before first real-record
+                               ingest into A2 pgvector)
   C6  column encryption       (must land before friend gets the URL)
   C7  LLM I/O guardrails      (overlaps with B1 — same llm-guard sidecar)
   C8  supply chain + ops      (independent, do anytime)
   C9  right-to-erasure        (must land before friend gets the URL)
 ```
 
-**Ship-to-friend gate** = every phase above shipped + tagged. No
-exceptions, no override flags, no “we’ll patch it next week.”
+**Ship-to-friend gate** = every phase above shipped + tagged.
+Trunk-merge gates documented in earlier roadmap revisions are
+**retired**. Gates now apply to non-Sam access only.
 
 -----
 
@@ -115,6 +121,19 @@ trunk serves chat freely. B0 lands ASAP as a short-lived branch off
 lesson, locked going forward: every AI phase bundles its safeguards
 on the same feature branch. A2+ follow this rule without exception.
 
+**Second correction (A2):** A2 shipped on `994c7e7` ahead of its
+stated C5 gate. Reconciled by fact that no chunks exist in
+`source_chunks` at ship time. The C5 gate is retained but reworded:
+C5 must land before first real-record ingest, not before A2 merge.
+
+**Third correction (off-roadmap shipments):** A7 (bundled search)
+and the workspace auto-bind / settings lockdown (A1.6) were shipped
+without prior roadmap entries. They are now documented in-place
+rather than reverted.
+
+**Net posture:** trunk-merge gates from the original roadmap are
+retired. All gates apply to **non-Sam access** going forward.
+
 ### Phase 2.A (2026-05-22) — bundled-system takes everything
 
 Accelerated from the original Phase 2 plan. Spec: `docs/superpowers/specs/2026-05-22-bundled-system-takes-everything-design.md`.
@@ -136,10 +155,21 @@ Accelerated from the original Phase 2 plan. Spec: `docs/superpowers/specs/2026-0
 - Single embedding model across all tiers (bge-m3 is the only 1024-dim option supported by the schema).
 - Apple MLX tier treated as external (Phase 6 deferred — no bundled MLX inference yet).
 
-### A1.5 — Hardening + pinning
+### A1.5 — Hardening + pinning — **partial**
 
-Branch from `main` after A1 merges. Closes A1 gaps 1-7 and absorbs
-**C2 (docker hardening)** as a single PR.
+Status: `is_bundled` delete guard shipped on main (`dcb1413`).
+Remaining work below is unshipped. Absorbs **C2 (docker hardening)**.
+
+**Shipped so far (`dcb1413`):**
+
+- Additive `is_bundled BOOLEAN DEFAULT false` on `providers` (plus
+  `role` and `bundle_group` columns added in the same wave).
+- `ensure_bundled_*` sets `is_bundled=true` on insert.
+- `DELETE /api/providers/{id}` returns 403 on bundled rows (spec
+  said 409; implementation chose 403 — see commit).
+- Frontend hides Save + Delete on bundled provider rows.
+
+**Remaining:**
 
 Docker:
 
@@ -183,6 +213,33 @@ Acceptance: existing 393 assertions still green, plus
 network check, no host ports, sha256 corrupt test, disk pre-flight
 synthetic test).
 
+### A1.6 — Workspace auto-bind + Settings lockdown — **shipped on main** (`994c7e7`)
+
+Policy reversal from the original roadmap's "NOT doing" list.
+
+- On workspace create AND on every tier-save / lifespan boot:
+  workspace `provider_id` and `model` auto-bind to the bundled chat
+  provider via `apply_bundled_bindings(conn, tier)`. Override on a
+  bundled-bound workspace is reset on tier change (intentional —
+  spec §4 boundary case).
+- Embedding + reranker continue to bind at global level (unchanged).
+- Settings → Providers / Embedding / Reranker tabs locked down for
+  bundled rows: read-only display, no edit, no delete. Tabs other
+  than System and Search were removed entirely from the nav in a
+  follow-up commit.
+- Workspace-level override deferred (the lockdown direction is
+  "sensible defaults, no foot-guns").
+
+**Rationale:** the original "operator picks explicitly" stance
+assumed an operator who wanted control. The friend deployment is the
+opposite case — she wants it to just work. The lockdown removes
+configuration surface area, which removes ways to break it.
+
+**Reversibility:** revert is a frontend-only change (re-enable the
+tabs and the workspace picker). The backend `apply_bundled_bindings`
+helper can stay; it's idempotent and harmless if the UI lets
+operators override.
+
 ### A1.7 — Operator pre-flight + first-launch ack
 
 Single highest-leverage thing for the non-technical-friend
@@ -212,29 +269,42 @@ is entered.
 deployment. Folds in B2's first-launch modal — both are "what the
 operator sees first."
 
-### A2 — Embed + Rerank
+### A2 — Embed + Rerank — **shipped on main** (`994c7e7`)
 
-Two sidecars (`hlh_embed`, `hlh_rerank`), both `infinity-emb`. Both on
-`hlh_inference` from day one.
+**As shipped:** a single combined sidecar `hlh_infer` (not the two
+separate sidecars in the original plan), running
+`michaelf34/infinity:0.0.77-cpu` with `INFINITY_MODEL_ID` listing
+both models. Embed engine `optimum` (ONNX) for bge-m3; rerank engine
+`torch` for bge-reranker-v2-m3 (no ONNX exports exist). Both served
+under `/v1/*` prefix to match existing call-site paths.
 
-|Service     |Image                         |Port|Role            |
-|------------|------------------------------|----|----------------|
-|`hlh_embed` |`michaelf34/infinity:<pinned>`|9620|embed (1024-dim)|
-|`hlh_rerank`|`michaelf34/infinity:<pinned>`|9621|rerank          |
+**Network posture deferred:** sidecar currently on `hlh_default`
+pending the A1.5 `hlh_inference` split. Move when A1.5 finishes.
 
-Per-tier defaults: Harrier-OSS-0.6B Q8 (cpu) / FP16 (gpu) +
-Qwen3-Reranker-0.6B Q4 (cpu) / Q8 (gpu). Both auto-bind to
-`global_settings.embedding_provider_id` and
-`global_settings.reranker_provider_id` on first ready (unlike chat,
-which is workspace-bound).
+**Models as shipped:**
 
-**A2 merge gate:** C5 (de-id pipeline) must land first. Embedding
-real medical records into pgvector without de-id means PHI lives in
-vectors permanently — partially invertible, painful to scrub. C5
-gates this.
+| Role | Repo | File |
+|---|---|---|
+| embed | `BAAI/bge-m3` (loaded by infinity from HF) | n/a (multi-file HF) |
+| rerank | `BAAI/bge-reranker-v2-m3` (same) | n/a |
+
+Both auto-bind to `global_settings.embedding_provider_id` and
+`global_settings.reranker_provider_id` on lifespan boot via
+`apply_bundled_bindings`.
+
+**A2 shipped ahead of its C5 gate.** Reconciled by fact: zero
+chunks in `source_chunks` at ship time. The gate now reads as:
+**C5 must land before first real-record ingest.** Until C5, do not
+ingest any record. If a record is ingested before C5, treat the
+vectors as compromised and re-embed after redaction (operationally:
+`TRUNCATE source_chunks` and re-run ingest post-C5).
 
 **Constraint:** embed dim hard-locked at 1024 (schema). Migration
 plan required before any model swap to a different dim.
+
+**Two-sidecar variant retained as fallback** in spec §10: if
+infinity multi-model proves unreliable, split into `hlh_embed` +
+`hlh_rerank`. Not needed today.
 
 ### A3 — Vision (VLM) + MedSigLIP
 
@@ -268,8 +338,51 @@ PaddleOCR. Custom HTTP shape.
 ### A6 — Apple MLX backend variant
 
 Deferred indefinitely. Detection in A0 flags `apple-mlx`; falls back
-to `cpu-std` at runtime on darwin/arm64. Friend’s hardware
-determines priority.
+to `cpu-std` at runtime on darwin/arm64. Friend's hardware
+determines priority. As shipped: `apply_bundled_bindings` treats
+`apple-mlx` as a no-op (same as `external`) so partial-bind state
+can't occur on Apple Silicon hosts.
+
+### A7 — Bundled search (`hlh_search`) — **shipped on main** (`994c7e7`)
+
+Off-roadmap addition. SearXNG meta-search sidecar bundled so chat can
+ground responses against current web results without operator setup.
+
+| Service | Image | Port | Network | Default |
+|---|---|---|---|---|
+| `hlh_search` | `searxng/searxng:latest` | 9612 (host) / 8080 (container) | host egress required | profile-gated |
+
+**As shipped:**
+
+- Compose profile `bundled` (same profile as `hlh_chat` + `hlh_infer`).
+- Internal access via `http://hlh_search:8080` on `hlh_default`;
+  `SEARXNG_URL` env in `hlh_api` overrides any operator `.env` value.
+- Host port `9612` exposed on `0.0.0.0` so the SearXNG UI is
+  reachable at `http://localhost:9612/`. Bind is user-agnostic — not
+  Tailscale-scoped (the bundled stack is meant to deploy on arbitrary
+  hosts; see `feedback-user-agnostic` memory).
+- `searxng/settings.yml` bind-mounted into the container with JSON
+  format enabled (default SearXNG config has JSON off — that's why
+  the prior external-URL wiring would silently fail to parse).
+- `searxng_config` table seeded on lifespan with sensible engine
+  defaults (`wikipedia, brave, mojeek, startpage, arxiv, pubmed`).
+
+**Posture deviations from the original diff:**
+
+- **Default state: on** (profile `bundled` is the default in
+  `.env.example`), not opt-in. The user has explicitly chosen "fuck
+  it, they get what we ship" — search is part of what we ship.
+- **No UI confirmation modal yet.** Threat-model entry in
+  `THREATMODEL.md` at C0 ship will document the PHI-in-query risk;
+  the modal proposed in the diff lands then.
+- **Friend default deferred.** When the friend-deployment work picks
+  up, decide whether to gate search behind the first-launch ack
+  modal (A1.7) or keep it on.
+
+**Known posture risk:** operator search queries reach third-party
+engines. SearXNG anonymizes (no cookies, no user-agent leaks, no
+logs) but the query content itself is visible. PHI risk is
+user-discipline-bound, not technically enforced. Documented for C0.
 
 -----
 
@@ -498,16 +611,21 @@ is checked.
 
 **Built-in AI:**
 
-- [ ] A1 merged to `main`
-- [ ] A1.5 merged to `main`
-- [ ] A2 merged to `main`
+- [x] A1 merged to `main`
+- [ ] A1.5 merged to `main` (partial — `is_bundled` shipped;
+  hardening/pinning/network split remaining)
+- [x] A1.6 workspace auto-bind + settings lockdown
+- [ ] A1.7 operator pre-flight + first-launch ack
+- [x] A2 merged to `main` (no real-record ingest until C5)
 - [ ] A3 merged or explicitly deferred with friend’s consent (e.g.,
   she doesn’t need vision)
 - [ ] A4 merged or explicitly deferred
+- [x] A7 bundled search (default-on; revisit posture for friend
+  deployment at A1.7)
 
 **Safeguards:**
 
-- [ ] B0 system prompt locked in pre-A1-merge
+- [x] B0 system prompt locked in (post-A1 reconciliation)
 - [ ] B1 output scanner sidecar shipped
 - [ ] B2 UI disclaimers + crisis card shipped
 - [ ] B3 audit-logged refusals shipped (depends on C4)
@@ -517,11 +635,11 @@ is checked.
 
 - [ ] C0 docs shipped
 - [ ] C1 disk + backup hygiene confirmed on friend’s host
-- [ ] C2 docker hardening (lands with A1.5)
+- [ ] C2 docker hardening (lands with A1.5 — still pending)
 - [ ] C3 synthetic data + log scrubbing shipped
 - [ ] C4 audit logging shipped
 - [ ] C5 de-id pipeline shipped, pre-write redactor defaulted **on**
-  for non-Sam deployments
+  for non-Sam deployments. **Blocks first real-record ingest.**
 - [ ] C6 column encryption shipped, friend’s `HLH_MASTER_KEY`
   generated + stored + key custody documented for her
 - [ ] C7 LLM I/O guardrails (lands with B1)
@@ -553,6 +671,9 @@ Apply continuously, not as phases:
 - `[SECURITY]` commit-message prefix on anything touching auth,
   crypto, redaction, audit, or safeguards.
 - Every release tagged. No “release” via `latest` Docker tag.
+- Theme toggle, design tokens, and typography baseline shipped
+  alongside Phase 1 work. Not a tracked phase; future UX work folds
+  into whichever phase touches the affected surface.
 
 -----
 
@@ -574,9 +695,6 @@ Out of scope. Listed so future-Sam doesn’t re-litigate.
 - LoRA hot-swap.
 - Multi-host inference within a single HLH instance.
 - BYOM file upload (HF-pull only).
-- Auto-bind workspaces to bundled chat provider (operator picks
-  explicitly; embed/rerank auto-bind at global level, different
-  concern).
 - User override on safeguard refusals.
 
 -----
@@ -591,6 +709,9 @@ Resolve at the phase where they become blocking.
   manual-download flow.
 - **A4 Q:** STT input transcode browser-side vs `hlh_api`-side.
 - **A5 Q:** dedicated OCR needed at all? End-of-A3 eval decides.
+- **A7 Q:** search egress posture for friend deployment. Shipped
+  default-on. Revisit if she finds it confusing, if PHI-in-query
+  incidents occur, or at A1.7 when first-launch ack lands.
 - **B1 Q:** llm-guard scanner threshold tuning. Iterate via B4 eval
   history.
 - **B2 Q:** crisis hotline numbers per locale. Friend is US; expand
@@ -610,12 +731,13 @@ Resolve at the phase where they become blocking.
 
 |Track          |Phases                                                                                                      |Total                    |
 |---------------|------------------------------------------------------------------------------------------------------------|-------------------------|
-|A — Built-in AI|A1 (done) + A1.5 (2d) + A2 (5d) + A3 (5d) + A4 (3d) + A5? + A6                                              |~3 weeks if A5/A6 skipped|
-|B — Safeguards |B0 (1d) + B1 (3d) + B2 (2d) + B3 (1d on top of C4) + B4 (ongoing)                                           |~1 week + ongoing        |
+|A — Built-in AI|A1 (done) + A1.5 finish (2d) + A1.6 (done) + A1.7 (1d) + A2 (done) + A3 (5d) + A4 (3d) + A5? + A6 + A7 (done)|~1.5 weeks if A5/A6 skipped|
+|B — Safeguards |B0 (done) + B1 (3d) + B2 (2d) + B3 (1d on top of C4) + B4 (ongoing)                                         |~1 week + ongoing        |
 |C — Security   |C0 (1d) + C1 (2hr) + C2 (in A1.5) + C3 (2d) + C4 (3d) + C5 (5-7d) + C6 (5d) + C7 (in B1) + C8 (1d) + C9 (2d)|~3-4 weeks               |
 
-**Total to ship-to-friend gate: 7-8 weeks of focused work.** Open-ended
-timeline means this is the *floor*; reality is “until done right.”
+**Total to ship-to-friend gate: 5-6 weeks of focused work** (revised
+down: A1.6, A2, A7, B0 already shipped). Open-ended timeline means
+this is the *floor*; reality is “until done right.”
 
 -----
 
