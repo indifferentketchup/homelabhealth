@@ -5,12 +5,12 @@ import { apiFetch } from '@/api/index.js'
 const DEFAULTS = {
   sidebarWidth: 260,
   chatMaxWidth: 1200,
-  fontSize: 15,
-  fsNav: 13,
-  fsChat: 15,
-  fsInput: 14,
-  fsHeading: 18,
-  fsCode: 13,
+  fontSize: 21,
+  fsNav: 20,
+  fsChat: 21,
+  fsInput: 20,
+  fsHeading: 24,
+  fsCode: 19,
 }
 
 function pickLayoutPayload(data) {
@@ -28,6 +28,11 @@ export const useLayoutStore = create((set, get) => ({
   hydrateFromServer(data) {
     const picked = pickLayoutPayload({ ...DEFAULTS, ...data })
     set(picked)
+    // Notify the DOM-applier (workspaceLayout.js) without creating a circular
+    // import. WorkspaceApp.jsx already listens on this event.
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('workspace-layout'))
+    }
   },
 
   setFontSize: (val) => set({ fontSize: val }),

@@ -22,12 +22,12 @@ _UI_LAYOUT_KEY = "ui_layout"
 _DEFAULT_UI_LAYOUT: dict[str, Any] = {
     "sidebarWidth": 260,
     "chatMaxWidth": 1200,
-    "fontSize": 15,
-    "fsNav": 13,
-    "fsChat": 15,
-    "fsInput": 14,
-    "fsHeading": 18,
-    "fsCode": 13,
+    "fontSize": 21,
+    "fsNav": 20,
+    "fsChat": 21,
+    "fsInput": 20,
+    "fsHeading": 24,
+    "fsCode": 19,
 }
 
 

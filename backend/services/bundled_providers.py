@@ -40,10 +40,10 @@ BUNDLED_RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
 # Phase 6 deferred. apply_bundled_bindings treats it like 'external' and
 # no-ops; operators on Apple Silicon pick a chat provider manually.
 TIER_CHAT_MODELS = {
-    "cpu-min": "Qwen3-1.7B-Q8_0.gguf",
-    "cpu-std": "medgemma-4b-it-Q4_K_M.gguf",
-    "gpu-8gb": "medgemma-4b-it-Q8_0.gguf",
-    "gpu-16gb": "medgemma-27b-text-it-Q4_K_M.gguf",
+    "cpu-min": "Qwen3.5-0.8B-Q8_0.gguf",
+    "cpu-std": "medgemma-1.5-4b-it-Q4_K_M.gguf",
+    "gpu-8gb": "medgemma-1.5-4b-it-Q8_0.gguf",
+    "gpu-16gb": "medgemma-27b-it-Q4_K_M.gguf",
     "gpu-24gb+": "medgemma-27b-it-Q4_K_M.gguf",
 }
 

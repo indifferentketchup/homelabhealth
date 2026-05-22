@@ -73,35 +73,39 @@ MODEL_REGISTRY: dict[str, dict[str, ModelSpec | None]] = {
         # Note for Phase 1.H report: design-vs-reality deviation, picked the
         # available quant; operator can override later.
         "cpu-min": ModelSpec(
-            repo="Qwen/Qwen3-1.7B-GGUF",
-            filename="Qwen3-1.7B-Q8_0.gguf",
+            repo="unsloth/Qwen3.5-0.8B-MTP-GGUF",
+            filename="Qwen3.5-0.8B-Q8_0.gguf",
             quant="Q8_0",
             license="apache-2.0",
-            license_url="https://huggingface.co/Qwen/Qwen3-1.7B-GGUF",
+            license_url="https://huggingface.co/unsloth/Qwen3.5-0.8B-MTP-GGUF",
         ),
+        # Google's medgemma repos ship safetensors only; unsloth re-uploads GGUF
+        # versions. 4B uses the v1.5 release; 27B stays on original (no v1.5
+        # mirror exists yet). license_url points at Google's canonical repo
+        # where the operator must click "Agree and access".
         "cpu-std": ModelSpec(
-            repo="google/medgemma-4b-it",
-            filename="medgemma-4b-it-Q4_K_M.gguf",
+            repo="unsloth/medgemma-1.5-4b-it-GGUF",
+            filename="medgemma-1.5-4b-it-Q4_K_M.gguf",
             quant="Q4_K_M",
             license=_GEMMA_LICENSE,
             license_url="https://huggingface.co/google/medgemma-4b-it",
         ),
         "gpu-8gb": ModelSpec(
-            repo="google/medgemma-4b-it",
-            filename="medgemma-4b-it-Q8_0.gguf",
+            repo="unsloth/medgemma-1.5-4b-it-GGUF",
+            filename="medgemma-1.5-4b-it-Q8_0.gguf",
             quant="Q8_0",
             license=_GEMMA_LICENSE,
             license_url="https://huggingface.co/google/medgemma-4b-it",
         ),
         "gpu-16gb": ModelSpec(
-            repo="google/medgemma-27b-text-it",
-            filename="medgemma-27b-text-it-Q4_K_M.gguf",
+            repo="unsloth/medgemma-27b-it-GGUF",
+            filename="medgemma-27b-it-Q4_K_M.gguf",
             quant="Q4_K_M",
             license=_GEMMA_LICENSE,
-            license_url="https://huggingface.co/google/medgemma-27b-text-it",
+            license_url="https://huggingface.co/google/medgemma-27b-it",
         ),
         "gpu-24gb+": ModelSpec(
-            repo="google/medgemma-27b-it",
+            repo="unsloth/medgemma-27b-it-GGUF",
             filename="medgemma-27b-it-Q4_K_M.gguf",
             quant="Q4_K_M",
             license=_GEMMA_LICENSE,

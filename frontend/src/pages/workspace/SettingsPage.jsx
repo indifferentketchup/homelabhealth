@@ -4,9 +4,6 @@ import { X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import { deleteNonWorkspaceChats } from '@/api/chats.js'
-import EmbeddingTab from '@/components/settings/EmbeddingTab.jsx'
-import ProvidersTab from '@/components/settings/ProvidersTab.jsx'
-import RerankerTab from '@/components/settings/RerankerTab.jsx'
 import SearchSettingsTab from '@/components/settings/SearchSettingsTab.jsx'
 import SystemTab from '@/components/settings/SystemTab.jsx'
 import { Button } from '@/components/ui/button'
@@ -20,13 +17,10 @@ const TABS = [
   { id: 'typography', label: 'Typography' },
   { id: 'layout', label: 'Layout' },
   { id: 'system', label: 'System' },
-  { id: 'providers', label: 'Providers' },
-  { id: 'embedding', label: 'Embedding' },
-  { id: 'reranker', label: 'Reranker' },
   { id: 'search', label: 'Search' },
 ]
 
-function clampTypographyFs(n, lo = 10, hi = 24) {
+function clampTypographyFs(n, lo = 10, hi = 32) {
   const v = typeof n === 'number' ? n : Number(n)
   if (!Number.isFinite(v)) return lo
   return Math.min(hi, Math.max(lo, Math.round(v)))
@@ -339,12 +333,6 @@ export default function SettingsPage({ onClose }) {
           )}
 
           {tab === 'system' && <SystemTab />}
-
-          {tab === 'providers' && <ProvidersTab />}
-
-          {tab === 'embedding' && <EmbeddingTab />}
-
-          {tab === 'reranker' && <RerankerTab />}
 
           {tab === 'search' && <SearchSettingsTab />}
         </div>
