@@ -34,29 +34,30 @@ sees zero of this until **everything** is at “shipped” status.
 
 ```
 Track A — Built-in AI
-  A0 ✓ shipped on main
-  A1 ✓ shipped on main (f2c5039, v0.1.0-phase-1)
-  A1.5 ✓ shipped on main — image pinning, container hardening (all six
-                  services), hlh_inference internal network, disk pre-flight,
+  A0 ✓ shipped (v0.3.0)
+  A1 ✓ shipped (v0.4.0)
+  A1.5 ✓ shipped (v0.8.0; is_bundled delete guard in v0.7.0) — image
+                  pinning, container hardening across all six services,
+                  hlh_inference internal network, disk pre-flight,
                   revision field on bundled_models
-  A1.6 ✓ shipped on main — workspace auto-bind + settings lockdown
-  A1.7 ✓ shipped on main — 11-check doctor module + CLI + endpoint +
+  A1.6 ✓ shipped (v0.7.0) — workspace auto-bind + settings lockdown
+  A1.7 ✓ shipped (v0.8.0) — 11-check doctor module + CLI + endpoint +
                   UI Pre-flight section + first-launch ack modal
-  A2 ✓ shipped on main (994c7e7) — ahead of C5 gate, no data ingested
-  A7 ✓ shipped on main — bundled search (hlh_search), off-roadmap addition
+  A2 ✓ shipped (v0.7.0) — ahead of C5 gate, no real-record ingest yet
+  A7 ✓ shipped (v0.7.0) — bundled search (hlh_search), off-roadmap addition
   A3 ─▶ A4 ─▶ A5? ─▶ A6
 
 Track B — Safeguards
-  B0 ✓ shipped on main (adba194)
+  B0 ✓ shipped (v0.6.0)
   B1                          (output scanner — gates non-Sam access)
   B2                          (UI disclaimers + crisis card)
   B3                          (audit-logged refusals + retry-with-warning)
   B4                          (red-team eval, ongoing)
 
 Track C — Security
-  C0  docs                    (independent, do anytime)
+  C0  docs                    (independent, do anytime — next up)
   C1  disk/backup hygiene     (independent, do anytime)
-  C2 ✓ shipped — absorbed into A1.5 (landed via bundled-tail branch)
+  C2 ✓ shipped (v0.8.0) — absorbed into A1.5
   C3  synthetic data + logs   (must land before any non-Sam data)
   C4  audit logging           (must land before B3)
   C5  de-id pipeline          (must land before first real-record
@@ -71,28 +72,31 @@ Track C — Security
 Trunk-merge gates documented in earlier roadmap revisions are
 **retired**. Gates now apply to non-Sam access only.
 
-**Active work (2026-05-22):** A1.5 + A1.7 + Phase 2.B shipped via the
-bundled-tail branch (`feat/a1.5-a1.7-bundled-tail`). Next: C0 docs
-foundation (SECURITY.md + THREATMODEL.md + breach-response + README
-security-posture section). Captures the A7 search-egress risk and the
-C5 first-real-ingest gate.
+**Latest release:** `v0.8.0` (2026-05-22) — A1.5 hardening + A1.7
+pre-flight + Phase 2.B embed/rerank visibility. See `CHANGELOG.md` for
+the per-tag rundown.
+
+**Active work:** **C0 — docs foundation** (SECURITY.md +
+THREATMODEL.md + docs/breach-response.md + README security-posture
+section). Captures the A7 search-egress risk and the C5
+first-real-ingest gate. Estimated ~1 day.
 
 -----
 
 ## Track A — Built-in AI
 
-### A0 — Hardware detect + tier picker — **shipped on main** (`d173e1f`)
+### A0 — Hardware detect + tier picker — **shipped** (`v0.3.0`, `d173e1f`)
 
 `system_profile` table, `GET /api/sysinfo`, `PUT /api/system/profile`,
 setup-complete gate, `SystemTab.jsx` with tier cards. Not re-documented
 here. Every later AI phase keys off `system_profile.tier`.
 
-### A1 — Chat sidecar — **shipped on main** (`f2c5039`, tagged `v0.1.0-phase-1`)
+### A1 — Chat sidecar — **shipped** (`v0.4.0`, `f2c5039`)
 
 9 commits + merge. 393 assertions across 13 verify scripts.
 Implementation contract documented in commit messages and
 `docs/phase-1-design.md`. The pre-B0 main tip is tagged
-`pre-safeguards-baseline` so the safeguards-free state is recoverable
+`snapshot/pre-safeguards` so the safeguards-free state is recoverable
 if a regression needs comparison.
 
 Summary:
@@ -122,27 +126,27 @@ Summary:
 1. MedGemma `filename` entries are unverified placeholders.
 1. No delete guard on `bundled-chat` provider row.
 
-**Safeguards posture (post-merge correction):** A1 shipped to `main`
-ahead of B0/B1 — against the intent of this roadmap. The current
-trunk serves chat freely. B0 lands ASAP as a short-lived branch off
-`main` to close that gap before any external exposure. Procedural
-lesson, locked going forward: every AI phase bundles its safeguards
-on the same feature branch. A2+ follow this rule without exception.
+**Safeguards posture (post-merge correction):** A1 (`v0.4.0`) shipped
+ahead of B0/B1 — against the intent of this roadmap. B0 then landed
+in `v0.6.0`, closing the system-prompt gap before any external
+exposure. Procedural lesson, locked going forward: every AI phase
+bundles its safeguards on the same feature branch. A2+ follow this
+rule without exception.
 
-**Second correction (A2):** A2 shipped on `994c7e7` ahead of its
+**Second correction (A2):** A2 shipped in `v0.7.0` ahead of its
 stated C5 gate. Reconciled by fact that no chunks exist in
 `source_chunks` at ship time. The C5 gate is retained but reworded:
 C5 must land before first real-record ingest, not before A2 merge.
 
-**Third correction (off-roadmap shipments):** A7 (bundled search)
-and the workspace auto-bind / settings lockdown (A1.6) were shipped
-without prior roadmap entries. They are now documented in-place
-rather than reverted.
+**Third correction (off-roadmap shipments):** A7 (bundled search,
+`v0.7.0`) and A1.6 (workspace auto-bind + settings lockdown, also
+`v0.7.0`) shipped without prior roadmap entries. They are now
+documented in-place rather than reverted.
 
 **Net posture:** trunk-merge gates from the original roadmap are
 retired. All gates apply to **non-Sam access** going forward.
 
-### Phase 2.A (2026-05-22) — bundled-system takes everything
+### Phase 2.A — bundled-system takes everything — **shipped** (`v0.7.0`, `994c7e7`)
 
 Accelerated from the original Phase 2 plan. Spec: `docs/superpowers/specs/2026-05-22-bundled-system-takes-everything-design.md`.
 
@@ -163,11 +167,11 @@ Accelerated from the original Phase 2 plan. Spec: `docs/superpowers/specs/2026-0
 - Single embedding model across all tiers (bge-m3 is the only 1024-dim option supported by the schema).
 - Apple MLX tier treated as external (Phase 6 deferred — no bundled MLX inference yet).
 
-### A1.5 — Hardening + pinning — **shipped on main**
+### A1.5 — Hardening + pinning — **shipped** (`v0.8.0`; `is_bundled` delete guard in `v0.7.0`, `dcb1413`)
 
 Absorbs **C2 (docker hardening)**. Spec: `docs/superpowers/specs/2026-05-22-a1.5-a1.7-bundled-tail-design.md` §1.
 
-**Shipped (`dcb1413` + bundled-tail branch):**
+**Shipped in `v0.7.0`:**
 
 - Additive `is_bundled BOOLEAN DEFAULT false` on `providers` (plus
   `role` and `bundle_group` columns added in the same wave).
@@ -175,26 +179,38 @@ Absorbs **C2 (docker hardening)**. Spec: `docs/superpowers/specs/2026-05-22-a1.5
 - `DELETE /api/providers/{id}` returns 403 on bundled rows (spec
   said 409; implementation chose 403 — see commit).
 - Frontend hides Save + Delete on bundled provider rows.
+
+**Shipped in `v0.8.0`:**
+
 - New `hlh_inference` network with `internal: true`. `hlh_api` joins
-  both `hlh_default` and `hlh_inference`. `hlh_chat` + `hlh_infer`
-  move to `hlh_inference` only.
-- Container hardening across all six services: `user: “1000:1000”`,
-  `read_only: true`, `tmpfs: [/tmp]`, `cap_drop: [ALL]`,
-  `security_opt: [no-new-privileges:true]`, `mem_limit` per tier
-  (cpu-min 3g → gpu-24gb+ 22g).
-- `ghcr.io/ggml-org/llama.cpp:server` pinned to specific digest.
-  All service binds scoped to Tailscale IP (no `0.0.0.0`).
-- `revision` field added to `bundled_models` registry entries.
-- Disk pre-flight: `model_puller` refuses pull if free space minus
-  `expected_bytes` would leave <5 GB. Status=`failed`,
-  error_message=”insufficient disk”.
+  both `hlh_default` and `hlh_inference`. `hlh_chat` moves to
+  `hlh_inference` only. `hlh_infer` joins both networks (needs
+  egress for HF weight downloads — defense-in-depth via container
+  hardening).
+- Container hardening across all six services: `read_only: true`,
+  `tmpfs: [/tmp]` (+ per-service additions for nginx/searxng/
+  postgres), `cap_drop: [ALL]`, `security_opt:
+  [no-new-privileges:true]`, per-service `mem_limit` (`hlh_chat`
+  driven by `HLH_CHAT_MEM`, default 6g; `hlh_infer` 4g).
+  `user: "1000:1000"` on chat/infer/api/ui/search; postgres exempt
+  (image runs as `postgres` user).
+- `ghcr.io/ggml-org/llama.cpp:server-b9282` and
+  `searxng/searxng:2026.5.22-c57f772ad` pinned. **Bind addresses
+  reversed from earlier roadmap text — host-facing services bind
+  `0.0.0.0` per the user-agnostic feedback; only chat/infer/db are
+  internal-only.**
+- `revision` field added to `ModelSpec` + `bundled_models` (default
+  `"main"`).
+- Disk pre-flight: `model_puller._check_disk_space` refuses pull if
+  free space minus `expected_bytes` would leave <5 GB. Status=
+  `failed`, `error_message="insufficient disk: ..."`.
 
 **Phase 2 follow-up (sha256 population):** `sha256` + `expected_bytes`
 pinning for each chat-tier model is deferred pending clean-pull
 verification on the production host. The mismatch path is coded;
 population is a one-time operational step, not a code change.
 
-### A1.6 — Workspace auto-bind + Settings lockdown — **shipped on main** (`994c7e7`)
+### A1.6 — Workspace auto-bind + Settings lockdown — **shipped** (`v0.7.0`, `994c7e7`)
 
 Policy reversal from the original roadmap's "NOT doing" list.
 
@@ -221,7 +237,7 @@ tabs and the workspace picker). The backend `apply_bundled_bindings`
 helper can stay; it's idempotent and harmless if the UI lets
 operators override.
 
-### A1.7 — Operator pre-flight + first-launch ack — **shipped on main**
+### A1.7 — Operator pre-flight + first-launch ack — **shipped** (`v0.8.0`)
 
 Single highest-leverage thing for the non-technical-friend
 deployment. Catches operator-error misconfiguration before any PHI
@@ -229,20 +245,27 @@ is entered.
 
 **Spec:** `docs/superpowers/specs/2026-05-22-a1.5-a1.7-bundled-tail-design.md` §2.
 
-**Shipped (bundled-tail branch):**
+**Shipped (11 checks; `backend/hlh/doctor.py`):**
 
-- `python -m hlh.doctor` — 11-check pre-flight module. Checks:
-  - DB pool reachable + schema version.
-  - Schema current (migration state).
-  - `hlh_chat` sidecar healthcheck green.
-  - `hlh_infer` sidecar healthcheck green.
-  - Disk available (configurable threshold, default 5 GB).
-  - `PROVIDER_KEY_ENCRYPTION_KEY` set + not placeholder.
-  - `HLH_MASTER_KEY` set + not placeholder.
-  - HF token set (if bundled models configured).
-  - Safeguard prompt version matches code-pinned value.
-  - Authelia reachable (if configured, yellow-not-red if absent).
-  - No legacy deprecated env vars set.
+- `python -m hlh.doctor` — CLI module with these checks:
+  - `db_pool` — DB pool reachable.
+  - `schema_applied` — `system_profile.id=1` row present.
+  - `setup_complete` — tier confirmed.
+  - `hlh_chat_reachable` — sidecar `/health` green.
+  - `hlh_infer_reachable` — sidecar `/health` green.
+  - `hlh_search_reachable` — sidecar `/healthz` green.
+  - `safeguard_version` — `services.safeguards.SAFEGUARD_VERSION`
+    imports + is non-empty (scoped to "code module intact" — no
+    DB singleton drift target exists yet).
+  - `disk_free_data` + `disk_free_models` — both ≥10 GB green,
+    5–10 GB warn, <5 GB red.
+  - `provider_key` — reuses `services.crypto._key()`; unset → warn
+    (cleartext fallback active), malformed → red.
+  - `hf_token` — DB-stored token OR `HF_TOKEN` env present.
+
+  **Deferred-to-later checks** (per spec §2 non-goals):
+  `HLH_MASTER_KEY` (lands with C6), Authelia reachability (Sam-
+  specific), LUKS / backrest snapshot freshness (defer to C1).
 - Output: green/yellow/red per check + actionable remediation line.
   No PHI in output. Exits 0 (all green/yellow), 1 (any red).
 - `GET /api/system/doctor` endpoint — returns JSON equivalent.
@@ -260,7 +283,7 @@ is entered.
 deployment. Folds in B2's first-launch modal — both are "what the
 operator sees first."
 
-### A2 — Embed + Rerank — **shipped on main** (`994c7e7`)
+### A2 — Embed + Rerank — **shipped** (`v0.7.0`, `994c7e7`)
 
 **As shipped:** a single combined sidecar `hlh_infer` (not the two
 separate sidecars in the original plan), running
@@ -334,7 +357,7 @@ determines priority. As shipped: `apply_bundled_bindings` treats
 `apple-mlx` as a no-op (same as `external`) so partial-bind state
 can't occur on Apple Silicon hosts.
 
-### A7 — Bundled search (`hlh_search`) — **shipped on main** (`994c7e7`)
+### A7 — Bundled search (`hlh_search`) — **shipped** (`v0.7.0`, `994c7e7`)
 
 Off-roadmap addition. SearXNG meta-search sidecar bundled so chat can
 ground responses against current web results without operator setup.
@@ -404,20 +427,21 @@ firm-refuse stance ships.
    medical need, surface “this could be urgent, consider emergency
    services” — never literal “call 911.”
 
-### B0 — System prompt baseline
+### B0 — System prompt baseline — **shipped** (`v0.6.0`, `adba194`)
 
 - Tiered-refusal system prompt locked into every chat request to
   `hlh_chat`. Prepended in `hlh_api` before forward; cannot be
   overridden by workspace prompt config.
 - Workspace-level system prompts append; they don’t replace.
-- New `safeguard_version` column on `messages` so we can correlate
-  refusals to a prompt revision.
+- New `safeguard_version` column on `messages` correlates refusals
+  to a prompt revision.
 
-**Status:** A1 shipped ahead of B0. B0 now lands as a short-lived
-branch off `main` (one-file change in the chat forward path + the
-`safeguard_version` migration), merges before any external exposure.
-System-prompt-only guardrails are defeatable but provide the baseline.
-Pre-B0 main tip tagged `pre-safeguards-baseline`.
+**Shipped late (post-A1 reconciliation):** A1 (`v0.4.0`) shipped
+ahead of B0 against the original intent of this roadmap. The pre-B0
+main tip is tagged `snapshot/pre-safeguards` so the safeguards-free
+state remains recoverable for regression comparison.
+System-prompt-only guardrails are defeatable; B1 (output scanner)
+remains the next-up safeguards work.
 
 ### B1 — Output scanner sidecar
 
