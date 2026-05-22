@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/index.js'
 import { useShallow } from 'zustand/react/shallow'
 
-import { PersonaGlyph } from './PersonaGlyph.jsx'
+import { AssistantGlyph } from './AssistantGlyph.jsx'
 
 function CodeBlockShell({ language, rawText, children }) {
   const [copied, setCopied] = useState(false)
@@ -178,8 +178,6 @@ export function MessageBubble({
   const {
     setActiveChatId,
     hydrateFromChat,
-    personaIconUrl,
-    personaEmoji,
     profileIconObjectUrl,
     userAvatarUrl,
     userEmoji,
@@ -188,8 +186,6 @@ export function MessageBubble({
     useShallow((s) => ({
       setActiveChatId: s.setActiveChatId,
       hydrateFromChat: s.hydrateFromChat,
-      personaIconUrl: s.personaIconUrl,
-      personaEmoji: s.personaEmoji,
       profileIconObjectUrl: s.profileIconObjectUrl,
       userAvatarUrl: s.userProfile.avatarDataUrl,
       userEmoji: s.userProfile.emoji,
@@ -292,7 +288,7 @@ export function MessageBubble({
           </div>
         )
       ) : (
-        <PersonaGlyph kind="bubble" iconUrl={personaIconUrl} emoji={personaEmoji} className="mt-0.5" />
+        <AssistantGlyph kind="bubble" className="mt-0.5" />
       )}
       <div
         className={cn(
