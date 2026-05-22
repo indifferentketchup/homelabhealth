@@ -12,6 +12,28 @@ services:
       POSTGRES_DB: hlh
     volumes:
       - hlh_db_data:/var/lib/postgresql/data
+    # Hardening: read_only + cap_drop + no-new-privileges.
+    # user: intentionally omitted — the postgres image expects to run as the
+    # `postgres` user (uid 999); forcing "1000:1000" breaks initdb. All other
+    # services carry the user: line.
+    # cap_add: postgres's entrypoint runs as root initially to chown the data
+    # dir, then drops to the postgres user via gosu. cap_drop:ALL removes
+    # CHOWN/FOWNER/DAC_OVERRIDE/SETUID/SETGID, breaking that flow. We add
+    # back the minimum set needed for the entrypoint + gosu transition.
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run/postgresql    # postgres writes its Unix socket here at runtime
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
+      - DAC_OVERRIDE
+      - SETUID
+      - SETGID
+    security_opt:
+      - no-new-privileges:true
     networks:
       - hlh_default
     healthcheck:
@@ -43,30 +65,46 @@ services:
       - hlh_branding:/data/branding
       - hlh_history:/data/history
       - hlh_models:/models               # Phase 1: model_puller writes here
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     networks:
       - hlh_default
+      - hlh_inference
 
   # Phase 1: bundled chat inference (llama.cpp server). Reads model weights
   # from the shared hlh_models volume; the model file is downloaded by the
   # api (services/model_puller.py) before this service is useful — until
   # then the healthcheck fails and the container restarts.
   #
-  # Only reachable inside hlh_default. The api proxies to it as a registered
+  # Only reachable inside hlh_inference. The api proxies to it as a registered
   # provider at http://hlh_chat:${HLH_CHAT_PORT}.
   #
   # Profile `bundled`: omit COMPOSE_PROFILES (or use external-only) to skip
   # the bundled sidecars entirely. Default in .env.example includes `bundled`.
   hlh_chat:
     # llama.cpp moved from ghcr.io/ggerganov/ to ghcr.io/ggml-org/ in 2025.
-    # Unpinned `server` tag for Phase 1; pin to a specific build (e.g.
-    # `server-bNNNN`) once the model file format / API contract is stable
-    # for this stack — see future tidy.
-    image: ghcr.io/ggml-org/llama.cpp:server
+    # Pinned to server-b9282 (2026-05-22; b9284 is the latest GitHub release but
+    # its GHCR image had not propagated at pin time — b9282 is the highest tag
+    # on ghcr.io/ggml-org/llama.cpp). To upgrade: bump the tag, run
+    # `docker compose pull hlh_chat && docker compose up -d hlh_chat`, then
+    # validate with backend/scripts/verify_a1_5_hardening.sh.
+    image: ghcr.io/ggml-org/llama.cpp:server-b9282
     container_name: hlh_chat
     restart: unless-stopped
     profiles: [bundled]
     env_file:
       - .env
+    environment:
+      # llama.cpp b9282+ ships its shared libs in /app but doesn't register
+      # /app in ldconfig. With read_only:true we can't run ldconfig at boot,
+      # so we set LD_LIBRARY_PATH so the dynamic linker finds them directly.
+      LD_LIBRARY_PATH: /app
     volumes:
       - hlh_models:/models:ro
     command: >
@@ -75,6 +113,15 @@ services:
       --port ${HLH_CHAT_PORT:-9610}
       --n-gpu-layers ${HLH_CHAT_NGL:-0}
       --jinja
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: ${HLH_CHAT_MEM:-6g}   # cpu-min: 3g, cpu-std: 6g, gpu-8gb: 8g, gpu-16gb: 18g, gpu-24gb+: 22g
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:${HLH_CHAT_PORT:-9610}/v1/models || exit 1"]
       interval: 30s
@@ -84,14 +131,15 @@ services:
     depends_on:
       - hlh_api
     networks:
-      - hlh_default
+      - hlh_inference
 
   # Phase 2: bundled embed + rerank (infinity-emb). Serves /v1/embeddings
   # (bge-m3, 1024-dim) AND /v1/rerank (bge-reranker-v2-m3) from one process.
   # INFINITY_URL_PREFIX="/v1" aligns infinity's native /embeddings + /rerank
   # paths with the /v1/* paths used by call sites in embeddings.py, providers.py,
   # and settings.py (which also serve TEI / OpenAI-compatible external providers).
-  # Internal-only on hlh_default. First boot downloads ~1-2 GB from HF (~5-15 min).
+  # Internal-only on hlh_inference. First boot downloads ~1-2 GB from HF (~5-15 min).
+  # Joins hlh_default as well so HF egress works on first boot (see spec §1 network note).
   #
   # Spec: docs/superpowers/specs/2026-05-22-bundled-system-takes-everything-design.md §1
   hlh_infer:
@@ -116,6 +164,15 @@ services:
       HF_TOKEN: "${HF_TOKEN:-}"   # not required for bge models (not gated); plumbed for future
     volumes:
       - hlh_models:/app/.cache   # infinity caches downloaded weights under HF_HOME (/app/.cache)
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 4g
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:${HLH_INFER_PORT:-9611}/health || exit 1"]
       interval: 30s
@@ -126,6 +183,7 @@ services:
       - hlh_api
     networks:
       - hlh_default
+      - hlh_inference
 
   # Phase 2: bundled SearXNG for web search. Internal-only on hlh_default.
   # JSON format is enabled via searxng/settings.yml (default config has it off,
@@ -133,7 +191,10 @@ services:
   #
   # Spec: docs/superpowers/specs/2026-05-22-bundled-system-takes-everything-design.md §1 (search addendum)
   hlh_search:
-    image: searxng/searxng:latest
+    # Pinned to 2026.5.22-c57f772ad (2026-05-22). To upgrade: pull latest,
+    # inspect the org.opencontainers.image.version label, bump this tag, then
+    # run `docker compose up -d hlh_search` and validate.
+    image: searxng/searxng:2026.5.22-c57f772ad
     container_name: hlh_search
     restart: unless-stopped
     profiles: [bundled]
@@ -146,6 +207,15 @@ services:
       - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
     ports:
       - "${HLH_PORT_SEARCH:-9612}:8080"
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /etc/searxng    # SearXNG writes runtime config/cache here; settings.yml is bind-mounted ro
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
       interval: 30s
@@ -170,6 +240,24 @@ services:
       HLH_API_UPSTREAM: ${HLH_API_UPSTREAM:-hlh_api:8000}
     ports:
       - "${HLH_PORT_UI:-9604}:80"
+    # user: intentionally omitted — nginx master must run as root (uid 0) to
+    # bind port 80 and transition workers to the `nginx` (uid 101) user via
+    # setuid. The worker processes themselves run as uid 101 per nginx.conf.
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx    # nginx writes proxy temp files + client_body here
+      - /run                # nginx.pid lives here (nginx.conf: pid /run/nginx.pid)
+      - /etc/nginx/conf.d   # 20-envsubst-on-templates.sh renders templates here at startup
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE    # bind port 80
+      - SETUID              # nginx master → worker user transition
+      - SETGID              # group transition for worker processes
+      - CHOWN               # nginx chowns its tmpfs cache dirs to uid 101 (nginx worker user)
+    security_opt:
+      - no-new-privileges:true
     networks:
       - hlh_default
 
@@ -177,6 +265,10 @@ networks:
   hlh_default:
     name: hlh_default
     driver: bridge
+  hlh_inference:
+    name: hlh_inference
+    driver: bridge
+    internal: true
 
 volumes:
   hlh_db_data:
