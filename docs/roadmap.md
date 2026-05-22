@@ -33,39 +33,41 @@ Three tracks. Phases interleave by dependency, not by track. The friend
 sees zero of this until **everything** is at “shipped” status.
 
 ```
-Track A — Built-in AI
-  A0 ✓ shipped (v0.3.0)
-  A1 ✓ shipped (v0.4.0)
-  A1.5 ✓ shipped (v0.8.0; is_bundled delete guard in v0.7.0) — image
-                  pinning, container hardening across all six services,
-                  hlh_inference internal network, disk pre-flight,
-                  revision field on bundled_models
-  A1.6 ✓ shipped (v0.7.0) — workspace auto-bind + settings lockdown
-  A1.7 ✓ shipped (v0.8.0) — 11-check doctor module + CLI + endpoint +
-                  UI Pre-flight section + first-launch ack modal
-  A2 ✓ shipped (v0.7.0) — ahead of C5 gate, no real-record ingest yet
-  A7 ✓ shipped (v0.7.0) — bundled search (hlh_search), off-roadmap addition
-  A3 ─▶ A4 ─▶ A5? ─▶ A6
+Shipped releases (most recent → oldest):
+  v0.8.1    docs + tooling polish (2026-05-22)
+  v0.8.0    A1.5 hardening + A1.7 pre-flight + Phase 2.B (2026-05-22)
+  v0.7.0    Phase 2.A bundled-system takes everything (2026-05-22)
+  v0.6.0    B0 safeguards baseline (2026-05-22)
+  v0.5.0    personas removed (2026-05-22)
+  v0.4.0    A1 chat sidecar (2026-05-22)
+  v0.3.0    A0 hardware detect + tier picker (2026-05-21)
+  v0.2.0    providers + api keys (2026-05-21)
+  v0.1.1    compose isolation from boolab (2026-05-02)
+  v0.1.0    strip + homelabhealth identity (2026-05-02)
 
-Track B — Safeguards
-  B0 ✓ shipped (v0.6.0)
-  B1                          (output scanner — gates non-Sam access)
-  B2                          (UI disclaimers + crisis card)
-  B3                          (audit-logged refusals + retry-with-warning)
-  B4                          (red-team eval, ongoing)
+Planned (dependency-ordered):
+  v0.9.0    C0  security + threat-model docs  ← active work
+  v0.10.0   C1  disk/backup hygiene + doctor LUKS/backrest checks
+  v0.11.0   C8  supply chain + ops (make security target)
+  v0.12.0   C4  audit logging (unblocks B3)
+  v0.13.0   C3  synthetic data + log scrubbing
+  v0.14.0   B2  UI disclaimers + crisis card
+  v0.15.0   B1 + C7  llm-guard sidecar (same deployable)
+  v0.16.0   B3  audit-logged refusals (on top of C4)
+  v0.17.0   C5  de-id pipeline (gates first real-record ingest)
+  v0.18.0   C6  column encryption
+  v0.19.0   C9  right-to-erasure
+  v0.20.0   A3  vision (VLM) + MedSigLIP
+  v0.21.0   A4  STT (whisper.cpp)
+  v0.22.0?  A5  OCR — conditional on A3 eval
+  v0.23.0+  A6  Apple MLX — deferred indefinitely
+  ongoing   B4  red-team eval (discipline, not a release)
+  v1.0.0    public release after ship-to-friend gate met
 
-Track C — Security
-  C0 → v0.9.0  security + threat-model docs (next up)
-  C1  disk/backup hygiene     (independent, do anytime)
-  C2 ✓ shipped (v0.8.0) — absorbed into A1.5
-  C3  synthetic data + logs   (must land before any non-Sam data)
-  C4  audit logging           (must land before B3)
-  C5  de-id pipeline          (must land before first real-record
-                               ingest into A2 pgvector)
-  C6  column encryption       (must land before friend gets the URL)
-  C7  LLM I/O guardrails      (overlaps with B1 — same llm-guard sidecar)
-  C8  supply chain + ops      (independent, do anytime)
-  C9  right-to-erasure        (must land before friend gets the URL)
+Phase track in summary:
+  A — Built-in AI:   A0 ✓ A1 ✓ A1.5 ✓ A1.6 ✓ A1.7 ✓ A2 ✓ A7 ✓ │ A3 A4 A5? A6
+  B — Safeguards:    B0 ✓                                       │ B1 B2 B3 B4
+  C — Security:                       C2 ✓                      │ C0 C1 C3 C4 C5 C6 C7 C8 C9
 ```
 
 **Ship-to-friend gate** = every phase above shipped + tagged.
@@ -325,7 +327,7 @@ plan required before any model swap to a different dim.
 infinity multi-model proves unreliable, split into `hlh_embed` +
 `hlh_rerank`. Not needed today.
 
-### A3 — Vision (VLM) + MedSigLIP
+### `v0.20.0` — Vision (VLM) + MedSigLIP (roadmap code: A3)
 
 Sidecar `hlh_vlm` running llama.cpp with `--mmproj`. Qwen2.5-VL-3B Q4
 (8gb tier) / Qwen2.5-VL-7B Q4 (16gb+).
@@ -337,7 +339,7 @@ impl. If redistribution is forbidden, surface a manual-download flow.
 mismatch at load. VLM model configs must NOT use MTP variants. Bake
 this into `MODEL_REGISTRY` validation.
 
-### A4 — STT (whisper.cpp)
+### `v0.21.0` — STT (whisper.cpp) (roadmap code: A4)
 
 Sidecar `hlh_stt` on port 9640. Tier-keyed defaults (whisper-tiny.en →
 whisper-large-v3-turbo).
@@ -348,13 +350,13 @@ editor.
 
 Decision deferred: webm/opus transcode in browser vs in `hlh_api`.
 
-### A5 — OCR (conditional)
+### `v0.22.0?` — OCR (conditional on A3 eval) (roadmap code: A5)
 
 Run only if A3 VLM eval on 5+ real medical document photos shows
 insufficient readability. Otherwise skip. If needed: Tesseract 5 or
 PaddleOCR. Custom HTTP shape.
 
-### A6 — Apple MLX backend variant
+### `v0.23.0+` — Apple MLX backend variant (deferred indefinitely; roadmap code: A6)
 
 Deferred indefinitely. Detection in A0 flags `apple-mlx`; falls back
 to `cpu-std` at runtime on darwin/arm64. Friend's hardware
@@ -448,7 +450,7 @@ state remains recoverable for regression comparison.
 System-prompt-only guardrails are defeatable; B1 (output scanner)
 remains the next-up safeguards work.
 
-### B1 — Output scanner sidecar
+### `v0.15.0` — Output scanner sidecar (roadmap code: B1; ships with C7 — same llm-guard deployable)
 
 - New sidecar `hlh_guard` running `llm-guard` (Protect AI, MIT). On
   `hlh_inference` net.
@@ -469,7 +471,7 @@ remains the next-up safeguards work.
 **Gate:** must land before any external exposure (friend deployment
 or public release). Same sidecar as C7 — ship once.
 
-### B2 — UI disclaimers + crisis card
+### `v0.14.0` — UI disclaimers + crisis card (roadmap code: B2)
 
 - Persistent disclaimer banner per chat session: “Educational only.
   Not medical advice.”
@@ -484,7 +486,7 @@ or public release). Same sidecar as C7 — ship once.
   with a visible badge (C-track also wants this for provenance —
   same column).
 
-### B3 — Audit-logged refusals + retry-with-warning flow
+### `v0.16.0` — Audit-logged refusals + retry-with-warning flow (roadmap code: B3; depends on C4/v0.12.0)
 
 Depends on C4 (audit logging infrastructure).
 
@@ -496,7 +498,7 @@ Depends on C4 (audit logging infrastructure).
 - Refusal review panel in settings: user can see their own refusal
   history, helps them learn what the tool is for vs not.
 
-### B4 — Red-team eval (ongoing)
+### B4 — Red-team eval (ongoing discipline, not a release)
 
 - `garak` (NVIDIA, Apache-2.0) red-team suite run periodically
   against `hlh_chat` + `hlh_guard` end-to-end.
@@ -523,7 +525,7 @@ dependency graph and any deltas.
 **Placement:** independent. Do anytime. Land before public release is
 even mentionable.
 
-### C1 — Disk and backup hygiene
+### `v0.10.0` — Disk and backup hygiene (roadmap code: C1)
 
 LUKS confirm, backrest passphrase, restore drill doc, key custody
 doc. The runtime pre-flight (`python -m hlh.doctor`) shipped as part
@@ -542,11 +544,11 @@ placeholder.
 
 **Placement:** independent. Do anytime. Cheap.
 
-### C2 — Docker hardening
+### C2 — Docker hardening — **shipped** (absorbed into A1.5, `v0.8.0`)
 
 Absorbed into A1.5. **Shipped** with the bundled-tail branch.
 
-### C3 — Synthetic data + log scrubbing
+### `v0.13.0` — Synthetic data + log scrubbing (roadmap code: C3)
 
 - Synthea fixtures in `tests/fixtures/synthea/`. Replace any
   real-shaped test data.
@@ -559,14 +561,14 @@ Absorbed into A1.5. **Shipped** with the bundled-tail branch.
 **Placement:** must land before any non-Sam data enters the system.
 Friend’s deployment requires this.
 
-### C4 — Audit logging
+### `v0.12.0` — Audit logging (roadmap code: C4; unblocks B3/v0.16.0)
 
 `audit_log` table, hash chain, insert-only Postgres role, write-ahead
 inserts, retention env var, FastAPI dependency wrapping PHI endpoints.
 
 **Placement:** B3 depends on this. Friend deployment requires this.
 
-### C5 — De-identification pipeline
+### `v0.17.0` — De-identification pipeline (roadmap code: C5; gates first real-record ingest)
 
 Microsoft Presidio sidecar (`hlh_redact`), Layer A (regex+validators
 for SSN/NPI/DEA/MRN/dates/ZIP/IP/MAC), Layer B (clinical NER —
@@ -584,7 +586,7 @@ Integration:
 **Placement:** A2 (embed+rerank) merge gate. RAG-into-pgvector
 without de-id means PHI in vectors forever.
 
-### C6 — Column encryption
+### `v0.18.0` — Column encryption (roadmap code: C6; gates friend URL)
 
 KEK/DEK envelope. `HLH_MASTER_KEY` in env. Per-record DEK via HKDF.
 AES-256-GCM on `record_text_enc`. Migration script idempotent +
@@ -597,7 +599,7 @@ requires plaintext). Document this honestly.
 **Placement:** must land before friend gets the URL. The friend
 case is the canonical reason this exists.
 
-### C7 — LLM I/O guardrails
+### `v0.15.0` — LLM I/O guardrails (roadmap code: C7; ships with B1 — same llm-guard deployable)
 
 `llm-guard` sidecar — same sidecar as B1. Different scanner config.
 
@@ -609,7 +611,7 @@ with B1), hallucinated identifiers.
 
 **Placement:** B1 and C7 are the same deployable. Ship together.
 
-### C8 — Supply chain + ops
+### `v0.11.0` — Supply chain + ops (roadmap code: C8)
 
 `make security` target: trivy + pip-audit + npm audit + syft SBOM.
 Renovate or Dependabot. Container image scanning. SOPS + age for
@@ -617,7 +619,7 @@ encrypted `.env` files. Pre-commit `.env` check.
 
 **Placement:** independent. Do anytime. Half-day cost.
 
-### C9 — Right-to-erasure
+### `v0.19.0` — Right-to-erasure (roadmap code: C9; gates friend URL)
 
 Hard delete by default. Cascade to chunks, embeddings, AI summaries,
 audit log content fields (with `tombstoned_at` preserving the
@@ -636,49 +638,47 @@ is checked.
 
 **Built-in AI:**
 
-- [x] A1 merged to `main`
-- [x] A1.5 merged to `main`
-- [x] A1.6 workspace auto-bind + settings lockdown
-- [x] A1.7 operator pre-flight + first-launch ack
-- [x] A2 merged to `main` (no real-record ingest until C5)
-- [ ] A3 merged or explicitly deferred with friend’s consent (e.g.,
-  she doesn’t need vision)
-- [ ] A4 merged or explicitly deferred
-- [x] A7 bundled search (default-on; THREATMODEL.md entry lands
-  with C0 covering operator-query-leakage-to-engines risk)
+- [x] `v0.4.0` — A1 chat sidecar
+- [x] `v0.7.0` — A1.6 workspace auto-bind + settings lockdown
+- [x] `v0.7.0` — A2 embed + rerank (no real-record ingest until v0.17.0/C5)
+- [x] `v0.7.0` — A7 bundled search (default-on; threat-model entry lands in v0.9.0/C0)
+- [x] `v0.8.0` — A1.5 hardening + Phase 2.B visibility
+- [x] `v0.8.0` — A1.7 operator pre-flight + first-launch ack
+- [ ] `v0.20.0` — A3 vision (VLM) + MedSigLIP, OR explicitly deferred with friend's consent
+- [ ] `v0.21.0` — A4 STT, OR explicitly deferred
 
 **Safeguards:**
 
-- [x] B0 system prompt locked in (post-A1 reconciliation)
-- [ ] B1 output scanner sidecar shipped
-- [ ] B2 UI disclaimers + crisis card shipped
-- [ ] B3 audit-logged refusals shipped (depends on C4)
-- [ ] B4 red-team eval pass on current model defaults
+- [x] `v0.6.0` — B0 system prompt baseline (post-A1 reconciliation)
+- [ ] `v0.14.0` — B2 UI disclaimers + crisis card
+- [ ] `v0.15.0` — B1 output scanner sidecar (ships with C7)
+- [ ] `v0.16.0` — B3 audit-logged refusals (on top of C4/v0.12.0)
+- [ ] B4 red-team eval pass on current model defaults (ongoing discipline, no tag)
 
 **Security:**
 
-- [ ] `v0.9.0` security + threat-model docs shipped (C0)
-- [ ] C1 disk + backup hygiene confirmed on friend’s host
-- [x] C2 docker hardening (landed with A1.5)
-- [ ] C3 synthetic data + log scrubbing shipped
-- [ ] C4 audit logging shipped
-- [ ] C5 de-id pipeline shipped, pre-write redactor defaulted **on**
+- [x] `v0.8.0` — C2 docker hardening (landed with A1.5)
+- [ ] `v0.9.0` — C0 security + threat-model docs
+- [ ] `v0.10.0` — C1 disk + backup hygiene confirmed on friend's host
+- [ ] `v0.11.0` — C8 supply chain hardening
+- [ ] `v0.12.0` — C4 audit logging
+- [ ] `v0.13.0` — C3 synthetic data + log scrubbing
+- [ ] `v0.15.0` — C7 LLM I/O guardrails (lands with B1)
+- [ ] `v0.17.0` — C5 de-id pipeline, pre-write redactor defaulted **on**
   for non-Sam deployments. **Blocks first real-record ingest.**
-- [ ] C6 column encryption shipped, friend’s `HLH_MASTER_KEY`
+- [ ] `v0.18.0` — C6 column encryption, friend's `HLH_MASTER_KEY`
   generated + stored + key custody documented for her
-- [ ] C7 LLM I/O guardrails (lands with B1)
-- [ ] C8 supply chain hardening shipped
-- [ ] C9 right-to-erasure shipped
+- [ ] `v0.19.0` — C9 right-to-erasure
 
-**Public-release-readiness** (deferred decision, but docs treat it
-as coming):
+**Public-release-readiness — `v1.0.0`** (deferred decision, but docs
+treat it as coming):
 
 - [ ] All checkboxes above
-- [ ] `SECURITY.md` vulnerability disclosure policy active
+- [ ] `SECURITY.md` vulnerability disclosure policy active (lands in `v0.9.0`)
 - [ ] `LICENSE` file (AGPL-3.0) committed
 - [ ] README final pass — honest, no weasel words, names non-defenses
 - [ ] `THREATMODEL.md` reviewed by a second pair of eyes
-- [ ] Tagged `v1.0.0`
+- [ ] Tag `v1.0.0` and push
 
 -----
 
@@ -755,9 +755,9 @@ Resolve at the phase where they become blocking.
 
 |Track          |Phases                                                                                                                                |Total                    |
 |---------------|--------------------------------------------------------------------------------------------------------------------------------------|-------------------------|
-|A — Built-in AI|A1 (done) + A1.5 (done) + A1.6 (done) + A1.7 (done) + A2 (done) + A3 (5d) + A4 (3d) + A5? + A6 + A7 (done) + Phase 2.B (done)|~1 week if A5/A6 skipped |
-|B — Safeguards |B0 (done) + B1 (3d) + B2 (2d) + B3 (1d on top of C4) + B4 (ongoing)                                                                  |~1 week + ongoing        |
-|C — Security   |v0.9.0/C0 (1d) + C1 (2hr) + C2 (done) + C3 (2d) + C4 (3d) + C5 (5-7d) + C6 (5d) + C7 (in B1) + C8 (1d) + C9 (2d)                 |~3-4 weeks               |
+|A — Built-in AI|v0.3.0-v0.8.0 ✓ + v0.20.0/A3 (5d) + v0.21.0/A4 (3d) + v0.22.0?/A5 + v0.23.0+/A6 (deferred)                                          |~1 week if A5/A6 skipped |
+|B — Safeguards |v0.6.0 ✓ + v0.14.0/B2 (2d) + v0.15.0/B1+C7 (3d) + v0.16.0/B3 (1d on top of v0.12.0/C4) + B4 ongoing                                |~1 week + ongoing        |
+|C — Security   |v0.8.0 ✓ + v0.9.0/C0 (1d) + v0.10.0/C1 (2hr) + v0.11.0/C8 (1d) + v0.12.0/C4 (3d) + v0.13.0/C3 (2d) + v0.17.0/C5 (5-7d) + v0.18.0/C6 (5d) + v0.19.0/C9 (2d)|~3-4 weeks               |
 
 **Total to ship-to-friend gate: ~4-5 weeks of focused work** (revised
 down: A1.5, A1.7, A1.6, A2, A7, B0, C2, Phase 2.B already shipped).
