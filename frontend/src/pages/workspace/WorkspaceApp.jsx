@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Outlet, matchPath, useLocation, useNavigate } from 'react-router-dom'
 import { FileStack, Menu } from 'lucide-react'
 
 import { getModelSettings } from '@/api/inference.js'
+import { getSystemProfile } from '@/api/system.js'
 import { ModelSelectorBar } from '@/components/chat/ModelSelectorBar.jsx'
 import { WorkspaceQuerySync } from '@/components/WorkspaceQuerySync.jsx'
 import { Sidebar } from '@/components/layout/Sidebar.jsx'
 import { Button } from '@/components/ui/button'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import SystemAcknowledgeModal from '@/components/settings/SystemAcknowledgeModal.jsx'
 import { applyWorkspaceLayoutToDom, clearWorkspaceLayoutLiveDraft } from '@/lib/workspaceLayout.js'
 import { PATH_HOME, workspacePath } from '@/routes/paths.js'
 import SettingsPage from '@/pages/workspace/SettingsPage.jsx'
@@ -39,6 +41,7 @@ export function SettingsRoute() {
 
 export default function WorkspaceApp() {
   const location = useLocation()
+  const queryClient = useQueryClient()
   const [mobileSidebar, setMobileSidebar] = useState(false)
   const [mobileSourcesOpen, setMobileSourcesOpen] = useState(false)
   const activeChatId = useAppStore((s) => s.activeChatId)
@@ -48,6 +51,22 @@ export default function WorkspaceApp() {
   const setActiveChatId = useAppStore((s) => s.setActiveChatId)
   const setDefaultModel = useAppStore((s) => s.setDefaultModel)
   const hydrateUserProfile = useAppStore((s) => s.hydrateUserProfile)
+
+  // System profile — shared queryKey with RequireSetup + SystemTab.
+  const { data: systemProfile } = useQuery({
+    queryKey: ['system', 'profile'],
+    queryFn: getSystemProfile,
+    staleTime: 30_000,
+    retry: false,
+  })
+
+  // Show the ack modal whenever setup_complete=true but acknowledged_at is null.
+  const showAckModal =
+    systemProfile?.setup_complete === true && !systemProfile?.acknowledged_at
+
+  const handleAcknowledged = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ['system', 'profile'] })
+  }, [queryClient])
 
   const { aiPath, settingsPath } = useMemo(
     () => ({
@@ -124,6 +143,9 @@ export default function WorkspaceApp() {
   return (
     <TooltipProvider>
       <WorkspaceQuerySync />
+      {showAckModal ? (
+        <SystemAcknowledgeModal onAcknowledged={handleAcknowledged} />
+      ) : null}
       <div className="layout flex h-[100lvh] w-full overflow-clip bg-background text-foreground md:flex-row">
         <Sidebar
           mobileOpen={mobileSidebar}
