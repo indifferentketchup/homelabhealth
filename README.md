@@ -19,6 +19,8 @@ The schema applies on startup; no manual migrations.
 
 **First boot:** the embedding sidecar (`hlh_infer`) downloads model weights from HuggingFace on first start — `BAAI/bge-m3` + `BAAI/bge-reranker-v2-m3`, ~1–2 GB total. Expect **5–15 minutes** before chat works end-to-end; the container restart-loops as `unhealthy` until the pull finishes. After first boot, weights are cached in the `hlh_models` Docker volume — subsequent boots are instant.
 
+**Doctor check:** run `docker exec hlh_api python -m hlh.doctor` any time to see the current state of the bundled stack — DB pool, schema, sidecars, disk, encryption key, HF token. Exits 0 if everything is green, 1 if any check is red. Also surfaced at `Settings → System → Pre-flight` in the UI.
+
 ## Required env vars
 
 | Var | Purpose |

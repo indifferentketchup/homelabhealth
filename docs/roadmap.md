@@ -36,10 +36,12 @@ sees zero of this until **everything** is at “shipped” status.
 Track A — Built-in AI
   A0 ✓ shipped on main
   A1 ✓ shipped on main (f2c5039, v0.1.0-phase-1)
-  A1.5  partial — is_bundled delete guard shipped (dcb1413);
-                  hardening + pinning + network split remaining
+  A1.5 ✓ shipped on main — image pinning, container hardening (all six
+                  services), hlh_inference internal network, disk pre-flight,
+                  revision field on bundled_models
   A1.6 ✓ shipped on main — workspace auto-bind + settings lockdown
-  A1.7  pre-flight + first-launch ack (remaining)
+  A1.7 ✓ shipped on main — 11-check doctor module + CLI + endpoint +
+                  UI Pre-flight section + first-launch ack modal
   A2 ✓ shipped on main (994c7e7) — ahead of C5 gate, no data ingested
   A7 ✓ shipped on main — bundled search (hlh_search), off-roadmap addition
   A3 ─▶ A4 ─▶ A5? ─▶ A6
@@ -54,7 +56,7 @@ Track B — Safeguards
 Track C — Security
   C0  docs                    (independent, do anytime)
   C1  disk/backup hygiene     (independent, do anytime)
-  C2  docker hardening        (folds into A1.5 — still pending)
+  C2 ✓ shipped — absorbed into A1.5 (landed via bundled-tail branch)
   C3  synthetic data + logs   (must land before any non-Sam data)
   C4  audit logging           (must land before B3)
   C5  de-id pipeline          (must land before first real-record
@@ -69,12 +71,11 @@ Track C — Security
 Trunk-merge gates documented in earlier roadmap revisions are
 **retired**. Gates now apply to non-Sam access only.
 
-**Active work (2026-05-22):** A1.5 finish + A1.7 + Phase 2.B
-visibility are spec'd as a single bundled-tail change in
-`docs/superpowers/specs/2026-05-22-a1.5-a1.7-bundled-tail-design.md`.
-~3 days estimated. After that lands, the next-up phase is C0 docs
-(captures the threat-model state from A7 search egress + the
-deferred C5 first-real-ingest gate).
+**Active work (2026-05-22):** A1.5 + A1.7 + Phase 2.B shipped via the
+bundled-tail branch (`feat/a1.5-a1.7-bundled-tail`). Next: C0 docs
+foundation (SECURITY.md + THREATMODEL.md + breach-response + README
+security-posture section). Captures the A7 search-egress risk and the
+C5 first-real-ingest gate.
 
 -----
 
@@ -154,7 +155,7 @@ Accelerated from the original Phase 2 plan. Spec: `docs/superpowers/specs/2026-0
 - Dark mode toggle (Settings → Sidebar) activates the existing `.dark` palette in globals.css via Zustand + localStorage + matchMedia.
 
 **Phase 2.B follow-ups:**
-- **Spec for the Models-panel visibility piece:** `docs/superpowers/specs/2026-05-22-a1.5-a1.7-bundled-tail-design.md` §3. Uses a lighter status-synthesis approach (surface infinity's healthy/loading state via the existing providers list) instead of rewriting `model_puller` to handle multi-file HF repos.
+- **Shipped** as Phase 2.B via status-synthesis in the Models panel (no puller rewrite needed — sidecar self-manages downloads, UI reflects sidecar health). Spec §3 of the bundled-tail design doc.
 - Optionally pin `michaelf34/infinity` to a specific newer tag if 0.0.77-cpu becomes unsuitable.
 
 **Known limitations** (documented in spec §10):
@@ -162,14 +163,11 @@ Accelerated from the original Phase 2 plan. Spec: `docs/superpowers/specs/2026-0
 - Single embedding model across all tiers (bge-m3 is the only 1024-dim option supported by the schema).
 - Apple MLX tier treated as external (Phase 6 deferred — no bundled MLX inference yet).
 
-### A1.5 — Hardening + pinning — **partial; remaining work spec'd**
+### A1.5 — Hardening + pinning — **shipped on main**
 
-Status: `is_bundled` delete guard shipped on main (`dcb1413`).
-Remaining work below is unshipped. Absorbs **C2 (docker hardening)**.
+Absorbs **C2 (docker hardening)**. Spec: `docs/superpowers/specs/2026-05-22-a1.5-a1.7-bundled-tail-design.md` §1.
 
-**Spec for remaining work:** `docs/superpowers/specs/2026-05-22-a1.5-a1.7-bundled-tail-design.md` §1.
-
-**Shipped so far (`dcb1413`):**
+**Shipped (`dcb1413` + bundled-tail branch):**
 
 - Additive `is_bundled BOOLEAN DEFAULT false` on `providers` (plus
   `role` and `bundle_group` columns added in the same wave).
@@ -177,50 +175,24 @@ Remaining work below is unshipped. Absorbs **C2 (docker hardening)**.
 - `DELETE /api/providers/{id}` returns 403 on bundled rows (spec
   said 409; implementation chose 403 — see commit).
 - Frontend hides Save + Delete on bundled provider rows.
-
-**Remaining:**
-
-Docker:
-
 - New `hlh_inference` network with `internal: true`. `hlh_api` joins
-  both `hlh_default` and `hlh_inference`. `hlh_chat` moves to
-  `hlh_inference` only.
-- `hlh_chat` additions: `user: "1000:1000"`, `read_only: true`,
-  `tmpfs: [/tmp]`, `cap_drop: [ALL]`,
+  both `hlh_default` and `hlh_inference`. `hlh_chat` + `hlh_infer`
+  move to `hlh_inference` only.
+- Container hardening across all six services: `user: “1000:1000”`,
+  `read_only: true`, `tmpfs: [/tmp]`, `cap_drop: [ALL]`,
   `security_opt: [no-new-privileges:true]`, `mem_limit` per tier
   (cpu-min 3g → gpu-24gb+ 22g).
-- Same hardening posture applied to `hlh_api` and `hlh_ui` as part
-  of the C2 scope.
-- Pin `ghcr.io/ggml-org/llama.cpp:server-<digest>` to a specific
-  build. Document upgrade procedure.
-- Confirm no service binds `0.0.0.0`. All binds to
-  `100.114.205.53`.
+- `ghcr.io/ggml-org/llama.cpp:server` pinned to specific digest.
+  All service binds scoped to Tailscale IP (no `0.0.0.0`).
+- `revision` field added to `bundled_models` registry entries.
+- Disk pre-flight: `model_puller` refuses pull if free space minus
+  `expected_bytes` would leave <5 GB. Status=`failed`,
+  error_message=”insufficient disk”.
 
-`MODEL_REGISTRY` pinning:
-
-- For every chat tier shipped in A1: confirm filename resolves
-  against current HF artifact, pin `revision`, compute and pin
-  `sha256` after clean pull, verify `expected_bytes`.
-
-Puller hardening:
-
-- Disk pre-flight: refuse pull if free space minus `expected_bytes`
-  would leave <5 GB. Status=`failed`, error_message=“insufficient
-  disk”.
-- sha256 mismatch path already coded — pinning lands here so the
-  path is actually exercised.
-
-Provider delete guard:
-
-- Additive `is_bundled BOOLEAN DEFAULT false` on `providers`.
-  `ensure_bundled_*` sets true on insert.
-- `DELETE /api/providers/{id}` returns 409 on bundled rows.
-- Frontend hides delete button (or disables with tooltip).
-
-Acceptance: existing 393 assertions still green, plus
-`verify_phase_1_5_hardening.sh` (docker inspect checks, internal
-network check, no host ports, sha256 corrupt test, disk pre-flight
-synthetic test).
+**Phase 2 follow-up (sha256 population):** `sha256` + `expected_bytes`
+pinning for each chat-tier model is deferred pending clean-pull
+verification on the production host. The mismatch path is coded;
+population is a one-time operational step, not a code change.
 
 ### A1.6 — Workspace auto-bind + Settings lockdown — **shipped on main** (`994c7e7`)
 
@@ -249,7 +221,7 @@ tabs and the workspace picker). The backend `apply_bundled_bindings`
 helper can stay; it's idempotent and harmless if the UI lets
 operators override.
 
-### A1.7 — Operator pre-flight + first-launch ack — **spec'd**
+### A1.7 — Operator pre-flight + first-launch ack — **shipped on main**
 
 Single highest-leverage thing for the non-technical-friend
 deployment. Catches operator-error misconfiguration before any PHI
@@ -257,24 +229,32 @@ is entered.
 
 **Spec:** `docs/superpowers/specs/2026-05-22-a1.5-a1.7-bundled-tail-design.md` §2.
 
-- `make doctor` (or `python -m hlh.doctor`) — pre-flight script.
-  Checks:
-  - LUKS on the host root partition.
-  - Backrest reachable, repo passphrase set, last successful
-    snapshot within N days.
-  - `HLH_MASTER_KEY` set and not the example placeholder.
-  - Authelia reachable (if configured).
-  - Active safeguard prompt version matches the version pinned in
-    code (catches accidental override).
-  - Sidecar healthchecks green.
+**Shipped (bundled-tail branch):**
+
+- `python -m hlh.doctor` — 11-check pre-flight module. Checks:
+  - DB pool reachable + schema version.
+  - Schema current (migration state).
+  - `hlh_chat` sidecar healthcheck green.
+  - `hlh_infer` sidecar healthcheck green.
+  - Disk available (configurable threshold, default 5 GB).
+  - `PROVIDER_KEY_ENCRYPTION_KEY` set + not placeholder.
+  - `HLH_MASTER_KEY` set + not placeholder.
+  - HF token set (if bundled models configured).
+  - Safeguard prompt version matches code-pinned value.
+  - Authelia reachable (if configured, yellow-not-red if absent).
+  - No legacy deprecated env vars set.
 - Output: green/yellow/red per check + actionable remediation line.
-  No PHI in output.
+  No PHI in output. Exits 0 (all green/yellow), 1 (any red).
+- `GET /api/system/doctor` endpoint — returns JSON equivalent.
 - Runs on every container start (logged) and on demand via
-  `docker exec hlh_api make doctor`.
+  `docker exec hlh_api python -m hlh.doctor`.
+- Settings → System → Pre-flight section surfaces the same checks
+  in the UI with live status icons.
 - First-launch modal (folded in from B2): one-time acknowledgement
   on the "Done" screen of setup — "what HLH is and isn't, not for
   clinical use, you understand." Tick to dismiss, cannot be re-shown
-  via UI (resets on `setup_complete=false`).
+  via UI (resets on `setup_complete=false`). `acknowledged_at`
+  column on `system_profile`.
 
 **Placement:** between A1.5 and A2. Biggest UX gate for the friend
 deployment. Folds in B2's first-launch modal — both are "what the
@@ -530,7 +510,7 @@ fails red if either is missing or matches the example placeholder.
 
 ### C2 — Docker hardening
 
-Already absorbed into A1.5. C2 ships when A1.5 ships.
+Absorbed into A1.5. **Shipped** with the bundled-tail branch.
 
 ### C3 — Synthetic data + log scrubbing
 
@@ -623,10 +603,9 @@ is checked.
 **Built-in AI:**
 
 - [x] A1 merged to `main`
-- [ ] A1.5 merged to `main` (partial — `is_bundled` shipped;
-  hardening/pinning/network split remaining)
+- [x] A1.5 merged to `main`
 - [x] A1.6 workspace auto-bind + settings lockdown
-- [ ] A1.7 operator pre-flight + first-launch ack
+- [x] A1.7 operator pre-flight + first-launch ack
 - [x] A2 merged to `main` (no real-record ingest until C5)
 - [ ] A3 merged or explicitly deferred with friend’s consent (e.g.,
   she doesn’t need vision)
@@ -646,7 +625,7 @@ is checked.
 
 - [ ] C0 docs shipped
 - [ ] C1 disk + backup hygiene confirmed on friend’s host
-- [ ] C2 docker hardening (lands with A1.5 — still pending)
+- [x] C2 docker hardening (landed with A1.5)
 - [ ] C3 synthetic data + log scrubbing shipped
 - [ ] C4 audit logging shipped
 - [ ] C5 de-id pipeline shipped, pre-write redactor defaulted **on**
@@ -740,15 +719,15 @@ Resolve at the phase where they become blocking.
 
 ## Effort estimate (rough)
 
-|Track          |Phases                                                                                                      |Total                    |
-|---------------|------------------------------------------------------------------------------------------------------------|-------------------------|
-|A — Built-in AI|A1 (done) + A1.5 finish (2d) + A1.6 (done) + A1.7 (1d) + A2 (done) + A3 (5d) + A4 (3d) + A5? + A6 + A7 (done)|~1.5 weeks if A5/A6 skipped|
-|B — Safeguards |B0 (done) + B1 (3d) + B2 (2d) + B3 (1d on top of C4) + B4 (ongoing)                                         |~1 week + ongoing        |
-|C — Security   |C0 (1d) + C1 (2hr) + C2 (in A1.5) + C3 (2d) + C4 (3d) + C5 (5-7d) + C6 (5d) + C7 (in B1) + C8 (1d) + C9 (2d)|~3-4 weeks               |
+|Track          |Phases                                                                                                                                |Total                    |
+|---------------|--------------------------------------------------------------------------------------------------------------------------------------|-------------------------|
+|A — Built-in AI|A1 (done) + A1.5 (done) + A1.6 (done) + A1.7 (done) + A2 (done) + A3 (5d) + A4 (3d) + A5? + A6 + A7 (done) + Phase 2.B (done)|~1 week if A5/A6 skipped |
+|B — Safeguards |B0 (done) + B1 (3d) + B2 (2d) + B3 (1d on top of C4) + B4 (ongoing)                                                                  |~1 week + ongoing        |
+|C — Security   |C0 (1d) + C1 (2hr) + C2 (done) + C3 (2d) + C4 (3d) + C5 (5-7d) + C6 (5d) + C7 (in B1) + C8 (1d) + C9 (2d)                         |~3-4 weeks               |
 
-**Total to ship-to-friend gate: 5-6 weeks of focused work** (revised
-down: A1.6, A2, A7, B0 already shipped). Open-ended timeline means
-this is the *floor*; reality is “until done right.”
+**Total to ship-to-friend gate: ~4-5 weeks of focused work** (revised
+down: A1.5, A1.7, A1.6, A2, A7, B0, C2, Phase 2.B already shipped).
+Open-ended timeline means this is the *floor*; reality is “until done right.”
 
 -----
 

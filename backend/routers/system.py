@@ -71,12 +71,13 @@ def _profile_response(row: Any) -> dict[str, Any]:
         "detected_at": row["detected_at"].isoformat() if row["detected_at"] else None,
         "chosen_at": row["chosen_at"].isoformat() if row["chosen_at"] else None,
         "setup_complete": bool(row["setup_complete"]),
+        "acknowledged_at": row["acknowledged_at"].isoformat() if row.get("acknowledged_at") else None,
         "recommended_tier": recommend_tier(sysinfo_json),
     }
 
 
 _PROFILE_COLS = (
-    "id, tier, tier_source, sysinfo_json, detected_at, chosen_at, setup_complete"
+    "id, tier, tier_source, sysinfo_json, detected_at, chosen_at, setup_complete, acknowledged_at"
 )
 
 
@@ -197,3 +198,21 @@ async def delete_hf_token(_: dict[str, Any] = Depends(require_admin)):
     async with pool.acquire() as conn:
         await hf_token.clear(conn)
     return Response(status_code=204)
+
+
+@router.post("/acknowledge")
+async def post_acknowledge(_: dict[str, Any] = Depends(require_admin)):
+    """Stamp acknowledged_at = NOW() on the singleton system_profile row."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE system_profile SET acknowledged_at = NOW() WHERE id = 1"
+        )
+    return Response(status_code=204)
+
+
+@router.get("/doctor")
+async def get_doctor(_: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
+    from hlh.doctor import run_checks, summarize
+    checks = await run_checks()
+    return {"checks": checks, "summary": summarize(checks)}
