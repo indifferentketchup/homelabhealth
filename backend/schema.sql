@@ -338,6 +338,39 @@ BEGIN
     END IF;
 END $$;
 
+-- ────────────────────────────────────────────────────────────────────────────
+-- Bundled-system takes everything (2026-05-22). See:
+-- docs/superpowers/specs/2026-05-22-bundled-system-takes-everything-design.md
+-- ────────────────────────────────────────────────────────────────────────────
+
+ALTER TABLE providers
+    ADD COLUMN IF NOT EXISTS is_bundled BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE providers
+    ADD COLUMN IF NOT EXISTS role TEXT;  -- 'chat' | 'embed' | 'rerank' | NULL (general-purpose external)
+
+ALTER TABLE providers
+    ADD COLUMN IF NOT EXISTS bundle_group TEXT;  -- 'homelab-health-ai' for bundled rows; NULL otherwise
+
+-- Backfill the existing bundled-chat row on first apply. Guarded so subsequent
+-- applies are no-ops. Order-safe: this runs in schema.sql before
+-- ensure_bundled_providers in lifespan; IN-clause handles both legacy + post-rename names.
+UPDATE providers
+   SET is_bundled = TRUE,
+       role = 'chat',
+       bundle_group = 'homelab-health-ai'
+ WHERE is_bundled = FALSE
+   AND name IN ('bundled-chat', 'HomeLab Health AI · Chat');
+
+CREATE TABLE IF NOT EXISTS hf_token_config (
+    id INT PRIMARY KEY DEFAULT 1,
+    token_encrypted BYTEA,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS hf_token_config_singleton_idx
+    ON hf_token_config ((1));
+
 -- chats.model becomes nullable post-providers: the workspace's (provider_id, model)
 -- pair is the authoritative source for sends, so chat.model is now informational.
 -- Existing rows with the legacy hardcoded default 'qwen3.5:9b' are harmless —
