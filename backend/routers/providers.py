@@ -59,6 +59,9 @@ def _redact_provider(r: Any) -> dict[str, Any]:
         "sort_order": int(r["sort_order"]),
         "last_verified_at": r["last_verified_at"].isoformat() if r.get("last_verified_at") else None,
         "last_verified_status": r["last_verified_status"],
+        "is_bundled": bool(r.get("is_bundled") or False),
+        "role": r.get("role"),
+        "bundle_group": r.get("bundle_group"),
         "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
         "updated_at": r["updated_at"].isoformat() if r.get("updated_at") else None,
     }
@@ -80,7 +83,9 @@ async def _fetch_provider_row(conn: Any, provider_id: uuid.UUID) -> Any:
     row = await conn.fetchrow(
         """
         SELECT id, name, base_url, api_key, enabled, sort_order,
-               last_verified_at, last_verified_status, created_at, updated_at
+               last_verified_at, last_verified_status,
+               is_bundled, role, bundle_group,
+               created_at, updated_at
           FROM providers
          WHERE id = $1::uuid
         """,
@@ -122,7 +127,9 @@ async def list_providers(_: dict[str, Any] = Depends(require_admin)):
         rows = await conn.fetch(
             """
             SELECT id, name, base_url, api_key, enabled, sort_order,
-                   last_verified_at, last_verified_status, created_at, updated_at
+                   last_verified_at, last_verified_status,
+                   is_bundled, role, bundle_group,
+                   created_at, updated_at
               FROM providers
              ORDER BY sort_order ASC, created_at ASC
             """,
@@ -166,7 +173,9 @@ async def create_provider(
                 INSERT INTO providers (name, base_url, api_key, enabled, sort_order)
                 VALUES ($1, $2, $3, $4, $5)
                 RETURNING id, name, base_url, api_key, enabled, sort_order,
-                          last_verified_at, last_verified_status, created_at, updated_at
+                          last_verified_at, last_verified_status,
+                          is_bundled, role, bundle_group,
+                          created_at, updated_at
                 """,
                 name,
                 base_url,
@@ -212,6 +221,12 @@ async def patch_provider(
     async with pool.acquire() as conn:
         row = await _fetch_provider_row(conn, provider_id)
 
+        if row.get("is_bundled"):
+            raise HTTPException(
+                status_code=403,
+                detail="Bundled providers are not editable. Adjust hardware tier in Settings → System.",
+            )
+
         if not data:
             return _redact_provider(row)
 
@@ -238,7 +253,9 @@ async def patch_provider(
                            updated_at = NOW()
                      WHERE id = $1::uuid
                     RETURNING id, name, base_url, api_key, enabled, sort_order,
-                              last_verified_at, last_verified_status, created_at, updated_at
+                              last_verified_at, last_verified_status,
+                              is_bundled, role, bundle_group,
+                              created_at, updated_at
                     """,
                     provider_id,
                     new_name,
@@ -258,7 +275,9 @@ async def patch_provider(
                            updated_at = NOW()
                      WHERE id = $1::uuid
                     RETURNING id, name, base_url, api_key, enabled, sort_order,
-                              last_verified_at, last_verified_status, created_at, updated_at
+                              last_verified_at, last_verified_status,
+                              is_bundled, role, bundle_group,
+                              created_at, updated_at
                     """,
                     provider_id,
                     new_name,
@@ -282,8 +301,13 @@ async def delete_provider(
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        # Ensure the provider exists (404 first, references second).
-        await _fetch_provider_row(conn, provider_id)
+        # Ensure the provider exists (404 first, bundled check second, references third).
+        row = await _fetch_provider_row(conn, provider_id)
+        if row.get("is_bundled"):
+            raise HTTPException(
+                status_code=403,
+                detail="Bundled providers are not editable. Adjust hardware tier in Settings → System.",
+            )
         refs = await _count_references(conn, provider_id)
         in_use = refs["workspaces"] > 0 or refs["embedding"] or refs["reranker"]
 
@@ -312,6 +336,71 @@ async def delete_provider(
                 )
             await conn.execute("DELETE FROM providers WHERE id = $1::uuid", provider_id)
     return Response(status_code=204)
+
+
+async def _resolve_embed_model_via_conn() -> str:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        val = await conn.fetchval(
+            "SELECT value FROM global_settings WHERE key = 'embedding_model'"
+        )
+    return val or "BAAI/bge-m3"
+
+
+async def _resolve_rerank_model_via_conn() -> str:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        val = await conn.fetchval(
+            "SELECT value FROM global_settings WHERE key = 'reranker_model'"
+        )
+    return val or "BAAI/bge-reranker-v2-m3"
+
+
+def _interpret_embed_response(r: Any) -> tuple[bool, str]:
+    if r.status_code >= 400:
+        return False, f"error: HTTP {r.status_code}"
+    try:
+        body = r.json()
+        embedding = body.get("data", [{}])[0].get("embedding")
+        if not isinstance(embedding, list):
+            return False, "error: malformed /v1/embeddings response (no embedding list)"
+        dim = len(embedding)
+        if dim != 1024:
+            return False, f"error: embedding dim mismatch: expected 1024, got {dim}"
+        return True, "ok"
+    except Exception as e:
+        return False, f"error: {_short_err(e)}"
+
+
+def _interpret_rerank_response(r: Any) -> tuple[bool, str]:
+    if r.status_code >= 400:
+        return False, f"error: HTTP {r.status_code}"
+    try:
+        body = r.json()
+        results = body.get("results")
+        if not isinstance(results, list):
+            return False, "error: malformed /rerank response (no results list)"
+        return True, "ok"
+    except Exception as e:
+        return False, f"error: {_short_err(e)}"
+
+
+def _interpret_models_response(r: Any) -> tuple[bool, str | None, list[str] | None]:
+    """Existing /v1/models flow, extracted for symmetry.
+
+    Returns (ok, status_str, model_ids_or_None).
+    """
+    if r.status_code >= 400:
+        return False, f"error: HTTP {r.status_code}", None
+    try:
+        body = r.json()
+        data = body.get("data") if isinstance(body, dict) else None
+        if not isinstance(data, list):
+            return False, "error: malformed /v1/models response (no 'data' list)", None
+        model_ids = [m["id"] for m in data if isinstance(m, dict) and isinstance(m.get("id"), str)]
+        return True, "ok", model_ids
+    except Exception as e:
+        return False, f"error: {_short_err(e)}", None
 
 
 @router.post("/{provider_id}/test")
@@ -345,58 +434,47 @@ async def test_provider(
     if key:
         headers["Authorization"] = f"Bearer {key}"
 
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(5.0)) as client:
-            r = await client.get(f"{base_url}/v1/models", headers=headers)
-        if r.status_code >= 400:
-            status = f"error: HTTP {r.status_code}"
-            async with pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    UPDATE providers SET last_verified_at = NOW(), last_verified_status = $2
-                     WHERE id = $1::uuid
-                    """,
-                    provider_id,
-                    status,
+    role = row.get("role")
+    model_ids: list[str] | None = None
+    async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
+        try:
+            if role == "embed":
+                em_model = await _resolve_embed_model_via_conn()
+                r = await client.post(
+                    f"{base_url}/v1/embeddings",
+                    headers={**headers, "Content-Type": "application/json"},
+                    json={"model": em_model, "input": ["test"]},
                 )
-            return {"ok": False, "status": status}
-        body = r.json()
-        data = body.get("data") if isinstance(body, dict) else None
-        if not isinstance(data, list):
-            status = "error: malformed /v1/models response (no 'data' list)"
-            async with pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    UPDATE providers SET last_verified_at = NOW(), last_verified_status = $2
-                     WHERE id = $1::uuid
-                    """,
-                    provider_id,
-                    status,
+                ok, status = _interpret_embed_response(r)
+            elif role == "rerank":
+                rr_model = await _resolve_rerank_model_via_conn()
+                r = await client.post(
+                    f"{base_url}/rerank",
+                    headers={**headers, "Content-Type": "application/json"},
+                    json={"model": rr_model, "query": "test", "documents": ["a", "b"]},
                 )
-            return {"ok": False, "status": status}
-        model_ids = [m["id"] for m in data if isinstance(m, dict) and isinstance(m.get("id"), str)]
-    except (httpx.HTTPError, ValueError) as e:
-        status = f"error: {_short_err(e)}"
-        async with pool.acquire() as conn:
-            await conn.execute(
-                """
-                UPDATE providers SET last_verified_at = NOW(), last_verified_status = $2
-                 WHERE id = $1::uuid
-                """,
-                provider_id,
-                status,
-            )
-        return {"ok": False, "status": status}
+                ok, status = _interpret_rerank_response(r)
+            else:
+                # Chat or external: keep existing /v1/models behavior
+                r = await client.get(f"{base_url}/v1/models", headers=headers)
+                ok, status, model_ids = _interpret_models_response(r)
+        except Exception as e:
+            ok, status = False, f"error: {_short_err(e)}"
 
     async with pool.acquire() as conn:
         await conn.execute(
             """
-            UPDATE providers SET last_verified_at = NOW(), last_verified_status = 'ok'
+            UPDATE providers SET last_verified_at = NOW(), last_verified_status = $2
              WHERE id = $1::uuid
             """,
             provider_id,
+            status,
         )
-    return {"ok": True, "status": "ok", "models": model_ids}
+
+    result: dict[str, Any] = {"ok": ok, "status": status}
+    if model_ids is not None:
+        result["models"] = model_ids
+    return result
 
 
 @router.get("/{provider_id}/models")
