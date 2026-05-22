@@ -440,6 +440,9 @@ CREATE TABLE IF NOT EXISTS system_profile (
 
 INSERT INTO system_profile (id) VALUES (1) ON CONFLICT DO NOTHING;
 
+-- A1.7: first-launch acknowledgement timestamp (2026-05-22).
+ALTER TABLE system_profile ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ;
+
 -- ────────────────────────────────────────────────────────────────────────────
 -- Phase 1: bundled-AI model artifacts + pull tracking.
 -- Spec: hlh_phase1_design.md §Schema additions
