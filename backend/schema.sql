@@ -383,3 +383,35 @@ CREATE TABLE IF NOT EXISTS system_profile (
 );
 
 INSERT INTO system_profile (id) VALUES (1) ON CONFLICT DO NOTHING;
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- Phase 1: bundled-AI model artifacts + pull tracking.
+-- Spec: hlh_phase1_design.md §Schema additions
+-- One row per (role, tier, model_id, quant) combination, seeded from
+-- services/model_puller.py:MODEL_REGISTRY at lifespan start.
+-- ────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS bundled_models (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    role            TEXT NOT NULL CHECK (role IN ('chat', 'embed', 'rerank', 'vision', 'medsiglip', 'stt', 'ocr')),
+    tier            TEXT NOT NULL,
+    model_id        TEXT NOT NULL,
+    quant           TEXT,
+    repo            TEXT NOT NULL,
+    filename        TEXT NOT NULL,
+    expected_bytes  BIGINT,
+    sha256          TEXT,
+    license         TEXT,
+    license_url     TEXT,
+    status          TEXT NOT NULL CHECK (status IN ('pending', 'pulling', 'ready', 'failed', 'skipped'))
+                    DEFAULT 'pending',
+    pulled_bytes    BIGINT NOT NULL DEFAULT 0,
+    error_message   TEXT,
+    pull_started_at TIMESTAMPTZ,
+    pull_finished_at TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (role, tier, model_id, quant)
+);
+
+CREATE INDEX IF NOT EXISTS bundled_models_role_tier_idx ON bundled_models (role, tier);
+CREATE INDEX IF NOT EXISTS bundled_models_status_idx ON bundled_models (status);
