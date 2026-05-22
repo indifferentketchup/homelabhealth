@@ -20,6 +20,47 @@ _No entries yet._
 
 ---
 
+## [v0.10.0] — 2026-05-22
+
+C1 disk + backup hygiene foundation. Three new pre-flight checks plus
+three operator docs. No schema, no compose, no UI changes.
+
+### Code
+- `backend/hlh/doctor.py` — three additive checks registered in
+  `run_checks()`:
+  - `luks_status` — best-effort LUKS detection on the docker data
+    root. From inside the api container subprocess calls usually fall
+    through to a WARN "unverifiable" state; the check returns OK or
+    "not on LUKS" WARN when host visibility is available.
+  - `backrest_repo` — reads `BACKREST_REPO_PASSWORD` env then
+    `/run/secrets/backrest_password` as fallback. Placeholder set
+    rejection (`changeme`, `example`, etc.) and 16-char length floor.
+  - `master_key` — reads `HLH_MASTER_KEY` env. Same placeholder set,
+    32-char floor. Returns WARN-on-unset (not ERROR) since C6
+    consumes the value at v0.18.0.
+  No secret value ever appears in `detail` output (length and
+  placeholder match only).
+
+### Docs
+- `docs/operator/key-custody.md` — per-host key generation rules and
+  copy-pasteable commands for `HLH_MASTER_KEY` and the backrest
+  passphrase. Explicit "generate on your host, not the maintainer's"
+  guidance per C6 threat model.
+- `docs/operator/restore-drill.md` — backrest restore verification
+  walkthrough. Verification, not initial setup.
+- `docs/operator/luks-setup.md` — one-time LUKS-on-data-volume
+  guide. Includes `cryptsetup luksFormat`, `/etc/crypttab`, and
+  auto-mount setup.
+- `.gitignore` — extended `docs/*` + `!docs/*.md` pattern to also
+  permit `docs/operator/*.md`.
+- `CHANGELOG.md` — `[Unreleased]` flipped to `[v0.10.0]`; fresh empty
+  `[Unreleased]` section restored.
+- `docs/roadmap.md` — `v0.10.0` moved from Planned to Shipped;
+  ship-to-friend C1 checkbox ticked; phase-track-summary updated;
+  active-work pointer retargeted to `v0.11.0` / C8.
+
+---
+
 ## [v0.9.0] — 2026-05-22
 
 Security + threat-model docs foundation. No code path changes.
