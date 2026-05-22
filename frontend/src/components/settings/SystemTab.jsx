@@ -13,6 +13,7 @@ import {
 } from '@/api/models.js'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import HfTokenField from './HfTokenField'
 
 /**
  * Per-tier metadata for the picker.
@@ -721,6 +722,8 @@ export default function SystemTab() {
           </div>
         </details>
       </div>
+
+      <HfTokenField />
 
       {/* Phase 1: Models sub-section — show bundled artifacts for the
           currently-selected tier (so the operator sees what would be pulled
