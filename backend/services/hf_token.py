@@ -14,7 +14,7 @@ from typing import Any
 
 from services.crypto import decrypt_secret, encrypt_secret
 
-_TOKEN_RE = re.compile(r"^hf_[A-Za-z0-9]{20,}$")
+_TOKEN_RE = re.compile(r"^hf_[A-Za-z0-9_]{20,}$")
 
 
 def _validate(raw: str) -> str:
@@ -22,7 +22,7 @@ def _validate(raw: str) -> str:
     if not s:
         raise ValueError("HF token cannot be empty")
     if not _TOKEN_RE.match(s):
-        raise ValueError("HF token must start with 'hf_' followed by 20+ alphanumeric chars")
+        raise ValueError("HF token must start with 'hf_' followed by 20+ alphanumeric/underscore chars")
     return s
 
 
@@ -32,22 +32,21 @@ async def get(conn: Any) -> str | None:
     )
     if row is None or row["token_encrypted"] is None:
         return None
-    stored = bytes(row["token_encrypted"]).decode("utf-8")
-    return decrypt_secret(stored)
+    return decrypt_secret(row["token_encrypted"])
 
 
 async def set_token(conn: Any, raw: str) -> None:
     token = _validate(raw)
-    encrypted = encrypt_secret(token) or ""
+    encrypted = encrypt_secret(token)
     await conn.execute(
         """
         INSERT INTO hf_token_config (id, token_encrypted, updated_at)
-        VALUES (1, $1::bytea, NOW())
+        VALUES (1, $1, NOW())
         ON CONFLICT (id) DO UPDATE
         SET token_encrypted = EXCLUDED.token_encrypted,
             updated_at = NOW()
         """,
-        encrypted.encode("utf-8"),
+        encrypted,
     )
 
 
@@ -62,8 +61,7 @@ async def masked(conn: Any) -> tuple[bool, str | None, Any]:
     )
     if row is None or row["token_encrypted"] is None:
         return False, None, None
-    stored = bytes(row["token_encrypted"]).decode("utf-8")
-    token = decrypt_secret(stored) or ""
+    token = decrypt_secret(row["token_encrypted"]) or ""
     if len(token) < 8:
         return True, "hf_…" + token[-2:], row["updated_at"]
     return True, "hf_…" + token[-4:], row["updated_at"]

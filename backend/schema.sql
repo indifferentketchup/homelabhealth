@@ -375,9 +375,23 @@ UPDATE providers
 
 CREATE TABLE IF NOT EXISTS hf_token_config (
     id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
-    token_encrypted BYTEA,
+    token_encrypted TEXT,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'hf_token_config'
+           AND column_name = 'token_encrypted'
+           AND data_type = 'bytea'
+    ) THEN
+        ALTER TABLE hf_token_config
+            ALTER COLUMN token_encrypted TYPE TEXT
+            USING CASE WHEN token_encrypted IS NULL THEN NULL ELSE convert_from(token_encrypted, 'UTF8') END;
+    END IF;
+END $$;
 
 DO $$
 BEGIN
