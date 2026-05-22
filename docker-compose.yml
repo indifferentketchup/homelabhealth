@@ -51,8 +51,8 @@ services:
   # Only reachable inside hlh_default. The api proxies to it as a registered
   # provider at http://hlh_chat:${HLH_CHAT_PORT}.
   #
-  # Profile `chat`: omit COMPOSE_PROFILES (or use external-only) to skip
-  # this service. Default in .env.example includes `chat`.
+  # Profile `bundled`: omit COMPOSE_PROFILES (or use external-only) to skip
+  # the bundled sidecars entirely. Default in .env.example includes `bundled`.
   hlh_chat:
     # llama.cpp moved from ghcr.io/ggerganov/ to ghcr.io/ggml-org/ in 2025.
     # Unpinned `server` tag for Phase 1; pin to a specific build (e.g.
@@ -61,7 +61,7 @@ services:
     image: ghcr.io/ggml-org/llama.cpp:server
     container_name: hlh_chat
     restart: unless-stopped
-    profiles: [chat]
+    profiles: [bundled]
     env_file:
       - .env
     volumes:
@@ -78,6 +78,47 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
+    depends_on:
+      - hlh_api
+    networks:
+      - hlh_default
+
+  # Phase 2: bundled embed + rerank (infinity-emb). Serves /v1/embeddings
+  # (bge-m3, 1024-dim) AND /v1/rerank (bge-reranker-v2-m3) from one process.
+  # INFINITY_URL_PREFIX="/v1" aligns infinity's native /embeddings + /rerank
+  # paths with the /v1/* paths used by call sites in embeddings.py, providers.py,
+  # and settings.py (which also serve TEI / OpenAI-compatible external providers).
+  # Internal-only on hlh_default. First boot downloads ~1-2 GB from HF (~5-15 min).
+  #
+  # Spec: docs/superpowers/specs/2026-05-22-bundled-system-takes-everything-design.md §1
+  hlh_infer:
+    # michaelf34/infinity — CPU variant; confirmed tag 0.0.77-cpu (2025-08-22).
+    # Multi-model via INFINITY_MODEL_ID with ";" separator (infinity env.py convention).
+    # Default engine for -cpu image is `optimum` (ONNX); works without NVIDIA drivers.
+    image: michaelf34/infinity:0.0.77-cpu
+    container_name: hlh_infer
+    restart: unless-stopped
+    profiles: [bundled]
+    env_file:
+      - .env
+    environment:
+      INFINITY_MODEL_ID: "BAAI/bge-m3;BAAI/bge-reranker-v2-m3"
+      # bge-m3 has ONNX exports → optimum. bge-reranker-v2-m3 does NOT ship
+      # ONNX files, so its slot must use torch (PyTorch CPU, no ONNX needed).
+      # Semicolon-separated list is broadcast 1-to-1 with INFINITY_MODEL_ID order.
+      INFINITY_ENGINE: "optimum;torch"
+      INFINITY_PORT: "${HLH_INFER_PORT:-9611}"
+      INFINITY_HOST: "0.0.0.0"
+      INFINITY_URL_PREFIX: "/v1"   # serve at /v1/embeddings + /v1/rerank to match call-site paths
+      HF_TOKEN: "${HF_TOKEN:-}"   # not required for bge models (not gated); plumbed for future
+    volumes:
+      - hlh_models:/app/.cache   # infinity caches downloaded weights under HF_HOME (/app/.cache)
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:${HLH_INFER_PORT:-9611}/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15m   # bge-m3 + reranker first download ~5-15 min from HF
     depends_on:
       - hlh_api
     networks:

@@ -76,6 +76,8 @@ input, textarea, select {
   --chart-3: #2C4A6B;
   --chart-4: #C8924C;
   --chart-5: #B85450;
+  /* Semantic alias used by ChatInput queued-message border */
+  --orange: var(--chart-4);
   --sidebar: var(--bg-panel);
   --sidebar-foreground: var(--text);
   --sidebar-primary: var(--accent);
@@ -134,6 +136,8 @@ input, textarea, select {
   --chart-3: #7A9AC0;
   --chart-4: #D6A266;
   --chart-5: #D67975;
+  /* Semantic alias used by ChatInput queued-message border */
+  --orange: var(--chart-4);
   --sidebar: var(--bg-panel);
   --sidebar-foreground: var(--text);
   --sidebar-primary: var(--accent);

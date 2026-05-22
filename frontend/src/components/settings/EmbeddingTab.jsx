@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { listProviders, listProviderModels } from '@/api/providers.js'
 import { getEmbeddingSettings, putEmbeddingSettings } from '@/api/settings.js'
+import { getSystemProfile } from '@/api/system.js'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 
@@ -10,6 +11,7 @@ const SELECT_CLASS =
 
 export default function EmbeddingTab() {
   const [loading, setLoading] = useState(true)
+  const [tier, setTier] = useState(null)
   const [providers, setProviders] = useState([])
   const [providerId, setProviderId] = useState('')
   const [models, setModels] = useState([])
@@ -26,11 +28,13 @@ export default function EmbeddingTab() {
     setLoading(true)
     ;(async () => {
       try {
-        const [provList, current] = await Promise.all([
+        const [provList, current, profile] = await Promise.all([
           listProviders(),
           getEmbeddingSettings(),
+          getSystemProfile(),
         ])
         if (cancelled) return
+        setTier(profile?.tier ?? null)
         const enabled = (provList?.items ?? []).filter((p) => p.enabled)
         setProviders(enabled)
         setDimension(current?.dimension ?? 1024)
@@ -146,6 +150,31 @@ export default function EmbeddingTab() {
     return (
       <section className="mx-auto w-full max-w-2xl">
         <p className="text-sm text-muted-foreground">Loading embedding settings…</p>
+      </section>
+    )
+  }
+
+  if (tier && tier !== 'external') {
+    return (
+      <section className="mx-auto w-full max-w-2xl space-y-4">
+        <div>
+          <h2 className="fs-heading font-semibold uppercase tracking-wide text-muted-foreground">
+            Embedding model
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            One global selection. Used by every ingest, every retrieval, and every memory entry.
+          </p>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <p className="text-sm">
+            <span className="font-mono text-foreground">BAAI/bge-m3</span>{' '}
+            <span className="text-muted-foreground">(1024-dim)</span>
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Bundled by HomeLab Health AI. Change hardware tier in{' '}
+            <span className="text-foreground">Settings → System</span> to swap embedding behavior.
+          </p>
+        </div>
       </section>
     )
   }

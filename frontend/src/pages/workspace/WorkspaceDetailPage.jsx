@@ -58,6 +58,7 @@ export default function WorkspaceDetailPage() {
   const [nameEditing, setNameEditing] = useState(false)
   const [detailName, setDetailName] = useState('')
   const [detailDesc, setDetailDesc] = useState('')
+  // #8FAE92 = dark-mode accent; intentional hex for <input type="color"> initial value (CSS vars not accepted)
   const [detailColor, setDetailColor] = useState('#8FAE92')
   const [inferProviderId, setInferProviderId] = useState('')
   const [inferModel, setInferModel] = useState('')
@@ -93,12 +94,34 @@ export default function WorkspaceDetailPage() {
     [providersPack],
   )
 
+  // Derived: the bundled chat provider row (is_bundled=true, role='chat'), if present.
+  const bundledChatProvider = useMemo(
+    () => (providersPack?.items ?? []).find((p) => p.is_bundled && p.role === 'chat') ?? null,
+    [providersPack],
+  )
+
+  // Derived: the provider currently bound to this workspace.
+  const currentProvider = useMemo(
+    () => (providersPack?.items ?? []).find((p) => p.id === workspace?.provider_id) ?? null,
+    [providersPack, workspace],
+  )
+
+  // True when the workspace is currently bound to the bundled chat row.
+  const isBoundToBundled = !!(currentProvider?.is_bundled && currentProvider?.role === 'chat')
+
+  // Providers eligible for the chat picker: non-bundled (external) OR the bundled-chat row.
+  // Excludes bundled embed/rerank rows which should never appear in the chat picker.
+  const chatPickerProviders = useMemo(
+    () => enabledProviders.filter((p) => !p.is_bundled || p.role === 'chat'),
+    [enabledProviders],
+  )
+
   useEffect(() => {
     if (!workspace) return
     setNameEdit(workspace.name || '')
     setDetailName(workspace.name || '')
     setDetailDesc(workspace.description || '')
-    setDetailColor(workspace.color || '#8FAE92')
+    setDetailColor(workspace.color || '#8FAE92') // hex required for <input type="color">
     setInferProviderId(workspace.provider_id || '')
     setInferModel((workspace.model && String(workspace.model).trim()) || '')
     const rm = workspace.rag_mode
@@ -192,7 +215,7 @@ export default function WorkspaceDetailPage() {
       updateWorkspace(id, {
         name: detailName.trim() || 'Untitled',
         description: detailDesc.trim() || null,
-        color: detailColor || '#8FAE92',
+        color: detailColor || '#8FAE92', // DB stores hex; color picker always yields a valid hex once touched
         pinned: pinnedFlag,
       }),
     onSuccess: () => invalidateWorkspace(),
@@ -299,6 +322,38 @@ export default function WorkspaceDetailPage() {
     return () => window.clearTimeout(t)
   }, [inferSaveMsg])
 
+  // Restore the workspace to the bundled chat provider.
+  // Uses the workspace's current model if available, falling back to the cpu-min default.
+  // apply_bundled_bindings will correct the model to the current tier on the next tier-save or lifespan restart.
+  function restoreBundledChat() {
+    if (!bundledChatProvider) return
+    const restoredModel = workspace?.model || 'Qwen3-1.7B-Q8_0.gguf'
+    updateWorkspace(id, {
+      provider_id: bundledChatProvider.id,
+      model: restoredModel,
+      rag_mode: ragMode,
+    })
+      .then(() => {
+        setInferProviderId(bundledChatProvider.id)
+        setInferModel(restoredModel)
+        setInferSaveErr(null)
+        setInferSaveMsg('Restored HomeLab Health AI as the chat provider.')
+        invalidateWorkspace()
+      })
+      .catch((e) => {
+        const raw = e instanceof Error ? e.message : 'Restore failed'
+        let pretty = raw
+        try {
+          const parsed = JSON.parse(raw)
+          if (parsed?.detail) pretty = String(parsed.detail)
+        } catch {
+          /* not JSON */
+        }
+        setInferSaveErr(pretty)
+        setInferSaveMsg(null)
+      })
+  }
+
   const clearEmbeddingsMut = useMutation({
     mutationFn: () => clearWorkspaceEmbeddings(id),
     onSuccess: () => {
@@ -325,7 +380,7 @@ export default function WorkspaceDetailPage() {
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <span
             className="size-3 shrink-0 rounded-full"
-            style={{ background: workspace?.color || '#8FAE92' }}
+            style={{ background: workspace?.color || 'var(--accent-workspace)' }}
             aria-hidden
           />
           {nameEditing ? (
@@ -422,10 +477,6 @@ export default function WorkspaceDetailPage() {
 
             <section className="rounded-lg border border-border bg-card p-4">
               <h2 className="mb-3 text-sm font-medium text-foreground">Provider, model, and generation</h2>
-              <p className="mb-3 text-xs text-muted-foreground">
-                Every chat in this workspace routes through the provider and model below. Clear both to disable chat for
-                this workspace (you&apos;ll see the &quot;No provider configured for this workspace&quot; message on send).
-              </p>
 
               {inferSaveErr ? (
                 <p data-testid="workspace-infer-save-error" className="mb-3 text-sm text-destructive">
@@ -434,103 +485,175 @@ export default function WorkspaceDetailPage() {
               ) : null}
               {inferSaveMsg ? <p className="mb-3 text-sm text-foreground">{inferSaveMsg}</p> : null}
 
-              <div className="flex flex-col gap-4 text-sm">
-                <label className="flex flex-col gap-1">
-                  <span className="text-muted-foreground">Provider</span>
-                  <select
-                    id="workspace-provider"
-                    value={inferProviderId}
-                    onChange={(e) => {
-                      setInferProviderId(e.target.value)
-                      setInferModel('')
-                    }}
-                    disabled={saveInferMut.isPending}
-                    className="h-9 rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <option value="">— none (chat disabled) —</option>
-                    {enabledProviders.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                  {enabledProviders.length === 0 ? (
-                    <span className="text-xs text-muted-foreground">
-                      No enabled providers. Add one in Settings → Providers.
+              {/* ── Chat provider status card ── */}
+              {isBoundToBundled ? (
+                <div className="rounded-lg border border-border bg-card p-3">
+                  <div className="text-sm font-medium text-foreground">Chat provider</div>
+                  <p className="mt-1 text-sm">
+                    <span className="font-mono text-foreground">HomeLab Health AI</span>
+                    {workspace.model ? (
+                      <span className="text-muted-foreground">
+                        {' · model '}
+                        <span className="font-mono text-foreground">{workspace.model}</span>
+                      </span>
+                    ) : null}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Bundled by the homelabhealth stack. Change hardware tier in Settings → System to swap the chat model.
+                  </p>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-secondary/40 bg-card p-3">
+                  <div className="text-sm font-medium text-foreground">Chat provider</div>
+                  <p className="mt-1 text-sm">
+                    <span className="font-mono text-foreground">
+                      {currentProvider?.name || '(provider not set)'}
                     </span>
-                  ) : null}
-                </label>
-
-                <label className="flex flex-col gap-1">
-                  <span className="text-muted-foreground">Model</span>
-                  <select
-                    id="workspace-model"
-                    value={inferModel}
-                    onChange={(e) => setInferModel(e.target.value)}
-                    disabled={saveInferMut.isPending || !inferProviderId || providerModelsState.loading}
-                    className="h-9 rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <option value="">
-                      {!inferProviderId
-                        ? '— pick a provider first —'
-                        : providerModelsState.loading
-                          ? 'Loading models…'
-                          : providerModelsState.error
-                            ? '— failed to load models —'
-                            : providerModels.length === 0
-                              ? '— no models reported by provider —'
-                              : '— pick a model —'}
-                    </option>
-                    {providerModels.map((mid) => (
-                      <option key={mid} value={mid}>
-                        {mid}
-                      </option>
-                    ))}
-                  </select>
-                  {providerModelsState.error ? (
-                    <span className="text-xs text-destructive">{providerModelsState.error}</span>
-                  ) : null}
-                </label>
-
-                <label className="flex flex-col gap-1">
-                  <span className="text-muted-foreground">RAG Mode</span>
-                  <select
-                    value={ragMode}
-                    onChange={(e) => setRagMode(e.target.value)}
-                    disabled={saveInferMut.isPending}
-                    className="h-9 rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <option value="auto">Auto (intent gate)</option>
-                    <option value="always">Always</option>
-                    <option value="off">Off</option>
-                  </select>
-                </label>
-
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => saveInferMut.mutate()}
-                    disabled={saveInferMut.isPending}
-                  >
-                    {saveInferMut.isPending ? 'Saving…' : 'Save inference settings'}
-                  </Button>
-                  {(inferProviderId || inferModel) && (
+                    {workspace.model ? (
+                      <span className="text-muted-foreground">
+                        {' · model '}
+                        <span className="font-mono text-foreground">{workspace.model}</span>
+                      </span>
+                    ) : null}
+                  </p>
+                  {bundledChatProvider ? (
                     <Button
                       type="button"
                       size="sm"
                       variant="outline"
-                      onClick={() => {
-                        setInferProviderId('')
+                      className="mt-2"
+                      onClick={() => restoreBundledChat()}
+                      disabled={saveInferMut.isPending}
+                      data-testid="restore-bundled-chat"
+                    >
+                      Restore HomeLab Health AI default
+                    </Button>
+                  ) : null}
+                </div>
+              )}
+
+              {/* ── Advanced disclosure: change chat provider ── */}
+              <details
+                className="mt-3 rounded-lg border border-border bg-card p-3"
+                open={!isBoundToBundled}
+                data-testid="chat-provider-advanced"
+              >
+                <summary className="cursor-pointer select-none text-sm font-medium text-foreground">
+                  Change chat provider (advanced)
+                </summary>
+
+                <div className="mt-3 rounded-md border border-destructive/50 bg-destructive/5 p-3 text-xs">
+                  <p className="font-medium text-foreground">Switching off HomeLab Health AI for chat</p>
+                  <p className="mt-1 text-muted-foreground">
+                    You&apos;ll need to keep an external chat endpoint reachable. Embeddings and reranking
+                    will still run on the bundled stack — only chat changes.
+                  </p>
+                </div>
+
+                <div className="mt-3 flex flex-col gap-4 text-sm">
+                  <p className="text-xs text-muted-foreground">
+                    Every chat in this workspace routes through the provider and model below. Clear both to disable chat
+                    for this workspace (you&apos;ll see the &quot;No provider configured for this workspace&quot; message
+                    on send).
+                  </p>
+
+                  <label className="flex flex-col gap-1">
+                    <span className="text-muted-foreground">Provider</span>
+                    <select
+                      id="workspace-provider"
+                      value={inferProviderId}
+                      onChange={(e) => {
+                        setInferProviderId(e.target.value)
                         setInferModel('')
                       }}
                       disabled={saveInferMut.isPending}
+                      className="h-9 rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      Clear (then Save)
+                      <option value="">— none (chat disabled) —</option>
+                      {chatPickerProviders.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                    {chatPickerProviders.length === 0 ? (
+                      <span className="text-xs text-muted-foreground">
+                        No enabled providers. Add one in Settings → Providers.
+                      </span>
+                    ) : null}
+                  </label>
+
+                  <label className="flex flex-col gap-1">
+                    <span className="text-muted-foreground">Model</span>
+                    <select
+                      id="workspace-model"
+                      value={inferModel}
+                      onChange={(e) => setInferModel(e.target.value)}
+                      disabled={saveInferMut.isPending || !inferProviderId || providerModelsState.loading}
+                      className="h-9 rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <option value="">
+                        {!inferProviderId
+                          ? '— pick a provider first —'
+                          : providerModelsState.loading
+                            ? 'Loading models…'
+                            : providerModelsState.error
+                              ? '— failed to load models —'
+                              : providerModels.length === 0
+                                ? '— no models reported by provider —'
+                                : '— pick a model —'}
+                      </option>
+                      {providerModels.map((mid) => (
+                        <option key={mid} value={mid}>
+                          {mid}
+                        </option>
+                      ))}
+                    </select>
+                    {providerModelsState.error ? (
+                      <span className="text-xs text-destructive">{providerModelsState.error}</span>
+                    ) : null}
+                  </label>
+
+                  <label className="flex flex-col gap-1">
+                    <span className="text-muted-foreground">RAG Mode</span>
+                    <select
+                      value={ragMode}
+                      onChange={(e) => setRagMode(e.target.value)}
+                      disabled={saveInferMut.isPending}
+                      className="h-9 rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <option value="auto">Auto (intent gate)</option>
+                      <option value="always">Always</option>
+                      <option value="off">Off</option>
+                    </select>
+                  </label>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => saveInferMut.mutate()}
+                      disabled={saveInferMut.isPending}
+                    >
+                      {saveInferMut.isPending ? 'Saving…' : 'Save inference settings'}
                     </Button>
-                  )}
+                    {(inferProviderId || inferModel) && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setInferProviderId('')
+                          setInferModel('')
+                        }}
+                        disabled={saveInferMut.isPending}
+                      >
+                        Clear (then Save)
+                      </Button>
+                    )}
+                  </div>
                 </div>
-              </div>
+              </details>
             </section>
 
             <section className="rounded-lg border border-border bg-card p-4">

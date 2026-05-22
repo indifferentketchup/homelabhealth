@@ -338,6 +338,75 @@ BEGIN
     END IF;
 END $$;
 
+-- ────────────────────────────────────────────────────────────────────────────
+-- Bundled-system takes everything (2026-05-22). See:
+-- docs/superpowers/specs/2026-05-22-bundled-system-takes-everything-design.md
+-- ────────────────────────────────────────────────────────────────────────────
+
+ALTER TABLE providers
+    ADD COLUMN IF NOT EXISTS is_bundled BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE providers
+    ADD COLUMN IF NOT EXISTS role TEXT;  -- 'chat' | 'embed' | 'rerank' | NULL (general-purpose external)
+
+ALTER TABLE providers
+    ADD COLUMN IF NOT EXISTS bundle_group TEXT;  -- 'homelab-health-ai' for bundled rows; NULL otherwise
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'providers_role_check'
+    ) THEN
+        ALTER TABLE providers
+            ADD CONSTRAINT providers_role_check
+            CHECK (role IN ('chat', 'embed', 'rerank'));
+    END IF;
+END $$;
+
+-- Backfill the existing bundled-chat row on first apply. Guarded so subsequent
+-- applies are no-ops. Order-safe: this runs in schema.sql before
+-- ensure_bundled_providers in lifespan; IN-clause handles both legacy + post-rename names.
+UPDATE providers
+   SET is_bundled = TRUE,
+       role = 'chat',
+       bundle_group = 'homelab-health-ai'
+ WHERE is_bundled = FALSE
+   AND name IN ('bundled-chat', 'HomeLab Health AI · Chat');
+
+CREATE TABLE IF NOT EXISTS hf_token_config (
+    id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    token_encrypted TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'hf_token_config'
+           AND column_name = 'token_encrypted'
+           AND data_type = 'bytea'
+    ) THEN
+        ALTER TABLE hf_token_config
+            ALTER COLUMN token_encrypted TYPE TEXT
+            USING CASE WHEN token_encrypted IS NULL THEN NULL ELSE convert_from(token_encrypted, 'UTF8') END;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'hf_token_config_id_check'
+    ) THEN
+        ALTER TABLE hf_token_config
+            ADD CONSTRAINT hf_token_config_id_check
+            CHECK (id = 1);
+    END IF;
+END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS hf_token_config_singleton_idx
+    ON hf_token_config ((1));
+
 -- chats.model becomes nullable post-providers: the workspace's (provider_id, model)
 -- pair is the authoritative source for sends, so chat.model is now informational.
 -- Existing rows with the legacy hardcoded default 'qwen3.5:9b' are harmless —

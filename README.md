@@ -17,6 +17,8 @@ docker compose up --build -d
 
 The schema applies on startup; no manual migrations.
 
+**First boot:** the embedding sidecar (`hlh_infer`) downloads model weights from HuggingFace on first start — `BAAI/bge-m3` + `BAAI/bge-reranker-v2-m3`, ~1–2 GB total. Expect **5–15 minutes** before chat works end-to-end; the container restart-loops as `unhealthy` until the pull finishes. After first boot, weights are cached in the `hlh_models` Docker volume — subsequent boots are instant.
+
 ## Required env vars
 
 | Var | Purpose |

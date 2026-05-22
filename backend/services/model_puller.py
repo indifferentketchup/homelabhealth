@@ -190,11 +190,27 @@ def _hf_url(repo: str, filename: str) -> str:
     return f"https://huggingface.co/{repo}/resolve/main/{filename}"
 
 
-def _hf_headers() -> dict[str, str]:
-    """Authorization header for gated repos if HF_TOKEN is set."""
-    token = (os.environ.get("HF_TOKEN") or "").strip()
-    if token:
-        return {"Authorization": f"Bearer {token}"}
+async def _hf_headers(pool_or_conn) -> dict[str, str]:
+    """Authorization header for gated repos.
+
+    Resolution: DB-stored token (services/hf_token.py) > HF_TOKEN env var > none.
+    DB lookup failures fall through to env silently — pulling shouldn't break
+    just because the token table is briefly unavailable.
+    """
+    # 1. DB-stored
+    try:
+        async with await _get_conn(pool_or_conn) as conn:
+            from services import hf_token
+            db_token = await hf_token.get(conn)
+            if db_token:
+                return {"Authorization": f"Bearer {db_token}"}
+    except Exception:
+        logger.warning("hf_token: DB lookup failed; falling back to env", exc_info=True)
+    # 2. Env fallback
+    env_token = (os.environ.get("HF_TOKEN") or "").strip()
+    if env_token:
+        return {"Authorization": f"Bearer {env_token}"}
+    # 3. None
     return {}
 
 
@@ -297,7 +313,7 @@ async def pull_model(pool_or_conn, model_uuid: str) -> dict[str, Any]:
             dest.parent.mkdir(parents=True, exist_ok=True)
             partial = dest.with_suffix(dest.suffix + ".partial")
             url = _hf_url(repo, filename)
-            headers = _hf_headers()
+            headers = await _hf_headers(pool_or_conn)
 
             sha = hashlib.sha256()
             bytes_written = 0

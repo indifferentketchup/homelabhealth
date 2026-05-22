@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 
 import { fetchMe } from '@/api/profile.js'
+import { createThemeSlice } from './themeSlice.js'
 
 const USER_PROFILE_STORAGE_KEY = 'homelabhealth-user-profile-v1'
 
@@ -41,6 +42,8 @@ function revokeProfileIconObjectUrl(url) {
 }
 
 export const useAppStore = create((set, get) => ({
+  ...createThemeSlice(set, get),
+
   currentUser: null,
   /** `/api/auth/profile/icon-asset` cached as blob URL. */
   profileIconObjectUrl: null,
