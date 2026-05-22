@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { listProviders, listProviderModels } from '@/api/providers.js'
 import { getRerankerSettings, putRerankerSettings } from '@/api/settings.js'
+import { getSystemProfile } from '@/api/system.js'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 
@@ -10,6 +11,7 @@ const SELECT_CLASS =
 
 export default function RerankerTab() {
   const [loading, setLoading] = useState(true)
+  const [tier, setTier] = useState(null)
   const [providers, setProviders] = useState([])
   const [providerId, setProviderId] = useState('')
   const [models, setModels] = useState([])
@@ -25,11 +27,13 @@ export default function RerankerTab() {
     setLoading(true)
     ;(async () => {
       try {
-        const [provList, current] = await Promise.all([
+        const [provList, current, profile] = await Promise.all([
           listProviders(),
           getRerankerSettings(),
+          getSystemProfile(),
         ])
         if (cancelled) return
+        setTier(profile?.tier ?? null)
         const enabled = (provList?.items ?? []).filter((p) => p.enabled)
         setProviders(enabled)
         const savedPid = current?.provider_id ?? ''
@@ -139,6 +143,30 @@ export default function RerankerTab() {
     return (
       <section className="mx-auto w-full max-w-2xl">
         <p className="text-sm text-muted-foreground">Loading reranker settings…</p>
+      </section>
+    )
+  }
+
+  if (tier && tier !== 'external') {
+    return (
+      <section className="mx-auto w-full max-w-2xl space-y-4">
+        <div>
+          <h2 className="fs-heading font-semibold uppercase tracking-wide text-muted-foreground">
+            Reranker model
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Optional. Improves retrieval ordering. Disable to fall back to flashrank CPU.
+          </p>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <p className="text-sm">
+            <span className="font-mono text-foreground">BAAI/bge-reranker-v2-m3</span>
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Bundled by HomeLab Health AI. Change hardware tier in{' '}
+            <span className="text-foreground">Settings → System</span> to swap reranker behavior.
+          </p>
+        </div>
       </section>
     )
   }
