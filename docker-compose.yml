@@ -100,6 +100,10 @@ services:
       - .env
     environment:
       INFINITY_MODEL_ID: "BAAI/bge-m3;BAAI/bge-reranker-v2-m3"
+      # bge-m3 has ONNX exports → optimum. bge-reranker-v2-m3 does NOT ship
+      # ONNX files, so its slot must use torch (PyTorch CPU, no ONNX needed).
+      # Semicolon-separated list is broadcast 1-to-1 with INFINITY_MODEL_ID order.
+      INFINITY_ENGINE: "optimum;torch"
       INFINITY_PORT: "${HLH_INFER_PORT:-9611}"
       INFINITY_HOST: "0.0.0.0"
       HF_TOKEN: "${HF_TOKEN:-}"   # not required for bge models (not gated); plumbed for future
