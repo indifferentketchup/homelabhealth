@@ -320,30 +320,35 @@ Was named `pre-strip-snapshot` before the 2026-05-22 retag pass.
 
 ## [snapshot/pre-phase-4-merge] — 2026-04-22
 
-Pre-existing tag from the boocode/boolab era. Captures the boolab
-state before the phase-4 merge that eventually became homelabhealth.
-Earliest tagged history of this repo.
+Captures the boolab state before the phase-4 merge that eventually
+became homelabhealth.
 
 Was named `pre-phase-4-merge` before the 2026-05-22 retag pass.
 
 ---
 
-## Pre-tag history (chronological)
+## [snapshot/genesis] — 2026-03-22
 
-Before the first tag (`snapshot/pre-phase-4-merge`, 2026-04-22), the
-repo evolved as boolab → boocode → homelabhealth. Highlights from
-the pre-tag commits:
+**Root commit of the repo** (`62063e7` — "Phase 0 complete: skeleton,
+docker, schema, mode detection"). Marks the boolab/boocode origin
+point. Between this and `snapshot/pre-strip` (2026-04-27) is one
+month of pre-homelabhealth history — 92 commits in total.
+
+Highlights from that window:
 
 - `62063e7` Phase 0 — initial skeleton, docker, schema, mode
-  detection.
-- `bc561ed` Phase 1 — BooOps core chat, streaming, model switcher.
-- `8efc758` feat: auth + user tiers (later stripped in v0.1.0).
+  detection (root).
+- `bc561ed` Phase 1 — BooOps core chat, streaming, model switcher
+  (same day).
+- `8efc758` feat: auth + user tiers (later stripped in `v0.1.0`).
 - `22034c8` feat: global personas + drop mode column (later removed
-  in v0.5.1).
+  in `v0.5.0`).
 - `8673cf2` feat: branding asset seeding.
 - A long tail of boocode terminal fixes (xterm, PTY width, scroll
   containment, glyph rendering) before the strip-down to
   homelabhealth.
 
 These commits remain reachable via `git log` but are not part of
-any tagged release.
+any release. `snapshot/pre-strip` is the other bookend of this
+window — the last commit before the strip pass that produced
+`v0.1.0`.
