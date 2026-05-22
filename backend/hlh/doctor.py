@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import asyncio
 import os
+import pathlib
 import shutil
+import subprocess
 from typing import Any
 
 import httpx
@@ -132,8 +134,163 @@ async def _check_hf_token() -> dict[str, Any]:
         return {"name": "hf_token", "status": ERROR, "detail": f"{type(e).__name__}: {e}"}
 
 
+def _check_luks_status() -> dict[str, Any]:
+    """Best-effort check that docker data root sits on LUKS (dm-crypt)."""
+    try:
+        # Step 1: try to resolve docker data root
+        try:
+            result = subprocess.run(
+                ["docker", "info", "--format", "{{.DockerRootDir}}"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                root = result.stdout.strip() or "/var/lib/docker"
+            else:
+                root = "/var/lib/docker"
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            root = "/var/lib/docker"
+
+        # Step 2: find the block device for this path
+        try:
+            df_result = subprocess.run(
+                ["df", "--output=source", root],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if df_result.returncode != 0:
+                return {
+                    "name": "luks_status",
+                    "status": WARN,
+                    "detail": "luks status unverifiable from container — confirm manually per docs/operator/luks-setup.md",
+                }
+            lines = df_result.stdout.strip().splitlines()
+            # df output has a header line; source is second line
+            source = lines[-1].strip() if len(lines) >= 2 else lines[0].strip()
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            return {
+                "name": "luks_status",
+                "status": WARN,
+                "detail": "luks status unverifiable from container — confirm manually per docs/operator/luks-setup.md",
+            }
+
+        # Step 3: check lsblk TYPE column for the source device
+        try:
+            lsblk_result = subprocess.run(
+                ["lsblk", "-no", "TYPE", source],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if lsblk_result.returncode != 0:
+                return {
+                    "name": "luks_status",
+                    "status": WARN,
+                    "detail": "luks status unverifiable from container — confirm manually per docs/operator/luks-setup.md",
+                }
+            type_lines = [line.strip() for line in lsblk_result.stdout.splitlines() if line.strip()]
+            if not type_lines:
+                return {
+                    "name": "luks_status",
+                    "status": WARN,
+                    "detail": "luks status unverifiable from container — confirm manually per docs/operator/luks-setup.md",
+                }
+            if "crypt" in type_lines:
+                return {
+                    "name": "luks_status",
+                    "status": OK,
+                    "detail": f"dm-crypt detected on {source}",
+                }
+            return {
+                "name": "luks_status",
+                "status": WARN,
+                "detail": "data volume is not on LUKS — see docs/operator/luks-setup.md",
+            }
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            return {
+                "name": "luks_status",
+                "status": WARN,
+                "detail": "luks status unverifiable from container — confirm manually per docs/operator/luks-setup.md",
+            }
+    except Exception as e:
+        return {"name": "luks_status", "status": ERROR, "detail": f"{type(e).__name__}: {e}"}
+
+
+_PASSPHRASE_PLACEHOLDERS = {"changeme", "example", "<paste your passphrase here>", "", "password"}
+
+
+def _check_backrest_repo() -> dict[str, Any]:
+    """Check that a non-placeholder backrest repo passphrase is configured."""
+    try:
+        # Priority 1: env var (treat set-but-empty as unset, fall through to secret file)
+        passphrase = os.environ.get("BACKREST_REPO_PASSWORD", "").strip()
+
+        # Priority 2: docker secret file fallback
+        if not passphrase:
+            try:
+                secret_path = pathlib.Path("/run/secrets/backrest_password")
+                if secret_path.exists():
+                    passphrase = secret_path.read_text().strip()
+            except OSError:
+                passphrase = ""
+
+        if not passphrase:
+            return {
+                "name": "backrest_repo",
+                "status": ERROR,
+                "detail": "backrest passphrase not configured — see docs/operator/restore-drill.md",
+            }
+        if passphrase.lower() in _PASSPHRASE_PLACEHOLDERS:
+            return {
+                "name": "backrest_repo",
+                "status": ERROR,
+                "detail": "passphrase matches placeholder — regenerate per docs/operator/key-custody.md",
+            }
+        len_chars = len(passphrase)
+        if len_chars < 16:
+            return {
+                "name": "backrest_repo",
+                "status": WARN,
+                "detail": "passphrase shorter than recommended (16+ chars)",
+            }
+        return {"name": "backrest_repo", "status": OK, "detail": f"configured ({len_chars} chars)"}
+    except Exception as e:
+        return {"name": "backrest_repo", "status": ERROR, "detail": f"{type(e).__name__}: {e}"}
+
+
+def _check_master_key() -> dict[str, Any]:
+    """Check that HLH_MASTER_KEY is set and non-placeholder (required at v0.18.0/C6)."""
+    try:
+        passphrase = os.environ.get("HLH_MASTER_KEY", "").strip()
+
+        if not passphrase:
+            return {
+                "name": "master_key",
+                "status": WARN,
+                "detail": "HLH_MASTER_KEY not set — required at v0.18.0/C6, generate per docs/operator/key-custody.md",
+            }
+        if passphrase.lower() in _PASSPHRASE_PLACEHOLDERS:
+            return {
+                "name": "master_key",
+                "status": ERROR,
+                "detail": "HLH_MASTER_KEY matches placeholder — regenerate per docs/operator/key-custody.md",
+            }
+        len_chars = len(passphrase)
+        if len_chars < 32:
+            return {
+                "name": "master_key",
+                "status": WARN,
+                "detail": "HLH_MASTER_KEY shorter than recommended (32+ chars)",
+            }
+        return {"name": "master_key", "status": OK, "detail": f"configured ({len_chars} chars)"}
+    except Exception as e:
+        return {"name": "master_key", "status": ERROR, "detail": f"{type(e).__name__}: {e}"}
+
+
 async def run_checks() -> list[dict[str, Any]]:
-    """Run all 11 checks. Returns ordered list."""
+    """Run all 14 checks. Returns ordered list."""
     return [
         await _check_db_pool(),
         await _check_schema_applied(),
@@ -146,6 +303,9 @@ async def run_checks() -> list[dict[str, Any]]:
         _check_disk_free("disk_free_models", "/models"),
         _check_provider_key(),
         await _check_hf_token(),
+        _check_luks_status(),
+        _check_backrest_repo(),
+        _check_master_key(),
     ]
 
 
