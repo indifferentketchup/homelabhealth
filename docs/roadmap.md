@@ -115,6 +115,27 @@ trunk serves chat freely. B0 lands ASAP as a short-lived branch off
 lesson, locked going forward: every AI phase bundles its safeguards
 on the same feature branch. A2+ follow this rule without exception.
 
+### Phase 2.A (2026-05-22) — bundled-system takes everything
+
+Accelerated from the original Phase 2 plan. Spec: `docs/superpowers/specs/2026-05-22-bundled-system-takes-everything-design.md`.
+
+**Shipped:**
+- `hlh_infer` sidecar (infinity-emb on `michaelf34/infinity:0.0.77-cpu`) serves embeddings (`BAAI/bge-m3`, 1024-dim) AND rerank (`BAAI/bge-reranker-v2-m3`) from one process.
+- Three immutable bundled provider rows (`is_bundled=TRUE`, `bundle_group='homelab-health-ai'`, roles `chat`/`embed`/`rerank`) — server-side 403 on PATCH/DELETE.
+- `apply_bundled_bindings(conn, tier)` helper rewrites global embed/rerank + every bundled-chat-bound workspace on lifespan boot AND tier-save. Override-on-bundled is reset on tier change (intentional — see spec §4 boundary cases).
+- HF token DB-stored via new `hf_token_config` singleton + `services/hf_token.py` + `routers/system.py` endpoints; UI field in Settings → System.
+- UI surgery: embedding/reranker tabs read-only when tier ≠ external; Settings → Providers groups bundled rows under one "HomeLab Health AI" expandable card; WorkspaceDetailPage hides the chat picker behind an advanced disclosure.
+- Dark mode toggle (Settings → Sidebar) activates the existing `.dark` palette in globals.css via Zustand + localStorage + matchMedia.
+
+**Phase 2.B follow-ups:**
+- Extend `model_puller.MODEL_REGISTRY` for `embed` + `rerank` so the Models panel tracks bge-m3 + bge-reranker download progress (currently infinity pulls them itself, opaque to the UI).
+- Optionally pin `michaelf34/infinity` to a specific newer tag if 0.0.77-cpu becomes unsuitable.
+
+**Known limitations** (documented in spec §10):
+- Encryption falls back to cleartext if `PROVIDER_KEY_ENCRYPTION_KEY` env unset — same posture as `providers.api_key`.
+- Single embedding model across all tiers (bge-m3 is the only 1024-dim option supported by the schema).
+- Apple MLX tier treated as external (Phase 6 deferred — no bundled MLX inference yet).
+
 ### A1.5 — Hardening + pinning
 
 Branch from `main` after A1 merges. Closes A1 gaps 1-7 and absorbs

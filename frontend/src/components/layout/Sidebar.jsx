@@ -32,6 +32,7 @@ import { useAppStore } from '@/store/index.js'
 import { useLayoutStore } from '@/store/layoutStore.js'
 import { cn } from '@/lib/utils'
 import { useLongPress } from '@/hooks/useLongPress.js'
+import ThemeToggle from '@/components/layout/ThemeToggle'
 
 // ---------------------------------------------------------------------------
 // Subcomponents for long-press parity on touch devices
@@ -459,7 +460,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
                         >
                           <span
                             className="size-2.5 shrink-0 rounded-full"
-                            style={{ background: d.color || '#8FAE92' }}
+                            style={{ background: d.color || 'var(--accent-workspace)' }}
                             aria-hidden
                           />
                           <span className="fs-nav line-clamp-2">{d.name}</span>
@@ -546,7 +547,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
                   >
                     <span
                       className="size-2.5 shrink-0 rounded-full"
-                      style={{ background: d.color || '#8FAE92' }}
+                      style={{ background: d.color || 'var(--accent-workspace)' }}
                       aria-hidden
                     />
                   </Link>
@@ -599,6 +600,10 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
               </Link>
             </Button>
           )}
+          <div className="flex justify-center py-1">
+            <ThemeToggle />
+          </div>
+
           {desktopCollapsed ? (
             <>
               <Button

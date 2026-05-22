@@ -83,9 +83,9 @@ async def lifespan(_app: FastAPI):
     pool = await get_pool()
     async with pool.acquire() as conn:
         seeded = await model_puller.seed_registry(conn)
-        # If setup_complete=true AND tier != external, ensure the bundled-chat
-        # provider row exists. No-op otherwise (silent).
-        await bundled_providers.ensure_bundled_chat_provider(conn)
+        profile_row = await conn.fetchrow("SELECT tier FROM system_profile WHERE id = 1")
+        if profile_row is not None:
+            await bundled_providers.apply_bundled_bindings(conn, profile_row["tier"] or "external")
     logger.info("model_puller: seeded %d bundled_models rows", seeded)
     try:
         yield

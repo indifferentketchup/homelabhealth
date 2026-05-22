@@ -21,11 +21,12 @@ import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from db import get_pool
 from deps import require_admin
-from services import bundled_providers
+from services import bundled_providers, hf_token
 from services.sysinfo import ALL_TIERS, collect, recommend_tier
 
 router = APIRouter()
@@ -37,6 +38,10 @@ _TIER_SOURCES = ("auto", "manual")
 class ProfilePut(BaseModel):
     tier: str = Field(..., min_length=1, max_length=64)
     tier_source: str = Field(default="manual", min_length=1, max_length=32)
+
+
+class HfTokenPut(BaseModel):
+    token: str = Field(..., min_length=10, max_length=200)
 
 
 def _profile_response(row: Any) -> dict[str, Any]:
@@ -131,10 +136,7 @@ async def put_profile(
         )
         if row is None:
             raise HTTPException(status_code=503, detail="system_profile row missing")
-        # Phase 1: now that setup_complete=true and we have a tier, seed the
-        # bundled-chat provider so the operator can immediately bind workspaces
-        # to it. Idempotent + no-op on external tier (see bundled_providers).
-        await bundled_providers.ensure_bundled_chat_provider(conn)
+        await bundled_providers.apply_bundled_bindings(conn, body.tier)
     return _profile_response(row)
 
 
@@ -161,3 +163,37 @@ async def redetect(_: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]
     if row is None:
         raise HTTPException(status_code=503, detail="system_profile row missing")
     return _profile_response(row)
+
+
+@router.get("/hf-token")
+async def get_hf_token(_: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        configured, masked, updated_at = await hf_token.masked(conn)
+    return {
+        "configured": configured,
+        "masked": masked,
+        "updated_at": updated_at.isoformat() if updated_at else None,
+    }
+
+
+@router.put("/hf-token")
+async def put_hf_token(
+    body: HfTokenPut,
+    _: dict[str, Any] = Depends(require_admin),
+):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        try:
+            await hf_token.set_token(conn, body.token)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+    return Response(status_code=204)
+
+
+@router.delete("/hf-token")
+async def delete_hf_token(_: dict[str, Any] = Depends(require_admin)):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await hf_token.clear(conn)
+    return Response(status_code=204)
