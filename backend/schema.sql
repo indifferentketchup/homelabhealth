@@ -352,6 +352,17 @@ ALTER TABLE providers
 ALTER TABLE providers
     ADD COLUMN IF NOT EXISTS bundle_group TEXT;  -- 'homelab-health-ai' for bundled rows; NULL otherwise
 
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'providers_role_check'
+    ) THEN
+        ALTER TABLE providers
+            ADD CONSTRAINT providers_role_check
+            CHECK (role IN ('chat', 'embed', 'rerank'));
+    END IF;
+END $$;
+
 -- Backfill the existing bundled-chat row on first apply. Guarded so subsequent
 -- applies are no-ops. Order-safe: this runs in schema.sql before
 -- ensure_bundled_providers in lifespan; IN-clause handles both legacy + post-rename names.
@@ -363,10 +374,21 @@ UPDATE providers
    AND name IN ('bundled-chat', 'HomeLab Health AI · Chat');
 
 CREATE TABLE IF NOT EXISTS hf_token_config (
-    id INT PRIMARY KEY DEFAULT 1,
+    id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
     token_encrypted BYTEA,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'hf_token_config_id_check'
+    ) THEN
+        ALTER TABLE hf_token_config
+            ADD CONSTRAINT hf_token_config_id_check
+            CHECK (id = 1);
+    END IF;
+END $$;
 
 CREATE UNIQUE INDEX IF NOT EXISTS hf_token_config_singleton_idx
     ON hf_token_config ((1));
