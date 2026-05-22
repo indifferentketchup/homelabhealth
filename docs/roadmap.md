@@ -23,7 +23,7 @@ Last updated: 2026-05-22 (reconciliation pass)
   Every commit, every doc, every defaulted env var is written for a
   stranger reading the repo. README is honest about state. `.env.example`
   lists every variable.
-- **License: AGPL-3.0 leading.** Locks in if anyone else ships from this.
+- **License: MIT.**
 
 -----
 
@@ -34,6 +34,7 @@ sees zero of this until **everything** is at “shipped” status.
 
 ```
 Shipped releases (most recent → oldest):
+  v0.9.0    C0  security + threat-model docs (2026-05-22)
   v0.8.1    docs + tooling polish (2026-05-22)
   v0.8.0    A1.5 hardening + A1.7 pre-flight + Phase 2.B (2026-05-22)
   v0.7.0    Phase 2.A bundled-system takes everything (2026-05-22)
@@ -46,8 +47,7 @@ Shipped releases (most recent → oldest):
   v0.1.0    strip + homelabhealth identity (2026-05-02)
 
 Planned (dependency-ordered):
-  v0.9.0    C0  security + threat-model docs  ← active work
-  v0.10.0   C1  disk/backup hygiene + doctor LUKS/backrest checks
+  v0.10.0   C1  disk/backup hygiene + doctor LUKS/backrest checks  ← active work
   v0.11.0   C8  supply chain + ops (make security target)
   v0.12.0   C4  audit logging (unblocks B3)
   v0.13.0   C3  synthetic data + log scrubbing
@@ -67,22 +67,20 @@ Planned (dependency-ordered):
 Phase track in summary:
   A — Built-in AI:   A0 ✓ A1 ✓ A1.5 ✓ A1.6 ✓ A1.7 ✓ A2 ✓ A7 ✓ │ A3 A4 A5? A6
   B — Safeguards:    B0 ✓                                       │ B1 B2 B3 B4
-  C — Security:                       C2 ✓                      │ C0 C1 C3 C4 C5 C6 C7 C8 C9
+  C — Security:      C0 ✓ C2 ✓                                 │ C1 C3 C4 C5 C6 C7 C8 C9
 ```
 
 **Ship-to-friend gate** = every phase above shipped + tagged.
 Trunk-merge gates documented in earlier roadmap revisions are
 **retired**. Gates now apply to non-Sam access only.
 
-**Latest release:** `v0.8.0` (2026-05-22) — A1.5 hardening + A1.7
-pre-flight + Phase 2.B embed/rerank visibility. See `CHANGELOG.md` for
-the per-tag rundown.
+**Latest release:** `v0.9.0` (2026-05-22) — security + threat-model docs foundation. See
+`CHANGELOG.md` for the per-tag rundown.
 
-**Active work — `v0.9.0` (security + threat-model docs foundation):**
-SECURITY.md, THREATMODEL.md, docs/safe-harbor.md,
-docs/breach-response.md, README security-posture section. Captures
-the A7 search-egress risk and the C5 first-real-ingest gate.
-Estimated ~1 day. Roadmap code: C0.
+**Active work — `v0.10.0` (C1 disk + backup hygiene):**
+LUKS passphrase confirmation, backrest passphrase and repo setup, restore drill documentation,
+key custody documentation for the friend deployment, and doctor checks verifying LUKS and
+backrest presence on the host. Roadmap code: C1.
 
 -----
 
@@ -658,7 +656,7 @@ is checked.
 **Security:**
 
 - [x] `v0.8.0` — C2 docker hardening (landed with A1.5)
-- [ ] `v0.9.0` — C0 security + threat-model docs
+- [x] `v0.9.0` — C0 security + threat-model docs
 - [ ] `v0.10.0` — C1 disk + backup hygiene confirmed on friend's host
 - [ ] `v0.11.0` — C8 supply chain hardening
 - [ ] `v0.12.0` — C4 audit logging
@@ -675,7 +673,7 @@ treat it as coming):
 
 - [ ] All checkboxes above
 - [ ] `SECURITY.md` vulnerability disclosure policy active (lands in `v0.9.0`)
-- [ ] `LICENSE` file (AGPL-3.0) committed
+- [ ] `LICENSE` file (MIT) committed
 - [ ] README final pass — honest, no weasel words, names non-defenses
 - [ ] `THREATMODEL.md` reviewed by a second pair of eyes
 - [ ] Tag `v1.0.0` and push
