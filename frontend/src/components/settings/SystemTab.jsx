@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import {
   getDoctor,
@@ -12,6 +12,7 @@ import {
   listModels,
   pullModel,
 } from '@/api/models.js'
+import { listProviders, testProvider } from '@/api/providers.js'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import HfTokenField from './HfTokenField'
@@ -296,7 +297,11 @@ function TierRadio({ tier, selected, onSelect, isRecommended, disabled }) {
 // ──────────────────────────────────────────────────────────────────────────────
 // Phase 1: Models sub-section.
 // Polls /api/models every 2s while any row is `pulling`; idle otherwise.
+// Phase 2.B: Synthetic embed + rerank rows from bundled providers.
 // ──────────────────────────────────────────────────────────────────────────────
+
+const MAX_SYNTH_ATTEMPTS = 60
+const SYNTH_POLL_MS = 5_000
 
 function progressFraction(row) {
   const pulled = Number(row?.pulled_bytes) || 0
@@ -325,6 +330,8 @@ function StatusBadge({ status }) {
   else if (status === 'pulling') cls = 'bg-sky-500/15 text-sky-700 dark:text-sky-300'
   else if (status === 'failed') cls = 'bg-rose-500/15 text-rose-700 dark:text-rose-300'
   else if (status === 'skipped') cls = 'bg-muted text-muted-foreground'
+  else if (status === 'loading') cls = 'bg-sky-500/15 text-sky-700 dark:text-sky-300'
+  else if (status === 'error') cls = 'bg-rose-500/15 text-rose-700 dark:text-rose-300'
   return (
     <span className={cn('inline-block rounded px-1.5 py-0.5 font-mono text-[11px]', cls)}>
       {status || '—'}
@@ -332,12 +339,32 @@ function StatusBadge({ status }) {
   )
 }
 
+/**
+ * Derive the display state for a synthetic (embed/rerank) row.
+ * @param {{ last_verified_status: string|null }} row
+ * @param {number} attempts - number of poll attempts so far
+ * @returns {{ state: 'ready'|'loading'|'error', msg: string }}
+ */
+function syntheticStatus(row, attempts) {
+  const lvs = row.last_verified_status
+  if (lvs && lvs.startsWith('ok')) return { state: 'ready', msg: '' }
+  if (lvs && lvs.startsWith('error:')) return { state: 'error', msg: lvs }
+  if ((attempts || 0) >= MAX_SYNTH_ATTEMPTS) {
+    return { state: 'error', msg: "sidecar didn't come up within 5 min — check `docker logs hlh_infer`" }
+  }
+  return { state: 'loading', msg: '' }
+}
+
 
 function ModelsPanel({ currentTier }) {
+  const queryClient = useQueryClient()
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [actionErr, setActionErr] = useState(null)
+
+  // ── Synthetic row polling state ──────────────────────────────────────────
+  const [synthAttempts, setSynthAttempts] = useState({}) // { provider_id: attempt_count }
 
   const refresh = useCallback(async () => {
     try {
@@ -364,6 +391,78 @@ function ModelsPanel({ currentTier }) {
     const t = window.setInterval(() => void refresh(), 2000)
     return () => window.clearInterval(t)
   }, [anyPulling, refresh])
+
+  // ── Bundled providers query (for synthetic embed + rerank rows) ──────────
+  const { data: providersData } = useQuery({
+    queryKey: ['providers'],
+    queryFn: () => listProviders(),
+    staleTime: 30_000,
+  })
+  const providers = providersData?.items ?? []
+
+  // Synthesize embed + rerank rows from bundled providers
+  const syntheticRows = useMemo(
+    () =>
+      providers
+        .filter((p) => p.is_bundled && (p.role === 'embed' || p.role === 'rerank'))
+        .map((p) => ({
+          id: p.id,
+          role: p.role,
+          model:
+            p.role === 'embed'
+              ? 'BAAI/bge-m3'
+              : p.role === 'rerank'
+              ? 'BAAI/bge-reranker-v2-m3'
+              : p.name,
+          last_verified_status: p.last_verified_status,
+          license: p.role === 'embed' ? 'mit' : 'apache-2.0',
+          license_url:
+            p.role === 'embed'
+              ? 'https://huggingface.co/BAAI/bge-m3'
+              : 'https://huggingface.co/BAAI/bge-reranker-v2-m3',
+        })),
+    [providers],
+  )
+
+  // ── Polling for synthetic rows in "loading" state ────────────────────────
+  useEffect(() => {
+    const loadingRows = syntheticRows.filter(
+      (r) => !r.last_verified_status || r.last_verified_status === '',
+    )
+    if (loadingRows.length === 0) return
+
+    const interval = window.setInterval(async () => {
+      for (const row of loadingRows) {
+        const attempts = synthAttempts[row.id] || 0
+        if (attempts >= MAX_SYNTH_ATTEMPTS) continue
+        try {
+          await testProvider(row.id)
+        } catch {
+          /* ignore — provider.last_verified_status is updated server-side */
+        }
+        setSynthAttempts((cur) => ({ ...cur, [row.id]: (cur[row.id] || 0) + 1 }))
+      }
+      queryClient.invalidateQueries({ queryKey: ['providers'] })
+    }, SYNTH_POLL_MS)
+
+    return () => window.clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syntheticRows, queryClient])
+  // Note: synthAttempts intentionally excluded from deps to avoid restarting
+  // the interval on every count increment; reads the latest value via
+  // setSynthAttempts functional updater instead.
+
+  async function onTestSynthetic(row) {
+    // Reset attempt counter so the 60-attempt cap starts fresh.
+    setSynthAttempts((cur) => ({ ...cur, [row.id]: 0 }))
+    setActionErr(null)
+    try {
+      await testProvider(row.id)
+      queryClient.invalidateQueries({ queryKey: ['providers'] })
+    } catch (e) {
+      setActionErr(e instanceof Error ? e.message : 'Test failed')
+    }
+  }
 
   async function onPull(row) {
     setActionErr(null)
@@ -440,6 +539,12 @@ function ModelsPanel({ currentTier }) {
         is active. Gated rows (MedGemma) need an <span className="font-mono">HF_TOKEN</span> and a
         license click at the linked HF page.
       </p>
+      <p className="text-xs text-muted-foreground">
+        Embed and rerank weights are downloaded automatically by{' '}
+        <span className="font-mono">hlh_infer</span> on first boot. They appear as{' '}
+        <span className="font-mono">loading</span> until the sidecar reports healthy, then{' '}
+        <span className="font-mono">ready</span>. No Pull button — the sidecar manages itself.
+      </p>
 
       {actionErr ? <p className="text-sm text-destructive">{actionErr}</p> : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
@@ -471,7 +576,7 @@ function ModelsPanel({ currentTier }) {
 
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading models…</p>
-      ) : items.length === 0 ? (
+      ) : items.length === 0 && syntheticRows.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           No bundled artifacts for this tier (or you picked <span className="font-mono">external</span>).
         </p>
@@ -489,6 +594,7 @@ function ModelsPanel({ currentTier }) {
               </tr>
             </thead>
             <tbody>
+              {/* Puller-driven chat rows */}
               {items.map((row) => {
                 const frac = progressFraction(row)
                 return (
@@ -577,6 +683,73 @@ function ModelsPanel({ currentTier }) {
                           {row.status === 'ready' ? 'Re-pull' : 'Pull'}
                         </Button>
                       )}
+                    </td>
+                  </tr>
+                )
+              })}
+
+              {/* Synthetic embed + rerank rows (Phase 2.B) */}
+              {syntheticRows.map((row) => {
+                const { state, msg } = syntheticStatus(row, synthAttempts[row.id])
+                return (
+                  <tr
+                    key={row.id}
+                    className="border-t border-border align-top"
+                    data-testid={`system-synth-row-${row.role}`}
+                  >
+                    <td className="px-3 py-2 font-medium text-foreground">{row.role}</td>
+                    <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
+                      {row.model}
+                    </td>
+                    <td className="px-3 py-2">
+                      <StatusBadge status={state} />
+                      {state === 'error' && msg ? (
+                        <div
+                          className="mt-1 text-xs text-destructive"
+                          data-testid={`system-synth-error-${row.role}`}
+                        >
+                          {msg}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-2 text-xs">
+                      {state === 'loading' ? (
+                        <span
+                          className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent text-sky-600"
+                          aria-label="loading"
+                        />
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-xs">
+                      {row.license ? (
+                        <a
+                          href={row.license_url || '#'}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline underline-offset-2 hover:text-foreground"
+                          title={row.license_url || ''}
+                        >
+                          {row.license}
+                        </a>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <div className="flex flex-col items-end gap-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void onTestSynthetic(row)}
+                          data-testid={`system-synth-test-${row.role}`}
+                        >
+                          Test
+                        </Button>
+                        <span className="text-[11px] text-muted-foreground">sidecar-managed</span>
+                      </div>
                     </td>
                   </tr>
                 )
