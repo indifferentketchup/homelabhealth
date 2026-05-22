@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from deps import get_principal
 from db import get_pool
+from services import bundled_providers
 
 router = APIRouter()
 
@@ -150,6 +151,13 @@ async def create_workspace(body: WorkspaceCreate, principal: dict[str, Any] = De
             rag_ins,
             principal["user_id"],
         )
+        # Bind the new workspace to the bundled chat provider when tier ≠ external.
+        # apply_bundled_bindings is idempotent; it will pick up the just-created
+        # workspace via its WHERE provider_id IS NULL UPDATE.
+        profile_row = await conn.fetchrow("SELECT tier FROM system_profile WHERE id = 1")
+        if profile_row is not None and profile_row["tier"] not in (None, "external", "apple-mlx"):
+            await bundled_providers.apply_bundled_bindings(conn, profile_row["tier"])
+
         prow = await conn.fetchrow(
             DAWS_SELECT + "WHERE d.id = $1::uuid",
             row["id"],
