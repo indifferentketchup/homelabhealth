@@ -474,3 +474,7 @@ CREATE TABLE IF NOT EXISTS bundled_models (
 
 CREATE INDEX IF NOT EXISTS bundled_models_role_tier_idx ON bundled_models (role, tier);
 CREATE INDEX IF NOT EXISTS bundled_models_status_idx ON bundled_models (status);
+
+-- B2: HuggingFace git ref pinning (branch, tag, or commit SHA). NULL falls
+-- back to 'main' in _hf_url; populated as 'main' for all Phase 1 chat specs.
+ALTER TABLE bundled_models ADD COLUMN IF NOT EXISTS revision TEXT;

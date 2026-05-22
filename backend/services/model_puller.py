@@ -45,7 +45,8 @@ class ModelSpec:
     """A model's pull spec: repo + filename + integrity + license metadata.
 
     `expected_bytes` and `sha256` are optional. `license` and `license_url`
-    are surfaced to the operator for gated repos.
+    are surfaced to the operator for gated repos. `revision` pins the
+    HuggingFace git ref (branch, tag, or commit SHA); defaults to 'main'.
     """
     repo: str
     filename: str
@@ -54,6 +55,7 @@ class ModelSpec:
     sha256: str | None = None
     license: str | None = None
     license_url: str | None = None
+    revision: str | None = None
 
     @property
     def model_id(self) -> str:
@@ -78,6 +80,7 @@ MODEL_REGISTRY: dict[str, dict[str, ModelSpec | None]] = {
             quant="Q8_0",
             license="apache-2.0",
             license_url="https://huggingface.co/unsloth/Qwen3.5-0.8B-MTP-GGUF",
+            revision="main",
         ),
         # Google's medgemma repos ship safetensors only; unsloth re-uploads GGUF
         # versions. 4B uses the v1.5 release; 27B stays on original (no v1.5
@@ -89,6 +92,7 @@ MODEL_REGISTRY: dict[str, dict[str, ModelSpec | None]] = {
             quant="Q4_K_M",
             license=_GEMMA_LICENSE,
             license_url="https://huggingface.co/google/medgemma-4b-it",
+            revision="main",
         ),
         "gpu-8gb": ModelSpec(
             repo="unsloth/medgemma-1.5-4b-it-GGUF",
@@ -96,6 +100,7 @@ MODEL_REGISTRY: dict[str, dict[str, ModelSpec | None]] = {
             quant="Q8_0",
             license=_GEMMA_LICENSE,
             license_url="https://huggingface.co/google/medgemma-4b-it",
+            revision="main",
         ),
         "gpu-16gb": ModelSpec(
             repo="unsloth/medgemma-27b-it-GGUF",
@@ -103,6 +108,7 @@ MODEL_REGISTRY: dict[str, dict[str, ModelSpec | None]] = {
             quant="Q4_K_M",
             license=_GEMMA_LICENSE,
             license_url="https://huggingface.co/google/medgemma-27b-it",
+            revision="main",
         ),
         "gpu-24gb+": ModelSpec(
             repo="unsloth/medgemma-27b-it-GGUF",
@@ -110,6 +116,7 @@ MODEL_REGISTRY: dict[str, dict[str, ModelSpec | None]] = {
             quant="Q4_K_M",
             license=_GEMMA_LICENSE,
             license_url="https://huggingface.co/google/medgemma-27b-it",
+            revision="main",
         ),
         "apple-mlx": None,  # Phase 6
         "external": None,
@@ -159,8 +166,8 @@ async def seed_registry(conn) -> int:
                 """
                 INSERT INTO bundled_models (role, tier, model_id, quant, repo, filename,
                                              expected_bytes, sha256, license, license_url,
-                                             status)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending')
+                                             revision, status)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending')
                 ON CONFLICT (role, tier, model_id, quant) DO UPDATE
                 SET repo = EXCLUDED.repo,
                     filename = EXCLUDED.filename,
@@ -168,6 +175,7 @@ async def seed_registry(conn) -> int:
                     sha256 = COALESCE(EXCLUDED.sha256, bundled_models.sha256),
                     license = EXCLUDED.license,
                     license_url = EXCLUDED.license_url,
+                    revision = EXCLUDED.revision,
                     updated_at = NOW()
                 """,
                 role,
@@ -180,6 +188,7 @@ async def seed_registry(conn) -> int:
                 spec.sha256,
                 spec.license,
                 spec.license_url,
+                spec.revision,
             )
             count += 1
     return count
@@ -190,8 +199,9 @@ async def seed_registry(conn) -> int:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def _hf_url(repo: str, filename: str) -> str:
-    return f"https://huggingface.co/{repo}/resolve/main/{filename}"
+def _hf_url(repo: str, filename: str, revision: str | None = None) -> str:
+    rev = revision or "main"
+    return f"https://huggingface.co/{repo}/resolve/{rev}/{filename}"
 
 
 async def _hf_headers(pool_or_conn) -> dict[str, str]:
@@ -227,6 +237,30 @@ class _Cancelled(Exception):
     """Pull was cancelled via request_cancel()."""
 
 
+class InsufficientDiskError(Exception):
+    """Pull rejected because of insufficient disk space."""
+
+
+def _check_disk_space(dest_dir: Path, expected_bytes: int | None) -> None:
+    """Refuse pull if free space minus expected_bytes leaves < 5 GB headroom.
+
+    No-op when expected_bytes is None (we can't predict). Logs a warning
+    in that case so the operator knows the check was skipped.
+    """
+    import shutil
+    if expected_bytes is None:
+        logger.warning("disk pre-flight skipped: expected_bytes unknown")
+        return
+    free = shutil.disk_usage(dest_dir).free
+    headroom = 5 * 1024 ** 3
+    needed = expected_bytes + headroom
+    if free < needed:
+        raise InsufficientDiskError(
+            f"need {needed / 1024**3:.1f} GB free ({expected_bytes / 1024**3:.1f} GB "
+            f"file + 5 GB headroom); only {free / 1024**3:.1f} GB available at {dest_dir}"
+        )
+
+
 async def _get_conn(pool_or_conn):
     """Async-context-managed connection from either a pool or a bare conn."""
     if hasattr(pool_or_conn, "acquire"):
@@ -243,7 +277,7 @@ async def _read_row(pool_or_conn, model_uuid: str):
     async with await _get_conn(pool_or_conn) as conn:
         return await conn.fetchrow(
             "SELECT id, role, tier, model_id, quant, repo, filename, "
-            "expected_bytes, sha256, license, license_url, status, pulled_bytes, "
+            "expected_bytes, sha256, license, license_url, revision, status, pulled_bytes, "
             "error_message, pull_started_at, pull_finished_at "
             "FROM bundled_models WHERE id = $1::uuid",
             model_uuid,
@@ -305,6 +339,7 @@ async def pull_model(pool_or_conn, model_uuid: str) -> dict[str, Any]:
     filename = row["filename"]
     expected_sha256 = row["sha256"]
     license_url = row["license_url"]
+    revision = row["revision"]
 
     cancel_event = asyncio.Event()
     _CANCEL_EVENTS[str(model_uuid)] = cancel_event
@@ -315,8 +350,13 @@ async def pull_model(pool_or_conn, model_uuid: str) -> dict[str, Any]:
 
             dest = _dest_path(role, tier, filename)
             dest.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                _check_disk_space(dest.parent, row["expected_bytes"])
+            except InsufficientDiskError as e:
+                await _mark_finished(pool_or_conn, model_uuid, status="failed", error_message=f"insufficient disk: {e}")
+                return dict(await _read_row(pool_or_conn, model_uuid))
             partial = dest.with_suffix(dest.suffix + ".partial")
-            url = _hf_url(repo, filename)
+            url = _hf_url(repo, filename, revision)
             headers = await _hf_headers(pool_or_conn)
 
             sha = hashlib.sha256()
