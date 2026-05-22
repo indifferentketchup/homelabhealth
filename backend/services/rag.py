@@ -119,7 +119,7 @@ async def _rerank_infinity(query: str, passages: list[dict]) -> list[dict] | Non
 
         async with httpx.AsyncClient(timeout=RERANKER_TIMEOUT) as client:
             r = await client.post(
-                f"{provider.base_url}/rerank",
+                f"{provider.base_url}/v1/rerank",
                 json={
                     "model": model,
                     "query": query,

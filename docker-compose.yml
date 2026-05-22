@@ -84,7 +84,10 @@ services:
       - hlh_default
 
   # Phase 2: bundled embed + rerank (infinity-emb). Serves /v1/embeddings
-  # (bge-m3, 1024-dim) AND /rerank (bge-reranker-v2-m3) from one process.
+  # (bge-m3, 1024-dim) AND /v1/rerank (bge-reranker-v2-m3) from one process.
+  # INFINITY_URL_PREFIX="/v1" aligns infinity's native /embeddings + /rerank
+  # paths with the /v1/* paths used by call sites in embeddings.py, providers.py,
+  # and settings.py (which also serve TEI / OpenAI-compatible external providers).
   # Internal-only on hlh_default. First boot downloads ~1-2 GB from HF (~5-15 min).
   #
   # Spec: docs/superpowers/specs/2026-05-22-bundled-system-takes-everything-design.md §1
@@ -106,6 +109,7 @@ services:
       INFINITY_ENGINE: "optimum;torch"
       INFINITY_PORT: "${HLH_INFER_PORT:-9611}"
       INFINITY_HOST: "0.0.0.0"
+      INFINITY_URL_PREFIX: "/v1"   # serve at /v1/embeddings + /v1/rerank to match call-site paths
       HF_TOKEN: "${HF_TOKEN:-}"   # not required for bge models (not gated); plumbed for future
     volumes:
       - hlh_models:/app/.cache   # infinity caches downloaded weights under HF_HOME (/app/.cache)
