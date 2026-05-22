@@ -197,3 +197,10 @@ async def delete_hf_token(_: dict[str, Any] = Depends(require_admin)):
     async with pool.acquire() as conn:
         await hf_token.clear(conn)
     return Response(status_code=204)
+
+
+@router.get("/doctor")
+async def get_doctor(_: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
+    from hlh.doctor import run_checks, summarize
+    checks = await run_checks()
+    return {"checks": checks, "summary": summarize(checks)}
