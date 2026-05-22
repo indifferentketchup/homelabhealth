@@ -16,19 +16,31 @@ live under the `snapshot/` namespace.
 
 ## [Unreleased]
 
-Work since `v0.8.0` (2026-05-22). Next-up per roadmap: **C0 docs
-foundation** (SECURITY.md + THREATMODEL.md + breach-response +
-README security-posture section).
+Next-up per roadmap: **security + threat-model docs foundation**
+(SECURITY.md + THREATMODEL.md + safe-harbor + breach-response +
+README security-posture section). Will land as `v0.9.0`.
+
+---
+
+## [v0.8.1] — 2026-05-22
+
+Docs + tooling polish on top of `v0.8.0`. No code path changes.
 
 ### Docs
 - `CHANGELOG.md` added covering every tag from
-  `snapshot/pre-phase-4-merge` (2026-04-22) forward. Convention
-  documented in `CLAUDE.md` (local, gitignored).
+  `snapshot/pre-phase-4-merge` (2026-04-22) forward.
 - Tag history re-normalized: `1.x` (inherited from boolab) renumbered
-  to `0.2.x` / `0.3.x`; debugging snapshots moved to `snapshot/`
-  namespace; four merges that shipped untagged
-  (B0 safeguards, personas removal, Phase 2.A, bundled-tail) now have
-  proper `v0.5.x` / `v0.6.0` / `v0.7.0` tags.
+  to `v0.2.0` / `v0.3.0`; debugging snapshots moved to `snapshot/`
+  namespace; four merges that shipped untagged (B0 safeguards,
+  personas removal, Phase 2.A, bundled-tail) now have proper
+  `v0.5.0` / `v0.6.0` / `v0.7.0` / `v0.8.0` tags. `snapshot/genesis`
+  added at the repo root.
+- Convention documented in `CLAUDE.md` (local, gitignored):
+  `[Unreleased]` at the top, rename on tag, group by track when
+  >5 items.
+- Roadmap tag references updated throughout. Three stale spots fixed
+  (A2 network posture, C1 doctor checks claim, ship-to-friend A7
+  note).
 
 ### Tooling
 - `verify_tier_change_rewrite.sh` brought current with the new
