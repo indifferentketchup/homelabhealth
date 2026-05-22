@@ -277,6 +277,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS searxng_config_singleton_idx ON searxng_config
 -- Drop legacy constraint from old multi-mode schema if present on existing DBs.
 ALTER TABLE searxng_config DROP CONSTRAINT IF EXISTS searxng_config_mode_check;
 
+-- Seed sensible defaults for the bundled SearXNG sidecar on first boot.
+-- Engines list matches AVAILABLE_ENGINES in SearchSettingsTab.jsx; subset
+-- enabled by default to keep result pages tidy. Operator can toggle in UI.
+INSERT INTO searxng_config (id, safe_search, image_proxy, enabled_engines, autocomplete)
+SELECT 1, 0, FALSE, 'wikipedia,brave,mojeek,startpage,arxiv,pubmed', ''
+ WHERE NOT EXISTS (SELECT 1 FROM searxng_config);
+
 CREATE TABLE IF NOT EXISTS workspace_memory (
     id SERIAL PRIMARY KEY,
     workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,

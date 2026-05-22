@@ -26,18 +26,18 @@ const TIERS = [
   {
     id: 'cpu-min',
     label: 'CPU — minimal',
-    chat: 'Qwen3 1.7B Q8_0',
-    embed: 'bge-large-en-v1.5 Q4',
-    rerank: 'flashrank',
+    chat: 'Qwen3.5 0.8B Q8_0',
+    embed: 'bge-m3 (1024-dim)',
+    rerank: 'bge-reranker-v2-m3',
     vision: '—',
     stt: 'whisper tiny',
-    footprint: '~2 GB RAM peak · ~1.8 GB disk',
+    footprint: '~1.5 GB RAM peak · ~0.9 GB disk',
     detect: '<16 GB RAM, no GPU',
   },
   {
     id: 'cpu-std',
     label: 'CPU — standard',
-    chat: 'MedGemma 4B Q4_K_M',
+    chat: 'MedGemma 1.5 4B Q4_K_M',
     embed: 'bge-large-en-v1.5 Q8',
     rerank: 'bge-reranker-base (CPU)',
     vision: '—',
@@ -48,7 +48,7 @@ const TIERS = [
   {
     id: 'gpu-8gb',
     label: 'GPU — 8 GB class',
-    chat: 'MedGemma 4B Q8_0',
+    chat: 'MedGemma 1.5 4B Q8_0',
     embed: 'bge-large-en-v1.5 FP16',
     rerank: 'bge-reranker-v2-m3',
     vision: '—',
@@ -59,7 +59,7 @@ const TIERS = [
   {
     id: 'gpu-16gb',
     label: 'GPU — 16 GB class',
-    chat: 'MedGemma 27B Text Q4_K_M',
+    chat: 'MedGemma 27B Q4_K_M',
     embed: 'Harrier-0.6B Q8',
     rerank: 'Qwen3-Reranker-0.6B',
     vision: 'Qwen2.5-VL-3B',
@@ -70,7 +70,7 @@ const TIERS = [
   {
     id: 'gpu-24gb+',
     label: 'GPU — 24 GB+',
-    chat: 'MedGemma 27B Multimodal Q4_K_M',
+    chat: 'MedGemma 27B Q4_K_M',
     embed: 'Harrier-0.6B Q8',
     rerank: 'Qwen3-Reranker-0.6B',
     vision: 'Qwen2.5-VL-7B',
@@ -102,7 +102,6 @@ const TIERS = [
   },
 ]
 
-const EXTERNAL_TIER = TIERS.find((t) => t.id === 'external')
 const VISIBLE_TIERS = TIERS.filter((t) => t.id !== 'external')
 
 
@@ -385,6 +384,40 @@ function ModelsPanel({ currentTier }) {
     }
   }
 
+  // Pull all pending rows in sequence. The puller serializes via _PULL_LOCK
+  // server-side anyway, so firing them one-by-one with awaits keeps the UI
+  // honest about which row is "in flight" right now.
+  const pendingRows = useMemo(
+    () => items.filter((r) => r.status === 'pending' || r.status === 'failed'),
+    [items],
+  )
+  const [pullingAll, setPullingAll] = useState(false)
+  async function onPullAll() {
+    if (pullingAll || pendingRows.length === 0) return
+    setPullingAll(true)
+    setActionErr(null)
+    try {
+      for (const row of pendingRows) {
+        try {
+          await pullModel(row.id)
+          setItems((cur) => cur.map((r) => (r.id === row.id ? { ...r, status: 'pulling' } : r)))
+        } catch (e) {
+          const raw = e instanceof Error ? e.message : 'Pull failed'
+          let pretty = raw
+          try {
+            const parsed = JSON.parse(raw)
+            if (parsed?.detail) pretty = String(parsed.detail)
+          } catch { /* not JSON */ }
+          setActionErr(`${row.role}: ${pretty}`)
+          // Continue to next row — one failure shouldn't block the rest.
+        }
+      }
+      await refresh()
+    } finally {
+      setPullingAll(false)
+    }
+  }
+
   async function onCancel(row) {
     setActionErr(null)
     try {
@@ -403,12 +436,37 @@ function ModelsPanel({ currentTier }) {
       </div>
       <p className="text-xs text-muted-foreground">
         Bundled-AI artifacts the operator downloads to the local cache. Polls every 2s while a pull
-        is active. MedGemma rows require <span className="font-mono">HF_TOKEN</span> + license
-        acceptance at the linked HF page.
+        is active. Gated rows (MedGemma) need an <span className="font-mono">HF_TOKEN</span> and a
+        license click at the linked HF page.
       </p>
 
       {actionErr ? <p className="text-sm text-destructive">{actionErr}</p> : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
+
+      {/* First-install / post-tier-change prompt. Surfaces whenever pending or
+          failed rows exist; one click queues them all (serialized server-side
+          via _PULL_LOCK in model_puller). */}
+      {!loading && pendingRows.length > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-primary/40 bg-primary/5 p-3">
+          <div className="text-sm">
+            <span className="font-medium text-foreground">
+              {pendingRows.length} model{pendingRows.length === 1 ? '' : 's'} ready to download
+            </span>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Sequential downloads — watch the per-row progress bar below.
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => void onPullAll()}
+            disabled={pullingAll || anyPulling}
+            data-testid="system-models-pull-all"
+          >
+            {pullingAll ? 'Queuing…' : 'Pull all'}
+          </Button>
+        </div>
+      ) : null}
 
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading models…</p>
@@ -444,7 +502,10 @@ function ModelsPanel({ currentTier }) {
                       {row.error_message ? (
                         <div className="mt-1 text-xs text-destructive" data-testid={`system-model-error-${row.role}`}>
                           {row.error_message}
-                          {row.license_url ? (
+                          {/* Only surface the license link when the puller reported a
+                              401-style license-acceptance error; otherwise the link is
+                              misleading (a 404 means the file is missing, not gated). */}
+                          {row.license_url && row.error_message.startsWith('License acceptance') ? (
                             <>
                               {' '}
                               <a
@@ -701,26 +762,6 @@ export default function SystemTab() {
             />
           ))}
         </div>
-
-        {/* Phase 1: External tier collapsed by default. Operators who explicitly
-            want BYO inference open this; others see only the bundled tiers. */}
-        <details className="mt-2 rounded-lg border border-border bg-card p-3" data-testid="system-external-advanced">
-          <summary className="cursor-pointer text-sm font-medium text-foreground">
-            Advanced: bring your own inference
-          </summary>
-          <p className="mt-2 text-xs text-muted-foreground">
-            You&apos;ll need to configure providers in Settings before HLH can chat or embed records.
-          </p>
-          <div className="mt-2">
-            <TierRadio
-              tier={EXTERNAL_TIER}
-              selected={selectedTier}
-              onSelect={setSelectedTier}
-              isRecommended={false}
-              disabled={busy}
-            />
-          </div>
-        </details>
       </div>
 
       <HfTokenField />

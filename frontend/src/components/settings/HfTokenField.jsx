@@ -148,12 +148,12 @@ export default function HfTokenField() {
           <li>
             Visit{' '}
             <a
-              href="https://huggingface.co/settings/tokens"
+              href="https://huggingface.co/settings/tokens/"
               target="_blank"
               rel="noopener noreferrer"
               className="text-primary underline"
             >
-              huggingface.co/settings/tokens
+              huggingface.co/settings/tokens/
             </a>{' '}
             and click <strong>Create new token</strong>.
           </li>

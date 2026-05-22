@@ -30,6 +30,9 @@ services:
       - .env
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql://hlh:hlh@hlh_db:5432/hlh}
+      # Bundled SearXNG (hlh_search). Override SEARXNG_URL from .env so the
+      # operator can't accidentally point at a broken external instance.
+      SEARXNG_URL: "http://hlh_search:8080"
     depends_on:
       hlh_db:
         condition: service_healthy
@@ -119,6 +122,36 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15m   # bge-m3 + reranker first download ~5-15 min from HF
+    depends_on:
+      - hlh_api
+    networks:
+      - hlh_default
+
+  # Phase 2: bundled SearXNG for web search. Internal-only on hlh_default.
+  # JSON format is enabled via searxng/settings.yml (default config has it off,
+  # which is why the prior external-URL wiring would silently fail to parse).
+  #
+  # Spec: docs/superpowers/specs/2026-05-22-bundled-system-takes-everything-design.md §1 (search addendum)
+  hlh_search:
+    image: searxng/searxng:latest
+    container_name: hlh_search
+    restart: unless-stopped
+    profiles: [bundled]
+    environment:
+      # Internal-only secret; SearXNG requires it to be set. Not a security
+      # boundary in this deployment — the service is unreachable from outside hlh_default.
+      SEARXNG_SECRET_KEY: "homelabhealth-bundled-search"
+      SEARXNG_BASE_URL: "http://hlh_search:8080/"
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    ports:
+      - "${HLH_PORT_SEARCH:-9612}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     depends_on:
       - hlh_api
     networks:

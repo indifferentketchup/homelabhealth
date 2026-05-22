@@ -573,6 +573,9 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
         </ScrollArea>
 
         <div className="mt-auto flex flex-col gap-1 border-t border-sidebar-border p-2">
+          <div className="flex justify-center py-1">
+            <ThemeToggle />
+          </div>
           {currentUser && (
             <Button
               type="button"
@@ -600,9 +603,6 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
               </Link>
             </Button>
           )}
-          <div className="flex justify-center py-1">
-            <ThemeToggle />
-          </div>
 
           {desktopCollapsed ? (
             <>
