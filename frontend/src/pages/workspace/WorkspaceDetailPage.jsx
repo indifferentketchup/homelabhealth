@@ -58,6 +58,7 @@ export default function WorkspaceDetailPage() {
   const [nameEditing, setNameEditing] = useState(false)
   const [detailName, setDetailName] = useState('')
   const [detailDesc, setDetailDesc] = useState('')
+  // #8FAE92 = dark-mode accent; intentional hex for <input type="color"> initial value (CSS vars not accepted)
   const [detailColor, setDetailColor] = useState('#8FAE92')
   const [inferProviderId, setInferProviderId] = useState('')
   const [inferModel, setInferModel] = useState('')
@@ -98,7 +99,7 @@ export default function WorkspaceDetailPage() {
     setNameEdit(workspace.name || '')
     setDetailName(workspace.name || '')
     setDetailDesc(workspace.description || '')
-    setDetailColor(workspace.color || '#8FAE92')
+    setDetailColor(workspace.color || '#8FAE92') // hex required for <input type="color">
     setInferProviderId(workspace.provider_id || '')
     setInferModel((workspace.model && String(workspace.model).trim()) || '')
     const rm = workspace.rag_mode
@@ -192,7 +193,7 @@ export default function WorkspaceDetailPage() {
       updateWorkspace(id, {
         name: detailName.trim() || 'Untitled',
         description: detailDesc.trim() || null,
-        color: detailColor || '#8FAE92',
+        color: detailColor || '#8FAE92', // DB stores hex; color picker always yields a valid hex once touched
         pinned: pinnedFlag,
       }),
     onSuccess: () => invalidateWorkspace(),
@@ -325,7 +326,7 @@ export default function WorkspaceDetailPage() {
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <span
             className="size-3 shrink-0 rounded-full"
-            style={{ background: workspace?.color || '#8FAE92' }}
+            style={{ background: workspace?.color || 'var(--accent-workspace)' }}
             aria-hidden
           />
           {nameEditing ? (
