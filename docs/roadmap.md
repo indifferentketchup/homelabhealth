@@ -292,8 +292,12 @@ both models. Embed engine `optimum` (ONNX) for bge-m3; rerank engine
 `torch` for bge-reranker-v2-m3 (no ONNX exports exist). Both served
 under `/v1/*` prefix to match existing call-site paths.
 
-**Network posture deferred:** sidecar currently on `hlh_default`
-pending the A1.5 `hlh_inference` split. Move when A1.5 finishes.
+**Network posture:** `hlh_infer` joins both `hlh_default` and
+`hlh_inference` as of `v0.8.0` (A1.5). The dual-network membership
+is intentional — infinity downloads model weights from HF on first
+boot, which requires egress, so the sidecar stays on the
+non-internal network. Container hardening (`read_only`, `cap_drop`,
+no host ports) bounds the blast radius.
 
 **Models as shipped:**
 
@@ -521,14 +525,19 @@ even mentionable.
 ### C1 — Disk and backup hygiene
 
 LUKS confirm, backrest passphrase, restore drill doc, key custody
-doc. `make doctor` pre-flight is its own phase now — see A1.7.
+doc. The runtime pre-flight (`python -m hlh.doctor`) shipped as part
+of A1.7 (`v0.8.0`) but currently SKIPS LUKS, backrest, and master-key
+checks per spec §2 deferred-checks list. C1 adds those check
+implementations to the existing doctor module (incremental — add a
+function, register it in `run_checks()`).
 
 **Per-host key generation — locked.** `HLH_MASTER_KEY` (C6) and the
 backrest repo passphrase MUST be generated on the operator's host,
 not on Sam's machine. If Sam generates them, Sam has copies — which
 defeats the C6 threat model entirely. The friend's onboarding doc
-includes a one-page "generate your keys" step; A1.7's `make doctor`
-fails red if either is missing or matches the example placeholder.
+includes a one-page "generate your keys" step; the doctor checks
+added in C1 fail red if either is missing or matches the example
+placeholder.
 
 **Placement:** independent. Do anytime. Cheap.
 
@@ -634,8 +643,8 @@ is checked.
 - [ ] A3 merged or explicitly deferred with friend’s consent (e.g.,
   she doesn’t need vision)
 - [ ] A4 merged or explicitly deferred
-- [x] A7 bundled search (default-on; revisit posture for friend
-  deployment at A1.7)
+- [x] A7 bundled search (default-on; THREATMODEL.md entry lands
+  with C0 covering operator-query-leakage-to-engines risk)
 
 **Safeguards:**
 
