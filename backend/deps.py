@@ -44,21 +44,6 @@ async def require_admin() -> dict[str, Any]:
     return await get_principal()
 
 
-async def assert_persona_usable(
-    conn: asyncpg.Connection,
-    principal: dict[str, Any],
-    persona_id: uuid.UUID | None,
-) -> None:
-    if persona_id is None:
-        return
-    row = await conn.fetchrow(
-        "SELECT 1 FROM personas WHERE id = $1::uuid",
-        persona_id,
-    )
-    if row is None:
-        raise HTTPException(status_code=400, detail="persona_id not found")
-
-
 async def assert_workspace_usable(
     conn: asyncpg.Connection,
     principal: dict[str, Any],

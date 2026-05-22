@@ -10,7 +10,6 @@ from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from db import apply_schema, close_pool, get_pool, init_pool
-from seed_assets import seed_default_assets
 from seed_users import ensure_super_admin
 from routers import (
     chats,
@@ -21,7 +20,6 @@ from routers import (
     memory,
     inference,
     models,
-    personas,
     profile,
     providers,
     search,
@@ -80,7 +78,6 @@ async def lifespan(_app: FastAPI):
     _warn_deprecated_env_vars()
     await init_pool()
     await apply_schema()
-    await seed_default_assets()
     await ensure_super_admin()
     # Phase 1: seed bundled_models from MODEL_REGISTRY. Idempotent — safe on every boot.
     pool = await get_pool()
@@ -145,7 +142,6 @@ api.include_router(system.router, prefix="/system", tags=["system"])
 api.include_router(models.router, prefix="/models", tags=["models"])
 api.include_router(inference.router, prefix="/inference", tags=["inference"])
 api.include_router(chats.router, prefix="/chats", tags=["chats"])
-api.include_router(personas.router, prefix="/personas", tags=["personas"])
 api.include_router(memory.router, prefix="/memory", tags=["memory"])
 api.include_router(workspaces.router, prefix="/workspaces", tags=["workspaces"])
 api.include_router(workspace_memory.router)

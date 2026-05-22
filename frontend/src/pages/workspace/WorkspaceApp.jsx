@@ -4,7 +4,6 @@ import { Link, Outlet, matchPath, useLocation, useNavigate } from 'react-router-
 import { FileStack, Menu } from 'lucide-react'
 
 import { getModelSettings } from '@/api/inference.js'
-import { listPersonas } from '@/api/personas.js'
 import { ModelSelectorBar } from '@/components/chat/ModelSelectorBar.jsx'
 import { WorkspaceQuerySync } from '@/components/WorkspaceQuerySync.jsx'
 import { Sidebar } from '@/components/layout/Sidebar.jsx'
@@ -47,7 +46,6 @@ export default function WorkspaceApp() {
   const sourcesRailW = useLayoutStore((s) => s.sidebarWidth) || 260
   const setActiveWorkspaceId = useAppStore((s) => s.setActiveWorkspaceId)
   const setActiveChatId = useAppStore((s) => s.setActiveChatId)
-  const setPersonas = useAppStore((s) => s.setPersonas)
   const setDefaultModel = useAppStore((s) => s.setDefaultModel)
   const hydrateUserProfile = useAppStore((s) => s.hydrateUserProfile)
 
@@ -84,17 +82,6 @@ export default function WorkspaceApp() {
   useEffect(() => {
     if (modelSettingsBoot?.default_model != null) setDefaultModel(modelSettingsBoot.default_model)
   }, [modelSettingsBoot?.default_model, setDefaultModel])
-
-  const { data: personaPack } = useQuery({
-    queryKey: ['personas'],
-    queryFn: () => listPersonas(),
-    staleTime: 60_000,
-  })
-
-  useEffect(() => {
-    const items = personaPack?.items
-    if (Array.isArray(items)) setPersonas(items)
-  }, [personaPack, setPersonas])
 
   useEffect(() => {
     hydrateUserProfile()

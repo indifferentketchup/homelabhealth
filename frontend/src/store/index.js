@@ -30,32 +30,6 @@ function loadUserProfileFromStorage() {
   }
 }
 
-/** Default persona, looked up from a personas list. */
-function defaultPersona(personas) {
-  const list = Array.isArray(personas) ? personas : []
-  return list.find((x) => x.is_default) ?? null
-}
-
-/** Map API persona row → store display fields (also used after AI settings refetch). */
-function personaFieldsFromRecord(p) {
-  if (!p) {
-    return {
-      personaDisplayName: 'Assistant',
-      personaIconUrl: null,
-      personaEmoji: '🤖',
-    }
-  }
-  return {
-    personaDisplayName: (p.name && String(p.name).trim()) || 'Assistant',
-    personaIconUrl: p.icon_url || null,
-    personaEmoji: (p.avatar_emoji && String(p.avatar_emoji).trim()) || '🤖',
-  }
-}
-
-function personaToUi(p) {
-  return personaFieldsFromRecord(p)
-}
-
 function revokeProfileIconObjectUrl(url) {
   if (url && String(url).startsWith('blob:')) {
     try {
@@ -126,52 +100,6 @@ export const useAppStore = create((set, get) => ({
   webSearchEnabled: false,
   setWebSearchEnabled: (enabled) => set({ webSearchEnabled: Boolean(enabled) }),
 
-  personaDisplayName: 'Assistant',
-  personaIconUrl: null,
-  personaEmoji: '🤖',
-
-  /** Default persona for new chats (initialized from API default) */
-  activePersonaId: null,
-  setActivePersonaId: (id) =>
-    set((s) => {
-      if (!id) {
-        const def = defaultPersona(s.personas)
-        if (def) return { activePersonaId: def.id, ...personaToUi(def) }
-        return { activePersonaId: null, ...personaToUi(null) }
-      }
-      const p = s.personas.find((x) => x.id === id)
-      if (p) return { activePersonaId: id, ...personaToUi(p) }
-      return { activePersonaId: id }
-    }),
-
-  personas: [],
-  setPersonas: (list) =>
-    set((s) => {
-      const personas = Array.isArray(list) ? list : []
-      let activePersonaId = s.activePersonaId
-      if (activePersonaId && !personas.some((x) => x.id === activePersonaId)) {
-        activePersonaId = null
-      }
-      if (!activePersonaId) {
-        const def = defaultPersona(personas)
-        if (def) {
-          return {
-            personas,
-            activePersonaId: def.id,
-            ...personaToUi(def),
-          }
-        }
-        return { personas, ...personaToUi(null), activePersonaId: null }
-      }
-      const p = personas.find((x) => x.id === activePersonaId)
-      if (!p) return { personas, activePersonaId }
-      return {
-        personas,
-        activePersonaId,
-        ...personaToUi(p),
-      }
-    }),
-
   /** Optional default workspace (prompt context) for new chats */
   activeWorkspaceId: null,
   setActiveWorkspaceId: (id) => set({ activeWorkspaceId: id }),
@@ -196,21 +124,11 @@ export const useAppStore = create((set, get) => ({
   /** Apply server chat fields to UI preferences for the active session */
   hydrateFromChat: (chat) => {
     if (!chat) return
-    const personas = get().personas
-    const personaId = chat.persona_id != null ? chat.persona_id : null
     set({
       selectedModel: chat.model ?? get().selectedModel,
       webSearchEnabled: Boolean(chat.web_search_enabled),
-      activePersonaId: personaId,
       activeWorkspaceId: chat.workspace_id != null ? chat.workspace_id : null,
     })
-    if (!personaId) {
-      const def = defaultPersona(personas)
-      set(personaToUi(def ?? null))
-      return
-    }
-    const p = personas.find((x) => x.id === personaId)
-    if (p) set(personaToUi(p))
   },
 }))
 
