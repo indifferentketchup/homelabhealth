@@ -22,11 +22,10 @@ BRANDING_WORKSPACE_ICONS = Path("/data/branding/daw_icons")
 # list_workspaces uses a wider variant that includes repo_* columns.
 DAWS_SELECT = """
     SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
-        d.pinned, d.system_prompt, d.persona_id,
+        d.pinned, d.system_prompt,
         d.model, d.rag_mode, d.provider_id,
-        d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
+        d.created_at, d.updated_at, d.owner_id
     FROM workspaces d
-    LEFT JOIN personas p ON p.id = d.persona_id
 """
 ALLOWED_ICON_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 
@@ -38,7 +37,6 @@ class WorkspaceCreate(BaseModel):
     name: str = Field(..., min_length=1)
     description: str | None = None
     system_prompt: str = ""
-    persona_id: uuid.UUID | None = None
     color: str = "#7c3aed"
     shared: bool = False
     sort_order: int = 0
@@ -52,7 +50,6 @@ class WorkspaceUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
     system_prompt: str | None = None
-    persona_id: uuid.UUID | None = None
     color: str | None = None
     shared: bool | None = None
     sort_order: int | None = None
@@ -71,7 +68,6 @@ class WorkspaceInstructionsBody(BaseModel):
 
 
 def _row(r: Any) -> dict[str, Any]:
-    pn = r.get("persona_name")
     m = r.get("model")
     pid = r.get("provider_id")
     return {
@@ -79,8 +75,6 @@ def _row(r: Any) -> dict[str, Any]:
         "name": r["name"],
         "description": r["description"] or "",
         "system_prompt": r["system_prompt"] or "",
-        "persona_id": str(r["persona_id"]) if r["persona_id"] else None,
-        "persona_name": pn,
         "color": r["color"] or "#7c3aed",
         "shared": bool(r["shared"]),
         "sort_order": int(r["sort_order"] or 0),
@@ -112,14 +106,6 @@ def _icon_path_for_workspace(workspace_id: uuid.UUID, ext: str) -> Path:
     return BRANDING_WORKSPACE_ICONS / f"{workspace_id}{ext}"
 
 
-async def _ensure_persona(conn: Any, persona_id: uuid.UUID | None) -> None:
-    if persona_id is None:
-        return
-    ok = await conn.fetchval("SELECT 1 FROM personas WHERE id = $1::uuid", persona_id)
-    if ok is None:
-        raise HTTPException(status_code=400, detail="persona_id not found")
-
-
 @router.get("/")
 async def list_workspaces(
     _: dict[str, Any] = Depends(get_principal),
@@ -127,11 +113,10 @@ async def list_workspaces(
     pool = await get_pool()
     sel = """
                 SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
-                    d.pinned, d.system_prompt, d.persona_id,
+                    d.pinned, d.system_prompt,
                     d.model, d.rag_mode,
-                    d.created_at, d.updated_at, d.owner_id, p.name AS persona_name
+                    d.created_at, d.updated_at, d.owner_id
                 FROM workspaces d
-                LEFT JOIN personas p ON p.id = d.persona_id
             """
     async with pool.acquire() as conn:
         rows = await conn.fetch(
@@ -144,22 +129,20 @@ async def list_workspaces(
 async def create_workspace(body: WorkspaceCreate, principal: dict[str, Any] = Depends(get_principal)):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        await _ensure_persona(conn, body.persona_id)
         ins_model = (body.workspace_model or "").strip() or None
         rag_ins: Literal["auto", "always", "off"] = "always"
         row = await conn.fetchrow(
             """
             INSERT INTO workspaces (
-                name, description, system_prompt, persona_id, color, shared, sort_order,
+                name, description, system_prompt, color, shared, sort_order,
                 model, rag_mode, owner_id
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING id
             """,
             body.name.strip(),
             body.description,
             body.system_prompt or "",
-            body.persona_id,
             body.color or "#7c3aed",
             body.shared,
             body.sort_order,
@@ -341,7 +324,7 @@ async def patch_workspace(
         row = await conn.fetchrow(
             """
             SELECT id, name, description, icon_url, color, shared, sort_order,
-                pinned, system_prompt, persona_id,
+                pinned, system_prompt,
                 model, rag_mode, provider_id,
                 created_at, updated_at, owner_id
             FROM workspaces WHERE id = $1::uuid
@@ -360,7 +343,6 @@ async def patch_workspace(
         new_name = data.get("name", row["name"])
         new_desc = data.get("description", row["description"])
         new_sp = data.get("system_prompt", row["system_prompt"])
-        new_pid = row["persona_id"] if "persona_id" not in data else data["persona_id"]
         new_color = data.get("color", row["color"])
         new_shared = data.get("shared", row["shared"])
         new_sort = data.get("sort_order", row["sort_order"])
@@ -395,21 +377,18 @@ async def patch_workspace(
         if isinstance(new_sp, str):
             new_sp = new_sp or ""
 
-        await _ensure_persona(conn, new_pid)
-
         await conn.execute(
             """
             UPDATE workspaces
-            SET name = $2, description = $3, system_prompt = $4, persona_id = $5,
-                color = $6, shared = $7, sort_order = $8, icon_url = $9, model = $10,
-                rag_mode = $11, provider_id = $12, updated_at = NOW()
+            SET name = $2, description = $3, system_prompt = $4,
+                color = $5, shared = $6, sort_order = $7, icon_url = $8, model = $9,
+                rag_mode = $10, provider_id = $11, updated_at = NOW()
             WHERE id = $1::uuid
             """,
             workspace_id,
             new_name,
             new_desc,
             new_sp,
-            new_pid,
             new_color,
             new_shared,
             new_sort,
