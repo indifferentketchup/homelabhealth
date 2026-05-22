@@ -8,13 +8,16 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 function hexWithAlpha(color, alphaHex) {
+  // Fallback '#8FAE92' must stay as hex: this function does string slicing to build '#rrggbbAA'.
+  // CSS vars cannot be used here. '8FAE92' is the dark-mode accent (--accent-workspace).
   const raw = (color || '#8FAE92').replace(/^#/, '')
   const six = raw.length >= 6 ? raw.slice(0, 6) : '8FAE92'
   return `#${six}${alphaHex}`
 }
 
 function WorkspaceIcon({ workspace }) {
-  const color = workspace.color || '#8FAE92'
+  // Use CSS var as fallback so the icon follows the theme when no color is set in the DB
+  const color = workspace.color || 'var(--accent-workspace)'
   const letter = (workspace.name || '?').trim().slice(0, 1).toUpperCase() || '?'
   if (workspace.icon_url) {
     return (
@@ -42,6 +45,7 @@ export default function WorkspacesPage() {
   const [showNew, setShowNew] = useState(false)
   const [newName, setNewName] = useState('')
   const [newDesc, setNewDesc] = useState('')
+  // #8FAE92 = dark-mode accent; intentional hex for <input type="color"> initial value
   const [newColor, setNewColor] = useState('#8FAE92')
   const [deleteId, setDeleteId] = useState(null)
 
@@ -61,14 +65,14 @@ export default function WorkspacesPage() {
       createWorkspace({
         name: newName.trim() || 'Untitled',
         description: newDesc.trim() || null,
-        color: newColor || '#8FAE92',
+        color: newColor || '#8FAE92', // DB stores hex; color picker always yields a valid hex once touched
       }),
     onSuccess: () => {
       invalidate()
       setShowNew(false)
       setNewName('')
       setNewDesc('')
-      setNewColor('#8FAE92')
+      setNewColor('#8FAE92') // reset color picker to default hex
     },
   })
 
