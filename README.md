@@ -2,6 +2,8 @@
 
 Self-hosted, single-user RAG chat app for personal records. Upload documents to a workspace, ask questions, get answers grounded in your sources via pgvector retrieval. Bring your own inference and embedding endpoints — anything OpenAI-compatible.
 
+Roadmap (built-in AI, safeguards, security): see [docs/roadmap.md](docs/roadmap.md) — the source of truth for both AI and security plans.
+
 ## Quickstart
 
 ```bash

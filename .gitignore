@@ -27,5 +27,5 @@ CLAUDE.md
 
 # Repo-internal (not for distribution)
 docs/*
-!docs/builtin-ai/
+!docs/*.md
 /history/
