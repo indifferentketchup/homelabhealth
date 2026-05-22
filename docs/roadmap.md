@@ -55,7 +55,7 @@ Track B — Safeguards
   B4                          (red-team eval, ongoing)
 
 Track C — Security
-  C0  docs                    (independent, do anytime — next up)
+  C0 → v0.9.0  security + threat-model docs (next up)
   C1  disk/backup hygiene     (independent, do anytime)
   C2 ✓ shipped (v0.8.0) — absorbed into A1.5
   C3  synthetic data + logs   (must land before any non-Sam data)
@@ -76,10 +76,11 @@ Trunk-merge gates documented in earlier roadmap revisions are
 pre-flight + Phase 2.B embed/rerank visibility. See `CHANGELOG.md` for
 the per-tag rundown.
 
-**Active work:** **C0 — docs foundation** (SECURITY.md +
-THREATMODEL.md + docs/breach-response.md + README security-posture
-section). Captures the A7 search-egress risk and the C5
-first-real-ingest gate. Estimated ~1 day.
+**Active work — `v0.9.0` (security + threat-model docs foundation):**
+SECURITY.md, THREATMODEL.md, docs/safe-harbor.md,
+docs/breach-response.md, README security-posture section. Captures
+the A7 search-egress risk and the C5 first-real-ingest gate.
+Estimated ~1 day. Roadmap code: C0.
 
 -----
 
@@ -514,7 +515,7 @@ for consistency with the master roadmap. Most content is unchanged from
 the existing plan; this section captures the **placement** in the
 dependency graph and any deltas.
 
-### C0 — Documentation foundation
+### `v0.9.0` — Security + threat-model docs foundation (roadmap code: C0)
 
 `SECURITY.md`, `THREATMODEL.md`, `docs/safe-harbor.md`,
 `docs/breach-response.md`, README “Security posture” section.
@@ -656,7 +657,7 @@ is checked.
 
 **Security:**
 
-- [ ] C0 docs shipped
+- [ ] `v0.9.0` security + threat-model docs shipped (C0)
 - [ ] C1 disk + backup hygiene confirmed on friend’s host
 - [x] C2 docker hardening (landed with A1.5)
 - [ ] C3 synthetic data + log scrubbing shipped
@@ -756,7 +757,7 @@ Resolve at the phase where they become blocking.
 |---------------|--------------------------------------------------------------------------------------------------------------------------------------|-------------------------|
 |A — Built-in AI|A1 (done) + A1.5 (done) + A1.6 (done) + A1.7 (done) + A2 (done) + A3 (5d) + A4 (3d) + A5? + A6 + A7 (done) + Phase 2.B (done)|~1 week if A5/A6 skipped |
 |B — Safeguards |B0 (done) + B1 (3d) + B2 (2d) + B3 (1d on top of C4) + B4 (ongoing)                                                                  |~1 week + ongoing        |
-|C — Security   |C0 (1d) + C1 (2hr) + C2 (done) + C3 (2d) + C4 (3d) + C5 (5-7d) + C6 (5d) + C7 (in B1) + C8 (1d) + C9 (2d)                         |~3-4 weeks               |
+|C — Security   |v0.9.0/C0 (1d) + C1 (2hr) + C2 (done) + C3 (2d) + C4 (3d) + C5 (5-7d) + C6 (5d) + C7 (in B1) + C8 (1d) + C9 (2d)                 |~3-4 weeks               |
 
 **Total to ship-to-friend gate: ~4-5 weeks of focused work** (revised
 down: A1.5, A1.7, A1.6, A2, A7, B0, C2, Phase 2.B already shipped).
