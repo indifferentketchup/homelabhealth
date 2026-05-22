@@ -13,7 +13,6 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from deps import (
-    assert_persona_usable,
     assert_workspace_usable,
     get_principal,
 )
@@ -32,13 +31,6 @@ from services.searx import searx_search_sources
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-
-async def _default_persona_id_for_mode(conn: asyncpg.Connection) -> uuid.UUID | None:
-    """Default persona for new chat."""
-    return await conn.fetchval(
-        "SELECT id FROM personas WHERE is_default IS TRUE LIMIT 1",
-    )
 
 
 _AUTO_MEMORY_TRIGGERS = (
@@ -93,45 +85,22 @@ async def _assembled_system_prompt(
     user_query_for_rag: str | None = None,
     include_site_private: bool = True,
 ) -> tuple[str, dict[str, int] | None]:
-    """Persona -> Workspace prompt + workspace instructions + semantic memory facts -> context files -> custom instructions -> RAG -> mode_memory."""
-    pid = chat["persona_id"]
+    """Workspace prompt + workspace instructions + semantic memory facts -> context files -> custom instructions -> RAG -> mode_memory."""
     workspace_id = chat["workspace_id"]
     workspace_prompt = ""
-    workspace_persona_id = None
     if workspace_id is not None:
         ws = await conn.fetchrow(
-            "SELECT system_prompt, persona_id, rag_mode FROM workspaces WHERE id = $1::uuid",
+            "SELECT system_prompt, rag_mode FROM workspaces WHERE id = $1::uuid",
             workspace_id,
         )
         if ws:
             workspace_prompt = (ws["system_prompt"] or "").strip()
-            workspace_persona_id = ws["persona_id"]
-
-    resolve_pid = pid if pid is not None else workspace_persona_id
-
-    persona_prompt = ""
-    if resolve_pid is not None:
-        pr = await conn.fetchrow(
-            "SELECT system_prompt FROM personas WHERE id = $1::uuid",
-            resolve_pid,
-        )
-        if pr:
-            persona_prompt = (pr["system_prompt"] or "").strip()
-
-    if not persona_prompt:
-        d = await conn.fetchrow(
-            "SELECT system_prompt FROM personas WHERE is_default IS TRUE LIMIT 1",
-        )
-        if d:
-            persona_prompt = (d["system_prompt"] or "").strip()
 
     parts: list[str] = []
     workspace_instr_count = 0
     mem_entries_count = 0
     rag_context_chars = 0
 
-    if persona_prompt:
-        parts.append(persona_prompt)
     if workspace_prompt:
         parts.append(workspace_prompt)
 
@@ -348,14 +317,12 @@ class ChatCreate(BaseModel):
     model: str | None = Field(default=None)
     workspace_id: uuid.UUID | None = None
     web_search_enabled: bool | None = None
-    persona_id: uuid.UUID | None = None
 
 
 class ChatPatch(BaseModel):
     title: str | None = None
     model: str | None = None
     web_search_enabled: bool | None = None
-    persona_id: uuid.UUID | None = None
     workspace_id: uuid.UUID | None = None
 
 
@@ -392,7 +359,6 @@ def _chat_row(r: asyncpg.Record) -> dict[str, Any]:
         "id": str(r["id"]),
         "title": r["title"],
         "workspace_id": str(r["workspace_id"]) if r["workspace_id"] else None,
-        "persona_id": str(r["persona_id"]) if r["persona_id"] else None,
         "model": r["model"],
         "web_search_enabled": r["web_search_enabled"],
         "rag_enabled": r["rag_enabled"],
@@ -422,18 +388,14 @@ def _message_row(r: asyncpg.Record) -> dict[str, Any]:
 async def create_chat(body: ChatCreate, principal: dict[str, Any] = Depends(get_principal)):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        await assert_persona_usable(conn, principal, body.persona_id)
         await assert_workspace_usable(conn, principal, body.workspace_id)
-        persona_id_for_insert = body.persona_id
-        if persona_id_for_insert is None:
-            persona_id_for_insert = await _default_persona_id_for_mode(conn)
         # Model resolution post-providers: explicit body.model first, then
         # workspace.model, then the legacy global_settings.default_model entry.
         # No env-var fallback. If all three are NULL, the row stores NULL and
         # send-time resolves the model via the workspace.
         row = await conn.fetchrow(
             """
-            INSERT INTO chats (title, workspace_id, model, web_search_enabled, rag_enabled, persona_id, owner_id)
+            INSERT INTO chats (title, workspace_id, model, web_search_enabled, rag_enabled, owner_id)
             VALUES ($1, $2,
                 COALESCE(
                     $3,
@@ -441,17 +403,15 @@ async def create_chat(body: ChatCreate, principal: dict[str, Any] = Depends(get_
                     (SELECT value FROM global_settings WHERE key = 'default_model' LIMIT 1)
                 ),
                 COALESCE($4, FALSE),
-                $7,
-                $5,
-                $6)
-            RETURNING id, title, workspace_id, persona_id, model, web_search_enabled, rag_enabled,
+                $6,
+                $5)
+            RETURNING id, title, workspace_id, model, web_search_enabled, rag_enabled,
                 pruning_summary, message_count, is_main_chat, created_at, updated_at
             """,
             body.title,
             body.workspace_id,
             body.model,
             body.web_search_enabled,
-            persona_id_for_insert,
             principal["user_id"],
             body.workspace_id is not None,
         )
@@ -467,7 +427,7 @@ async def list_chats(
 ):
     pool = await get_pool()
     cols = """
-                id, title, workspace_id, persona_id, model, web_search_enabled, rag_enabled,
+                id, title, workspace_id, model, web_search_enabled, rag_enabled,
                 pruning_summary, message_count, is_main_chat, created_at, updated_at
     """
     async with pool.acquire() as conn:
@@ -531,7 +491,7 @@ async def get_chat(chat_id: uuid.UUID, principal: dict[str, Any] = Depends(get_p
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            SELECT id, title, workspace_id, persona_id, model, web_search_enabled, rag_enabled,
+            SELECT id, title, workspace_id, model, web_search_enabled, rag_enabled,
                 pruning_summary, message_count, is_main_chat, created_at, updated_at
             FROM chats
             WHERE id = $1::uuid
@@ -635,7 +595,7 @@ async def patch_chat(
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            SELECT id, title, workspace_id, persona_id, model, web_search_enabled, rag_enabled,
+            SELECT id, title, workspace_id, model, web_search_enabled, rag_enabled,
                 pruning_summary, message_count, is_main_chat, created_at, updated_at
             FROM chats
             WHERE id = $1::uuid
@@ -649,11 +609,8 @@ async def patch_chat(
         new_title = data.get("title", row["title"])
         new_model = data.get("model", row["model"])
         new_ws = data.get("web_search_enabled", row["web_search_enabled"])
-        new_persona = row["persona_id"] if "persona_id" not in data else data["persona_id"]
         new_workspace = row["workspace_id"] if "workspace_id" not in data else data["workspace_id"]
 
-        if new_persona is not None:
-            await assert_persona_usable(conn, principal, new_persona)
         if new_workspace is not None:
             await assert_workspace_usable(conn, principal, new_workspace)
 
@@ -661,16 +618,15 @@ async def patch_chat(
             """
             UPDATE chats
             SET title = $2, model = $3, web_search_enabled = $4,
-                persona_id = $5, workspace_id = $6, updated_at = NOW()
+                workspace_id = $5, updated_at = NOW()
             WHERE id = $1::uuid
-            RETURNING id, title, workspace_id, persona_id, model, web_search_enabled, rag_enabled,
+            RETURNING id, title, workspace_id, model, web_search_enabled, rag_enabled,
                 pruning_summary, message_count, is_main_chat, created_at, updated_at
             """,
             chat_id,
             new_title,
             new_model,
             new_ws,
-            new_persona,
             new_workspace,
         )
     return _chat_row(updated)
@@ -847,7 +803,7 @@ async def fork_chat_at_message(
         async with conn.transaction():
             src = await conn.fetchrow(
                 """
-                SELECT id, title, model, persona_id, workspace_id,
+                SELECT id, title, model, workspace_id,
                     web_search_enabled, rag_enabled
                 FROM chats
                 WHERE id = $1::uuid
@@ -891,18 +847,17 @@ async def fork_chat_at_message(
             new_chat = await conn.fetchrow(
                 """
                 INSERT INTO chats (
-                    title, workspace_id, model, persona_id,
+                    title, workspace_id, model,
                     web_search_enabled, rag_enabled, message_count,
                     owner_id
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                RETURNING id, title, workspace_id, persona_id, model, web_search_enabled, rag_enabled,
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                RETURNING id, title, workspace_id, model, web_search_enabled, rag_enabled,
                     pruning_summary, message_count, is_main_chat, created_at, updated_at
                 """,
                 fork_title,
                 src["workspace_id"],
                 src["model"],
-                src["persona_id"],
                 src["web_search_enabled"],
                 src["rag_enabled"],
                 len(copies),
@@ -946,7 +901,7 @@ async def append_message(
     async with pool.acquire() as conn:
         chat = await conn.fetchrow(
             """
-            SELECT id, title, model, pruning_summary, persona_id, web_search_enabled, workspace_id,
+            SELECT id, title, model, pruning_summary, web_search_enabled, workspace_id,
                 message_count, rag_enabled
             FROM chats
             WHERE id = $1::uuid

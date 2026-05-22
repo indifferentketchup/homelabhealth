@@ -14,36 +14,10 @@ CREATE TABLE IF NOT EXISTS workspaces (
     model TEXT,
     rag_mode TEXT NOT NULL DEFAULT 'auto',
     system_prompt TEXT NOT NULL DEFAULT '',
-    persona_id UUID,
     owner_id UUID,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
-
-CREATE TABLE IF NOT EXISTS personas (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name TEXT NOT NULL,
-    icon_url TEXT,
-    system_prompt TEXT NOT NULL,
-    web_search_enabled BOOLEAN DEFAULT FALSE,
-    rag_enabled BOOLEAN DEFAULT TRUE,
-    avatar_emoji TEXT DEFAULT '🤖',
-    is_default BOOLEAN NOT NULL DEFAULT FALSE,
-    owner_id UUID,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Ensure is_default exists on live DBs upgraded from the old schema (idempotent).
-ALTER TABLE personas ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT FALSE;
--- Ensure avatar_emoji and updated_at exist on older live DBs.
-ALTER TABLE personas ADD COLUMN IF NOT EXISTS avatar_emoji TEXT DEFAULT '🤖';
-ALTER TABLE personas ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
-
--- Single-default uniqueness (partial index allows multiple FALSE).
-CREATE UNIQUE INDEX IF NOT EXISTS personas_one_default_idx
-    ON personas ((1))
-    WHERE is_default = TRUE;
 
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -56,10 +30,8 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- FK back-references now that users and personas exist
-ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS persona_id UUID REFERENCES personas(id) ON DELETE SET NULL;
+-- FK back-references now that users exist
 ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS owner_id UUID REFERENCES users(id) ON DELETE CASCADE;
-ALTER TABLE personas ADD COLUMN IF NOT EXISTS owner_id UUID REFERENCES users(id) ON DELETE CASCADE;
 
 UPDATE users SET display_name = username WHERE display_name IS NULL OR btrim(display_name) = '';
 UPDATE users SET bio = COALESCE(bio, '') WHERE bio IS NULL;
@@ -106,7 +78,6 @@ CREATE TABLE IF NOT EXISTS chats (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title TEXT,
     workspace_id UUID REFERENCES workspaces(id) ON DELETE SET NULL,
-    persona_id UUID REFERENCES personas(id) ON DELETE SET NULL,
     model TEXT NOT NULL DEFAULT 'qwen3.5:9b',
     web_search_enabled BOOLEAN DEFAULT FALSE,
     rag_enabled BOOLEAN DEFAULT TRUE,
@@ -117,6 +88,11 @@ CREATE TABLE IF NOT EXISTS chats (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Personas removal (one-time destructive migration; idempotent on subsequent re-applies).
+ALTER TABLE chats DROP COLUMN IF EXISTS persona_id;
+ALTER TABLE workspaces DROP COLUMN IF EXISTS persona_id;
+DROP TABLE IF EXISTS personas CASCADE;
 
 CREATE TABLE IF NOT EXISTS messages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -226,7 +202,6 @@ CREATE INDEX IF NOT EXISTS messages_created_at_idx ON messages(created_at);
 CREATE INDEX IF NOT EXISTS sources_workspace_id_idx ON sources(workspace_id);
 CREATE INDEX IF NOT EXISTS sources_embedding_status_idx ON sources(embedding_status);
 CREATE INDEX IF NOT EXISTS notes_workspace_id_idx ON notes(workspace_id);
-CREATE INDEX IF NOT EXISTS personas_owner_id_idx ON personas(owner_id);
 CREATE INDEX IF NOT EXISTS workspaces_owner_id_idx ON workspaces(owner_id);
 
 -- Global settings seed

@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils.js'
 import { useAppStore } from '@/store/index.js'
 import { useLayoutStore } from '@/store/layoutStore.js'
 
-import { PersonaMark } from './PersonaMark.jsx'
+import { AssistantGlyph } from './AssistantGlyph.jsx'
 import { ChatInput } from './ChatInput.jsx'
 import { MessageList } from './MessageList.jsx'
 import { ModelSelectorBar } from './ModelSelectorBar.jsx'
@@ -83,9 +83,6 @@ export function ChatView({
   const selectedModel = useAppStore((s) => s.selectedModel)
   const webSearchEnabled = useAppStore((s) => s.webSearchEnabled)
   const hydrateFromChat = useAppStore((s) => s.hydrateFromChat)
-  const personaDisplayName = useAppStore((s) => s.personaDisplayName)
-  const personaIconUrl = useAppStore((s) => s.personaIconUrl)
-  const personaEmoji = useAppStore((s) => s.personaEmoji)
   const setActiveChatId = useAppStore((s) => s.setActiveChatId)
   const setChats = useAppStore((s) => s.setChats)
 
@@ -263,13 +260,12 @@ export function ChatView({
       setStreamText('')
       setOptimisticUser({ id: '__optimistic_user__', role: 'user', content })
       try {
-        const { activePersonaId, activeWorkspaceId } = useAppStore.getState()
+        const { activeWorkspaceId } = useAppStore.getState()
         const workspaceForCreate =
           normalizeWorkspaceUuid(activeWorkspaceId) || resolvedWorkspaceId || undefined
         const modelForCreate = selectedModel || undefined
         const newChat = await createChat({
           ...(modelForCreate ? { model: modelForCreate } : {}),
-          ...(activePersonaId ? { persona_id: activePersonaId } : {}),
           ...(workspaceForCreate ? { workspace_id: workspaceForCreate } : {}),
           ...(webSearchEnabled ? { web_search_enabled: true } : {}),
         })
@@ -367,12 +363,8 @@ export function ChatView({
           }}
         >
           <div className="flex w-full flex-col items-center gap-4" style={{ maxWidth: chatMaxW }}>
-            <PersonaMark
-              iconUrl={personaIconUrl}
-              emoji={personaEmoji}
-              fallbackLetter={personaDisplayName?.slice(0, 1) || 'A'}
-            />
-            <h1 className="fs-heading text-center font-semibold tracking-tight text-foreground">{personaDisplayName}</h1>
+            <AssistantGlyph kind="header" />
+            <h1 className="fs-heading text-center font-semibold tracking-tight text-foreground">Assistant</h1>
           </div>
           <div className="bc-chat-anchor w-full px-4">
             {sendError ? (

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { getCustomInstructions, putCustomInstructions } from '@/api/customInstructions.js'
@@ -6,10 +6,8 @@ import { getModelServerConfig, patchModelServerConfig } from '@/api/settings.js'
 import { embedAllMemories, extractMemory, getMemory, putMemory } from '@/api/memory.js'
 import { createMemoryEntry, deleteMemoryEntry, listMemoryEntries } from '@/api/memoryEntries.js'
 import { fetchModels, getModelSettings, patchModelSettings } from '@/api/inference.js'
-import { createPersona, deletePersona, listPersonas, updatePersona, uploadPersonaIcon } from '@/api/personas.js'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { useAppStore } from '@/store/index.js'
 
 function WorkspaceModelsSection({ queryClient, selectClass }) {
   const {
@@ -163,21 +161,7 @@ function WorkspaceModelsSection({ queryClient, selectClass }) {
 
 export default function AISettings() {
   const queryClient = useQueryClient()
-  const setPersonas = useAppStore((s) => s.setPersonas)
-  const setActivePersonaId = useAppStore((s) => s.setActivePersonaId)
-  const currentDefaultKey = 'is_default'
-  const [tab, setTab] = useState('personas')
-
-  const { data: personaPack } = useQuery({
-    queryKey: ['personas'],
-    queryFn: () => listPersonas(),
-    staleTime: 15_000,
-  })
-  const personas = personaPack?.items ?? []
-
-  useEffect(() => {
-    if (personaPack?.items) setPersonas(personaPack.items)
-  }, [personaPack, setPersonas])
+  const [tab, setTab] = useState('memory')
 
   const { data: memoryRow, isLoading: memLoading } = useQuery({
     queryKey: ['memory'],
@@ -274,77 +258,6 @@ export default function AISettings() {
     })
   }
 
-  const invalidatePersonas = useCallback(async () => {
-    await queryClient.refetchQueries({ queryKey: ['personas'] })
-    const pack = queryClient.getQueryData(['personas'])
-    const items = pack?.items
-    if (Array.isArray(items)) setPersonas(items)
-  }, [queryClient, setPersonas])
-
-  const personaIconInputRef = useRef(null)
-  const uploadPersonaIconMut = useMutation({
-    mutationFn: ({ id, file }) => uploadPersonaIcon(id, file),
-    onSuccess: () => invalidatePersonas(),
-  })
-  const clearPersonaIconMut = useMutation({
-    mutationFn: (id) => updatePersona(id, { icon_url: null }),
-    onSuccess: () => invalidatePersonas(),
-  })
-
-  const [pForm, setPForm] = useState(null)
-  const [pEmoji, setPEmoji] = useState('🤖')
-  const [pName, setPName] = useState('')
-  const [pPrompt, setPPrompt] = useState('')
-
-  function openNewPersona() {
-    setPForm('new')
-    setPEmoji('🤖')
-    setPName('')
-    setPPrompt('')
-  }
-
-  function openEditPersona(p) {
-    setPForm(p.id)
-    setPEmoji(p.avatar_emoji || '🤖')
-    setPName(p.name || '')
-    setPPrompt(p.system_prompt || '')
-  }
-
-  const savePersona = useMutation({
-    mutationFn: async () => {
-      if (pForm === 'new') {
-        return createPersona({
-          name: pName.trim() || 'Unnamed',
-          system_prompt: pPrompt,
-          avatar_emoji: pEmoji.trim() || '🤖',
-        })
-      }
-      return updatePersona(pForm, {
-        name: pName.trim() || 'Unnamed',
-        system_prompt: pPrompt,
-        avatar_emoji: pEmoji.trim() || '🤖',
-      })
-    },
-    onSuccess: () => {
-      setPForm(null)
-      invalidatePersonas()
-    },
-  })
-
-  const setDefaultPersona = useMutation({
-    mutationFn: (id) => updatePersona(id, { [currentDefaultKey]: true }),
-    onSuccess: async () => {
-      await invalidatePersonas()
-      const def = useAppStore.getState().personas.find((p) => p[currentDefaultKey])
-      if (def) setActivePersonaId(def.id)
-    },
-  })
-
-  const delPersona = useMutation({
-    mutationFn: (id) => deletePersona(id),
-    onSuccess: () => invalidatePersonas(),
-  })
-
   const { data: modelServerConfig } = useQuery({
     queryKey: ['settings', 'inference'],
     queryFn: getModelServerConfig,
@@ -377,11 +290,10 @@ export default function AISettings() {
       <div className="border-b border-border px-4 py-4">
         <h1 className="text-lg font-semibold tracking-tight text-foreground">AI</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Personas, memory, model defaults, and global instructions.
+          Memory, model defaults, and global instructions.
         </p>
         <div className="mt-4 flex gap-1 border-b border-border">
           {[
-            { id: 'personas', label: 'Personas' },
             { id: 'memory', label: 'Memory' },
             { id: 'model', label: 'Model' },
             { id: 'instructions', label: 'Instructions' },
@@ -404,167 +316,6 @@ export default function AISettings() {
       </div>
 
       <div className="mx-auto w-full max-w-3xl flex-1 px-4 py-6">
-        {tab === 'personas' && (
-          <div className="flex flex-col gap-4">
-            <div className="flex justify-end">
-              <Button type="button" size="sm" onClick={openNewPersona}>
-                New persona
-              </Button>
-            </div>
-
-            {pForm && (
-              <div className="rounded-lg border border-border bg-card p-4">
-                <p className="mb-3 text-sm font-medium text-foreground">
-                  {pForm === 'new' ? 'New persona' : 'Edit persona'}
-                </p>
-                <div className="flex flex-col gap-3">
-                  <label className="flex flex-col gap-1 text-sm">
-                    <span className="text-muted-foreground">Emoji</span>
-                    <div className="flex flex-wrap items-center gap-3">
-                      <input
-                        value={pEmoji}
-                        onChange={(e) => setPEmoji(e.target.value)}
-                        className="h-9 w-24 rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2"
-                        maxLength={8}
-                      />
-                      {pForm !== 'new' ? (
-                        (() => {
-                          const ep = personas.find((x) => x.id === pForm)
-                          return ep?.icon_url ? (
-                            <img src={ep.icon_url} alt="" className="size-10 rounded-full object-cover" />
-                          ) : null
-                        })()
-                      ) : null}
-                    </div>
-                  </label>
-                  <div className="flex flex-col gap-1 text-sm">
-                    <span className="text-muted-foreground">Avatar image (overrides emoji)</span>
-                    {pForm === 'new' ? (
-                      <p className="text-xs text-muted-foreground">Save first, then upload an image.</p>
-                    ) : (
-                      <>
-                        <input
-                          ref={personaIconInputRef}
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) => {
-                            const f = e.target.files?.[0]
-                            e.target.value = ''
-                            if (f) uploadPersonaIconMut.mutate({ id: pForm, file: f })
-                          }}
-                        />
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => personaIconInputRef.current?.click()}
-                            disabled={uploadPersonaIconMut.isPending}
-                          >
-                            {uploadPersonaIconMut.isPending ? 'Uploading…' : 'Choose image'}
-                          </Button>
-                          {personas.find((x) => x.id === pForm)?.icon_url ? (
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => clearPersonaIconMut.mutate(pForm)}
-                              disabled={clearPersonaIconMut.isPending}
-                            >
-                              Remove image
-                            </Button>
-                          ) : null}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                  <label className="flex flex-col gap-1 text-sm">
-                    <span className="text-muted-foreground">Name</span>
-                    <input
-                      value={pName}
-                      onChange={(e) => setPName(e.target.value)}
-                      className="h-9 rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2"
-                    />
-                  </label>
-                  <label className="flex flex-col gap-1 text-sm">
-                    <span className="text-muted-foreground">System prompt</span>
-                    <textarea
-                      value={pPrompt}
-                      onChange={(e) => setPPrompt(e.target.value)}
-                      rows={6}
-                      className="resize-y rounded-md border border-border bg-background px-2 py-2 text-sm text-foreground outline-none ring-ring focus-visible:ring-2"
-                    />
-                  </label>
-                  <div className="flex gap-2">
-                    <Button type="button" size="sm" onClick={() => savePersona.mutate()} disabled={savePersona.isPending}>
-                      Save
-                    </Button>
-                    <Button type="button" size="sm" variant="outline" onClick={() => setPForm(null)}>
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <ul className="flex flex-col gap-3">
-              {personas.map((p) => (
-                <li
-                  key={p.id}
-                  className="rounded-lg border border-border bg-card p-4"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        {p.icon_url ? (
-                          <img src={p.icon_url} alt="" className="size-10 shrink-0 rounded-full object-cover" />
-                        ) : (
-                          <span className="text-xl" aria-hidden>
-                            {p.avatar_emoji || '🤖'}
-                          </span>
-                        )}
-                        <span className="font-medium text-foreground">{p.name}</span>
-                        {p[currentDefaultKey] && (
-                          <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
-                            Default
-                          </span>
-                        )}
-                      </div>
-                      <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">{p.system_prompt || '—'}</p>
-                    </div>
-                    <div className="flex shrink-0 flex-wrap gap-2">
-                      <Button type="button" size="sm" variant="secondary" onClick={() => openEditPersona(p)}>
-                        Edit
-                      </Button>
-                      {!p[currentDefaultKey] && (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setDefaultPersona.mutate(p.id)}
-                          disabled={setDefaultPersona.isPending}
-                        >
-                          Set default
-                        </Button>
-                      )}
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="destructive"
-                        disabled={p[currentDefaultKey]}
-                        onClick={() => delPersona.mutate(p.id)}
-                      >
-                        Delete
-                      </Button>
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
         {tab === 'memory' && (
           <div className="flex flex-col gap-6">
             <div className="space-y-3 rounded-lg border border-border bg-card/40 p-4">

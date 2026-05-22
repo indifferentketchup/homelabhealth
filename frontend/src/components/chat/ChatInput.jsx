@@ -7,8 +7,6 @@ import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/store/index.js'
 import { cn } from '@/lib/utils'
 
-import { PersonaGlyph } from './PersonaGlyph.jsx'
-
 // Read a File into a text-attachment shape, rejecting images outright and
 // stripping any embedded null bytes (PG's TEXT type rejects 0x00, which
 // previously caused 500s when a binary file got attached and the message
@@ -52,7 +50,6 @@ export function ChatInput({
   onStop,
   activeChatId,
   chatMaxW,
-  hidePersonaInMenu = false,
 }) {
   const taRef = useRef(null)
   const uploadInputRef = useRef(null)
@@ -68,9 +65,6 @@ export function ChatInput({
 
   const webSearchEnabled = useAppStore((s) => s.webSearchEnabled)
   const setWebSearchEnabled = useAppStore((s) => s.setWebSearchEnabled)
-  const personaDisplayName = useAppStore((s) => s.personaDisplayName)
-  const personaIconUrl = useAppStore((s) => s.personaIconUrl)
-  const personaEmoji = useAppStore((s) => s.personaEmoji)
 
   useEffect(() => {
     if (!toastMsg) return
@@ -476,22 +470,6 @@ export function ChatInput({
                   />
                 </button>
               </div>
-              {!hidePersonaInMenu && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="flex h-9 w-full cursor-default items-center gap-2 rounded-md px-2 text-left text-sm text-foreground outline-none hover:bg-accent hover:text-accent-foreground"
-                  disabled
-                >
-                  <PersonaGlyph
-                    kind="menu"
-                    iconUrl={personaIconUrl}
-                    emoji={personaEmoji}
-                    className="text-muted-foreground"
-                  />
-                  <span className="truncate">Persona: {personaDisplayName}</span>
-                </button>
-              )}
             </div>
           </div>,
           document.body,

@@ -3,14 +3,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, ChevronDown, Search } from 'lucide-react'
 
 import { listWorkspaces } from '@/api/workspaces.js'
-import { listPersonas } from '@/api/personas.js'
 import { fetchModels, getModelSettings } from '@/api/inference.js'
 import { getChat, patchChat } from '@/api/chats.js'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/store/index.js'
 import { cn, sortSelectedFirst } from '@/lib/utils'
-
-import { PersonaGlyph } from './PersonaGlyph.jsx'
 
 function formatModelSize(bytes) {
   if (bytes == null || Number.isNaN(bytes)) return '—'
@@ -63,16 +60,12 @@ export function ModelSelectorBar({ className }) {
   const queryClient = useQueryClient()
 
   const [modelOpen, setModelOpen] = useState(false)
-  const [personaOpen, setPersonaOpen] = useState(false)
   const [q, setQ] = useState('')
 
   const modelWrapRef = useRef(null)
   const modelBtnRef = useRef(null)
-  const personaBtnRef = useRef(null)
-  const personaWrapRef = useRef(null)
 
   const modelRect = useFixedRect(modelBtnRef, modelOpen)
-  const personaRect = useFixedRect(personaBtnRef, personaOpen)
 
   const selectedModel = useAppStore((s) => s.selectedModel)
   const setSelectedModel = useAppStore((s) => s.setSelectedModel)
@@ -80,9 +73,7 @@ export function ModelSelectorBar({ className }) {
   const activeChatId = useAppStore((s) => s.activeChatId)
   const userTouchedLandingModelRef = useRef(false)
   const prevActiveChatIdRef = useRef(activeChatId)
-  const storePersonaId = useAppStore((s) => s.activePersonaId)
   const storeWorkspaceId = useAppStore((s) => s.activeWorkspaceId)
-  const setActivePersonaId = useAppStore((s) => s.setActivePersonaId)
 
   const { data: modelsData, isLoading: modelsLoading } = useQuery({
     queryKey: ['inference', 'models'],
@@ -100,16 +91,6 @@ export function ModelSelectorBar({ className }) {
     () => new Set(Array.isArray(modelSettings?.hidden_models) ? modelSettings.hidden_models : []),
     [modelSettings],
   )
-
-  const { data: personaPack } = useQuery({
-    queryKey: ['personas'],
-    queryFn: () => listPersonas(),
-    staleTime: 30_000,
-  })
-  const personas = personaPack?.items ?? []
-  const defaultPersona = useMemo(() => {
-    return personas.find((p) => p.is_default) ?? null
-  }, [personas])
 
   const { data: chat } = useQuery({
     queryKey: ['chat', activeChatId],
@@ -145,15 +126,8 @@ export function ModelSelectorBar({ className }) {
     [filtered, selectedModel],
   )
 
-  const chatPersonaId = chat?.persona_id ?? null
   const chatWorkspaceId = chat?.workspace_id ?? null
-  const effectivePersonaId = activeChatId ? chatPersonaId : storePersonaId
   const effectiveWorkspaceId = activeChatId ? chatWorkspaceId : storeWorkspaceId
-
-  const displayPersona = useMemo(() => {
-    if (effectivePersonaId) return personas.find((p) => p.id === effectivePersonaId) ?? defaultPersona
-    return defaultPersona
-  }, [effectivePersonaId, personas, defaultPersona])
 
   const displayWorkspace = useMemo(() => {
     if (!effectiveWorkspaceId) return null
@@ -166,11 +140,6 @@ export function ModelSelectorBar({ className }) {
   )
   const modelLocked = Boolean(
     workspacePinnedModel && (activeChatId ? chatWorkspaceId : storeWorkspaceId),
-  )
-
-  const sortedPersonas = useMemo(
-    () => sortSelectedFirst(personas, effectivePersonaId || defaultPersona?.id, 'id'),
-    [personas, effectivePersonaId, defaultPersona],
   )
 
   useEffect(() => {
@@ -229,26 +198,6 @@ export function ModelSelectorBar({ className }) {
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [modelOpen])
 
-  useEffect(() => {
-    if (!personaOpen) return
-    function onMouseDown(e) {
-      if (personaWrapRef.current && !personaWrapRef.current.contains(e.target)) {
-        setPersonaOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', onMouseDown)
-    return () => document.removeEventListener('mousedown', onMouseDown)
-  }, [personaOpen])
-
-  useEffect(() => {
-    if (!personaOpen) return
-    function onKeyDown(e) {
-      if (e.key === 'Escape') setPersonaOpen(false)
-    }
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
-  }, [personaOpen])
-
   async function selectModel(modelId) {
     if (modelLocked) return
     if (!activeChatId) userTouchedLandingModelRef.current = true
@@ -262,36 +211,6 @@ export function ModelSelectorBar({ className }) {
       } catch {
         /* ignore */
       }
-    }
-  }
-
-  async function selectPersona(id) {
-    setPersonaOpen(false)
-    if (!activeChatId) {
-      setActivePersonaId(id)
-      return
-    }
-    try {
-      await patchChat(activeChatId, { persona_id: id })
-      await queryClient.invalidateQueries({ queryKey: ['chat', activeChatId] })
-      await queryClient.invalidateQueries({ queryKey: ['chats'] })
-    } catch {
-      /* ignore */
-    }
-  }
-
-  async function clearPersonaToDefault() {
-    setPersonaOpen(false)
-    if (!activeChatId) {
-      if (defaultPersona) setActivePersonaId(defaultPersona.id)
-      return
-    }
-    try {
-      await patchChat(activeChatId, { persona_id: null })
-      await queryClient.invalidateQueries({ queryKey: ['chat', activeChatId] })
-      await queryClient.invalidateQueries({ queryKey: ['chats'] })
-    } catch {
-      /* ignore */
     }
   }
 
@@ -370,64 +289,6 @@ export function ModelSelectorBar({ className }) {
           </FixedDropdownPanel>
         )}
       </div>
-
-      <div ref={personaWrapRef} className="relative">
-          <span ref={personaBtnRef} className="inline-flex">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-9 max-w-[10rem] gap-1.5 border-border bg-card px-2.5 font-normal"
-              aria-expanded={personaOpen}
-              aria-haspopup="listbox"
-              onClick={() => setPersonaOpen((o) => !o)}
-            >
-              <PersonaGlyph kind="trigger" iconUrl={displayPersona?.icon_url} emoji={displayPersona?.avatar_emoji} />
-              <span className="truncate text-xs font-medium">{displayPersona?.name || 'Persona'}</span>
-              <ChevronDown className="size-3 shrink-0 opacity-70" aria-hidden />
-            </Button>
-          </span>
-          {personaOpen && (
-            <FixedDropdownPanel rect={personaRect} className="min-w-[12rem]">
-              <ul className="max-h-[min(50vh,18rem)] overflow-y-auto" role="listbox">
-                <li>
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground"
-                    onClick={() => clearPersonaToDefault()}
-                  >
-                    <PersonaGlyph
-                      kind="list"
-                      iconUrl={defaultPersona?.icon_url}
-                      emoji={defaultPersona?.avatar_emoji}
-                    />
-                    <span className="truncate">Default ({defaultPersona?.name || 'Assistant'})</span>
-                    {!effectivePersonaId && <Check className="ml-auto size-4 shrink-0 text-primary" />}
-                  </button>
-                </li>
-                {sortedPersonas.map((p) => {
-                  const sel = effectivePersonaId === p.id
-                  return (
-                    <li key={p.id}>
-                      <button
-                        type="button"
-                        className={cn(
-                          'flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground',
-                          sel && 'bg-muted',
-                        )}
-                        onClick={() => selectPersona(p.id)}
-                      >
-                        <PersonaGlyph kind="list" iconUrl={p.icon_url} emoji={p.avatar_emoji} />
-                        <span className="min-w-0 flex-1 truncate">{p.name}</span>
-                        {sel && <Check className="size-4 shrink-0 text-primary" />}
-                      </button>
-                    </li>
-                  )
-                })}
-              </ul>
-            </FixedDropdownPanel>
-          )}
-        </div>
     </div>
   )
 }
