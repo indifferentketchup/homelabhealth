@@ -34,6 +34,7 @@ sees zero of this until **everything** is at “shipped” status.
 
 ```
 Shipped releases (most recent → oldest):
+  v0.10.0   C1  disk + backup hygiene + doctor LUKS/backrest checks (2026-05-22)
   v0.9.0    C0  security + threat-model docs (2026-05-22)
   v0.8.1    docs + tooling polish (2026-05-22)
   v0.8.0    A1.5 hardening + A1.7 pre-flight + Phase 2.B (2026-05-22)
@@ -47,8 +48,7 @@ Shipped releases (most recent → oldest):
   v0.1.0    strip + homelabhealth identity (2026-05-02)
 
 Planned (dependency-ordered):
-  v0.10.0   C1  disk/backup hygiene + doctor LUKS/backrest checks  ← active work
-  v0.11.0   C8  supply chain + ops (make security target)
+  v0.11.0   C8  supply chain + ops (make security target)  ← active work
   v0.12.0   C4  audit logging (unblocks B3)
   v0.13.0   C3  synthetic data + log scrubbing
   v0.14.0   B2  UI disclaimers + crisis card
@@ -66,21 +66,21 @@ Planned (dependency-ordered):
 
 Phase track in summary:
   A — Built-in AI:   A0 ✓ A1 ✓ A1.5 ✓ A1.6 ✓ A1.7 ✓ A2 ✓ A7 ✓ │ A3 A4 A5? A6
-  B — Safeguards:    B0 ✓                                       │ B1 B2 B3 B4
-  C — Security:      C0 ✓ C2 ✓                                 │ C1 C3 C4 C5 C6 C7 C8 C9
+  B — Safeguards:    B0 ✓                                     │ B1 B2 B3 B4
+  C — Security:      C0 ✓ C1 ✓ C2 ✓                           │ C3 C4 C5 C6 C7 C8 C9
 ```
 
 **Ship-to-friend gate** = every phase above shipped + tagged.
 Trunk-merge gates documented in earlier roadmap revisions are
 **retired**. Gates now apply to non-Sam access only.
 
-**Latest release:** `v0.9.0` (2026-05-22) — security + threat-model docs foundation. See
+**Latest release:** `v0.10.0` (2026-05-22) — C1 disk + backup hygiene + doctor LUKS/backrest checks. See
 `CHANGELOG.md` for the per-tag rundown.
 
-**Active work — `v0.10.0` (C1 disk + backup hygiene):**
-LUKS passphrase confirmation, backrest passphrase and repo setup, restore drill documentation,
-key custody documentation for the friend deployment, and doctor checks verifying LUKS and
-backrest presence on the host. Roadmap code: C1.
+**Active work — `v0.11.0` (C8 supply chain + ops):**
+Pin every Docker image tag to a digest, surface dependency-update review
+in the doctor, document the `make security` target, and add a CI gate
+for any unpinned tag. Roadmap code: C8.
 
 -----
 
@@ -657,7 +657,7 @@ is checked.
 
 - [x] `v0.8.0` — C2 docker hardening (landed with A1.5)
 - [x] `v0.9.0` — C0 security + threat-model docs
-- [ ] `v0.10.0` — C1 disk + backup hygiene confirmed on friend's host
+- [x] `v0.10.0` — C1 disk + backup hygiene confirmed on friend's host
 - [ ] `v0.11.0` — C8 supply chain hardening
 - [ ] `v0.12.0` — C4 audit logging
 - [ ] `v0.13.0` — C3 synthetic data + log scrubbing

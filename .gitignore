@@ -28,4 +28,7 @@ CLAUDE.md
 # Repo-internal (not for distribution)
 docs/*
 !docs/*.md
+!docs/operator/
+docs/operator/*
+!docs/operator/*.md
 /history/
