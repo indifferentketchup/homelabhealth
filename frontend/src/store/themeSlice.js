@@ -25,8 +25,7 @@ function attachSystemListener(getCurrentTheme) {
   _mqListener = () => {
     if (getCurrentTheme() === 'system') applyThemeClass('system')
   }
-  if (_mq.addEventListener) _mq.addEventListener('change', _mqListener)
-  else _mq.addListener(_mqListener)
+  _mq.addEventListener('change', _mqListener)
 }
 
 export const createThemeSlice = (set, get) => ({
