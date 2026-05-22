@@ -20,6 +20,7 @@ from routers import (
     workspaces,
     memory,
     inference,
+    models,
     personas,
     profile,
     providers,
@@ -28,6 +29,7 @@ from routers import (
     settings,
     system,
 )
+from services import bundled_providers, model_puller
 from routers.history import router as history_router
 from routers.notes import router as notes_router
 from routers.sources import router as sources_router
@@ -80,6 +82,14 @@ async def lifespan(_app: FastAPI):
     await apply_schema()
     await seed_default_assets()
     await ensure_super_admin()
+    # Phase 1: seed bundled_models from MODEL_REGISTRY. Idempotent — safe on every boot.
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        seeded = await model_puller.seed_registry(conn)
+        # If setup_complete=true AND tier != external, ensure the bundled-chat
+        # provider row exists. No-op otherwise (silent).
+        await bundled_providers.ensure_bundled_chat_provider(conn)
+    logger.info("model_puller: seeded %d bundled_models rows", seeded)
     try:
         yield
     finally:
@@ -132,6 +142,7 @@ async def api_health():
 api.include_router(profile.router, prefix="/profile", tags=["profile"])
 api.include_router(providers.router, prefix="/providers", tags=["providers"])
 api.include_router(system.router, prefix="/system", tags=["system"])
+api.include_router(models.router, prefix="/models", tags=["models"])
 api.include_router(inference.router, prefix="/inference", tags=["inference"])
 api.include_router(chats.router, prefix="/chats", tags=["chats"])
 api.include_router(personas.router, prefix="/personas", tags=["personas"])

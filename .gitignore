@@ -26,5 +26,6 @@ CLAUDE.md
 .worktrees/
 
 # Repo-internal (not for distribution)
-docs/
+docs/*
+!docs/builtin-ai/
 /history/

@@ -39,6 +39,47 @@ services:
       - hlh_uploads:/data/uploads
       - hlh_branding:/data/branding
       - hlh_history:/data/history
+      - hlh_models:/models               # Phase 1: model_puller writes here
+    networks:
+      - hlh_default
+
+  # Phase 1: bundled chat inference (llama.cpp server). Reads model weights
+  # from the shared hlh_models volume; the model file is downloaded by the
+  # api (services/model_puller.py) before this service is useful — until
+  # then the healthcheck fails and the container restarts.
+  #
+  # Only reachable inside hlh_default. The api proxies to it as a registered
+  # provider at http://hlh_chat:${HLH_CHAT_PORT}.
+  #
+  # Profile `chat`: omit COMPOSE_PROFILES (or use external-only) to skip
+  # this service. Default in .env.example includes `chat`.
+  hlh_chat:
+    # llama.cpp moved from ghcr.io/ggerganov/ to ghcr.io/ggml-org/ in 2025.
+    # Unpinned `server` tag for Phase 1; pin to a specific build (e.g.
+    # `server-bNNNN`) once the model file format / API contract is stable
+    # for this stack — see future tidy.
+    image: ghcr.io/ggml-org/llama.cpp:server
+    container_name: hlh_chat
+    restart: unless-stopped
+    profiles: [chat]
+    env_file:
+      - .env
+    volumes:
+      - hlh_models:/models:ro
+    command: >
+      --model ${HLH_CHAT_MODEL_PATH:-/models/chat/cpu-min/Qwen3-1.7B-Q8_0.gguf}
+      --host 0.0.0.0
+      --port ${HLH_CHAT_PORT:-9610}
+      --n-gpu-layers ${HLH_CHAT_NGL:-0}
+      --jinja
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:${HLH_CHAT_PORT:-9610}/v1/models || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      - hlh_api
     networks:
       - hlh_default
 
@@ -68,3 +109,4 @@ volumes:
   hlh_uploads:
   hlh_branding:
   hlh_history:
+  hlh_models:

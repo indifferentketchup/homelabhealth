@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
 import {
@@ -6,79 +6,86 @@ import {
   postSystemRedetect,
   putSystemProfile,
 } from '@/api/system.js'
+import {
+  cancelPull,
+  listModels,
+  pullModel,
+} from '@/api/models.js'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 /**
- * Per-tier metadata for the picker. Source of truth is
- * docs/hlh_phase0_design.md §Tier definitions. Footprints are rough
- * approximations (design says "approx VRAM/RAM, approx disk").
+ * Per-tier metadata for the picker.
+ *
+ * Phase 0 source: hlh_phase0_design.md §Tier definitions (sysinfo + UX).
+ * Phase 1 update (hlh_phase1_design.md §Tier model defaults): chat strings
+ * now reflect MedGemma defaults for cpu-std and up. Footprints are rough.
  */
 const TIERS = [
   {
     id: 'cpu-min',
     label: 'CPU — minimal',
-    chat: 'Qwen3 1.7B Q4',
+    chat: 'Qwen3 1.7B Q8_0',
     embed: 'bge-large-en-v1.5 Q4',
     rerank: 'flashrank',
     vision: '—',
     stt: 'whisper tiny',
-    footprint: '~3 GB RAM peak · ~3 GB disk',
+    footprint: '~2 GB RAM peak · ~1.8 GB disk',
     detect: '<16 GB RAM, no GPU',
   },
   {
     id: 'cpu-std',
     label: 'CPU — standard',
-    chat: 'Qwen3 4B Q4',
+    chat: 'MedGemma 4B Q4_K_M',
     embed: 'bge-large-en-v1.5 Q8',
     rerank: 'bge-reranker-base (CPU)',
     vision: '—',
     stt: 'whisper base',
-    footprint: '~6 GB RAM peak · ~5 GB disk',
+    footprint: '~4 GB RAM peak · ~2.8 GB disk',
     detect: '≥16 GB RAM, no GPU',
   },
   {
     id: 'gpu-8gb',
     label: 'GPU — 8 GB class',
-    chat: 'Qwen3 8B Q4',
+    chat: 'MedGemma 4B Q8_0',
     embed: 'bge-large-en-v1.5 FP16',
     rerank: 'bge-reranker-v2-m3',
     vision: '—',
     stt: 'whisper small',
-    footprint: '~8 GB VRAM peak · ~10 GB disk',
+    footprint: '~6 GB VRAM peak · ~4.5 GB disk',
     detect: '6–11 GB VRAM',
   },
   {
     id: 'gpu-16gb',
     label: 'GPU — 16 GB class',
-    chat: 'Qwen3 14B Q4',
+    chat: 'MedGemma 27B Text Q4_K_M',
     embed: 'Harrier-0.6B Q8',
     rerank: 'Qwen3-Reranker-0.6B',
     vision: 'Qwen2.5-VL-3B',
     stt: 'whisper medium',
-    footprint: '~16 GB VRAM peak · ~20 GB disk',
+    footprint: '~16 GB VRAM peak · ~16 GB disk',
     detect: '12–23 GB VRAM',
   },
   {
     id: 'gpu-24gb+',
     label: 'GPU — 24 GB+',
-    chat: 'Qwen3 32B Q4',
+    chat: 'MedGemma 27B Multimodal Q4_K_M',
     embed: 'Harrier-0.6B Q8',
     rerank: 'Qwen3-Reranker-0.6B',
     vision: 'Qwen2.5-VL-7B',
     stt: 'whisper large',
-    footprint: '~26 GB VRAM peak · ~30 GB disk',
+    footprint: '~18 GB VRAM peak · ~18 GB disk',
     detect: '≥24 GB VRAM',
   },
   {
     id: 'apple-mlx',
-    label: 'Apple Silicon (MLX)',
-    chat: 'Qwen3 MLX',
+    label: 'Apple Silicon (MLX) — deferred to Phase 6',
+    chat: 'MedGemma 4B MLX',
     embed: 'bge-large-en-v1.5 MLX',
     rerank: 'bge-reranker-v2-m3 MLX',
     vision: 'Qwen2.5-VL MLX',
     stt: 'whisper.cpp Metal',
-    footprint: '~12–16 GB unified · ~15 GB disk',
+    footprint: '~12–16 GB unified · varies',
     detect: 'Apple Silicon, ≥16 GB unified',
   },
   {
@@ -93,6 +100,9 @@ const TIERS = [
     detect: 'Operator chose external only',
   },
 ]
+
+const EXTERNAL_TIER = TIERS.find((t) => t.id === 'external')
+const VISIBLE_TIERS = TIERS.filter((t) => t.id !== 'external')
 
 
 function formatGpu(g) {
@@ -282,6 +292,246 @@ function TierRadio({ tier, selected, onSelect, isRecommended, disabled }) {
 }
 
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Phase 1: Models sub-section.
+// Polls /api/models every 2s while any row is `pulling`; idle otherwise.
+// ──────────────────────────────────────────────────────────────────────────────
+
+function progressFraction(row) {
+  const pulled = Number(row?.pulled_bytes) || 0
+  const total = Number(row?.expected_bytes) || 0
+  if (total <= 0 || pulled < 0) return null
+  return Math.min(1, Math.max(0, pulled / total))
+}
+
+function formatBytes(n) {
+  const v = Number(n)
+  if (!Number.isFinite(v) || v <= 0) return '—'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let x = v
+  let i = 0
+  while (x >= 1024 && i < units.length - 1) {
+    x /= 1024
+    i += 1
+  }
+  return `${x.toFixed(x >= 10 || i === 0 ? 0 : 1)} ${units[i]}`
+}
+
+
+function StatusBadge({ status }) {
+  let cls = 'bg-muted text-muted-foreground'
+  if (status === 'ready') cls = 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+  else if (status === 'pulling') cls = 'bg-sky-500/15 text-sky-700 dark:text-sky-300'
+  else if (status === 'failed') cls = 'bg-rose-500/15 text-rose-700 dark:text-rose-300'
+  else if (status === 'skipped') cls = 'bg-muted text-muted-foreground'
+  return (
+    <span className={cn('inline-block rounded px-1.5 py-0.5 font-mono text-[11px]', cls)}>
+      {status || '—'}
+    </span>
+  )
+}
+
+
+function ModelsPanel({ currentTier }) {
+  const [items, setItems] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [actionErr, setActionErr] = useState(null)
+
+  const refresh = useCallback(async () => {
+    try {
+      const data = await listModels()
+      const filtered = (data?.items ?? []).filter((r) => r.tier === currentTier)
+      setItems(filtered)
+      setError(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load models')
+    } finally {
+      setLoading(false)
+    }
+  }, [currentTier])
+
+  useEffect(() => {
+    setLoading(true)
+    void refresh()
+  }, [refresh])
+
+  const anyPulling = useMemo(() => items.some((r) => r.status === 'pulling'), [items])
+
+  useEffect(() => {
+    if (!anyPulling) return
+    const t = window.setInterval(() => void refresh(), 2000)
+    return () => window.clearInterval(t)
+  }, [anyPulling, refresh])
+
+  async function onPull(row) {
+    setActionErr(null)
+    try {
+      await pullModel(row.id)
+      // Optimistically mark pulling so polling kicks in immediately.
+      setItems((cur) => cur.map((r) => (r.id === row.id ? { ...r, status: 'pulling' } : r)))
+      await refresh()
+    } catch (e) {
+      const raw = e instanceof Error ? e.message : 'Pull failed'
+      let pretty = raw
+      try {
+        const parsed = JSON.parse(raw)
+        if (parsed?.detail) pretty = String(parsed.detail)
+      } catch {
+        /* not JSON */
+      }
+      setActionErr(pretty)
+    }
+  }
+
+  async function onCancel(row) {
+    setActionErr(null)
+    try {
+      await cancelPull(row.id)
+      await refresh()
+    } catch (e) {
+      setActionErr(e instanceof Error ? e.message : 'Cancel failed')
+    }
+  }
+
+  return (
+    <div className="space-y-2" data-testid="system-models-panel">
+      <div className="flex items-baseline justify-between gap-2">
+        <h3 className="text-sm font-medium text-foreground">Models for this tier</h3>
+        <span className="text-xs text-muted-foreground">tier: <span className="font-mono">{currentTier || '—'}</span></span>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Bundled-AI artifacts the operator downloads to the local cache. Polls every 2s while a pull
+        is active. MedGemma rows require <span className="font-mono">HF_TOKEN</span> + license
+        acceptance at the linked HF page.
+      </p>
+
+      {actionErr ? <p className="text-sm text-destructive">{actionErr}</p> : null}
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+
+      {loading ? (
+        <p className="text-sm text-muted-foreground">Loading models…</p>
+      ) : items.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No bundled artifacts for this tier (or you picked <span className="font-mono">external</span>).
+        </p>
+      ) : (
+        <div className="overflow-x-auto rounded-md border border-border">
+          <table className="w-full table-auto text-sm">
+            <thead className="bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 font-medium">Role</th>
+                <th className="px-3 py-2 font-medium">Model</th>
+                <th className="px-3 py-2 font-medium">Status</th>
+                <th className="px-3 py-2 font-medium">Progress</th>
+                <th className="px-3 py-2 font-medium">License</th>
+                <th className="px-3 py-2 font-medium text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((row) => {
+                const frac = progressFraction(row)
+                return (
+                  <tr key={row.id} className="border-t border-border align-top">
+                    <td className="px-3 py-2 font-medium text-foreground">{row.role}</td>
+                    <td className="px-3 py-2 font-mono text-xs text-muted-foreground" title={row.model_id}>
+                      <div>{row.repo}</div>
+                      <div className="text-[11px]">{row.filename}{row.quant ? ` · ${row.quant}` : ''}</div>
+                    </td>
+                    <td className="px-3 py-2">
+                      <StatusBadge status={row.status} />
+                      {row.error_message ? (
+                        <div className="mt-1 text-xs text-destructive" data-testid={`system-model-error-${row.role}`}>
+                          {row.error_message}
+                          {row.license_url ? (
+                            <>
+                              {' '}
+                              <a
+                                href={row.license_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="underline underline-offset-2 hover:text-foreground"
+                              >
+                                Visit and accept here.
+                              </a>
+                            </>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-2 text-xs">
+                      {row.status === 'pulling' || row.status === 'ready' ? (
+                        <div className="flex flex-col gap-1">
+                          <div className="h-1.5 w-32 overflow-hidden rounded-full bg-muted">
+                            <div
+                              className="h-full bg-primary transition-all"
+                              style={{ width: `${Math.round(((frac ?? 0) * 100))}%` }}
+                              data-testid={`system-model-progress-${row.role}`}
+                            />
+                          </div>
+                          <span className="font-mono text-[11px] text-muted-foreground">
+                            {formatBytes(row.pulled_bytes)} / {formatBytes(row.expected_bytes)}
+                            {frac != null ? ` (${Math.round(frac * 100)}%)` : ''}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-xs">
+                      {row.license ? (
+                        <a
+                          href={row.license_url || '#'}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline underline-offset-2 hover:text-foreground"
+                          title={row.license_url || ''}
+                        >
+                          {row.license}
+                        </a>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {row.status === 'pulling' ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void onCancel(row)}
+                          data-testid={`system-model-cancel-${row.role}`}
+                        >
+                          Cancel
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => void onPull(row)}
+                          data-testid={`system-model-pull-${row.role}`}
+                        >
+                          {row.status === 'ready' ? 'Re-pull' : 'Pull'}
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+
+// ──────────────────────────────────────────────────────────────────────────────
+// SystemTab
+// ──────────────────────────────────────────────────────────────────────────────
+
+
 export default function SystemTab() {
   const queryClient = useQueryClient()
   const [loading, setLoading] = useState(true)
@@ -307,8 +557,6 @@ export default function SystemTab() {
       const data = await getSystemProfile()
       setProfile(data)
       syncCache(data)
-      // Initialize selection: if not set up, prefer the recommended tier;
-      // otherwise reflect the saved tier so Save stays disabled until changed.
       if (data?.setup_complete) {
         setSelectedTier(data.tier || data.recommended_tier || '')
       } else {
@@ -341,8 +589,6 @@ export default function SystemTab() {
       const updated = await postSystemRedetect()
       setProfile(updated)
       syncCache(updated)
-      // Don't overwrite user's selection. If they haven't completed setup yet
-      // and weren't tracking a specific choice, nudge to the new recommendation.
       if (!updated?.setup_complete && (!selectedTier || selectedTier === profile?.recommended_tier)) {
         setSelectedTier(updated.recommended_tier || '')
       }
@@ -392,9 +638,7 @@ export default function SystemTab() {
 
   const saveEnabled = useMemo(() => {
     if (!profile || !selectedTier) return false
-    // First-boot: always allow Save (operator must confirm).
     if (!profile.setup_complete) return true
-    // Already set up: only enable if user has changed their mind.
     return selectedTier !== profile.tier
   }, [profile, selectedTier])
 
@@ -445,7 +689,7 @@ export default function SystemTab() {
       <div className="space-y-2">
         <h3 className="text-sm font-medium text-foreground">Choose a tier</h3>
         <div className="grid grid-cols-1 gap-2">
-          {TIERS.map((t) => (
+          {VISIBLE_TIERS.map((t) => (
             <TierRadio
               key={t.id}
               tier={t}
@@ -456,7 +700,32 @@ export default function SystemTab() {
             />
           ))}
         </div>
+
+        {/* Phase 1: External tier collapsed by default. Operators who explicitly
+            want BYO inference open this; others see only the bundled tiers. */}
+        <details className="mt-2 rounded-lg border border-border bg-card p-3" data-testid="system-external-advanced">
+          <summary className="cursor-pointer text-sm font-medium text-foreground">
+            Advanced: bring your own inference
+          </summary>
+          <p className="mt-2 text-xs text-muted-foreground">
+            You&apos;ll need to configure providers in Settings before HLH can chat or embed records.
+          </p>
+          <div className="mt-2">
+            <TierRadio
+              tier={EXTERNAL_TIER}
+              selected={selectedTier}
+              onSelect={setSelectedTier}
+              isRecommended={false}
+              disabled={busy}
+            />
+          </div>
+        </details>
       </div>
+
+      {/* Phase 1: Models sub-section — show bundled artifacts for the
+          currently-selected tier (so the operator sees what would be pulled
+          before they commit, and can drive pulls post-save). */}
+      <ModelsPanel currentTier={selectedTier} />
 
       {saveErr ? (
         <p data-testid="system-save-error" className="text-sm text-destructive">
