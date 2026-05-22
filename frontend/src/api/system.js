@@ -31,3 +31,13 @@ export const putHfToken = (token) =>
 /** DELETE /api/system/hf-token — clear the stored HF token. Returns null (204). */
 export const deleteHfToken = () =>
   apiFetch('/api/system/hf-token', { method: 'DELETE' })
+
+/** GET /api/system/doctor — runs all pre-flight checks, returns { checks, summary }. */
+export async function getDoctor() {
+  return apiFetch('/api/system/doctor', { method: 'GET' })
+}
+
+/** POST /api/system/acknowledge — stamps acknowledged_at = NOW() on system_profile. Returns 204. */
+export async function postAcknowledge() {
+  return apiFetch('/api/system/acknowledge', { method: 'POST' })
+}
