@@ -27,6 +27,7 @@ from services.rag import (
     retrieve_context,
     retrieve_memory_facts,
 )
+from services.safeguards import current_version, prepend_safeguard
 from services.searx import searx_search_sources
 
 router = APIRouter()
@@ -210,6 +211,12 @@ async def _assembled_system_prompt(
         preview,
     )
     logger.debug("assembled prompt full text=%s", assembled)
+
+    # B0 safeguards: prepend the locked tiered-refusal prompt as the final
+    # step. Chokepoint — no code path returns from this function without it.
+    # Workspace prompt + RAG appear after, never before. See
+    # services/safeguards.py for the prompt text + version key.
+    assembled = prepend_safeguard(assembled)
 
     return assembled, sse_rag_meta
 
@@ -826,7 +833,7 @@ async def fork_chat_at_message(
 
             msg_rows = await conn.fetch(
                 """
-                SELECT id, role, content, model, tokens_used, sources_used
+                SELECT id, role, content, model, tokens_used, sources_used, safeguard_version
                 FROM messages
                 WHERE chat_id = $1::uuid
                 ORDER BY created_at ASC, id ASC
@@ -871,10 +878,10 @@ async def fork_chat_at_message(
                 await conn.execute(
                     """
                     INSERT INTO messages (
-                        id, chat_id, role, content, model, tokens_used, sources_used, forked_from
+                        id, chat_id, role, content, model, tokens_used, sources_used, forked_from, safeguard_version
                     )
                     VALUES (
-                        $1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8::uuid
+                        $1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8::uuid, $9
                     )
                     """,
                     mid,
@@ -885,6 +892,7 @@ async def fork_chat_at_message(
                     r["tokens_used"],
                     r["sources_used"],
                     r["id"],
+                    r["safeguard_version"],
                 )
 
     return _chat_row(new_chat)
@@ -1093,13 +1101,14 @@ async def append_message(
         async with p.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO messages (id, chat_id, role, content, model)
-                VALUES ($1::uuid, $2::uuid, 'assistant', $3, $4)
+                INSERT INTO messages (id, chat_id, role, content, model, safeguard_version)
+                VALUES ($1::uuid, $2::uuid, 'assistant', $3, $4, $5)
                 """,
                 assist_id,
                 chat_id,
                 assistant_text,
                 effective_model,
+                current_version(),
             )
             await conn.execute(
                 """

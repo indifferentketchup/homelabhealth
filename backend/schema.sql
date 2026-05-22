@@ -106,6 +106,11 @@ CREATE TABLE IF NOT EXISTS messages (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- B0 safeguards: stamp the active safeguard prompt version on every assistant
+-- message write. NULL for pre-B0 historical rows; populated values copy verbatim
+-- on fork (see fork_chat_at_message in routers/chats.py).
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS safeguard_version TEXT;
+
 CREATE TABLE IF NOT EXISTS sources (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
