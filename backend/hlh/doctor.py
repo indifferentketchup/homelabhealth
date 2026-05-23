@@ -289,8 +289,46 @@ def _check_master_key() -> dict[str, Any]:
         return {"name": "master_key", "status": WARN, "detail": f"{type(e).__name__}: {e}"}
 
 
+async def _check_audit_log_chain() -> dict[str, Any]:
+    """Verify the audit_log rows form a valid hash chain.
+
+    Reads ALL rows ordered by id ASC and the chain anchor from
+    audit_log_chain_head.first_anchor_hash. Pre-prune, the anchor is 32 zero
+    bytes (genesis). Post-prune, audit_retention atomically advances it to
+    the prev_hash of the new oldest row, so verify_chain still validates the
+    remaining rows. A "last 100 rows" window would skip the anchor check and
+    silently pass a corrupted chain; if performance becomes an issue at scale
+    we can add a windowed mode later. For v0.11.0 read all.
+
+    Returns ERROR on break — chain integrity is a real invariant, not
+    operator-prudence (no C1-style demotion to WARN here).
+    """
+    try:
+        from services.audit import verify_chain
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            anchor_row = await conn.fetchrow(
+                "SELECT first_anchor_hash FROM audit_log_chain_head WHERE id = 1"
+            )
+            rows = await conn.fetch(
+                "SELECT * FROM audit_log ORDER BY id ASC"
+            )
+        if not rows:
+            return {"name": "audit_log_chain", "status": OK, "detail": "empty (no rows yet)"}
+        anchor = bytes(anchor_row["first_anchor_hash"]) if anchor_row else b"\x00" * 32
+        ok, bad_id = verify_chain(rows, expected_first_prev=anchor)
+        if ok:
+            note = f"{len(rows)} rows verified"
+            if anchor != b"\x00" * 32:
+                note += " (post-prune anchor)"
+            return {"name": "audit_log_chain", "status": OK, "detail": note}
+        return {"name": "audit_log_chain", "status": ERROR, "detail": f"chain break detected at row id={bad_id}"}
+    except Exception as e:
+        return {"name": "audit_log_chain", "status": ERROR, "detail": f"{type(e).__name__}: {e}"}
+
+
 async def run_checks() -> list[dict[str, Any]]:
-    """Run all 14 checks. Returns ordered list."""
+    """Run all 15 checks. Returns ordered list."""
     return [
         await _check_db_pool(),
         await _check_schema_applied(),
@@ -306,6 +344,7 @@ async def run_checks() -> list[dict[str, Any]]:
         _check_luks_status(),
         _check_backrest_repo(),
         _check_master_key(),
+        await _check_audit_log_chain(),
     ]
 
 

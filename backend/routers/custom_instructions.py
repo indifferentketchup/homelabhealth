@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from deps import require_admin
 from db import get_pool
+from services.audit import AuditEventHandle, audit_event
 
 router = APIRouter()
 
@@ -25,7 +26,10 @@ def _row(r: Any) -> dict[str, Any]:
 
 
 @router.get("/")
-async def get_instructions(_: dict = Depends(require_admin)):
+async def get_instructions(
+    _: dict = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
+):
     pool = await get_pool()
     async with pool.acquire() as conn:
         await conn.execute(
@@ -38,6 +42,8 @@ async def get_instructions(_: dict = Depends(require_admin)):
         row = await conn.fetchrow(
             "SELECT content, updated_at FROM custom_instructions LIMIT 1"
         )
+    async with audit.targeting("custom_instructions", None):
+        pass
     return _row(row)
 
 
@@ -45,6 +51,7 @@ async def get_instructions(_: dict = Depends(require_admin)):
 async def put_instructions(
     body: InstructionsBody,
     _: dict = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -58,11 +65,16 @@ async def put_instructions(
             """,
             body.content or "",
         )
+    async with audit.targeting("custom_instructions", None):
+        pass
     return _row(row)
 
 
 @router.delete("/")
-async def clear_instructions(_: dict = Depends(require_admin)):
+async def clear_instructions(
+    _: dict = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
+):
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -74,4 +86,6 @@ async def clear_instructions(_: dict = Depends(require_admin)):
             RETURNING content, updated_at
             """
         )
+    async with audit.targeting("custom_instructions", None):
+        pass
     return _row(row)

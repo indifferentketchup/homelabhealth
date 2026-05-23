@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from deps import get_principal
 from db import get_pool
+from services.audit import AuditEventHandle, audit_event
 from services.chunking import chunk_text, parse_source_bytes
 from services.embeddings import EmbeddingError, embed_batch, format_vector
 
@@ -165,6 +166,7 @@ async def upload_source(
     workspace_id: uuid.UUID,
     file: UploadFile = File(...),
     _: dict = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
 ) -> dict[str, Any]:
     raw = await file.read()
     if not raw:
@@ -208,6 +210,8 @@ async def upload_source(
         )
 
     asyncio.create_task(_ingest_source(source_id, workspace_id, raw, mime, name))
+    async with audit.targeting("source", source_id):
+        pass
     return {"source_id": str(source_id), "status": "ingesting"}
 
 
@@ -215,6 +219,7 @@ async def upload_source(
 async def list_sources(
     workspace_id: uuid.UUID,
     _: dict = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
 ) -> list[dict[str, Any]]:
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -243,6 +248,8 @@ async def list_sources(
                 "mime_type": r["mime_type"],
             }
         )
+    async with audit.targeting("source", workspace_id):
+        pass
     return out
 
 
@@ -250,6 +257,7 @@ async def list_sources(
 async def delete_source(
     source_id: uuid.UUID,
     _: dict = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
 ) -> dict[str, str]:
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -259,6 +267,8 @@ async def delete_source(
     async with pool.acquire() as conn:
         await conn.execute("DELETE FROM sources WHERE id = $1::uuid", source_id)
 
+    async with audit.targeting("source", source_id):
+        pass
     return {"deleted": str(source_id)}
 
 
@@ -266,6 +276,7 @@ async def delete_source(
 async def clear_workspace_chunks(
     workspace_id: uuid.UUID,
     _: dict = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
 ) -> dict[str, Any]:
     """Delete all chunks and reset embedding status for all sources in a workspace."""
     pool = await get_pool()
@@ -292,4 +303,6 @@ async def clear_workspace_chunks(
             workspace_id,
         )
         reset_count = int(result or 0)
+    async with audit.targeting("source", workspace_id):
+        pass
     return {"deleted_chunks": deleted_count, "reset_sources": reset_count}
