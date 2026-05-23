@@ -1,0 +1,30 @@
+{
+  "resourceType": "Bundle",
+  "type": "collection",
+  "entry": [
+    {
+      "resource": {
+        "resourceType": "Patient",
+        "id": "synth-patient-002",
+        "name": [{"family": "Smith", "given": ["John"]}],
+        "gender": "male",
+        "birthDate": "1972-07-22",
+        "address": [{"city": "Shelbyville", "state": "IL", "postalCode": "62565"}],
+        "identifier": [
+          {"system": "http://hospital.example.org/mrn", "value": "MRN-SYNTH-002"}
+        ]
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Condition",
+        "id": "synth-condition-002",
+        "subject": {"reference": "Patient/synth-patient-002"},
+        "code": {
+          "coding": [{"system": "http://snomed.info/sct", "code": "38341003", "display": "Hypertensive disorder"}]
+        },
+        "onsetDateTime": "2018-06-15"
+      }
+    }
+  ]
+}
