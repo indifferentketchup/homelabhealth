@@ -11,6 +11,7 @@ from typing import Any
 
 from deps import get_principal
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from services.audit import AuditEventHandle, audit_event
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -95,6 +96,7 @@ class WorkspaceContextFilePatch(BaseModel):
 async def list_context_files(
     workspace_id: uuid.UUID = Query(...),
     _: dict = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -110,6 +112,8 @@ async def list_context_files(
             """,
             workspace_id,
         )
+    async with audit.targeting("workspace_context_file", workspace_id):
+        pass
     return [_row_list(r) for r in rows]
 
 
@@ -125,6 +129,7 @@ async def upload_context_file(
     file: UploadFile = File(...),
     embeddable: str | None = Form("false"),
     _: dict = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -159,6 +164,8 @@ async def upload_context_file(
             file_url,
             emb,
         )
+    async with audit.targeting("workspace_context_file", file_id):
+        pass
     return _row_list(row)
 
 
@@ -167,6 +174,7 @@ async def patch_context_file(
     file_id: uuid.UUID,
     body: WorkspaceContextFilePatch,
     _: dict = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     pool = await get_pool()
     data = body.model_dump(exclude_unset=True)
@@ -195,11 +203,17 @@ async def patch_context_file(
             new_emb,
             new_sort,
         )
+    async with audit.targeting("workspace_context_file", file_id):
+        pass
     return _row_list(updated)
 
 
 @router.delete("/{file_id}")
-async def delete_context_file(file_id: uuid.UUID, _: dict = Depends(get_principal)):
+async def delete_context_file(
+    file_id: uuid.UUID,
+    _: dict = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
+):
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -216,6 +230,8 @@ async def delete_context_file(file_id: uuid.UUID, _: dict = Depends(get_principa
         )
     if result == "DELETE 0":
         raise HTTPException(status_code=404, detail="Context file not found")
+    async with audit.targeting("workspace_context_file", file_id):
+        pass
     return {"ok": True}
 
 
@@ -223,6 +239,7 @@ async def delete_context_file(file_id: uuid.UUID, _: dict = Depends(get_principa
 async def download_context_file(
     file_id: uuid.UUID,
     _: dict = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -236,6 +253,8 @@ async def download_context_file(
     if path is None or not path.is_file():
         raise HTTPException(status_code=404, detail="File not found")
     media_type, _ = mimetypes.guess_type(str(path))
+    async with audit.targeting("workspace_context_file", file_id):
+        pass
     return FileResponse(
         str(path),
         filename=path.name,

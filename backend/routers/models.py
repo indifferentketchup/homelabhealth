@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 
 from db import get_pool
 from deps import require_admin
+from services.audit import AuditEventHandle, audit_event
 from services import model_puller
 from services.model_puller import ALL_TIERS
 
@@ -109,6 +110,7 @@ async def get_model(
 async def pull_one(
     model_id: uuid.UUID,
     _: dict[str, Any] = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
 ) -> dict[str, Any]:
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -126,6 +128,8 @@ async def pull_one(
         pass
 
     _track(asyncio.create_task(model_puller.pull_model(pool, str(model_id))))
+    async with audit.targeting("models", model_id):
+        pass
     return _row(row)
 
 
@@ -133,6 +137,7 @@ async def pull_one(
 async def pull_for_tier(
     body: PullForTierBody,
     _: dict[str, Any] = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
 ) -> dict[str, Any]:
     if body.tier not in ALL_TIERS:
         raise HTTPException(
@@ -143,6 +148,8 @@ async def pull_for_tier(
     queued = await model_puller.pull_for_tier(pool, body.tier)
     for _role, mid in queued.items():
         _track(asyncio.create_task(model_puller.pull_model(pool, mid)))
+    async with audit.targeting("models", None):
+        pass
     return {"queued": list(queued.values())}
 
 
@@ -150,6 +157,9 @@ async def pull_for_tier(
 async def cancel(
     model_id: uuid.UUID,
     _: dict[str, Any] = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
 ) -> dict[str, Any]:
     triggered = model_puller.request_cancel(str(model_id))
+    async with audit.targeting("models", model_id):
+        pass
     return {"ok": True, "cancel_requested": triggered}

@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from deps import require_admin
 from db import get_pool
+from services.audit import AuditEventHandle, audit_event
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +151,7 @@ async def get_searxng_config():
 async def update_searxng_config(
     body: SearxngConfigUpdate,
     _owner: dict = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -201,6 +203,8 @@ async def update_searxng_config(
         autocomplete=autocomplete,
     )
 
+    async with audit.targeting("searxng_config", None):
+        pass
     return {
         "status": "updated",
         "safe_search": safe_search,

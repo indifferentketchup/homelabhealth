@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from db import get_pool
 from deps import require_admin
+from services.audit import AuditEventHandle, audit_event
 from services.crypto import decrypt_secret, encrypt_secret
 
 router = APIRouter()
@@ -121,7 +122,10 @@ async def _count_references(conn: Any, provider_id: uuid.UUID) -> dict[str, Any]
 
 
 @router.get("")
-async def list_providers(_: dict[str, Any] = Depends(require_admin)):
+async def list_providers(
+    _: dict[str, Any] = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
+):
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
@@ -134,6 +138,8 @@ async def list_providers(_: dict[str, Any] = Depends(require_admin)):
              ORDER BY sort_order ASC, created_at ASC
             """,
         )
+    async with audit.targeting("provider", None):
+        pass
     return {"items": [_redact_provider(r) for r in rows]}
 
 
@@ -141,10 +147,13 @@ async def list_providers(_: dict[str, Any] = Depends(require_admin)):
 async def get_provider(
     provider_id: uuid.UUID,
     _: dict[str, Any] = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await _fetch_provider_row(conn, provider_id)
+    async with audit.targeting("provider", provider_id):
+        pass
     return _redact_provider(row)
 
 
@@ -152,6 +161,7 @@ async def get_provider(
 async def create_provider(
     body: ProviderCreate,
     _: dict[str, Any] = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     name = body.name.strip()
     if not name:
@@ -189,6 +199,8 @@ async def create_provider(
             if "providers_name_key" in msg or "duplicate key" in msg.lower():
                 raise HTTPException(status_code=409, detail="provider name already exists") from e
             raise
+    async with audit.targeting("provider", row["id"]):
+        pass
     return _redact_provider(row)
 
 
@@ -197,6 +209,7 @@ async def patch_provider(
     provider_id: uuid.UUID,
     body: ProviderPatch,
     _: dict[str, Any] = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     data = body.model_dump(exclude_unset=True)
 
@@ -290,6 +303,8 @@ async def patch_provider(
             if "providers_name_key" in msg or "duplicate key" in msg.lower():
                 raise HTTPException(status_code=409, detail="provider name already exists") from e
             raise
+    async with audit.targeting("provider", provider_id):
+        pass
     return _redact_provider(updated)
 
 
@@ -298,6 +313,7 @@ async def delete_provider(
     provider_id: uuid.UUID,
     force: bool = Query(default=False),
     _: dict[str, Any] = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -335,6 +351,8 @@ async def delete_provider(
                     provider_id,
                 )
             await conn.execute("DELETE FROM providers WHERE id = $1::uuid", provider_id)
+    async with audit.targeting("provider", provider_id):
+        pass
     return Response(status_code=204)
 
 
@@ -407,6 +425,7 @@ def _interpret_models_response(r: Any) -> tuple[bool, str | None, list[str] | No
 async def test_provider(
     provider_id: uuid.UUID,
     _: dict[str, Any] = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -474,6 +493,8 @@ async def test_provider(
     result: dict[str, Any] = {"ok": ok, "status": status}
     if model_ids is not None:
         result["models"] = model_ids
+    async with audit.targeting("provider", provider_id):
+        pass
     return result
 
 
@@ -481,6 +502,7 @@ async def test_provider(
 async def list_provider_models(
     provider_id: uuid.UUID,
     _: dict[str, Any] = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -508,4 +530,6 @@ async def list_provider_models(
             status_code=502,
             detail=f"upstream models fetch failed: {_short_err(e)}",
         ) from e
+    async with audit.targeting("provider", provider_id):
+        pass
     return r.json()

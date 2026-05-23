@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from deps import get_principal
 from db import get_pool
+from services.audit import AuditEventHandle, audit_event
 
 router = APIRouter()
 
@@ -50,7 +51,10 @@ def _me_payload(row: Any, user_id: uuid.UUID) -> dict[str, Any]:
 
 
 @router.get("/me")
-async def me(principal: dict[str, Any] = Depends(get_principal)):
+async def me(
+    principal: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
+):
     uid = principal["user_id"]
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -63,11 +67,17 @@ async def me(principal: dict[str, Any] = Depends(get_principal)):
         )
     if row is None:
         raise HTTPException(status_code=503, detail="owner_user_missing")
+    async with audit.targeting("profile", uid):
+        pass
     return _me_payload(row, uid)
 
 
 @router.patch("/")
-async def patch_profile(body: ProfilePatch, principal: dict[str, Any] = Depends(get_principal)):
+async def patch_profile(
+    body: ProfilePatch,
+    principal: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
+):
     uid = principal["user_id"]
     data = body.model_dump(exclude_unset=True)
     clear_icon = bool(data.pop("clear_icon", None))
@@ -112,6 +122,8 @@ async def patch_profile(body: ProfilePatch, principal: dict[str, Any] = Depends(
             new_icon,
         )
     assert updated is not None
+    async with audit.targeting("profile", uid):
+        pass
     return _me_payload(updated, uid)
 
 
@@ -119,6 +131,7 @@ async def patch_profile(body: ProfilePatch, principal: dict[str, Any] = Depends(
 async def upload_profile_icon(
     file: UploadFile = File(...),
     principal: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     uid = principal["user_id"]
     orig = (file.filename or "").strip()
@@ -148,11 +161,16 @@ async def upload_profile_icon(
             uid,
         )
     assert row is not None
+    async with audit.targeting("profile", uid):
+        pass
     return _me_payload(row, uid)
 
 
 @router.get("/icon-asset")
-async def serve_profile_icon(principal: dict[str, Any] = Depends(get_principal)):
+async def serve_profile_icon(
+    principal: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
+):
     uid = principal["user_id"]
     USER_PROFILE_ICONS.mkdir(parents=True, exist_ok=True)
     matches = list(USER_PROFILE_ICONS.glob(f"{uid}.*"))
@@ -160,4 +178,6 @@ async def serve_profile_icon(principal: dict[str, Any] = Depends(get_principal))
         raise HTTPException(status_code=404, detail="Icon not found")
     path = matches[0]
     media_type, _ = mimetypes.guess_type(str(path))
+    async with audit.targeting("profile", uid):
+        pass
     return FileResponse(str(path), media_type=media_type or "application/octet-stream")

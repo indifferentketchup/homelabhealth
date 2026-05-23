@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from deps import require_admin
 from db import get_pool
+from services.audit import AuditEventHandle, audit_event
 from services.provider_client import (
     Provider,
     build_headers,
@@ -78,6 +79,7 @@ class ModelSettingsPatch(BaseModel):
 async def list_models(
     provider_id: uuid.UUID = Query(..., description="Provider whose /v1/models to proxy"),
     _: dict = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     provider = await resolve_provider(provider_id)
     try:
@@ -89,20 +91,26 @@ async def list_models(
             r.raise_for_status()
     except httpx.HTTPError as e:
         raise HTTPException(status_code=502, detail=f"Inference backend unreachable: {e}") from e
+    async with audit.targeting("inference", None):
+        pass
     return r.json()
 
 
 @router.get("/settings")
-async def get_model_settings():
+async def get_model_settings(audit: AuditEventHandle = Depends(audit_event)):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        return await _model_settings_payload(conn)
+        result = await _model_settings_payload(conn)
+    async with audit.targeting("inference", None):
+        pass
+    return result
 
 
 @router.patch("/settings")
 async def patch_model_settings(
     body: ModelSettingsPatch,
     _owner: dict = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     dk, hk = _model_settings_keys()
     pool = await get_pool()
@@ -111,7 +119,10 @@ async def patch_model_settings(
             await _upsert_setting(conn, dk, body.default_model)
         if body.hidden_models is not None:
             await _upsert_setting(conn, hk, json.dumps(body.hidden_models))
-        return await _model_settings_payload(conn)
+        result = await _model_settings_payload(conn)
+    async with audit.targeting("inference", None):
+        pass
+    return result
 
 
 async def _stream_openai_chat_completions(
@@ -174,6 +185,7 @@ async def chat_proxy(
         ..., description="Workspace whose provider routes this chat"
     ),
     _owner: dict = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     try:
         body = await request.json()
@@ -190,6 +202,9 @@ async def chat_proxy(
     # same provider). If absent, fall back to the workspace pin.
     if not body.get("model"):
         body["model"] = ws_model
+
+    audit._target_type = "inference"
+    audit._target_id = str(workspace_id)
 
     return StreamingResponse(
         _stream_openai_chat_completions(provider, body),

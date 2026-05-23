@@ -478,3 +478,75 @@ CREATE INDEX IF NOT EXISTS bundled_models_status_idx ON bundled_models (status);
 -- B2: HuggingFace git ref pinning (branch, tag, or commit SHA). NULL falls
 -- back to 'main' in _hf_url; populated as 'main' for all Phase 1 chat specs.
 ALTER TABLE bundled_models ADD COLUMN IF NOT EXISTS revision TEXT;
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- Audit log (C4 / v0.11.0) — append-only hash chain.
+-- Spec: docs/superpowers/specs/2026-05-23-v0.11.0-c4-audit-logging-design.md
+-- ────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS audit_log (
+  id              BIGSERIAL PRIMARY KEY,
+  ts              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  request_id      UUID NOT NULL,
+  actor           TEXT NOT NULL,
+  action          TEXT NOT NULL,
+  target_type     TEXT,
+  target_id       TEXT,
+  status_code     INT,
+  payload_hash    BYTEA NOT NULL,
+  prev_hash       BYTEA NOT NULL,
+  row_hash        BYTEA NOT NULL,
+  CONSTRAINT audit_log_row_hash_len  CHECK (octet_length(row_hash) = 32),
+  CONSTRAINT audit_log_prev_hash_len CHECK (octet_length(prev_hash) = 32)
+);
+
+CREATE INDEX IF NOT EXISTS audit_log_ts_idx          ON audit_log (ts DESC);
+CREATE INDEX IF NOT EXISTS audit_log_request_id_idx  ON audit_log (request_id);
+CREATE INDEX IF NOT EXISTS audit_log_target_idx      ON audit_log (target_type, target_id);
+
+CREATE TABLE IF NOT EXISTS audit_log_chain_head (
+  id          SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  last_hash   BYTEA NOT NULL DEFAULT '\x0000000000000000000000000000000000000000000000000000000000000000'::bytea
+);
+INSERT INTO audit_log_chain_head (id) VALUES (1) ON CONFLICT DO NOTHING;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'hlh_audit_writer') THEN
+    CREATE ROLE hlh_audit_writer NOLOGIN;
+  END IF;
+END $$;
+
+-- INSERT + SELECT both needed: INSERT ... RETURNING id requires SELECT privilege.
+-- The role intentionally omits UPDATE, DELETE, and TRUNCATE to enforce append-only.
+GRANT INSERT, SELECT ON audit_log TO hlh_audit_writer;
+GRANT SELECT, UPDATE ON audit_log_chain_head TO hlh_audit_writer;
+GRANT USAGE, SELECT ON SEQUENCE audit_log_id_seq TO hlh_audit_writer;
+
+-- Allow the hlh application role to SET LOCAL ROLE hlh_audit_writer within
+-- a transaction. Postgres requires the current role to be a member of the
+-- target role (or superuser) for SET LOCAL ROLE to succeed.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_auth_members m
+      JOIN pg_roles r ON r.oid = m.roleid
+      JOIN pg_roles u ON u.oid = m.member
+     WHERE r.rolname = 'hlh_audit_writer'
+       AND u.rolname = 'hlh'
+  ) THEN
+    GRANT hlh_audit_writer TO hlh;
+  END IF;
+END $$;
+
+-- Post-prune chain anchor (C4 BLOCKER fix, 2026-05-23).
+-- After retention deletes the genesis row, the new oldest row's prev_hash
+-- is NOT 32 zero bytes — it's the row_hash of the deleted predecessor.
+-- audit_retention atomically advances this anchor on each prune; doctor's
+-- audit_log_chain check uses it as the verify_chain() starting anchor so
+-- post-prune chains still validate.
+--
+-- The existing table-level GRANT SELECT, UPDATE on audit_log_chain_head
+-- (above) covers the new column automatically — no GRANT change needed.
+ALTER TABLE audit_log_chain_head
+  ADD COLUMN IF NOT EXISTS first_anchor_hash BYTEA NOT NULL
+  DEFAULT '\x0000000000000000000000000000000000000000000000000000000000000000'::bytea;
