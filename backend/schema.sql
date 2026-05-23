@@ -111,6 +111,9 @@ CREATE TABLE IF NOT EXISTS messages (
 -- on fork (see fork_chat_at_message in routers/chats.py).
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS safeguard_version TEXT;
 
+-- B2 disclaimers: flag AI-generated messages for frontend badge rendering.
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS ai_generated BOOLEAN NOT NULL DEFAULT FALSE;
+
 CREATE TABLE IF NOT EXISTS sources (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
