@@ -304,6 +304,11 @@ export function MessageBubble({
               : 'border-l-2 border-accent/30 py-1 pl-3 text-foreground',
           )}
         >
+          {!isUser && (
+            <span className="mb-1 inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[0.65rem] font-medium text-primary">
+              AI-generated
+            </span>
+          )}
           {isUser ? (
             editing ? (
               <div className="flex flex-col gap-2">
@@ -353,6 +358,11 @@ export function MessageBubble({
                 </div>
               ) : null}
             </div>
+          )}
+          {!isUser && !isPendingTyping && (
+            <p className="mt-2 border-t border-border/50 pt-1.5 text-[0.6rem] text-muted-foreground/70">
+              Not medical advice
+            </p>
           )}
         </div>
         {tsLabel ? (

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Virtuoso } from 'react-virtuoso'
 
+import { CrisisCard, detectCrisis } from './CrisisCard.jsx'
 import { MessageBubble } from './MessageBubble.jsx'
 
 function WebSourcesRow({ sources }) {
@@ -106,6 +107,7 @@ export function MessageList({
               onEditUser={onEditUser}
               onRegenerate={onRegenerate}
             />
+            {m.role === 'assistant' && detectCrisis(m.content) && <CrisisCard />}
           </div>
         )
       }}
