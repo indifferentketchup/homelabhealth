@@ -28,6 +28,7 @@ from routers import (
     system,
 )
 from services import bundled_providers, model_puller
+from services.log_redactor import install_redactor
 from routers.history import router as history_router
 from routers.notes import router as notes_router
 from routers.sources import router as sources_router
@@ -76,6 +77,7 @@ def _cors_origins() -> list[str]:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    install_redactor()
     _warn_deprecated_env_vars()
     await init_pool()
     await apply_schema()
@@ -96,6 +98,29 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="homelabhealth API", lifespan=lifespan)
 
+from fastapi.responses import JSONResponse
+from starlette.requests import Request as StarletteRequest
+
+
+@app.exception_handler(Exception)
+async def _global_exception_handler(request: StarletteRequest, exc: Exception):
+    """Return sanitized error to client; log scrubbed trace server-side."""
+    request_id = getattr(getattr(request, "state", None), "request_id", None)
+    logger.exception(
+        "unhandled exception on %s %s (request_id=%s)",
+        request.method,
+        request.url.path,
+        request_id,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "internal_error",
+            "request_id": str(request_id) if request_id else None,
+        },
+    )
+
+
 import uuid as _uuid
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -108,6 +133,17 @@ class _SizeLimit(BaseHTTPMiddleware):
         return await call_next(request)
 
 app.add_middleware(_SizeLimit)
+
+
+class _NoCacheAPIMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/api/"):
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
+
+app.add_middleware(_NoCacheAPIMiddleware)
 
 
 class _RequestIDMiddleware(BaseHTTPMiddleware):
