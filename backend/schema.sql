@@ -537,3 +537,16 @@ BEGIN
     GRANT hlh_audit_writer TO hlh;
   END IF;
 END $$;
+
+-- Post-prune chain anchor (C4 BLOCKER fix, 2026-05-23).
+-- After retention deletes the genesis row, the new oldest row's prev_hash
+-- is NOT 32 zero bytes — it's the row_hash of the deleted predecessor.
+-- audit_retention atomically advances this anchor on each prune; doctor's
+-- audit_log_chain check uses it as the verify_chain() starting anchor so
+-- post-prune chains still validate.
+--
+-- The existing table-level GRANT SELECT, UPDATE on audit_log_chain_head
+-- (above) covers the new column automatically — no GRANT change needed.
+ALTER TABLE audit_log_chain_head
+  ADD COLUMN IF NOT EXISTS first_anchor_hash BYTEA NOT NULL
+  DEFAULT '\x0000000000000000000000000000000000000000000000000000000000000000'::bytea;

@@ -120,16 +120,26 @@ async def insert_audit_event(conn: asyncpg.Connection, rec: AuditRecord) -> int:
         return row["id"]
 
 
-def verify_chain(rows: list[asyncpg.Record]) -> tuple[bool, Optional[int]]:
+def verify_chain(
+    rows: list[asyncpg.Record],
+    expected_first_prev: bytes = b"\x00" * 32,
+) -> tuple[bool, Optional[int]]:
     """Recompute the hash chain from a list of rows ordered by id ASC.
+
+    `expected_first_prev` is what the FIRST row's prev_hash should be.
+    Default (32 zero bytes) is the genesis state. After a retention prune,
+    pass the new anchor value (the prev_hash recorded for the new oldest
+    row at prune time, stored in audit_log_chain_head.first_anchor_hash).
 
     Returns (ok, first_bad_row_id). If ok is True, first_bad_row_id is None.
     Used by the verify script and (in Task C) the doctor check.
     """
-    expected_prev = b"\x00" * 32
+    expected_prev = expected_first_prev
     for row in rows:
         # The genesis row has prev_hash == 32 zero bytes; non-genesis rows
-        # have prev_hash == previous row's row_hash.
+        # have prev_hash == previous row's row_hash. After a prune, the first
+        # remaining row's prev_hash is the row_hash of the deleted predecessor
+        # — supplied to this function as expected_first_prev.
         if bytes(row["prev_hash"]) != expected_prev:
             return False, row["id"]
         ts_iso = row["ts"].isoformat()
