@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from deps import require_admin
 from db import get_pool
+from services.audit import AuditEventHandle, audit_event
 from services.embeddings import EMBEDDING_DIM
 from services.provider_client import build_headers, resolve_provider
 
@@ -88,6 +89,7 @@ async def get_ui_layout() -> dict[str, Any]:
 async def patch_ui_layout(
     body: dict[str, Any],
     _owner: dict = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
 ) -> dict[str, Any]:
     if not isinstance(body, dict):
         pool = await get_pool()
@@ -98,7 +100,9 @@ async def patch_ui_layout(
         cur = await _read_ui_layout(conn)
         merged = _coerce_layout({**cur, **body})
         await _write_ui_layout(conn, merged)
-        return merged
+    async with audit.targeting("settings", None):
+        pass
+    return merged
 
 _MODEL_SERVER_KEYS = ("flash_attention", "max_loaded_models", "keep_alive")
 
@@ -146,6 +150,7 @@ async def get_model_server_config(_: dict = Depends(require_admin)) -> dict[str,
 async def patch_model_server_config(
     body: ModelServerConfigPatch,
     _: dict = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
 ) -> dict[str, Any]:
     ka = body.keep_alive.strip() or "30m"
     pool = await get_pool()
@@ -171,7 +176,10 @@ async def patch_model_server_config(
             """,
             ka,
         )
-        return await _model_server_config_from_conn(conn)
+        result = await _model_server_config_from_conn(conn)
+    async with audit.targeting("settings", None):
+        pass
+    return result
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -296,6 +304,7 @@ async def get_embedding_settings(_: dict = Depends(require_admin)) -> dict[str, 
 async def put_embedding_settings(
     body: RoleBindingPut,
     _: dict = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
 ) -> dict[str, Any]:
     raw_model = (body.model or "").strip() if isinstance(body.model, str) else None
     norm_model = raw_model if raw_model else None
@@ -311,6 +320,8 @@ async def put_embedding_settings(
             await _write_role_binding(conn, *_EMBEDDING_KEYS, None, None)
             binding = await _read_role_binding(conn, *_EMBEDDING_KEYS)
         binding["dimension"] = EMBEDDING_DIM
+        async with audit.targeting("settings", None):
+            pass
         return binding
 
     # Both set → probe before write so the DB state can't drift from a working config.
@@ -328,6 +339,8 @@ async def put_embedding_settings(
             await _write_role_binding(conn, *_EMBEDDING_KEYS, norm_pid, norm_model)
         binding = await _read_role_binding(conn, *_EMBEDDING_KEYS)
     binding["dimension"] = EMBEDDING_DIM
+    async with audit.targeting("settings", None):
+        pass
     return binding
 
 
@@ -342,6 +355,7 @@ async def get_reranker_settings(_: dict = Depends(require_admin)) -> dict[str, A
 async def put_reranker_settings(
     body: RoleBindingPut,
     _: dict = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
 ) -> dict[str, Any]:
     raw_model = (body.model or "").strip() if isinstance(body.model, str) else None
     norm_model = raw_model if raw_model else None
@@ -353,4 +367,7 @@ async def put_reranker_settings(
     async with pool.acquire() as conn:
         async with conn.transaction():
             await _write_role_binding(conn, *_RERANKER_KEYS, norm_pid, norm_model)
-        return await _read_role_binding(conn, *_RERANKER_KEYS)
+        result = await _read_role_binding(conn, *_RERANKER_KEYS)
+    async with audit.targeting("settings", None):
+        pass
+    return result

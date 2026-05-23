@@ -31,6 +31,7 @@ from services import bundled_providers, model_puller
 from routers.history import router as history_router
 from routers.notes import router as notes_router
 from routers.sources import router as sources_router
+from routers.audit import router as audit_router
 
 import logging
 logging.basicConfig(level=logging.INFO)
@@ -95,6 +96,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="homelabhealth API", lifespan=lifespan)
 
+import uuid as _uuid
 from starlette.middleware.base import BaseHTTPMiddleware
 
 class _SizeLimit(BaseHTTPMiddleware):
@@ -106,6 +108,17 @@ class _SizeLimit(BaseHTTPMiddleware):
         return await call_next(request)
 
 app.add_middleware(_SizeLimit)
+
+
+class _RequestIDMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        request.state.request_id = _uuid.uuid4()
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = str(request.state.request_id)
+        request.state.response_status_code = response.status_code
+        return response
+
+app.add_middleware(_RequestIDMiddleware)
 
 _origins = _cors_origins()
 app.add_middleware(
@@ -153,6 +166,7 @@ api.include_router(searxng.router, prefix="/searxng", tags=["searxng"])
 api.include_router(notes_router, tags=["notes"])
 api.include_router(sources_router, tags=["sources"])
 api.include_router(history_router, prefix="/history", tags=["history"])
+api.include_router(audit_router, prefix="/audit", tags=["audit"])
 
 
 app.include_router(api)

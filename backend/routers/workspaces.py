@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from deps import get_principal
 from db import get_pool
 from services import bundled_providers
+from services.audit import AuditEventHandle, audit_event
 
 router = APIRouter()
 
@@ -110,6 +111,7 @@ def _icon_path_for_workspace(workspace_id: uuid.UUID, ext: str) -> Path:
 @router.get("/")
 async def list_workspaces(
     _: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     pool = await get_pool()
     sel = """
@@ -123,11 +125,17 @@ async def list_workspaces(
         rows = await conn.fetch(
             sel + " ORDER BY d.sort_order ASC NULLS LAST, d.name ASC",
         )
+    async with audit.targeting("workspace", None):
+        pass
     return {"items": [_row(r) for r in rows]}
 
 
 @router.post("/")
-async def create_workspace(body: WorkspaceCreate, principal: dict[str, Any] = Depends(get_principal)):
+async def create_workspace(
+    body: WorkspaceCreate,
+    principal: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
+):
     pool = await get_pool()
     async with pool.acquire() as conn:
         ins_model = (body.workspace_model or "").strip() or None
@@ -162,6 +170,8 @@ async def create_workspace(body: WorkspaceCreate, principal: dict[str, Any] = De
             DAWS_SELECT + "WHERE d.id = $1::uuid",
             row["id"],
         )
+    async with audit.targeting("workspace", row["id"]):
+        pass
     return _row(prow)
 
 
@@ -169,6 +179,7 @@ async def create_workspace(body: WorkspaceCreate, principal: dict[str, Any] = De
 async def get_workspace_instructions(
     workspace_id: uuid.UUID,
     _: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -184,6 +195,8 @@ async def get_workspace_instructions(
             """,
             workspace_id,
         )
+    async with audit.targeting("workspace", workspace_id):
+        pass
     return {"content": (row["content"] or "") if row else ""}
 
 
@@ -192,6 +205,7 @@ async def put_workspace_instructions(
     workspace_id: uuid.UUID,
     body: WorkspaceInstructionsBody,
     _: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -221,6 +235,8 @@ async def put_workspace_instructions(
                 workspace_id,
                 body.content or "",
             )
+    async with audit.targeting("workspace", workspace_id):
+        pass
     return {"content": body.content or ""}
 
 
@@ -229,6 +245,7 @@ async def upload_workspace_icon(
     workspace_id: uuid.UUID,
     file: UploadFile = File(...),
     _: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -265,6 +282,8 @@ async def upload_workspace_icon(
             DAWS_SELECT + "WHERE d.id = $1::uuid",
             workspace_id,
         )
+    async with audit.targeting("workspace", workspace_id):
+        pass
     return _row(prow)
 
 
@@ -284,6 +303,7 @@ async def patch_workspace_pin(
     workspace_id: uuid.UUID,
     body: WorkspacePinBody,
     _: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -304,11 +324,17 @@ async def patch_workspace_pin(
         )
         if prow is None:
             raise HTTPException(status_code=404, detail="Workspace not found")
+    async with audit.targeting("workspace", workspace_id):
+        pass
     return _row(prow)
 
 
 @router.get("/{workspace_id}")
-async def get_workspace(workspace_id: uuid.UUID, _: dict[str, Any] = Depends(get_principal)):
+async def get_workspace(
+    workspace_id: uuid.UUID,
+    _: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
+):
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -317,6 +343,8 @@ async def get_workspace(workspace_id: uuid.UUID, _: dict[str, Any] = Depends(get
         )
     if row is None:
         raise HTTPException(status_code=404, detail="Workspace not found")
+    async with audit.targeting("workspace", workspace_id):
+        pass
     return _row(row)
 
 
@@ -325,6 +353,7 @@ async def patch_workspace(
     workspace_id: uuid.UUID,
     body: WorkspaceUpdate,
     _: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     pool = await get_pool()
     data = body.model_dump(exclude_unset=True)
@@ -409,11 +438,17 @@ async def patch_workspace(
             DAWS_SELECT + "WHERE d.id = $1::uuid",
             workspace_id,
         )
+    async with audit.targeting("workspace", workspace_id):
+        pass
     return _row(prow)
 
 
 @router.delete("/{workspace_id}")
-async def delete_workspace(workspace_id: uuid.UUID, _: dict[str, Any] = Depends(get_principal)):
+async def delete_workspace(
+    workspace_id: uuid.UUID,
+    _: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
+):
     pool = await get_pool()
     async with pool.acquire() as conn:
         meta = await conn.fetchrow(
@@ -427,4 +462,6 @@ async def delete_workspace(workspace_id: uuid.UUID, _: dict[str, Any] = Depends(
         result = await conn.execute("DELETE FROM workspaces WHERE id = $1::uuid", workspace_id)
     if result == "DELETE 0":
         raise HTTPException(status_code=404, detail="Workspace not found")
+    async with audit.targeting("workspace", workspace_id):
+        pass
     return {"ok": True}

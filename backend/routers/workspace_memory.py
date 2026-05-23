@@ -10,6 +10,7 @@ from pydantic import BaseModel, field_validator
 
 from deps import require_owner
 from db import get_pool
+from services.audit import AuditEventHandle, audit_event
 
 router = APIRouter(prefix="/workspaces", tags=["workspace-memory"])
 
@@ -43,6 +44,7 @@ def _entry_row(r: Any) -> dict[str, Any]:
 async def list_workspace_memory(
     workspace_id: uuid.UUID,
     _owner: dict[str, Any] = Depends(require_owner),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -58,6 +60,8 @@ async def list_workspace_memory(
             """,
             workspace_id,
         )
+    async with audit.targeting("workspace_memory", workspace_id):
+        pass
     return [_entry_row(r) for r in rows]
 
 
@@ -66,6 +70,7 @@ async def create_workspace_memory(
     workspace_id: uuid.UUID,
     body: WorkspaceMemoryCreate,
     _owner: dict[str, Any] = Depends(require_owner),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -82,6 +87,8 @@ async def create_workspace_memory(
             body.content,
         )
     assert row is not None
+    async with audit.targeting("workspace_memory", workspace_id):
+        pass
     return _entry_row(row)
 
 
@@ -90,6 +97,7 @@ async def delete_workspace_memory(
     workspace_id: uuid.UUID,
     entry_id: int,
     _owner: dict[str, Any] = Depends(require_owner),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -106,4 +114,6 @@ async def delete_workspace_memory(
         )
     if result == "DELETE 0":
         raise HTTPException(status_code=404, detail="Memory entry not found")
+    async with audit.targeting("workspace_memory", workspace_id):
+        pass
     return {"ok": True}

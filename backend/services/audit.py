@@ -148,3 +148,98 @@ def verify_chain(rows: list[asyncpg.Record]) -> tuple[bool, Optional[int]]:
             return False, row["id"]
         expected_prev = bytes(row["row_hash"])
     return True, None
+
+
+# --- FastAPI integration ---
+# (Imported lazily so audit.py stays import-light for the verify script.)
+
+import contextlib
+import os
+from contextvars import ContextVar
+from typing import AsyncIterator
+
+from fastapi import Request
+
+from db import get_pool
+
+# Per-request principal placeholder until real auth lands.
+# For now: actor is always "owner" (matches deps.py stub).
+_DEFAULT_ACTOR = "owner"
+
+
+class AuditEventHandle:
+    """Captures request_id, action, target during endpoint handling.
+    Inserted on async-context exit with the final status_code."""
+
+    def __init__(self, request: Request):
+        self._request = request
+        self._target_type: Optional[str] = None
+        self._target_id: Optional[str] = None
+        self._committed = False
+
+    @property
+    def request_id(self):
+        return self._request.state.request_id
+
+    @contextlib.asynccontextmanager
+    async def targeting(self, target_type: str, target_id) -> AsyncIterator[None]:
+        """Inside the endpoint: set the target before doing work."""
+        self._target_type = target_type
+        self._target_id = str(target_id) if target_id is not None else None
+        yield
+
+    async def commit(self, status_code: int, body_bytes: bytes) -> None:
+        """Insert one audit row. Called by the dependency teardown."""
+        if self._committed:
+            return
+        self._committed = True
+        actor = _DEFAULT_ACTOR  # TODO: derive from Remote-User when real auth lands
+        route = self._request.scope.get("route")
+        if route is not None:
+            action = f"{self._request.method} {route.path}"
+        else:
+            action = f"{self._request.method} {self._request.url.path}"
+        payload_hash = hashlib.sha256(body_bytes).digest()
+        rec = AuditRecord(
+            request_id=self._request.state.request_id,
+            actor=actor,
+            action=action,
+            target_type=self._target_type,
+            target_id=self._target_id,
+            status_code=status_code,
+            payload_hash=payload_hash,
+        )
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await insert_audit_event(conn, rec)
+
+
+async def audit_event(request: Request) -> AsyncIterator[AuditEventHandle]:
+    """FastAPI dependency. Yields a handle; commits the audit row after the
+    response is sent.
+
+    Usage:
+        @router.post("/api/chats/{chat_id}/messages")
+        async def post_msg(..., audit: AuditEventHandle = Depends(audit_event)):
+            async with audit.targeting("chat", chat_id):
+                ...
+
+    Body capture: raw request body bytes are hashed (no redaction in v0.11.0;
+    C3 / v0.12.0 will add the scrubber).
+    """
+    handle = AuditEventHandle(request)
+    # Capture the raw body once so endpoint can still consume it (FastAPI caches).
+    body_bytes = await request.body()
+    # FastAPI normally streams body; calling .body() forces a read. Subsequent
+    # reads inside the endpoint get the cached bytes.
+    yield handle
+    # After endpoint returns, we don't have the response status here directly
+    # via dependency yield. Use a middleware to set request.state.status_code
+    # then commit from middleware on response. See request_id_middleware below.
+    # For yield-based deps, post-yield code runs AFTER response is built.
+    status_code = getattr(request.state, "response_status_code", 0)
+    try:
+        await handle.commit(status_code, body_bytes)
+    except Exception as e:
+        import logging
+        logging.getLogger("audit").error("audit insert failed: %s: %s", type(e).__name__, e)

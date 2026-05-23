@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from deps import get_principal
 from db import get_pool
+from services.audit import AuditEventHandle, audit_event
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 
@@ -63,6 +64,7 @@ class NoteUpdate(BaseModel):
 async def list_notes(
     workspace_id: uuid.UUID,
     _: dict = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
 ) -> list[dict[str, Any]]:
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -90,6 +92,8 @@ async def list_notes(
                 "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
             }
         )
+    async with audit.targeting("note", workspace_id):
+        pass
     return out
 
 
@@ -98,6 +102,7 @@ async def create_note(
     workspace_id: uuid.UUID,
     body: NoteCreate,
     _: dict = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
 ) -> dict[str, Any]:
     st = (body.source_type or "manual").strip()
     if st not in _ALLOWED_SOURCE_TYPES:
@@ -123,6 +128,8 @@ async def create_note(
             st,
             body.message_id,
         )
+    async with audit.targeting("note", row["id"]):
+        pass
     return _note_row_dict(row)
 
 
@@ -131,6 +138,7 @@ async def update_note(
     note_id: uuid.UUID,
     body: NoteUpdate,
     _: dict = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
 ) -> dict[str, Any]:
     if body.title is None and body.content is None:
         raise HTTPException(400, "No fields to update")
@@ -156,6 +164,8 @@ async def update_note(
             new_title,
             new_content,
         )
+    async with audit.targeting("note", note_id):
+        pass
     return _note_row_dict(updated)
 
 
@@ -163,6 +173,7 @@ async def update_note(
 async def delete_note(
     note_id: uuid.UUID,
     _: dict = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
 ) -> dict[str, str]:
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -170,4 +181,6 @@ async def delete_note(
         if row is None:
             raise HTTPException(404, "Note not found")
         await conn.execute("DELETE FROM notes WHERE id = $1::uuid", note_id)
+    async with audit.targeting("note", note_id):
+        pass
     return {"deleted": str(note_id)}

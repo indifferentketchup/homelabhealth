@@ -17,6 +17,7 @@ from deps import (
     get_principal,
 )
 from db import get_pool
+from services.audit import AuditEventHandle, audit_event
 from services.provider_client import (
     Provider,
     build_headers,
@@ -392,7 +393,11 @@ def _message_row(r: asyncpg.Record) -> dict[str, Any]:
 
 
 @router.post("/")
-async def create_chat(body: ChatCreate, principal: dict[str, Any] = Depends(get_principal)):
+async def create_chat(
+    body: ChatCreate,
+    principal: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
+):
     pool = await get_pool()
     async with pool.acquire() as conn:
         await assert_workspace_usable(conn, principal, body.workspace_id)
@@ -422,6 +427,8 @@ async def create_chat(body: ChatCreate, principal: dict[str, Any] = Depends(get_
             principal["user_id"],
             body.workspace_id is not None,
         )
+    async with audit.targeting("chat", row["id"]):
+        pass
     return _chat_row(row)
 
 
@@ -431,6 +438,7 @@ async def list_chats(
     offset: int = Query(0, ge=0),
     workspace_id: uuid.UUID | None = Query(None, description="When set, only chats for this workspace."),
     principal: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     pool = await get_pool()
     cols = """
@@ -469,12 +477,15 @@ async def list_chats(
             total = await conn.fetchval(
                 "SELECT COUNT(*)::int FROM chats",
             )
+    async with audit.targeting("chat", None):
+        pass
     return {"items": [_chat_row(r) for r in rows], "total": total, "limit": limit, "offset": offset}
 
 
 @router.delete("/non-workspace")
 async def delete_non_workspace_chats(
     principal: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     """Delete all chats not tied to a workspace (workspace_id IS NULL)."""
     pool = await get_pool()
@@ -489,11 +500,17 @@ async def delete_non_workspace_chats(
             SELECT COUNT(*)::int FROM deleted
             """,
         )
+    async with audit.targeting("chat", None):
+        pass
     return {"deleted": int(deleted or 0)}
 
 
 @router.get("/{chat_id}")
-async def get_chat(chat_id: uuid.UUID, principal: dict[str, Any] = Depends(get_principal)):
+async def get_chat(
+    chat_id: uuid.UUID,
+    principal: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
+):
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -507,6 +524,8 @@ async def get_chat(chat_id: uuid.UUID, principal: dict[str, Any] = Depends(get_p
         )
     if row is None:
         raise HTTPException(status_code=404, detail="Chat not found")
+    async with audit.targeting("chat", chat_id):
+        pass
     return _chat_row(row)
 
 
@@ -515,6 +534,7 @@ async def patch_web_search(
     chat_id: uuid.UUID,
     body: WebSearchToggleBody,
     principal: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -536,6 +556,8 @@ async def patch_web_search(
         )
     if row is None:
         raise HTTPException(status_code=404, detail="Chat not found")
+    async with audit.targeting("chat", chat_id):
+        pass
     return {"web_search_enabled": bool(row["web_search_enabled"])}
 
 
@@ -543,6 +565,7 @@ async def patch_web_search(
 async def get_source_selection(
     chat_id: uuid.UUID,
     principal: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -556,6 +579,8 @@ async def get_source_selection(
             "SELECT source_id FROM chat_source_selections WHERE chat_id = $1::uuid",
             chat_id,
         )
+    async with audit.targeting("chat", chat_id):
+        pass
     return {"chat_id": str(chat_id), "source_ids": [str(r["source_id"]) for r in rows]}
 
 
@@ -564,6 +589,7 @@ async def put_source_selection(
     chat_id: uuid.UUID,
     body: SourceSelectionBody,
     principal: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -588,6 +614,8 @@ async def put_source_selection(
                     chat_id,
                     sid,
                 )
+    async with audit.targeting("chat", chat_id):
+        pass
     return {"chat_id": str(chat_id), "source_ids": [str(s) for s in body.source_ids]}
 
 
@@ -596,6 +624,7 @@ async def patch_chat(
     chat_id: uuid.UUID,
     body: ChatPatch,
     principal: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     pool = await get_pool()
     data = body.model_dump(exclude_unset=True)
@@ -636,11 +665,17 @@ async def patch_chat(
             new_ws,
             new_workspace,
         )
+    async with audit.targeting("chat", chat_id):
+        pass
     return _chat_row(updated)
 
 
 @router.delete("/{chat_id}")
-async def delete_chat(chat_id: uuid.UUID, principal: dict[str, Any] = Depends(get_principal)):
+async def delete_chat(
+    chat_id: uuid.UUID,
+    principal: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
+):
     pool = await get_pool()
     async with pool.acquire() as conn:
         cur = await conn.fetchrow(
@@ -652,6 +687,8 @@ async def delete_chat(chat_id: uuid.UUID, principal: dict[str, Any] = Depends(ge
         result = await conn.execute("DELETE FROM chats WHERE id = $1::uuid", chat_id)
     if result == "DELETE 0":
         raise HTTPException(status_code=404, detail="Chat not found")
+    async with audit.targeting("chat", chat_id):
+        pass
     return {"ok": True}
 
 
@@ -659,6 +696,7 @@ async def delete_chat(chat_id: uuid.UUID, principal: dict[str, Any] = Depends(ge
 async def export_chat(
     chat_id: uuid.UUID,
     principal: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
 ) -> dict:
     """Save a chat's messages to /data/history/chats/<workspace-slug>/<file-slug>.md.
 
@@ -769,6 +807,8 @@ async def export_chat(
         "export_chat chat_id=%s workspace=%s file=%s ai_renamed=%s",
         str(chat_id), workspace_name, file_path.name, ai_renamed,
     )
+    async with audit.targeting("chat", chat_id):
+        pass
     return {
         "filename": file_path.name,
         "workspace_slug": slugify(workspace_name),
@@ -778,7 +818,11 @@ async def export_chat(
 
 
 @router.get("/{chat_id}/messages")
-async def list_messages(chat_id: uuid.UUID, principal: dict[str, Any] = Depends(get_principal)):
+async def list_messages(
+    chat_id: uuid.UUID,
+    principal: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
+):
     pool = await get_pool()
     async with pool.acquire() as conn:
         c = await conn.fetchrow(
@@ -796,6 +840,8 @@ async def list_messages(chat_id: uuid.UUID, principal: dict[str, Any] = Depends(
             """,
             chat_id,
         )
+    async with audit.targeting("chat", chat_id):
+        pass
     return {"items": [_message_row(r) for r in rows]}
 
 
@@ -804,6 +850,7 @@ async def fork_chat_at_message(
     chat_id: uuid.UUID,
     message_id: uuid.UUID,
     principal: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -895,6 +942,8 @@ async def fork_chat_at_message(
                     r["safeguard_version"],
                 )
 
+    async with audit.targeting("chat", chat_id):
+        pass
     return _chat_row(new_chat)
 
 
@@ -903,6 +952,7 @@ async def append_message(
     chat_id: uuid.UUID,
     body: MessageCreate,
     principal: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     pool = await get_pool()
 
@@ -918,6 +968,9 @@ async def append_message(
         )
         if chat is None:
             raise HTTPException(status_code=404, detail="Chat not found")
+
+        audit._target_type = "chat"
+        audit._target_id = str(chat_id)
 
         # Provider resolution: every chat send must go through the workspace's
         # configured provider. Workspaces without a provider raise the exact
