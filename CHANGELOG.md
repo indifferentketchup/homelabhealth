@@ -20,6 +20,38 @@ _No entries yet._
 
 ---
 
+## [v0.12.0] — 2026-05-23
+
+C3 synthetic data + log scrubbing. Defense-in-depth PHI redaction on
+all Python log output, sanitized exception responses, browser cache
+prevention on API responses, frontend route audit, and Synthea test
+fixtures.
+
+### Code
+- `backend/services/log_redactor.py` — `PHIRedactorFilter(logging.Filter)`
+  scrubbing SSN, phone, email, MRN, DOB, and credit card patterns from
+  log records. Installed on root logger at startup via `install_redactor()`.
+  Known gap: `record.exc_info` tracebacks are not scrubbed (defense-in-depth,
+  not perfection — no current handlers embed PHI in exception messages).
+- `backend/main.py` — global `@app.exception_handler(Exception)` returns
+  `{"error": "internal_error", "request_id": <uuid>}` to client; scrubbed
+  trace to server log only. `_NoCacheAPIMiddleware` sets `Cache-Control:
+  no-store` on all `/api/*` responses.
+
+### Docs
+- `frontend/src/routes/paths.js` — one-line route audit comment confirming
+  all paths are UUID-keyed (no PHI in URLs). Verified 2026-05-23.
+- `tests/fixtures/synthea/` — two synthetic FHIR R4 Patient bundles
+  (`patient_jane_doe.json`, `patient_john_smith.json`) for future C5
+  de-id pipeline verification.
+- `CHANGELOG.md` — `[Unreleased]` flipped to `[v0.12.0]`; fresh empty
+  `[Unreleased]` section restored.
+- `docs/roadmap.md` — `v0.12.0` moved from Planned to Shipped;
+  ship-to-friend C3 checkbox ticked; active-work pointer retargeted
+  to `v0.13.0` / B2.
+
+---
+
 ## [v0.11.0] — 2026-05-23
 
 C4 audit logging. Append-only hash-chained `audit_log` table recording
