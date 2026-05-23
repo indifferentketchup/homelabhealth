@@ -20,6 +20,39 @@ _No entries yet._
 
 ---
 
+## [v0.13.0] — 2026-05-23
+
+B2 UI disclaimers + crisis card. Visible safety chrome so the user
+is never confused about whether the AI's output is medical advice.
+
+### Code
+- `backend/schema.sql` — `ai_generated BOOLEAN` column on `messages`
+  (default FALSE; set TRUE on assistant inserts, FALSE on user inserts,
+  propagated on fork).
+- `backend/routers/chats.py` — three INSERT sites updated to include
+  `ai_generated`.
+
+### Frontend
+- `DisclaimerBanner.jsx` — persistent "Educational only. Not medical
+  advice." banner at the top of every active chat view.
+- `CrisisCard.jsx` — visually distinct card with 988, Poison Control,
+  and 911 hotline numbers. Appears below any assistant message whose
+  content matches crisis keywords (suicide, self-harm, overdose, etc.).
+  US defaults hardcoded; locale configurability deferred.
+- `MessageBubble.jsx` — "AI-generated" badge on assistant messages,
+  "Not medical advice" footnote at the bottom of every assistant bubble.
+- `ChatView.jsx` — integrates `DisclaimerBanner`.
+- `MessageList.jsx` — integrates `CrisisCard` via Virtuoso's
+  `itemContent` callback (conditional on `detectCrisis()`).
+
+### Docs
+- `CHANGELOG.md` — `[Unreleased]` flipped to `[v0.13.0]`.
+- `docs/roadmap.md` — `v0.13.0` moved from Planned to Shipped;
+  ship-to-friend B2 checkbox ticked; active-work pointer retargeted
+  to `v0.14.0` / B1+C7.
+
+---
+
 ## [v0.12.0] — 2026-05-23
 
 C3 synthetic data + log scrubbing. Defense-in-depth PHI redaction on
