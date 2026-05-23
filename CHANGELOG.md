@@ -20,6 +20,33 @@ _No entries yet._
 
 ---
 
+## [v0.10.1] — 2026-05-23
+
+C1 demoted to advanced/optional per MVP-scope review. Friend deployment
+is on LAN behind Authelia — disk encryption and backup discipline are
+operator-prudence, not friend-deployment blockers. No code path
+behavior changes for operators who didn't set the env vars; doctor now
+WARNs (not ERRORs) on missing LUKS / backrest / master-key state.
+
+### Code
+- `backend/hlh/doctor.py` — three checks (`luks_status`, `backrest_repo`,
+  `master_key`) downgraded to never return ERROR. All previous ERROR
+  paths are now WARN. Doctor message paths updated to point at the new
+  `docs/operator/advanced/` location.
+
+### Docs
+- `docs/operator/key-custody.md` → `docs/operator/advanced/key-custody.md`
+- `docs/operator/restore-drill.md` → `docs/operator/advanced/restore-drill.md`
+- `docs/operator/luks-setup.md` → `docs/operator/advanced/luks-setup.md`
+- Internal cross-references updated to the new paths.
+- `.gitignore` — extended `docs/operator/*` + `!docs/operator/*.md` pattern
+  one level deeper for `docs/operator/advanced/*.md`.
+- `docs/roadmap.md` — C1 deep section updated: removed "pending v0.10.1
+  demotion" annotation (now shipped). Latest release callout retargeted
+  to v0.10.1.
+
+---
+
 ## [v0.10.0] — 2026-05-22
 
 C1 disk + backup hygiene foundation. Three new pre-flight checks plus

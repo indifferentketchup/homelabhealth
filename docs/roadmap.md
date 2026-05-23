@@ -34,6 +34,7 @@ sees zero of this until **everything** is at “shipped” status.
 
 ```
 Shipped releases (most recent → oldest):
+  v0.10.1   C1  demoted to advanced/optional (2026-05-23)
   v0.10.0   C1  disk + backup hygiene + doctor LUKS/backrest checks (2026-05-22)
   v0.9.0    C0  security + threat-model docs (2026-05-22)
   v0.8.1    docs + tooling polish (2026-05-22)
@@ -77,7 +78,7 @@ Phase track in summary:
 Trunk-merge gates documented in earlier roadmap revisions are
 **retired**. Gates now apply to non-Sam access only.
 
-**Latest release:** `v0.10.0` (2026-05-22) — C1 disk + backup hygiene + doctor LUKS/backrest checks. See
+**Latest release:** `v0.10.1` (2026-05-23) — C1 demoted to advanced/optional per MVP-scope review. See
 `CHANGELOG.md` for the per-tag rundown.
 
 **Active work — `v0.11.0` (C4 audit logging):**
@@ -533,17 +534,17 @@ dependency graph and any deltas.
 **Placement:** independent. Do anytime. Land before public release is
 even mentionable.
 
-### `v0.10.0` — Disk and backup hygiene (roadmap code: C1) — **shipped, pending v0.10.1 demotion**
+### `v0.10.0` / `v0.10.1` — Disk and backup hygiene (roadmap code: C1) — **shipped + demoted**
 
 LUKS confirm, backrest passphrase, restore drill doc, key custody
 doc. Shipped in `v0.10.0` (2026-05-22) — three doctor checks
 (`luks_status`, `backrest_repo`, `master_key`) registered in
 `run_checks()`, plus three operator docs under `docs/operator/`.
 
-**Pending v0.10.1 demotion (per 2026-05-23 MVP scope decision):**
-The three checks ship to operators as **advanced/optional** —
-relocate the docs under `docs/operator/advanced/`, and adjust the
-checks so they never produce ERROR status (downgrade ERROR cases to
+**Demoted in v0.10.1 (2026-05-23):**
+The three checks ship as **advanced/optional** —
+docs relocated under `docs/operator/advanced/`, and checks adjusted
+so they never produce ERROR status (downgraded ERROR cases to
 WARN). MVP friend deployment is on LAN behind Authelia; LUKS +
 backrest are operator-prudence, not blockers. C6 (`HLH_MASTER_KEY`)
 still gates column encryption when that lands.
@@ -553,7 +554,7 @@ backrest repo passphrase MUST be generated on the operator's host,
 not on Sam's machine. If Sam generates them, Sam has copies — which
 defeats the C6 threat model entirely. The friend's onboarding doc
 includes a one-page "generate your keys" step; the doctor checks
-added in C1 fail red if either is missing or matches the example
+added in C1 WARN if either is missing or matches the example
 placeholder.
 
 **Placement:** independent. Do anytime. Cheap.

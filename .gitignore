@@ -31,4 +31,7 @@ docs/*
 !docs/operator/
 docs/operator/*
 !docs/operator/*.md
+!docs/operator/advanced/
+docs/operator/advanced/*
+!docs/operator/advanced/*.md
 /history/
