@@ -327,8 +327,18 @@ async def _check_audit_log_chain() -> dict[str, Any]:
         return {"name": "audit_log_chain", "status": ERROR, "detail": f"{type(e).__name__}: {e}"}
 
 
+def _check_guard_scanners() -> dict[str, Any]:
+    try:
+        from services.guard import scanner_summary
+        summary = scanner_summary()
+        total = sum(summary.values())
+        return {"name": "guard_scanners", "status": OK, "detail": f"{total} patterns across {len(summary)} categories"}
+    except Exception as e:
+        return {"name": "guard_scanners", "status": ERROR, "detail": f"{type(e).__name__}: {e}"}
+
+
 async def run_checks() -> list[dict[str, Any]]:
-    """Run all 15 checks. Returns ordered list."""
+    """Run all 16 checks. Returns ordered list."""
     return [
         await _check_db_pool(),
         await _check_schema_applied(),
@@ -345,6 +355,7 @@ async def run_checks() -> list[dict[str, Any]]:
         _check_backrest_repo(),
         _check_master_key(),
         await _check_audit_log_chain(),
+        _check_guard_scanners(),
     ]
 
 
