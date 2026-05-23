@@ -29,7 +29,16 @@ async def _run(dry_run: bool) -> int:
     try:
         days = int(raw)
     except ValueError:
-        print("HLH_AUDIT_LOG_RETENTION_DAYS unset — no audit rows pruned")
+        print(
+            f"HLH_AUDIT_LOG_RETENTION_DAYS invalid value (got {raw!r},"
+            " want positive integer) — no audit rows pruned"
+        )
+        return 0
+    if days <= 0:
+        print(
+            f"HLH_AUDIT_LOG_RETENTION_DAYS must be a positive integer"
+            f" (got {days}) — no audit rows pruned"
+        )
         return 0
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
@@ -52,17 +61,32 @@ async def _run(dry_run: bool) -> int:
                     " Re-run without --dry-run to delete."
                 )
                 return 0
-            rows = await conn.fetch(
-                "DELETE FROM audit_log WHERE ts < $1 RETURNING id",
-                cutoff,
-            )
-        ids = [r["id"] for r in rows]
+            # Atomically DELETE the old rows and advance the chain anchor so
+            # doctor's audit_log_chain check still validates the remaining
+            # rows. Without this anchor advance, the post-prune oldest row's
+            # prev_hash would no longer match the 32-zero-byte genesis,
+            # producing a permanent false-positive ERROR.
+            async with conn.transaction():
+                deleted = await conn.fetch(
+                    "DELETE FROM audit_log WHERE ts < $1 RETURNING id",
+                    cutoff,
+                )
+                new_oldest = await conn.fetchrow(
+                    "SELECT prev_hash FROM audit_log ORDER BY id ASC LIMIT 1"
+                )
+                if new_oldest is None:
+                    # Pruned everything — reset anchor to genesis zeros.
+                    new_anchor = b"\x00" * 32
+                else:
+                    new_anchor = bytes(new_oldest["prev_hash"])
+                await conn.execute(
+                    "UPDATE audit_log_chain_head SET first_anchor_hash = $1 WHERE id = 1",
+                    new_anchor,
+                )
+        ids = [r["id"] for r in deleted]
         print(
             f"Pruned {len(ids)} audit rows older than {cutoff.isoformat()}."
-            f" ids range: {min(ids)}..{max(ids)}."
-            " Chain integrity is preserved from the new head backward;"
-            " old rows are gone permanently (intentional operator action)."
-            " TODO: verify_chain --since option to skip pre-cutoff range."
+            f" ids range: {min(ids)}..{max(ids)}. Chain anchor advanced."
         )
         return 0
     except Exception as exc:  # noqa: BLE001

@@ -292,10 +292,13 @@ def _check_master_key() -> dict[str, Any]:
 async def _check_audit_log_chain() -> dict[str, Any]:
     """Verify the audit_log rows form a valid hash chain.
 
-    Reads ALL rows ordered by id ASC — verify_chain() must start at the genesis
-    row (id=1, prev_hash=32 zero bytes). A "last 100 rows" window would skip the
-    genesis check and silently pass a corrupted chain. If performance becomes an
-    issue at scale we can add a windowed mode later; for v0.11.0 read all.
+    Reads ALL rows ordered by id ASC and the chain anchor from
+    audit_log_chain_head.first_anchor_hash. Pre-prune, the anchor is 32 zero
+    bytes (genesis). Post-prune, audit_retention atomically advances it to
+    the prev_hash of the new oldest row, so verify_chain still validates the
+    remaining rows. A "last 100 rows" window would skip the anchor check and
+    silently pass a corrupted chain; if performance becomes an issue at scale
+    we can add a windowed mode later. For v0.11.0 read all.
 
     Returns ERROR on break — chain integrity is a real invariant, not
     operator-prudence (no C1-style demotion to WARN here).
@@ -304,14 +307,21 @@ async def _check_audit_log_chain() -> dict[str, Any]:
         from services.audit import verify_chain
         pool = await get_pool()
         async with pool.acquire() as conn:
+            anchor_row = await conn.fetchrow(
+                "SELECT first_anchor_hash FROM audit_log_chain_head WHERE id = 1"
+            )
             rows = await conn.fetch(
                 "SELECT * FROM audit_log ORDER BY id ASC"
             )
         if not rows:
             return {"name": "audit_log_chain", "status": OK, "detail": "empty (no rows yet)"}
-        ok, bad_id = verify_chain(rows)
+        anchor = bytes(anchor_row["first_anchor_hash"]) if anchor_row else b"\x00" * 32
+        ok, bad_id = verify_chain(rows, expected_first_prev=anchor)
         if ok:
-            return {"name": "audit_log_chain", "status": OK, "detail": f"{len(rows)} rows verified"}
+            note = f"{len(rows)} rows verified"
+            if anchor != b"\x00" * 32:
+                note += " (post-prune anchor)"
+            return {"name": "audit_log_chain", "status": OK, "detail": note}
         return {"name": "audit_log_chain", "status": ERROR, "detail": f"chain break detected at row id={bad_id}"}
     except Exception as e:
         return {"name": "audit_log_chain", "status": ERROR, "detail": f"{type(e).__name__}: {e}"}

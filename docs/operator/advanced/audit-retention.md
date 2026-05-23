@@ -48,17 +48,16 @@ Redirect stdout to a log file so you have a record of each prune run.
 
 ## Chain integrity after a prune
 
-The hash chain remains valid from the new oldest row backward to itself.
-Deleted rows are gone permanently; the chain cannot be reconstructed from
-the remaining rows alone.
+After each prune, the retention CLI atomically advances the chain anchor
+stored in `audit_log_chain_head.first_anchor_hash`. The `audit_log_chain`
+doctor check uses this anchor when verifying — pruned segments are properly
+excluded from genesis-anchored verification, but the remaining chain is
+still tamper-evident from the new oldest row forward.
 
-This is intentional: a retention prune is a deliberate operator action,
-not a forensic event. The `doctor` check (`audit_log_chain`) validates
-all remaining rows each time it runs. If you need to verify the chain
-covered a deleted range, you need a backup that pre-dates the prune.
-
-Note: `verify_chain --since` (to skip rows before a known cutoff) is not
-yet implemented. The current doctor check reads all remaining rows.
+Deleted rows are gone permanently. This is intentional: a retention prune
+is a deliberate operator action, not a forensic event. If you need to
+verify the chain covered a deleted range, you need a backup that pre-dates
+the prune.
 
 ## Recovery if you mis-pruned
 
