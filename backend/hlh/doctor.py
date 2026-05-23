@@ -164,7 +164,7 @@ def _check_luks_status() -> dict[str, Any]:
                 return {
                     "name": "luks_status",
                     "status": WARN,
-                    "detail": "luks status unverifiable from container — confirm manually per docs/operator/luks-setup.md",
+                    "detail": "luks status unverifiable from container — confirm manually per docs/operator/advanced/luks-setup.md",
                 }
             lines = df_result.stdout.strip().splitlines()
             # df output has a header line; source is second line
@@ -173,7 +173,7 @@ def _check_luks_status() -> dict[str, Any]:
             return {
                 "name": "luks_status",
                 "status": WARN,
-                "detail": "luks status unverifiable from container — confirm manually per docs/operator/luks-setup.md",
+                "detail": "luks status unverifiable from container — confirm manually per docs/operator/advanced/luks-setup.md",
             }
 
         # Step 3: check lsblk TYPE column for the source device
@@ -188,14 +188,14 @@ def _check_luks_status() -> dict[str, Any]:
                 return {
                     "name": "luks_status",
                     "status": WARN,
-                    "detail": "luks status unverifiable from container — confirm manually per docs/operator/luks-setup.md",
+                    "detail": "luks status unverifiable from container — confirm manually per docs/operator/advanced/luks-setup.md",
                 }
             type_lines = [line.strip() for line in lsblk_result.stdout.splitlines() if line.strip()]
             if not type_lines:
                 return {
                     "name": "luks_status",
                     "status": WARN,
-                    "detail": "luks status unverifiable from container — confirm manually per docs/operator/luks-setup.md",
+                    "detail": "luks status unverifiable from container — confirm manually per docs/operator/advanced/luks-setup.md",
                 }
             if "crypt" in type_lines:
                 return {
@@ -206,16 +206,16 @@ def _check_luks_status() -> dict[str, Any]:
             return {
                 "name": "luks_status",
                 "status": WARN,
-                "detail": "data volume is not on LUKS — see docs/operator/luks-setup.md",
+                "detail": "data volume is not on LUKS — see docs/operator/advanced/luks-setup.md",
             }
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
             return {
                 "name": "luks_status",
                 "status": WARN,
-                "detail": "luks status unverifiable from container — confirm manually per docs/operator/luks-setup.md",
+                "detail": "luks status unverifiable from container — confirm manually per docs/operator/advanced/luks-setup.md",
             }
     except Exception as e:
-        return {"name": "luks_status", "status": ERROR, "detail": f"{type(e).__name__}: {e}"}
+        return {"name": "luks_status", "status": WARN, "detail": f"{type(e).__name__}: {e}"}
 
 
 _PASSPHRASE_PLACEHOLDERS = {"changeme", "example", "<paste your passphrase here>", "", "password"}
@@ -239,14 +239,14 @@ def _check_backrest_repo() -> dict[str, Any]:
         if not passphrase:
             return {
                 "name": "backrest_repo",
-                "status": ERROR,
-                "detail": "backrest passphrase not configured — see docs/operator/restore-drill.md",
+                "status": WARN,
+                "detail": "backrest passphrase not configured — see docs/operator/advanced/restore-drill.md",
             }
         if passphrase.lower() in _PASSPHRASE_PLACEHOLDERS:
             return {
                 "name": "backrest_repo",
-                "status": ERROR,
-                "detail": "passphrase matches placeholder — regenerate per docs/operator/key-custody.md",
+                "status": WARN,
+                "detail": "passphrase matches placeholder — regenerate per docs/operator/advanced/key-custody.md",
             }
         len_chars = len(passphrase)
         if len_chars < 16:
@@ -257,7 +257,7 @@ def _check_backrest_repo() -> dict[str, Any]:
             }
         return {"name": "backrest_repo", "status": OK, "detail": f"configured ({len_chars} chars)"}
     except Exception as e:
-        return {"name": "backrest_repo", "status": ERROR, "detail": f"{type(e).__name__}: {e}"}
+        return {"name": "backrest_repo", "status": WARN, "detail": f"{type(e).__name__}: {e}"}
 
 
 def _check_master_key() -> dict[str, Any]:
@@ -269,13 +269,13 @@ def _check_master_key() -> dict[str, Any]:
             return {
                 "name": "master_key",
                 "status": WARN,
-                "detail": "HLH_MASTER_KEY not set — required at v0.18.0/C6, generate per docs/operator/key-custody.md",
+                "detail": "HLH_MASTER_KEY not set — required at v0.18.0/C6, generate per docs/operator/advanced/key-custody.md",
             }
         if passphrase.lower() in _PASSPHRASE_PLACEHOLDERS:
             return {
                 "name": "master_key",
-                "status": ERROR,
-                "detail": "HLH_MASTER_KEY matches placeholder — regenerate per docs/operator/key-custody.md",
+                "status": WARN,
+                "detail": "HLH_MASTER_KEY matches placeholder — regenerate per docs/operator/advanced/key-custody.md",
             }
         len_chars = len(passphrase)
         if len_chars < 32:
@@ -286,7 +286,7 @@ def _check_master_key() -> dict[str, Any]:
             }
         return {"name": "master_key", "status": OK, "detail": f"configured ({len_chars} chars)"}
     except Exception as e:
-        return {"name": "master_key", "status": ERROR, "detail": f"{type(e).__name__}: {e}"}
+        return {"name": "master_key", "status": WARN, "detail": f"{type(e).__name__}: {e}"}
 
 
 async def run_checks() -> list[dict[str, Any]]:

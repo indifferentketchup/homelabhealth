@@ -85,7 +85,7 @@ docker exec hlh_api python -m hlh.doctor
 
 Look at the `luks_status` row. The check shells out to `docker info`, `df`, and `lsblk`
 and is best-effort from inside the container. In most default configs it returns WARN
-with `"luks status unverifiable from container — confirm manually per docs/operator/luks-setup.md"`.
+with `"luks status unverifiable from container — confirm manually per docs/operator/advanced/luks-setup.md"`.
 If the container has host visibility into block devices, the check may return OK
 (`dm-crypt detected on ...`) or WARN (`data volume is not on LUKS`). Treat any WARN
 containing "is not on LUKS" as a real issue — that is the check positively reporting an
