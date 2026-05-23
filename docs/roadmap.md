@@ -7,7 +7,7 @@ Phase numbering renumbers slightly so AI / Security / Safeguards each get
 their own track but interleave on a single dependency graph.
 
 Owner: Sam
-Last updated: 2026-05-23 (B2 shipped)
+Last updated: 2026-05-23 (B1+C7 shipped)
 
 -----
 
@@ -34,6 +34,7 @@ sees zero of this until **everything** is at “shipped” status.
 
 ```
 Shipped releases (most recent → oldest):
+  v0.14.0   B1+C7  I/O guard scanner (in-process) (2026-05-23)
   v0.13.0   B2  UI disclaimers + crisis card (2026-05-23)
   v0.12.0   C3  synthetic data + log scrubbing (2026-05-23)
   v0.11.0   C4  audit logging + hash chain + retention CLI (2026-05-23)
@@ -52,8 +53,7 @@ Shipped releases (most recent → oldest):
   v0.1.0    strip + homelabhealth identity (2026-05-02)
 
 Planned (dependency-ordered; MVP-must-ship marked):
-  v0.14.0   B1 + C7  llm-guard sidecar (same deployable)             [MVP]  ← active work
-  v0.15.0   B3  audit-logged refusals (on top of C4)
+  v0.15.0   B3  audit-logged refusals (on top of C4)                        ← active work
   v0.16.0   C5  de-id pipeline (gates first real-record ingest)      [MVP]
   v0.17.0   C6  column encryption                                    [MVP]
   v0.18.0   A3  vision (VLM) + MedSigLIP
@@ -70,23 +70,20 @@ Deferred indefinitely (MVP-irrelevant, 2026-05-23 defer pass):
 
 Phase track in summary:
   A — Built-in AI:   A0 ✓ A1 ✓ A1.5 ✓ A1.6 ✓ A1.7 ✓ A2 ✓ A7 ✓ │ A3 A4 A5? A6
-  B — Safeguards:    B0 ✓ B2 ✓                                │ B1 B3          │ B4 deferred
-  C — Security:      C0 ✓ C1 ✓ C2 ✓ C3 ✓ C4 ✓                 │ C5 C6 C7       │ C8 C9 deferred
+  B — Safeguards:    B0 ✓ B1 ✓ B2 ✓                           │ B3             │ B4 deferred
+  C — Security:      C0 ✓ C1 ✓ C2 ✓ C3 ✓ C4 ✓ C7 ✓            │ C5 C6          │ C8 C9 deferred
 ```
 
 **Ship-to-friend gate** = every phase above shipped + tagged.
 Trunk-merge gates documented in earlier roadmap revisions are
 **retired**. Gates now apply to non-Sam access only.
 
-**Latest release:** `v0.13.0` (2026-05-23) — B2 UI disclaimers + crisis card. See
+**Latest release:** `v0.14.0` (2026-05-23) — B1+C7 I/O guard scanner (in-process). See
 `CHANGELOG.md` for the per-tag rundown.
 
-**Active work — `v0.14.0` (B1 + C7 llm-guard sidecar):**
-Output scanner sidecar (`hlh_guard`) using llm-guard, mounted on the
-`hlh_inference` internal network. Scans every assistant response for
-PII leakage, prompt injection, and crisis-escalation signals. Ships
-with the C7 LLM I/O guardrails on the same deployable. Roadmap code:
-B1 + C7.
+**Active work — `v0.15.0` (B3 audit-logged refusals):**
+Refusal events recorded in `audit_log` (depends on C4). Retry-with-warning
+flow for blocked content. Refusal review panel in settings. Roadmap code: B3.
 
 -----
 
@@ -679,7 +676,7 @@ is checked.
 
 - [x] `v0.6.0` — B0 system prompt baseline (post-A1 reconciliation)
 - [x] `v0.13.0` — B2 UI disclaimers + crisis card  [MVP]
-- [ ] `v0.14.0` — B1 output scanner sidecar (ships with C7)  [MVP]
+- [x] `v0.14.0` — B1 output scanner sidecar (ships with C7)  [MVP]
 - [ ] `v0.15.0` — B3 audit-logged refusals (on top of C4/v0.11.0)
 - B4 red-team eval — **deferred indefinitely** per 2026-05-23 scope pass
 
@@ -690,7 +687,7 @@ is checked.
 - [x] `v0.10.0` — C1 disk + backup hygiene confirmed on friend's host
 - [x] `v0.11.0` — C4 audit logging  [MVP]
 - [x] `v0.12.0` — C3 synthetic data + log scrubbing  [MVP]
-- [ ] `v0.14.0` — C7 LLM I/O guardrails (lands with B1)  [MVP]
+- [x] `v0.14.0` — C7 LLM I/O guardrails (lands with B1)  [MVP]
 - [ ] `v0.16.0` — C5 de-id pipeline, pre-write redactor defaulted **on**
   for non-Sam deployments. **Blocks first real-record ingest.**  [MVP]
 - [ ] `v0.17.0` — C6 column encryption, friend's `HLH_MASTER_KEY`
@@ -784,7 +781,7 @@ Resolve at the phase where they become blocking.
 |Track          |Phases                                                                                                                                |Total                    |
 |---------------|--------------------------------------------------------------------------------------------------------------------------------------|-------------------------|
 |A — Built-in AI|v0.3.0-v0.8.0 ✓ + v0.18.0/A3 (5d) + v0.19.0/A4 (3d) + v0.20.0?/A5 + v0.21.0+/A6 (deferred)                                          |~1 week if A5/A6 skipped |
-|B — Safeguards |v0.6.0 ✓ + v0.13.0/B2 ✓ + v0.14.0/B1+C7 (3d) + v0.15.0/B3 (1d on top of v0.11.0/C4) + B4 deferred                              |~1 week                  |
+|B — Safeguards |v0.6.0 ✓ + v0.13.0/B2 ✓ + v0.14.0/B1+C7 ✓ + v0.15.0/B3 (1d on top of v0.11.0/C4) + B4 deferred                              |~1 week                  |
 |C — Security   |v0.8.0 ✓ + v0.9.0/C0 ✓ + v0.10.0/C1 ✓ + v0.11.0/C4 ✓ + v0.12.0/C3 ✓ + v0.16.0/C5 (5-7d) + v0.17.0/C6 (5d) + C8/C9 deferred|~2 weeks                 |
 
 **Total to ship-to-friend gate: ~2-3 weeks of focused work** (revised
