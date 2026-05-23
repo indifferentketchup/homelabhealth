@@ -12,6 +12,7 @@ import { useLayoutStore } from '@/store/layoutStore.js'
 
 import { AssistantGlyph } from './AssistantGlyph.jsx'
 import { ChatInput } from './ChatInput.jsx'
+import { DisclaimerBanner } from './DisclaimerBanner.jsx'
 import { MessageList } from './MessageList.jsx'
 import { ModelSelectorBar } from './ModelSelectorBar.jsx'
 
@@ -404,6 +405,7 @@ export function ChatView({
         <ModelSelectorBar />
       </div>
       <div className="mx-auto flex min-h-0 w-full flex-1 flex-col" style={{ maxWidth: chatMaxW }}>
+        <DisclaimerBanner />
         <div className="bc-chat-messages-mobile min-h-0 flex-1">
           {isLoading && !busy ? (
             <MessageListSkeleton />
