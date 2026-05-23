@@ -20,6 +20,42 @@ _No entries yet._
 
 ---
 
+## [v0.14.0] — 2026-05-23
+
+B1 + C7 I/O guard scanner. In-process regex-based input and output
+scanning on every chat inference request. No separate Docker container
+— same security coverage via `services/guard.py` for a single-user
+LAN deployment.
+
+### Architecture deviation
+The roadmap specified a separate `hlh_guard` Docker sidecar running
+llm-guard (Protect AI). This release implements the same functional
+coverage as an in-process regex scanner — no new container, no new
+pip dep. The sidecar architecture can be revisited if the threat model
+changes (public release, multi-user, untrusted operators).
+
+### Code
+- `backend/services/guard.py` — `scan_input()` (9 prompt-injection
+  patterns + 6 banned substrings) and `scan_output()` (4 PII patterns,
+  7 medical-advice patterns, 1 crisis pattern, 2 hallucinated-ID
+  patterns). 29 patterns total. Crisis flags pass through (flag, don't
+  block). All other categories block.
+- `backend/routers/chats.py` — input scan before inference (returns
+  422 `input_blocked` on hit). Output scan after response completion
+  (stores `guard_flags` JSONB on flagged messages, emits `guard_alert`
+  SSE event before `[DONE]`).
+- `backend/schema.sql` — `guard_flags JSONB` column on `messages`.
+- `backend/hlh/doctor.py` — `guard_scanners` check (OK when module
+  loads, reports pattern count). 16 checks total.
+
+### Docs
+- `CHANGELOG.md` — `[Unreleased]` flipped to `[v0.14.0]`.
+- `docs/roadmap.md` — `v0.14.0` moved from Planned to Shipped;
+  ship-to-friend B1 + C7 checkboxes ticked; active-work pointer
+  retargeted to `v0.15.0` / B3.
+
+---
+
 ## [v0.13.0] — 2026-05-23
 
 B2 UI disclaimers + crisis card. Visible safety chrome so the user

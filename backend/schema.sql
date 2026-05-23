@@ -553,3 +553,6 @@ END $$;
 ALTER TABLE audit_log_chain_head
   ADD COLUMN IF NOT EXISTS first_anchor_hash BYTEA NOT NULL
   DEFAULT '\x0000000000000000000000000000000000000000000000000000000000000000'::bytea;
+
+-- B1/C7 guard: store scan findings on flagged messages.
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS guard_flags JSONB;
