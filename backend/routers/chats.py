@@ -9,7 +9,7 @@ from typing import Any, AsyncIterator
 import asyncpg
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from deps import (
@@ -1062,6 +1062,18 @@ async def append_message(
     summary = chat["pruning_summary"]
     user_message_text = _scrub_pg_text(body.content.strip())
 
+    from services.guard import scan_input, scan_output
+    input_scan = scan_input(user_message_text)
+    if not input_scan.passed:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": "input_blocked",
+                "guard_flags": input_scan.to_json(),
+                "message": "Your message was blocked by the input guard. Please rephrase.",
+            },
+        )
+
     async def gen() -> AsyncIterator[bytes]:
         sources_list: list[dict[str, str]] = []
         extra_search = ""
@@ -1151,13 +1163,16 @@ async def append_message(
         if not assistant_text:
             return
 
+        output_scan = scan_output(assistant_text)
+        guard_flags_json = output_scan.to_json() if output_scan.flags else None
+
         assist_id = uuid.uuid4()
         p = await get_pool()
         async with p.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO messages (id, chat_id, role, content, model, safeguard_version, ai_generated)
-                VALUES ($1::uuid, $2::uuid, 'assistant', $3, $4, $5, $6)
+                INSERT INTO messages (id, chat_id, role, content, model, safeguard_version, ai_generated, guard_flags)
+                VALUES ($1::uuid, $2::uuid, 'assistant', $3, $4, $5, $6, $7)
                 """,
                 assist_id,
                 chat_id,
@@ -1165,6 +1180,7 @@ async def append_message(
                 effective_model,
                 current_version(),
                 True,
+                json.dumps(guard_flags_json) if guard_flags_json else None,
             )
             await conn.execute(
                 """
@@ -1231,6 +1247,18 @@ async def append_message(
                         logger.warning("Failed to embed memory entry: %s", e)
 
         await summarize_and_compress(str(chat_id), p)
+
+        if not output_scan.passed:
+            yield _sse(json.dumps({
+                "type": "guard_alert",
+                "flags": output_scan.to_json(),
+                "message": "The assistant's response was flagged by the output guard.",
+            }))
+        if output_scan.flags and output_scan.passed:
+            yield _sse(json.dumps({
+                "type": "guard_info",
+                "flags": output_scan.to_json(),
+            }))
 
         yield _sse("[DONE]")
 
