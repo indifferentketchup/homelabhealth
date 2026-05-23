@@ -20,6 +20,51 @@ _No entries yet._
 
 ---
 
+## [v0.11.0] — 2026-05-23
+
+C4 audit logging. Append-only hash-chained `audit_log` table recording
+every PHI-touching API request. Insert-only Postgres role, write-ahead
+dependency on every PHI endpoint, hash-chain tamper detection, retention
+CLI, and a doctor check for chain integrity.
+
+### Code
+- `backend/schema.sql` — `audit_log` table (BIGSERIAL PK, hash chain
+  with `prev_hash` / `row_hash`), `audit_log_chain_head` singleton
+  (chain head + post-prune anchor), `hlh_audit_writer` insert-only role.
+- `backend/services/audit.py` — `AuditRecord` dataclass, chain-hash
+  primitives (`_canonicalize`, `_compute_row_hash`), `insert_audit_event`
+  (serialized via `SELECT ... FOR UPDATE` on chain head, `SET LOCAL ROLE
+  hlh_audit_writer`), `verify_chain` (anchor-aware, backwards compatible),
+  `AuditEventHandle` FastAPI dependency, `audit_event` yield-based
+  dependency with fault-tolerant post-yield commit.
+- `backend/main.py` — `_RequestIDMiddleware` generates UUID per request,
+  surfaces `X-Request-ID` header, captures response status code for
+  audit commit.
+- `backend/routers/audit.py` — `GET /api/audit/recent` (paginated,
+  excludes hash columns, self-auditing).
+- `backend/routers/*` — 18 routers wrapped with `Depends(audit_event)` +
+  `audit.targeting(...)` on every PHI-touching endpoint. Streaming
+  endpoints use direct attribute assignment.
+- `backend/hlh/doctor.py` — new `_check_audit_log_chain` (ERROR on chain
+  break; reads `first_anchor_hash` for post-prune correctness). 15 checks
+  total.
+- `backend/hlh/audit_retention.py` — CLI (`python -m hlh.audit_retention`)
+  with `--dry-run`, positive-integer validation, distinct error messages,
+  atomic prune + anchor advance.
+- `backend/scripts/verify_audit_log.sh` — insert/tamper/restore/verify
+  roundtrip against the live stack.
+
+### Docs
+- `docs/operator/advanced/audit-retention.md` — opt-in retention setup,
+  cron example, post-prune chain anchor explanation, recovery cross-ref.
+- `CHANGELOG.md` — `[Unreleased]` flipped to `[v0.11.0]`; fresh empty
+  `[Unreleased]` section restored.
+- `docs/roadmap.md` — `v0.11.0` moved from Planned to Shipped;
+  ship-to-friend C4 checkbox ticked; active-work pointer retargeted
+  to `v0.12.0` / C3.
+
+---
+
 ## [v0.10.1] — 2026-05-23
 
 C1 demoted to advanced/optional per MVP-scope review. Friend deployment
