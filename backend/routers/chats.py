@@ -880,7 +880,7 @@ async def fork_chat_at_message(
 
             msg_rows = await conn.fetch(
                 """
-                SELECT id, role, content, model, tokens_used, sources_used, safeguard_version
+                SELECT id, role, content, model, tokens_used, sources_used, safeguard_version, ai_generated
                 FROM messages
                 WHERE chat_id = $1::uuid
                 ORDER BY created_at ASC, id ASC
@@ -925,10 +925,10 @@ async def fork_chat_at_message(
                 await conn.execute(
                     """
                     INSERT INTO messages (
-                        id, chat_id, role, content, model, tokens_used, sources_used, forked_from, safeguard_version
+                        id, chat_id, role, content, model, tokens_used, sources_used, forked_from, safeguard_version, ai_generated
                     )
                     VALUES (
-                        $1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8::uuid, $9
+                        $1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8::uuid, $9, $10
                     )
                     """,
                     mid,
@@ -940,6 +940,7 @@ async def fork_chat_at_message(
                     r["sources_used"],
                     r["id"],
                     r["safeguard_version"],
+                    r["ai_generated"],
                 )
 
     async with audit.targeting("chat", chat_id):
@@ -1001,13 +1002,14 @@ async def append_message(
         async with conn.transaction():
             await conn.execute(
                 """
-                INSERT INTO messages (id, chat_id, role, content, model)
-                VALUES ($1::uuid, $2::uuid, 'user', $3, $4)
+                INSERT INTO messages (id, chat_id, role, content, model, ai_generated)
+                VALUES ($1::uuid, $2::uuid, 'user', $3, $4, $5)
                 """,
                 user_msg_id,
                 chat_id,
                 _scrub_pg_text(body.content.strip()),
                 effective_model,
+                False,
             )
             await conn.execute(
                 """
@@ -1154,14 +1156,15 @@ async def append_message(
         async with p.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO messages (id, chat_id, role, content, model, safeguard_version)
-                VALUES ($1::uuid, $2::uuid, 'assistant', $3, $4, $5)
+                INSERT INTO messages (id, chat_id, role, content, model, safeguard_version, ai_generated)
+                VALUES ($1::uuid, $2::uuid, 'assistant', $3, $4, $5, $6)
                 """,
                 assist_id,
                 chat_id,
                 assistant_text,
                 effective_model,
                 current_version(),
+                True,
             )
             await conn.execute(
                 """
