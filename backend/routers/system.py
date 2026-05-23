@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field
 
 from db import get_pool
 from deps import require_admin
+from services.audit import AuditEventHandle, audit_event
 from services import bundled_providers, hf_token
 from services.sysinfo import ALL_TIERS, collect, recommend_tier
 
@@ -110,6 +111,7 @@ async def get_profile(_: dict[str, Any] = Depends(require_admin)) -> dict[str, A
 async def put_profile(
     body: ProfilePut,
     _: dict[str, Any] = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
 ) -> dict[str, Any]:
     """Persist operator's tier choice. Sets chosen_at = NOW(), setup_complete = TRUE."""
     if body.tier not in ALL_TIERS:
@@ -138,11 +140,16 @@ async def put_profile(
         if row is None:
             raise HTTPException(status_code=503, detail="system_profile row missing")
         await bundled_providers.apply_bundled_bindings(conn, body.tier)
+    async with audit.targeting("system", None):
+        pass
     return _profile_response(row)
 
 
 @router.post("/redetect")
-async def redetect(_: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
+async def redetect(
+    _: dict[str, Any] = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
+) -> dict[str, Any]:
     """Re-run sysinfo collection, store under sysinfo_json, update detected_at.
 
     Does NOT change `tier`, `tier_source`, or `setup_complete`. The operator
@@ -163,6 +170,8 @@ async def redetect(_: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]
         )
     if row is None:
         raise HTTPException(status_code=503, detail="system_profile row missing")
+    async with audit.targeting("system", None):
+        pass
     return _profile_response(row)
 
 
@@ -182,6 +191,7 @@ async def get_hf_token(_: dict[str, Any] = Depends(require_admin)) -> dict[str, 
 async def put_hf_token(
     body: HfTokenPut,
     _: dict[str, Any] = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -189,25 +199,37 @@ async def put_hf_token(
             await hf_token.set_token(conn, body.token)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
+    async with audit.targeting("system", None):
+        pass
     return Response(status_code=204)
 
 
 @router.delete("/hf-token")
-async def delete_hf_token(_: dict[str, Any] = Depends(require_admin)):
+async def delete_hf_token(
+    _: dict[str, Any] = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
+):
     pool = await get_pool()
     async with pool.acquire() as conn:
         await hf_token.clear(conn)
+    async with audit.targeting("system", None):
+        pass
     return Response(status_code=204)
 
 
 @router.post("/acknowledge")
-async def post_acknowledge(_: dict[str, Any] = Depends(require_admin)):
+async def post_acknowledge(
+    _: dict[str, Any] = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
+):
     """Stamp acknowledged_at = NOW() on the singleton system_profile row."""
     pool = await get_pool()
     async with pool.acquire() as conn:
         await conn.execute(
             "UPDATE system_profile SET acknowledged_at = NOW() WHERE id = 1"
         )
+    async with audit.targeting("system", None):
+        pass
     return Response(status_code=204)
 
 

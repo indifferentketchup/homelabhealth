@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from deps import get_principal, require_admin
 from db import get_pool
+from services.audit import AuditEventHandle, audit_event
 from services.provider_client import build_headers, resolve_provider_for_workspace
 
 router = APIRouter()
@@ -35,14 +36,21 @@ class MemoryEntryPatch(BaseModel):
 
 
 @router.get("/")
-async def get_memory(_: dict = Depends(require_admin)):
+async def get_memory(
+    _: dict = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
+):
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             "SELECT content, updated_at FROM mode_memory LIMIT 1",
         )
     if row is None:
+        async with audit.targeting("memory", None):
+            pass
         return {"content": "", "updated_at": None}
+    async with audit.targeting("memory", None):
+        pass
     return {
         "content": row["content"] or "",
         "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
@@ -50,7 +58,11 @@ async def get_memory(_: dict = Depends(require_admin)):
 
 
 @router.put("/")
-async def put_memory(body: MemoryPut = Body(), _: dict = Depends(require_admin)):
+async def put_memory(
+    body: MemoryPut = Body(),
+    _: dict = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
+):
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -62,6 +74,8 @@ async def put_memory(body: MemoryPut = Body(), _: dict = Depends(require_admin))
             """,
             body.content or "",
         )
+    async with audit.targeting("memory", None):
+        pass
     return {
         "content": row["content"] or "",
         "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
@@ -69,7 +83,10 @@ async def put_memory(body: MemoryPut = Body(), _: dict = Depends(require_admin))
 
 
 @router.post("/extract")
-async def extract_memory(_: dict = Depends(require_admin)):
+async def extract_memory(
+    _: dict = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
+):
     pool = await get_pool()
 
     async with pool.acquire() as conn:
@@ -171,6 +188,8 @@ async def extract_memory(_: dict = Depends(require_admin)):
             updated,
         )
 
+    async with audit.targeting("memory", None):
+        pass
     return {
         "content": row["content"] or "",
         "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
@@ -194,7 +213,10 @@ def _memory_entry_row(r: Any) -> dict[str, Any]:
 
 
 @router.post("/embed-all")
-async def embed_all_memories(principal: dict[str, Any] = Depends(get_principal)):
+async def embed_all_memories(
+    principal: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
+):
     if principal.get("kind") != "owner":
         raise HTTPException(status_code=403, detail="owner_only")
     pool = await get_pool()
@@ -225,11 +247,16 @@ async def embed_all_memories(principal: dict[str, Any] = Depends(get_principal))
                 count += 1
         except Exception as e:
             logger.warning("embed_all_memories failed for %s: %s", row["id"], e)
+    async with audit.targeting("memory", None):
+        pass
     return {"embedded": count, "total": len(rows)}
 
 
 @router.get("/entries/")
-async def list_memory_entries(_: dict = Depends(require_admin)):
+async def list_memory_entries(
+    _: dict = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
+):
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
@@ -241,6 +268,8 @@ async def list_memory_entries(_: dict = Depends(require_admin)):
             ORDER BY created_at DESC NULLS LAST, id DESC
             """,
         )
+    async with audit.targeting("memory", None):
+        pass
     return [_memory_entry_row(r) for r in rows]
 
 
@@ -248,6 +277,7 @@ async def list_memory_entries(_: dict = Depends(require_admin)):
 async def create_memory_entry(
     body: MemoryEntryCreate,
     _: dict = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     src = (body.source or "manual").strip().lower()
     if src not in ("manual", "auto"):
@@ -263,6 +293,8 @@ async def create_memory_entry(
             body.content.strip(),
             src,
         )
+    async with audit.targeting("memory", row["id"]):
+        pass
     return _memory_entry_row(row)
 
 
@@ -271,6 +303,7 @@ async def patch_memory_entry(
     entry_id: uuid.UUID,
     body: MemoryEntryPatch,
     _: dict = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -286,11 +319,17 @@ async def patch_memory_entry(
         )
     if row is None:
         raise HTTPException(status_code=404, detail="Memory entry not found")
+    async with audit.targeting("memory", entry_id):
+        pass
     return _memory_entry_row(row)
 
 
 @router.delete("/entries/{entry_id}")
-async def delete_memory_entry(entry_id: uuid.UUID, _: dict = Depends(require_admin)):
+async def delete_memory_entry(
+    entry_id: uuid.UUID,
+    _: dict = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
+):
     pool = await get_pool()
     async with pool.acquire() as conn:
         result = await conn.execute(
@@ -303,4 +342,6 @@ async def delete_memory_entry(entry_id: uuid.UUID, _: dict = Depends(require_adm
         )
     if result == "UPDATE 0":
         raise HTTPException(status_code=404, detail="Memory entry not found")
+    async with audit.targeting("memory", entry_id):
+        pass
     return {"ok": True}

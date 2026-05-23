@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from deps import get_principal
 from db import get_pool
+from services.audit import AuditEventHandle, audit_event
 from services.history import (
     VALID_KINDS,
     workspace_dir,
@@ -66,6 +67,7 @@ async def list_history(
     kind: str,
     workspace_id: uuid.UUID = Query(...),
     principal: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
 ) -> dict:
     _ensure_kind(kind)
     name = await _workspace_name(workspace_id)
@@ -86,6 +88,8 @@ async def list_history(
             "modified_at": int(st.st_mtime),
         })
     items.sort(key=lambda x: x["modified_at"], reverse=True)
+    async with audit.targeting("history", None):
+        pass
     return {"kind": kind, "workspace_id": str(workspace_id), "workspace_slug": slugify(name), "items": items}
 
 
@@ -95,6 +99,7 @@ async def read_history(
     workspace_id: uuid.UUID = Query(...),
     file: str = Query(..., min_length=1),
     principal: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
 ) -> dict:
     _ensure_kind(kind)
     name = await _workspace_name(workspace_id)
@@ -114,6 +119,8 @@ async def read_history(
             detail=f"file exceeds {MAX_FILE_BYTES} bytes",
         )
     text = path.read_text(encoding="utf-8", errors="replace")
+    async with audit.targeting("history", None):
+        pass
     return {
         "kind": kind,
         "filename": file,
@@ -123,7 +130,12 @@ async def read_history(
 
 
 @router.post("/{kind}/rename")
-async def rename_history(kind: str, body: RenameBody, principal: dict[str, Any] = Depends(get_principal)) -> dict:
+async def rename_history(
+    kind: str,
+    body: RenameBody,
+    principal: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
+) -> dict:
     _ensure_kind(kind)
     name = await _workspace_name(body.workspace_id)
     try:
@@ -194,6 +206,8 @@ async def rename_history(kind: str, body: RenameBody, principal: dict[str, Any] 
             raise HTTPException(status_code=500, detail="rename collision loop")
 
     if new_path == old_path:
+        async with audit.targeting("history", None):
+            pass
         return {"filename": candidate, "renamed": False}
 
     try:
@@ -202,11 +216,18 @@ async def rename_history(kind: str, body: RenameBody, principal: dict[str, Any] 
         logger.warning("rename os error: %s", e)
         raise HTTPException(status_code=500, detail="rename failed")
 
+    async with audit.targeting("history", None):
+        pass
     return {"filename": candidate, "renamed": True}
 
 
 @router.delete("/{kind}")
-async def delete_history(kind: str, body: DeleteBody, principal: dict[str, Any] = Depends(get_principal)) -> dict:
+async def delete_history(
+    kind: str,
+    body: DeleteBody,
+    principal: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
+) -> dict:
     _ensure_kind(kind)
     name = await _workspace_name(body.workspace_id)
     try:
@@ -220,4 +241,6 @@ async def delete_history(kind: str, body: DeleteBody, principal: dict[str, Any] 
     except OSError as e:
         logger.warning("delete os error: %s", e)
         raise HTTPException(status_code=500, detail="delete failed")
+    async with audit.targeting("history", None):
+        pass
     return {"ok": True}
