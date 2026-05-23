@@ -1,0 +1,30 @@
+{
+  "resourceType": "Bundle",
+  "type": "collection",
+  "entry": [
+    {
+      "resource": {
+        "resourceType": "Patient",
+        "id": "synth-patient-001",
+        "name": [{"family": "Doe", "given": ["Jane"]}],
+        "gender": "female",
+        "birthDate": "1985-03-15",
+        "address": [{"city": "Springfield", "state": "IL", "postalCode": "62701"}],
+        "identifier": [
+          {"system": "http://hospital.example.org/mrn", "value": "MRN-SYNTH-001"}
+        ]
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Condition",
+        "id": "synth-condition-001",
+        "subject": {"reference": "Patient/synth-patient-001"},
+        "code": {
+          "coding": [{"system": "http://snomed.info/sct", "code": "73211009", "display": "Diabetes mellitus"}]
+        },
+        "onsetDateTime": "2020-01-10"
+      }
+    }
+  ]
+}
