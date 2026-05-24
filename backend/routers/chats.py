@@ -29,6 +29,7 @@ from services.rag import (
     retrieve_context,
     retrieve_memory_facts,
 )
+from services.crypto import encrypt_column, decrypt_column
 from services.safeguards import current_version, prepend_safeguard
 from services.searx import searx_search_sources
 
@@ -147,13 +148,16 @@ async def _assembled_system_prompt(
     if include_site_private:
         ci_rows = await conn.fetch(
             """
-            SELECT content FROM custom_instructions
-            WHERE btrim(content) <> ''
+            SELECT id, content FROM custom_instructions
+            WHERE content IS NOT NULL
             """,
         )
-        custom_instr = "\n\n".join(
-            (r["content"] or "").strip() for r in ci_rows if (r["content"] or "").strip()
-        )
+        _ci_parts: list[str] = []
+        for _ci in ci_rows:
+            _ci_plain = decrypt_column(_ci["content"] or "", str(_ci["id"])).strip()
+            if _ci_plain:
+                _ci_parts.append(_ci_plain)
+        custom_instr = "\n\n".join(_ci_parts)
         if custom_instr:
             parts.append(custom_instr)
 
@@ -380,11 +384,12 @@ def _chat_row(r: asyncpg.Record) -> dict[str, Any]:
 
 
 def _message_row(r: asyncpg.Record) -> dict[str, Any]:
+    raw_content = r["content"] or ""
     return {
         "id": str(r["id"]),
         "chat_id": str(r["chat_id"]),
         "role": r["role"],
-        "content": r["content"],
+        "content": decrypt_column(raw_content, str(r["id"])) if raw_content else raw_content,
         "model": r["model"],
         "tokens_used": r["tokens_used"],
         "sources_used": r["sources_used"],
@@ -728,7 +733,7 @@ async def export_chat(
 
         msg_rows = await conn.fetch(
             """
-            SELECT role, content, created_at
+            SELECT id, role, content, created_at
             FROM messages
             WHERE chat_id=$1::uuid
             ORDER BY created_at ASC, id ASC
@@ -740,7 +745,7 @@ async def export_chat(
     messages = [
         {
             "role": r["role"],
-            "content": r["content"],
+            "content": decrypt_column(r["content"] or "", str(r["id"])) if r["content"] else (r["content"] or ""),
             "created_at": r["created_at"].isoformat() if r["created_at"] else None,
         }
         for r in msg_rows
@@ -923,6 +928,8 @@ async def fork_chat_at_message(
 
             for r in copies:
                 mid = uuid.uuid4()
+                raw_content = r["content"] or ""
+                plain_content = decrypt_column(raw_content, str(r["id"])) if raw_content else raw_content
                 await conn.execute(
                     """
                     INSERT INTO messages (
@@ -935,7 +942,7 @@ async def fork_chat_at_message(
                     mid,
                     new_id,
                     r["role"],
-                    r["content"],
+                    encrypt_column(plain_content, str(mid)) if plain_content else plain_content,
                     r["model"],
                     r["tokens_used"],
                     r["sources_used"],
@@ -1017,7 +1024,7 @@ async def append_message(
                 """,
                 user_msg_id,
                 chat_id,
-                _scrub_pg_text(body.content.strip()),
+                encrypt_column(_scrub_pg_text(body.content.strip()), str(user_msg_id)),
                 effective_model,
                 False,
             )
@@ -1033,7 +1040,7 @@ async def append_message(
 
         msg_rows = await conn.fetch(
             """
-            SELECT role, content
+            SELECT id, role, content
             FROM messages
             WHERE chat_id = $1::uuid
             ORDER BY created_at ASC, id ASC
@@ -1122,7 +1129,8 @@ async def append_message(
             role = r["role"]
             if role not in ("user", "assistant", "system"):
                 continue
-            api_messages.append({"role": role, "content": r["content"] or ""})
+            raw = r["content"] or ""
+            api_messages.append({"role": role, "content": decrypt_column(raw, str(r["id"])) if raw else raw})
 
         # De-identify user messages before sending to external providers.
         # Bundled providers (is_bundled=True) run on-box — no redaction needed.
@@ -1201,7 +1209,7 @@ async def append_message(
                 """,
                 assist_id,
                 chat_id,
-                assistant_text,
+                encrypt_column(assistant_text, str(assist_id)),
                 effective_model,
                 current_version(),
                 True,
