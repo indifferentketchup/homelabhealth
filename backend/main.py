@@ -34,6 +34,7 @@ from routers.history import router as history_router
 from routers.notes import router as notes_router
 from routers.sources import router as sources_router
 from routers.audit import router as audit_router
+from routers.auth import router as auth_router
 
 import logging
 logging.basicConfig(level=logging.INFO)
@@ -148,6 +149,50 @@ class _NoCacheAPIMiddleware(BaseHTTPMiddleware):
 app.add_middleware(_NoCacheAPIMiddleware)
 
 
+_AUTH_WHITELIST = {
+    "/api/auth/login",
+    "/api/auth/logout",
+    "/api/auth/needs-setup",
+    "/api/auth/setup",
+    "/api/health",
+    "/health",
+}
+
+
+class _AuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        path = request.url.path
+        # Allow whitelisted paths
+        if path in _AUTH_WHITELIST:
+            return await call_next(request)
+        # Allow non-API paths (frontend static assets)
+        if not path.startswith("/api/"):
+            return await call_next(request)
+        # Check session cookie
+        from services.auth import validate_session
+        token = request.cookies.get("hlh_session")
+        if not token:
+            # Check if setup is needed — if so, allow through (the frontend
+            # will redirect to setup)
+            from services.auth import needs_setup as _needs_setup
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                if await _needs_setup(conn):
+                    return await call_next(request)
+            from starlette.responses import JSONResponse
+            return JSONResponse(status_code=401, content={"detail": "not_authenticated"})
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            user = await validate_session(conn, token)
+        if user is None:
+            from starlette.responses import JSONResponse
+            return JSONResponse(status_code=401, content={"detail": "session_expired"})
+        return await call_next(request)
+
+
+app.add_middleware(_AuthMiddleware)
+
+
 class _RequestIDMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         request.state.request_id = _uuid.uuid4()
@@ -187,6 +232,7 @@ async def api_health():
     return {"status": "ok"}
 
 
+api.include_router(auth_router, prefix="/auth", tags=["auth"])
 api.include_router(profile.router, prefix="/profile", tags=["profile"])
 api.include_router(providers.router, prefix="/providers", tags=["providers"])
 api.include_router(system.router, prefix="/system", tags=["system"])
