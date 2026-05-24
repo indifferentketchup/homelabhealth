@@ -20,6 +20,37 @@ _No entries yet._
 
 ---
 
+## [v0.17.0] — 2026-05-24
+
+C6 column encryption. AES-256-GCM envelope encryption on PHI columns
+using per-record HKDF-derived DEKs from `HLH_MASTER_KEY`. Opt-in —
+app works without the key (plaintext passthrough). This is the FINAL
+MVP item — all ship-to-friend prerequisites are now met.
+
+### Code
+- `backend/services/crypto.py` — column encryption primitives:
+  `encrypt_column()` / `decrypt_column()` with `cenc:v1:` prefix,
+  HKDF key derivation from `HLH_MASTER_KEY` + record UUID,
+  AES-256-GCM. Passthrough when key unset.
+- `backend/routers/chats.py` — encrypt `messages.content` on write
+  (user + assistant + fork paths), decrypt on read (list, detail,
+  export, api_messages for inference).
+- `backend/routers/notes.py` — encrypt/decrypt `notes.content`.
+- `backend/routers/custom_instructions.py` — encrypt/decrypt
+  `custom_instructions.content`.
+- `backend/scripts/migrate_column_encryption.sh` — idempotent
+  migration encrypting existing plaintext rows. Pre-flight guard
+  for `HLH_MASTER_KEY`.
+- `backend/hlh/doctor.py` — `column_encryption` check (OK when
+  key configured, WARN when unset). 18 checks total.
+
+### Docs
+- `CHANGELOG.md` — `[Unreleased]` flipped to `[v0.17.0]`.
+- `docs/roadmap.md` — `v0.17.0` moved from Planned to Shipped;
+  ship-to-friend C6 checkbox ticked. **All MVP checkboxes now [x].**
+
+---
+
 ## [v0.16.0] — 2026-05-24
 
 C5 de-identification pipeline. Regex-based PHI redaction gates first
