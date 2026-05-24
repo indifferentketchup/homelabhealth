@@ -14,6 +14,7 @@ from deps import get_principal
 from db import get_pool
 from services.audit import AuditEventHandle, audit_event
 from services.chunking import chunk_text, parse_source_bytes
+from services.deid import is_enabled as deid_enabled, redact_chunks
 from services.embeddings import EmbeddingError, embed_batch, format_vector
 
 router = APIRouter(prefix="/sources", tags=["sources"])
@@ -96,6 +97,15 @@ async def _ingest_source(source_id: uuid.UUID, workspace_id: uuid.UUID, raw: byt
                     "No text extracted",
                 )
             return
+
+        if deid_enabled():
+            chunks, deid_findings = redact_chunks(chunks)
+            total_findings = sum(len(f) for f in deid_findings)
+            if total_findings:
+                logger.info(
+                    "deid: redacted %d PHI findings across %d chunks for source_id=%s",
+                    total_findings, len(chunks), source_id,
+                )
 
         try:
             embeddings = await embed_batch(chunks)
