@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from deps import get_principal
 from db import get_pool
 from services.audit import AuditEventHandle, audit_event
+from services.crypto import encrypt_column, decrypt_column
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 
@@ -34,12 +35,13 @@ def _default_title_from_content(content: str) -> str:
 
 
 def _note_row_dict(r: Any) -> dict[str, Any]:
+    raw_content = r["content"] or ""
     return {
         "id": str(r["id"]),
         "workspace_id": str(r["workspace_id"]),
         "group_id": str(r["group_id"]) if r.get("group_id") else None,
         "title": r["title"],
-        "content": r["content"],
+        "content": decrypt_column(raw_content, str(r["id"])) if raw_content else raw_content,
         "source_type": r["source_type"],
         "message_id": str(r["message_id"]) if r.get("message_id") else None,
         "converted_to_source_id": str(r["converted_to_source_id"]) if r.get("converted_to_source_id") else None,
@@ -82,11 +84,12 @@ async def list_notes(
         )
     out: list[dict[str, Any]] = []
     for r in rows:
+        raw_content = r["content"] or ""
         out.append(
             {
                 "id": str(r["id"]),
                 "title": r["title"],
-                "content": r["content"],
+                "content": decrypt_column(raw_content, str(r["id"])) if raw_content else raw_content,
                 "source_type": r["source_type"],
                 "created_at": r["created_at"].isoformat() if r["created_at"] else None,
                 "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
@@ -110,6 +113,7 @@ async def create_note(
     title = body.title.strip() if body.title else None
     if not title:
         title = _default_title_from_content(body.content)
+    note_id = uuid.uuid4()
     pool = await get_pool()
     async with pool.acquire() as conn:
         workspace_exists = await conn.fetchval("SELECT 1 FROM workspaces WHERE id = $1::uuid", workspace_id)
@@ -117,14 +121,15 @@ async def create_note(
             raise HTTPException(404, "Workspace not found")
         row = await conn.fetchrow(
             """
-            INSERT INTO notes (workspace_id, title, content, source_type, message_id)
-            VALUES ($1::uuid, $2, $3, $4, $5::uuid)
+            INSERT INTO notes (id, workspace_id, title, content, source_type, message_id)
+            VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::uuid)
             RETURNING id, workspace_id, group_id, title, content, source_type, message_id,
                       converted_to_source_id, created_at, updated_at
             """,
+            note_id,
             workspace_id,
             title,
-            body.content,
+            encrypt_column(body.content, str(note_id)),
             st,
             body.message_id,
         )
@@ -151,7 +156,11 @@ async def update_note(
         if row is None:
             raise HTTPException(404, "Note not found")
         new_title = body.title if body.title is not None else row["title"]
-        new_content = body.content if body.content is not None else row["content"]
+        if body.content is not None:
+            new_content = encrypt_column(body.content, str(note_id))
+        else:
+            # Keep existing stored value (already encrypted or plaintext passthrough)
+            new_content = row["content"]
         updated = await conn.fetchrow(
             """
             UPDATE notes
