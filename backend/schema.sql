@@ -556,3 +556,21 @@ ALTER TABLE audit_log_chain_head
 
 -- B1/C7 guard: store scan findings on flagged messages.
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS guard_flags JSONB;
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- v0.19.0: built-in auth — password hashing + session management.
+-- password_hash is nullable; NULL = first-launch state (no password set yet).
+-- sessions.token_hash stores SHA-256 of the raw session token (not the token).
+-- ────────────────────────────────────────────────────────────────────────────
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+
+CREATE TABLE IF NOT EXISTS sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS sessions_token_hash_idx ON sessions (token_hash);
+CREATE INDEX IF NOT EXISTS sessions_expires_idx ON sessions (expires_at);
