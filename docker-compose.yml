@@ -149,7 +149,7 @@ services:
     # Default engine for -cpu image is `optimum` (ONNX); works without NVIDIA drivers.
     # v0.0.77 requires the `v2` subcommand (deprecated the implicit default since 0.0.32).
     image: michaelf34/infinity:0.0.77-cpu
-    command: ["v2"]
+    command: ["v2", "--no-model-warmup"]
     container_name: hlh_infer
     restart: unless-stopped
     profiles: [bundled]
