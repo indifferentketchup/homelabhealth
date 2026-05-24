@@ -20,6 +20,44 @@ _No entries yet._
 
 ---
 
+## [v0.19.0] — 2026-05-24
+
+Built-in authentication. Username/password login with session cookies.
+No reverse-proxy auth assumed — the app handles its own auth out of
+the box. First-launch setup wizard creates the admin account.
+
+### Code
+- `backend/services/auth.py` — PBKDF2-SHA256 password hashing (600k
+  iterations), session token management (SHA-256 hashed in DB, raw in
+  HttpOnly cookie), `create_user`, `set_password`, `needs_setup`.
+- `backend/routers/auth.py` — `POST /login`, `POST /logout`,
+  `GET /me`, `GET /needs-setup`, `POST /setup` (first-launch account
+  creation).
+- `backend/deps.py` — replaced always-owner stub with session-based
+  auth. `get_principal()` reads session cookie, validates against DB,
+  returns 401 if invalid.
+- `backend/main.py` — `_AuthMiddleware` enforces auth on all `/api/*`
+  requests except login/setup/health endpoints. Auth router mounted
+  at `/api/auth`.
+- `backend/schema.sql` — `users.password_hash TEXT`, `sessions` table
+  with token_hash + expiry.
+
+### Frontend
+- `LoginPage.jsx` — username/password form with error handling.
+- `SetupPage.jsx` — first-launch account creation (username + password
+  + confirm). Auto-login after setup.
+- `AppRoutes.jsx` — `AuthGuard` wrapper checks setup status then
+  session on mount. Redirects to `/setup` or `/login` as needed.
+- `api/index.js` — global 401 handler redirects to `/login` on
+  session expiry.
+
+### Docs
+- `CHANGELOG.md` — `[Unreleased]` flipped to `[v0.19.0]`.
+- `docs/roadmap.md` — `v0.19.0` moved from Planned to Shipped;
+  active-work pointer retargeted to `v0.20.0` / B3.
+
+---
+
 ## [v0.18.0] — 2026-05-24
 
 Key auto-generation + HF token cleanup. Zero-friction first launch:

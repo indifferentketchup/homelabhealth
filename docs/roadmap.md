@@ -7,7 +7,7 @@ Phase numbering renumbers slightly so AI / Security / Safeguards each get
 their own track but interleave on a single dependency graph.
 
 Owner: Sam
-Last updated: 2026-05-24 (v0.18.0 shipped)
+Last updated: 2026-05-24 (v0.19.0 shipped — built-in auth)
 
 -----
 
@@ -33,6 +33,7 @@ Three tracks. Phases interleave by dependency, not by track.
 
 ```
 Shipped releases (most recent → oldest):
+  v0.19.0   built-in auth (username/password, sessions) (2026-05-24)
   v0.18.0   key auto-generation + HF token cleanup (2026-05-24)
   v0.17.0   C6  column encryption (2026-05-24)
   v0.16.0   C5  de-id pipeline (in-process regex) (2026-05-24)
@@ -55,8 +56,7 @@ Shipped releases (most recent → oldest):
   v0.1.0    strip + homelabhealth identity (2026-05-02)
 
 Planned (dependency-ordered):
-  v0.19.0   built-in auth (username/password, sessions, login UI)           ← active work
-  v0.20.0   B3  audit-logged refusals (on top of C4)
+  v0.20.0   B3  audit-logged refusals (on top of C4)                        ← active work
   v0.21.0   A3  vision (VLM) + MedSigLIP
   v0.22.0   A4  STT (whisper.cpp)
   v0.23.0?  A5  OCR — conditional on A3 eval
@@ -78,12 +78,11 @@ Phase track in summary:
 **Ship-ready gate** = every security + safeguard phase shipped + tagged,
 built-in auth working, key auto-generation working, setup wizard tested.
 
-**Latest release:** `v0.18.0` (2026-05-24) — key auto-generation. See `CHANGELOG.md` for the per-tag rundown.
+**Latest release:** `v0.19.0` (2026-05-24) — built-in auth. See `CHANGELOG.md` for the per-tag rundown.
 
-**Active work — `v0.19.0` (built-in auth):**
-Username/password authentication built into the app. Login page, session
-management, password hashing. No reverse-proxy auth assumed. Every
-self-hoster gets auth out of the box.
+**Active work — `v0.20.0` (B3 audit-logged refusals):**
+Refusal events recorded in `audit_log`. Retry-with-warning flow for
+blocked content. Refusal review panel in settings. Roadmap code: B3.
 
 -----
 
