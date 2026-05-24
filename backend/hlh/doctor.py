@@ -348,8 +348,20 @@ def _check_deid_pipeline() -> dict[str, Any]:
         return {"name": "deid_pipeline", "status": ERROR, "detail": f"{type(e).__name__}: {e}"}
 
 
+def _check_column_encryption() -> dict[str, Any]:
+    try:
+        from services.crypto import column_encryption_summary
+        s = column_encryption_summary()
+        if not s.get("enabled"):
+            detail = s.get("status") or s.get("error", "unknown")
+            return {"name": "column_encryption", "status": WARN, "detail": detail}
+        return {"name": "column_encryption", "status": OK, "detail": s["status"]}
+    except Exception as e:
+        return {"name": "column_encryption", "status": ERROR, "detail": f"{type(e).__name__}: {e}"}
+
+
 async def run_checks() -> list[dict[str, Any]]:
-    """Run all 17 checks. Returns ordered list."""
+    """Run all 18 checks. Returns ordered list."""
     return [
         await _check_db_pool(),
         await _check_schema_applied(),
@@ -368,6 +380,7 @@ async def run_checks() -> list[dict[str, Any]]:
         await _check_audit_log_chain(),
         _check_guard_scanners(),
         _check_deid_pipeline(),
+        _check_column_encryption(),
     ]
 
 
