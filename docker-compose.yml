@@ -147,7 +147,9 @@ services:
     # michaelf34/infinity — CPU variant; confirmed tag 0.0.77-cpu (2025-08-22).
     # Multi-model via INFINITY_MODEL_ID with ";" separator (infinity env.py convention).
     # Default engine for -cpu image is `optimum` (ONNX); works without NVIDIA drivers.
+    # v0.0.77 requires the `v2` subcommand (deprecated the implicit default since 0.0.32).
     image: michaelf34/infinity:0.0.77-cpu
+    command: ["v2"]
     container_name: hlh_infer
     restart: unless-stopped
     profiles: [bundled]
@@ -173,7 +175,7 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    mem_limit: 4g
+    mem_limit: 6g
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:${HLH_INFER_PORT:-9611}/health || exit 1"]
       interval: 30s
