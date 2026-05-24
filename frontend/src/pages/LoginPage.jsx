@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 
 export default function LoginPage() {
@@ -7,7 +6,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const navigate = useNavigate()
+
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -25,8 +24,7 @@ export default function LoginPage() {
         setError(data.detail === 'invalid_credentials' ? 'Invalid username or password.' : 'Login failed.')
         return
       }
-      navigate('/', { replace: true })
-      window.location.reload() // force re-fetch of app state with cookie
+      window.location.href = '/'
     } finally {
       setLoading(false)
     }
