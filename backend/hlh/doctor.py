@@ -101,7 +101,7 @@ def _check_provider_key() -> dict[str, Any]:
         return {
             "name": "provider_key",
             "status": WARN,
-            "detail": "PROVIDER_KEY_ENCRYPTION_KEY unset — provider api_keys + HF token stored in cleartext",
+            "detail": "PROVIDER_KEY_ENCRYPTION_KEY not set — keys should auto-generate on launch; check /data/keys/.hlh_keys",
         }
     try:
         from services.crypto import _key
@@ -127,8 +127,8 @@ async def _check_hf_token() -> dict[str, Any]:
             return {"name": "hf_token", "status": OK, "detail": "configured via env"}
         return {
             "name": "hf_token",
-            "status": WARN,
-            "detail": "unset — gated models (MedGemma) will fail with 401",
+            "status": OK,
+            "detail": "unset (optional — bundled models are on ungated repos)",
         }
     except Exception as e:
         return {"name": "hf_token", "status": ERROR, "detail": f"{type(e).__name__}: {e}"}
@@ -269,7 +269,7 @@ def _check_master_key() -> dict[str, Any]:
             return {
                 "name": "master_key",
                 "status": WARN,
-                "detail": "HLH_MASTER_KEY not set — required at v0.18.0/C6, generate per docs/operator/advanced/key-custody.md",
+                "detail": "HLH_MASTER_KEY not set — keys should auto-generate on launch; check /data/keys/.hlh_keys",
             }
         if passphrase.lower() in _PASSPHRASE_PLACEHOLDERS:
             return {
@@ -404,6 +404,11 @@ def _print_cli(checks: list[dict[str, Any]]) -> int:
 
 
 def _main_cli() -> int:
+    # Ensure encryption keys are available before any check that reads them.
+    # This mirrors what main.py lifespan does on server start.
+    from services.key_manager import ensure_keys
+    ensure_keys()
+
     async def _run():
         from db import init_pool, close_pool
         await init_pool()

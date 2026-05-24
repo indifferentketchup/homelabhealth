@@ -28,6 +28,7 @@ from routers import (
     system,
 )
 from services import bundled_providers, model_puller
+from services.key_manager import ensure_keys
 from services.log_redactor import install_redactor
 from routers.history import router as history_router
 from routers.notes import router as notes_router
@@ -77,6 +78,7 @@ def _cors_origins() -> list[str]:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    ensure_keys()       # first: ensure encryption keys are in os.environ
     install_redactor()
     _warn_deprecated_env_vars()
     await init_pool()
