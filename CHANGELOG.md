@@ -20,6 +20,32 @@ _No entries yet._
 
 ---
 
+## [v0.18.0] — 2026-05-24
+
+Key auto-generation + HF token cleanup. Zero-friction first launch:
+encryption keys auto-generate and persist to `/data/keys/.hlh_keys`.
+No `.env` editing required for a default deployment.
+
+### Code
+- `backend/services/key_manager.py` — `ensure_keys()` reads env → file
+  → auto-generates. Sets `os.environ` so existing crypto code works
+  unchanged. Persists to `/data/keys/.hlh_keys` with `0600` permissions.
+- `backend/main.py` — `ensure_keys()` called first in lifespan.
+- `backend/hlh/doctor.py` — `hf_token` check changed from WARN to OK
+  when unset ("optional — bundled models are on ungated repos"). Doctor
+  CLI also calls `ensure_keys()` for consistency.
+  `provider_key` and `master_key` WARN messages updated to reference
+  auto-generation.
+- `docker-compose.yml` — `hlh_keys` named volume for key persistence.
+- `backend/Dockerfile` — pre-creates `/data/keys` with correct ownership.
+
+### Docs
+- `CHANGELOG.md` — `[Unreleased]` flipped to `[v0.18.0]`.
+- `docs/roadmap.md` — `v0.18.0` moved from Planned to Shipped;
+  active-work pointer retargeted to `v0.19.0` (built-in auth).
+
+---
+
 ## [v0.17.0] — 2026-05-24
 
 C6 column encryption. AES-256-GCM envelope encryption on PHI columns
