@@ -7,7 +7,7 @@ Phase numbering renumbers slightly so AI / Security / Safeguards each get
 their own track but interleave on a single dependency graph.
 
 Owner: Sam
-Last updated: 2026-05-24 (posture shift — deployable to anyone, built-in auth required)
+Last updated: 2026-05-24 (v0.18.0 shipped)
 
 -----
 
@@ -33,6 +33,7 @@ Three tracks. Phases interleave by dependency, not by track.
 
 ```
 Shipped releases (most recent → oldest):
+  v0.18.0   key auto-generation + HF token cleanup (2026-05-24)
   v0.17.0   C6  column encryption (2026-05-24)
   v0.16.0   C5  de-id pipeline (in-process regex) (2026-05-24)
   v0.14.0   B1+C7  I/O guard scanner (in-process) (2026-05-23)
@@ -54,8 +55,7 @@ Shipped releases (most recent → oldest):
   v0.1.0    strip + homelabhealth identity (2026-05-02)
 
 Planned (dependency-ordered):
-  v0.18.0   key auto-generation + HF token cleanup                          ← active work
-  v0.19.0   built-in auth (username/password, sessions, login UI)
+  v0.19.0   built-in auth (username/password, sessions, login UI)           ← active work
   v0.20.0   B3  audit-logged refusals (on top of C4)
   v0.21.0   A3  vision (VLM) + MedSigLIP
   v0.22.0   A4  STT (whisper.cpp)
@@ -78,13 +78,12 @@ Phase track in summary:
 **Ship-ready gate** = every security + safeguard phase shipped + tagged,
 built-in auth working, key auto-generation working, setup wizard tested.
 
-**Latest release:** `v0.17.0` (2026-05-24) — C6 column encryption. All security +
-safeguard MVP phases shipped. See `CHANGELOG.md` for the per-tag rundown.
+**Latest release:** `v0.18.0` (2026-05-24) — key auto-generation. See `CHANGELOG.md` for the per-tag rundown.
 
-**Active work — `v0.18.0` (key auto-generation + HF token cleanup):**
-Auto-generate `HLH_MASTER_KEY` and `PROVIDER_KEY_ENCRYPTION_KEY` on first
-launch (persist to `/data/.hlh_keys`). Remove HF token requirement if all
-bundled models are on ungated repos. Zero `.env` editing for default deploy.
+**Active work — `v0.19.0` (built-in auth):**
+Username/password authentication built into the app. Login page, session
+management, password hashing. No reverse-proxy auth assumed. Every
+self-hoster gets auth out of the box.
 
 -----
 

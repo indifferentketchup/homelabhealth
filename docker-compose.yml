@@ -61,6 +61,7 @@ services:
     ports:
       - "${HLH_PORT_API:-9600}:8000"
     volumes:
+      - hlh_keys:/data/keys              # key_manager writes /data/keys/.hlh_keys here
       - hlh_uploads:/data/uploads
       - hlh_branding:/data/branding
       - hlh_history:/data/history
@@ -272,6 +273,7 @@ networks:
 
 volumes:
   hlh_db_data:
+  hlh_keys:
   hlh_uploads:
   hlh_branding:
   hlh_history:

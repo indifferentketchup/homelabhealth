@@ -7,6 +7,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Pre-create writable data directories so named volumes are initialised with
+# correct ownership when the container runs as user 1000:1000.
+RUN mkdir -p /data/keys && chown -R 1000:1000 /data/keys
+
 EXPOSE 8000
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
