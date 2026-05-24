@@ -16,6 +16,10 @@ export async function apiFetch(path, options = {}) {
   }
   const res = await fetch(path, { ...rest, headers, body })
   if (!res.ok) {
+    if (res.status === 401) {
+      window.location.href = '/login'
+      throw new Error('Session expired')
+    }
     const text = await res.text().catch(() => '')
     throw new Error(text || res.statusText || String(res.status))
   }
