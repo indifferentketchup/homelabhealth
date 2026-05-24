@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 
 export default function SetupPage() {
@@ -8,7 +7,7 @@ export default function SetupPage() {
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const navigate = useNavigate()
+
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -40,8 +39,7 @@ export default function SetupPage() {
         body: JSON.stringify({ username, password }),
         credentials: 'same-origin',
       })
-      navigate('/', { replace: true })
-      window.location.reload()
+      window.location.href = '/'
     } finally {
       setLoading(false)
     }
