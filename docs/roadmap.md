@@ -7,30 +7,29 @@ Phase numbering renumbers slightly so AI / Security / Safeguards each get
 their own track but interleave on a single dependency graph.
 
 Owner: Sam
-Last updated: 2026-05-24 (C6 shipped — all MVP items complete)
+Last updated: 2026-05-24 (posture shift — deployable to anyone, built-in auth required)
 
 -----
 
 ## Posture
 
-- **Single user (Sam) today.** No third user, no public release yet.
-- **Friend is the next user.** Nothing ships to her until the entire
-  roadmap is complete — including safeguards, hardening, and security.
-  No early access. No “we’ll add safeguards later.”
+- **Deployable to anyone.** Self-hosted single-user app. A non-expert
+  operator should be able to `docker compose up` and be running within
+  minutes. No assumed reverse proxy, no assumed Authelia, no assumed
+  Tailscale. The app handles its own auth and encryption out of the box.
+- **Plug and play.** Encryption keys auto-generated on first launch.
+  Built-in username/password auth. Setup wizard picks the hardware tier
+  and downloads the model. Zero `.env` editing required for a default
+  deployment.
 - **Timeline: open-ended.** Build it right. No hard deadline driving
   shortcuts.
-- **Public release: deferred, but documented as if it’s coming.**
-  Every commit, every doc, every defaulted env var is written for a
-  stranger reading the repo. README is honest about state. `.env.example`
-  lists every variable.
 - **License: MIT.**
 
 -----
 
 ## Tracks and dependency graph
 
-Three tracks. Phases interleave by dependency, not by track. The friend
-sees zero of this until **everything** is at “shipped” status.
+Three tracks. Phases interleave by dependency, not by track.
 
 ```
 Shipped releases (most recent → oldest):
@@ -54,18 +53,20 @@ Shipped releases (most recent → oldest):
   v0.1.1    compose isolation from boolab (2026-05-02)
   v0.1.0    strip + homelabhealth identity (2026-05-02)
 
-Planned (dependency-ordered; MVP-must-ship marked):
-  v0.15.0   B3  audit-logged refusals (on top of C4)                        ← active work
-  v0.18.0   A3  vision (VLM) + MedSigLIP
-  v0.19.0   A4  STT (whisper.cpp)
-  v0.20.0?  A5  OCR — conditional on A3 eval
-  v0.21.0+  A6  Apple MLX — deferred indefinitely
-  v1.0.0    public release after ship-to-friend gate met
+Planned (dependency-ordered):
+  v0.18.0   key auto-generation + HF token cleanup                          ← active work
+  v0.19.0   built-in auth (username/password, sessions, login UI)
+  v0.20.0   B3  audit-logged refusals (on top of C4)
+  v0.21.0   A3  vision (VLM) + MedSigLIP
+  v0.22.0   A4  STT (whisper.cpp)
+  v0.23.0?  A5  OCR — conditional on A3 eval
+  v0.24.0+  A6  Apple MLX — deferred indefinitely
+  v1.0.0    public release
 
-Deferred indefinitely (MVP-irrelevant, 2026-05-23 defer pass):
-  C8  supply chain + ops — friend is on LAN behind Authelia, not a CVE target;
-      real risk is operator error, not Postgres CVE. Revisit if posture changes.
-  C9  right-to-erasure — defer until first concrete erasure request from a user.
+Deferred indefinitely (2026-05-24 posture-shift pass):
+  C8  supply chain + ops — developer discipline, not user-facing. Revisit
+      for v1.0.0 public release prep.
+  C9  right-to-erasure — defer until first concrete erasure request.
   B4  red-team eval — discipline only; never gets a tag.
 
 Phase track in summary:
@@ -74,16 +75,16 @@ Phase track in summary:
   C — Security:      C0 ✓ C1 ✓ C2 ✓ C3 ✓ C4 ✓ C5 ✓ C6 ✓ C7 ✓  │                │ C8 C9 deferred
 ```
 
-**Ship-to-friend gate** = every phase above shipped + tagged.
-Trunk-merge gates documented in earlier roadmap revisions are
-**retired**. Gates now apply to non-Sam access only.
+**Ship-ready gate** = every security + safeguard phase shipped + tagged,
+built-in auth working, key auto-generation working, setup wizard tested.
 
-**Latest release:** `v0.17.0` (2026-05-24) — C6 column encryption. ALL MVP items shipped. See
-`CHANGELOG.md` for the per-tag rundown.
+**Latest release:** `v0.17.0` (2026-05-24) — C6 column encryption. All security +
+safeguard MVP phases shipped. See `CHANGELOG.md` for the per-tag rundown.
 
-**Active work — `v0.15.0` (B3 audit-logged refusals):**
-Every safeguard refusal writes an `audit_log` row. Retry-with-warning UX.
-Refusal review panel in settings. Depends on C4/v0.11.0. Roadmap code: B3.
+**Active work — `v0.18.0` (key auto-generation + HF token cleanup):**
+Auto-generate `HLH_MASTER_KEY` and `PROVIDER_KEY_ENCRYPTION_KEY` on first
+launch (persist to `/data/.hlh_keys`). Remove HF token requirement if all
+bundled models are on ungated repos. Zero `.env` editing for default deploy.
 
 -----
 
