@@ -18,6 +18,7 @@ from deps import (
 )
 from db import get_pool
 from services.audit import AuditEventHandle, audit_event
+from services.deid import is_enabled as deid_enabled, redact_text
 from services.provider_client import (
     Provider,
     build_headers,
@@ -987,6 +988,15 @@ async def append_message(
         # ignored once we're past the resolver — workspace owns the truth.
         effective_model = ws_model
 
+        # Fetch is_bundled so the gen() closure knows whether data leaves the
+        # operator's network. Bundled providers (hlh_chat) stay on-box; external
+        # providers require de-identification of user messages before send.
+        provider_is_bundled_row = await conn.fetchval(
+            "SELECT is_bundled FROM providers WHERE id = $1::uuid",
+            provider.id,
+        )
+        provider_is_bundled: bool = bool(provider_is_bundled_row or False)
+
         # Keep chat.model in sync with the resolved model (purely informational;
         # send-time always re-resolves via the workspace).
         if (chat["model"] or "") != effective_model:
@@ -1113,6 +1123,21 @@ async def append_message(
             if role not in ("user", "assistant", "system"):
                 continue
             api_messages.append({"role": role, "content": r["content"] or ""})
+
+        # De-identify user messages before sending to external providers.
+        # Bundled providers (is_bundled=True) run on-box — no redaction needed.
+        # System and assistant messages are not redacted (safeguard preamble +
+        # historical assistant responses; see C5 Task B rationale).
+        if deid_enabled() and not provider_is_bundled:
+            for msg in api_messages:
+                if msg["role"] == "user":
+                    r = redact_text(msg["content"])
+                    if r.had_phi:
+                        logger.info(
+                            "deid: redacted %d findings in user message before external inference",
+                            len(r.findings),
+                        )
+                    msg["content"] = r.text
 
         full: list[str] = []
         had_error = False

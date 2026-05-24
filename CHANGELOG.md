@@ -20,6 +20,43 @@ _No entries yet._
 
 ---
 
+## [v0.16.0] — 2026-05-24
+
+C5 de-identification pipeline. Regex-based PHI redaction gates first
+real-record ingest — source document chunks and embeddings now store
+redacted text by default. External inference messages are also redacted
+before leaving the operator's network.
+
+### Architecture deviation
+The roadmap specified a Microsoft Presidio sidecar with NER models.
+This release implements regex-based de-identification in-process —
+no new container, no model downloads. Covers SSN, phone, email, MRN,
+dates, ZIP, and title+name patterns across three policy levels
+(strict/standard/permissive). NER-based scanning can be added as a
+future enhancement.
+
+### Code
+- `backend/services/deid.py` — `redact_text()` and `redact_chunks()`
+  with three policy levels. 7 pattern categories in strict mode.
+  `DeidResult` with typed placeholders (`[SSN]`, `[PHONE]`, etc.).
+  Env: `HLH_DEID_ENABLED` (default true), `HLH_REDACTION_POLICY`
+  (default strict).
+- `backend/routers/sources.py` — chunks redacted before embedding
+  in the ingest pipeline. Stored text and vectors encode redacted form.
+- `backend/routers/chats.py` — user messages redacted before
+  external (non-bundled) inference. Bundled local inference skipped
+  (data stays on operator's machine).
+- `backend/hlh/doctor.py` — `deid_pipeline` check (OK when enabled
+  with policy + pattern count, WARN when disabled). 17 checks total.
+
+### Docs
+- `CHANGELOG.md` — `[Unreleased]` flipped to `[v0.16.0]`.
+- `docs/roadmap.md` — `v0.16.0` moved from Planned to Shipped;
+  ship-to-friend C5 checkbox ticked; active-work pointer retargeted
+  to `v0.17.0` / C6.
+
+---
+
 ## [v0.14.0] — 2026-05-23
 
 B1 + C7 I/O guard scanner. In-process regex-based input and output

@@ -337,8 +337,19 @@ def _check_guard_scanners() -> dict[str, Any]:
         return {"name": "guard_scanners", "status": ERROR, "detail": f"{type(e).__name__}: {e}"}
 
 
+def _check_deid_pipeline() -> dict[str, Any]:
+    try:
+        from services.deid import pipeline_summary
+        s = pipeline_summary()
+        if not s["enabled"]:
+            return {"name": "deid_pipeline", "status": WARN, "detail": "disabled (HLH_DEID_ENABLED=false)"}
+        return {"name": "deid_pipeline", "status": OK, "detail": f"enabled, policy={s['policy']}, {s['pattern_count']} patterns"}
+    except Exception as e:
+        return {"name": "deid_pipeline", "status": ERROR, "detail": f"{type(e).__name__}: {e}"}
+
+
 async def run_checks() -> list[dict[str, Any]]:
-    """Run all 16 checks. Returns ordered list."""
+    """Run all 17 checks. Returns ordered list."""
     return [
         await _check_db_pool(),
         await _check_schema_applied(),
@@ -356,6 +367,7 @@ async def run_checks() -> list[dict[str, Any]]:
         _check_master_key(),
         await _check_audit_log_chain(),
         _check_guard_scanners(),
+        _check_deid_pipeline(),
     ]
 
 
