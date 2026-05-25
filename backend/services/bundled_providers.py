@@ -135,6 +135,7 @@ async def apply_bundled_bindings(conn, tier: str) -> None:
     """
     if tier in ("external", "apple-mlx"):
         logger.info("apply_bundled_bindings: tier=%s; no-op (Apple MLX bundling is Phase 6)", tier)
+        link_active_mmproj(tier)
         return
 
     ids = await ensure_bundled_providers(conn)
@@ -174,7 +175,10 @@ async def apply_bundled_bindings(conn, tier: str) -> None:
         BUNDLED_RERANK_MODEL,
     )
 
-    # 3. Workspace chat binding. Per spec §4 step 3, BOTH UPDATEs are required:
+    # 3. Symlink active mmproj for the current tier so hlh_chat picks it up.
+    link_active_mmproj(tier)
+
+    # 4. Workspace chat binding. Per spec §4 step 3, BOTH UPDATEs are required:
     # the IN (...) form doesn't subsume the IS NULL case (IN with NULL is NULL,
     # not TRUE), so we keep two statements.
     chat_model = TIER_CHAT_MODELS.get(tier)
@@ -201,26 +205,35 @@ async def apply_bundled_bindings(conn, tier: str) -> None:
         tier, chat_model,
     )
 
-    # 4. Symlink active mmproj for the current tier so hlh_chat picks it up.
-    await link_active_mmproj(tier)
 
+def link_active_mmproj(tier: str) -> None:
+    """Create/update symlink for the active tier's mmproj file.
 
-async def link_active_mmproj(tier: str) -> None:
-    """Create/update symlink for the active tier's mmproj file."""
+    Best-effort: logs and continues on filesystem errors so the API
+    starts even if the symlink can't be written. hlh_chat will simply
+    start without --mmproj in that case.
+    """
     from services.model_puller import MODEL_REGISTRY
-    spec = MODEL_REGISTRY.get("vision", {}).get(tier)
-    if spec is None:
-        if ACTIVE_MMPROJ.is_symlink() or ACTIVE_MMPROJ.exists():
-            ACTIVE_MMPROJ.unlink()
-        return
-    target = MODELS_BASE / "vision" / tier / spec.filename
-    if not target.exists():
-        if ACTIVE_MMPROJ.is_symlink() or ACTIVE_MMPROJ.exists():
-            ACTIVE_MMPROJ.unlink()
-        return
-    ACTIVE_MMPROJ.parent.mkdir(parents=True, exist_ok=True)
-    tmp = ACTIVE_MMPROJ.with_suffix(".tmp")
-    if tmp.is_symlink() or tmp.exists():
-        tmp.unlink()
-    os.symlink(target, tmp)
-    os.rename(tmp, ACTIVE_MMPROJ)
+    try:
+        spec = MODEL_REGISTRY.get("vision", {}).get(tier)
+        if spec is None:
+            if ACTIVE_MMPROJ.is_symlink() or ACTIVE_MMPROJ.exists():
+                ACTIVE_MMPROJ.unlink()
+                logger.info("link_active_mmproj: tier=%s → cleared (no vision spec)", tier)
+            return
+        target = MODELS_BASE / "vision" / tier / spec.filename
+        if not target.exists():
+            if ACTIVE_MMPROJ.is_symlink() or ACTIVE_MMPROJ.exists():
+                ACTIVE_MMPROJ.unlink()
+            logger.info("link_active_mmproj: tier=%s → cleared (mmproj not yet pulled)", tier)
+            return
+        ACTIVE_MMPROJ.parent.mkdir(parents=True, exist_ok=True)
+        rel_target = Path(tier) / spec.filename
+        tmp = ACTIVE_MMPROJ.parent / (ACTIVE_MMPROJ.name + ".tmp")
+        if tmp.is_symlink() or tmp.exists():
+            tmp.unlink()
+        os.symlink(rel_target, tmp)
+        os.rename(tmp, ACTIVE_MMPROJ)
+        logger.info("link_active_mmproj: tier=%s → %s", tier, rel_target)
+    except OSError as exc:
+        logger.error("link_active_mmproj: tier=%s failed: %s", tier, exc)
