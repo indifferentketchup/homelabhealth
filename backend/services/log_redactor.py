@@ -30,8 +30,7 @@ class PHIRedactorFilter(logging.Filter):
         ("us_phone",    re.compile(r"\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b")),
         ("email",       re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")),
         ("mrn",         re.compile(r"\bMRN[:\s#]*\d{4,12}\b", re.IGNORECASE)),
-        ("dob_slash",   re.compile(r"\b\d{1,2}/\d{1,2}/\d{2,4}\b")),
-        ("dob_dash",    re.compile(r"\b\d{1,2}-\d{1,2}-\d{2,4}\b")),
+        ("dob",         re.compile(r"(?i)(?:DOB|date\s*of\s*birth|birth\s*date|born)[:\s]*\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}\b")),
         ("credit_card", re.compile(r"\b(?:\d{4}[-\s]?){3}\d{4}\b")),
     ]
 

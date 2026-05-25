@@ -48,7 +48,7 @@ _STANDARD = _PERMISSIVE + [
 ]
 
 _STRICT = _STANDARD + [
-    ("date", re.compile(r"\b\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}\b"), "[DATE]"),
+    ("dob", re.compile(r"(?i)(?:DOB|date\s*of\s*birth|birth\s*date|born)[:\s]*\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}\b"), "[DOB]"),
     ("zip", re.compile(r"\b\d{5}(?:-\d{4})?\b"), "[ZIP]"),
     # Catches "Dr. Smith", "Mr. Johnson", "Ms. Alice Brown" — title + capitalized words.
     # Known limitation: names without titles are not matched (regex cannot do NER).
