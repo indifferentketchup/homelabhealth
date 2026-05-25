@@ -11,7 +11,7 @@ COPY . .
 
 # Pre-create writable data directories so named volumes are initialised with
 # correct ownership when the container runs as user 1000:1000.
-RUN mkdir -p /data/keys && chown -R 1000:1000 /data/keys
+RUN mkdir -p /data/keys /data/uploads && chown -R 1000:1000 /data/keys /data/uploads
 
 EXPOSE 8000
 

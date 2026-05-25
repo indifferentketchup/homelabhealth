@@ -21,3 +21,7 @@ export function deleteSource(sourceId) {
 export function patchSource(sourceId, data) {
   return apiFetch(`/api/sources/by-id/${sourceId}`, { method: 'PATCH', json: data })
 }
+
+export function getSourceContent(sourceId) {
+  return apiFetch(`/api/sources/by-id/${sourceId}/content`)
+}
