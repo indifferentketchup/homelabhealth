@@ -20,6 +20,29 @@ _No entries yet._
 
 ---
 
+## [v0.23.0] — 2026-05-25
+
+### Safeguards
+- **B3 Audit-logged refusals:** every guard refusal (input block or output
+  flag) writes a hash-chained `audit_log` row with action
+  `safeguard.refuse.input` or `safeguard.flag.output`.
+- Retry-with-warning UX: input blocks show an amber inline warning with
+  category-specific guidance ("rephrase as an educational question").
+  Draft is preserved for easy editing. No bypass button.
+- Output guard flags displayed as expandable amber badge on flagged
+  assistant messages.
+
+### UX
+- **Safety Log** settings panel: paginated view of all safeguard events
+  (input blocks + output flags) from the audit log.
+
+### API
+- `GET /api/audit/refusals` — paginated audit_log rows filtered to
+  `safeguard.*` actions.
+- `guard_flags` field now included in messages list API response.
+
+---
+
 ## [v0.22.0] — 2026-05-25
 
 ### AI
