@@ -9,6 +9,7 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from pydantic import BaseModel
 
 from deps import get_principal
 from db import get_pool
@@ -275,6 +276,32 @@ async def list_sources(
     async with audit.targeting("source", workspace_id):
         pass
     return out
+
+
+class SourcePatch(BaseModel):
+    name: str | None = None
+
+
+@router.patch("/by-id/{source_id}")
+async def patch_source(
+    source_id: uuid.UUID,
+    body: SourcePatch,
+    _: dict = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
+) -> dict[str, Any]:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        if body.name is not None:
+            await conn.execute(
+                "UPDATE sources SET name = $1, updated_at = NOW() WHERE id = $2::uuid",
+                body.name.strip(), source_id,
+            )
+        row = await conn.fetchrow("SELECT id, name FROM sources WHERE id = $1::uuid", source_id)
+        if row is None:
+            raise HTTPException(404, "Source not found")
+    async with audit.targeting("source", source_id):
+        pass
+    return {"id": str(row["id"]), "name": row["name"]}
 
 
 @router.delete("/by-id/{source_id}")

@@ -338,22 +338,53 @@ export function WorkspaceLayout() {
 export function WorkspaceChat() {
   const { workspaceId } = useParams()
   const activeChatId = useAppStore((s) => s.activeChatId)
-  const sidebarW = useLayoutStore((s) => s.sidebarWidth) || 260
   const [filesPanelExpanded, setFilesPanelExpanded] = useState(true)
   const filesRailCollapsed = !filesPanelExpanded
   const [notesOpen, setNotesOpen] = useState(false)
+  const [rightPanelWidth, setRightPanelWidth] = useState(320)
+  const resizingRef = useRef(false)
+
+  useEffect(() => {
+    function onMouseMove(e) {
+      if (!resizingRef.current) return
+      const newWidth = window.innerWidth - e.clientX
+      setRightPanelWidth(Math.max(200, Math.min(600, newWidth)))
+    }
+    function onMouseUp() {
+      resizingRef.current = false
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+  }, [])
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
       <div className="flex min-h-0 min-w-0 flex-1">
         <ChatView workspaceId={workspaceId} />
       </div>
+      {!filesRailCollapsed && (
+        <div
+          className="hidden h-full cursor-col-resize bg-transparent hover:bg-primary/20 active:bg-primary/40 transition-colors md:block w-1 shrink-0 z-[51]"
+          onMouseDown={(e) => {
+            e.preventDefault()
+            resizingRef.current = true
+            document.body.style.cursor = 'col-resize'
+            document.body.style.userSelect = 'none'
+          }}
+        />
+      )}
       <div
         className={cn(
-          'hidden h-full min-h-0 shrink-0 flex-col border-l border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width] duration-200 ease-out md:flex z-[50]',
+          'hidden h-full min-h-0 shrink-0 flex-col border-l border-sidebar-border bg-sidebar text-sidebar-foreground md:flex z-[50]',
           filesRailCollapsed && 'w-14',
         )}
-        style={!filesRailCollapsed ? { width: sidebarW } : undefined}
+        style={!filesRailCollapsed ? { width: rightPanelWidth } : undefined}
       >
         <div className="flex shrink-0 flex-col gap-2 border-b border-sidebar-border p-2">
           <Button
