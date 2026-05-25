@@ -20,6 +20,78 @@ _No entries yet._
 
 ---
 
+## [v0.21.0] — 2026-05-25
+
+Sources pipeline polish: reingest, source injection into chat, and bugfixes.
+
+### AI
+- `POST /api/sources/reingest-all` re-parses and re-embeds from stored
+  files without re-uploading (`6d8dbac`).
+- Backend source injection — sources attached to a message are injected
+  into the system prompt with clickable viewer (`473a7ed`).
+- Structured lab table parser now correctly separates value from
+  reference range (`29f0fa2`).
+
+### Safeguards
+- De-id: only redact birthdate patterns, not all dates (`37cf78a`).
+- De-id applied to "Send to Chat" content endpoint (`f83cf3f`).
+
+### UX
+- Per-file upload progress with status indicators (`c308f1e`).
+- Source dedup check scoped to current workspace (`636acd8`).
+- Tighter workspace card footer buttons (`55cc090`).
+- Auto-title logging + timeout bumped to 30 s (`e69c2af`).
+
+### Fixes
+- Pass `sourceIds` to `runStream` — was undefined in closure scope (`e82afad`).
+- Add `'image'` to `sources.source_type` CHECK constraint (`5d61967`).
+- Delete stored files on source/workspace deletion (`a7e3a91`).
+
+### Docs
+- `CLAUDE.md` — updated auth section (built-in auth, not single-user stub),
+  expanded layout with security services, added pdfplumber/tesseract/argon2
+  to stack.
+
+---
+
+## [v0.20.0] — 2026-05-25
+
+Sources overhaul: file storage, PDF/OCR parsing, multi-file upload, and
+safeguards hardening.
+
+### AI
+- File storage — uploaded files stored on disk; "Send to Chat" reads full
+  document content (`39a6e4d`).
+- Switch to pdfplumber + structured lab table parser (`1b25590`).
+- Tesseract OCR for image uploads (PNG, JPG, TIFF, BMP) (`9faad18`).
+- Multi-file upload support (`9e41fed`).
+- Tighten system prompt to prevent hallucination over source data (`8a49ffa`).
+- Remove raw-text fallback for auto-title (`3cf5c3f`).
+
+### Safeguards
+- Structured record-interpretation rules + banned verbs (`c6cb018`).
+- Prevent speculative alarmism from lab values (`b2dd8ab`).
+
+### UX
+- Sources: right-click context menu, auto-title from LLM (`c06fc9b`).
+- Sources: hover tooltip, inline rename, resizable panel (`a49d519`).
+- Sources: attachment chips, collapsible notes, tighter layout (`4744e6b`).
+- Sources: replace checkboxes with "Send to Chat" button (`8229fa1`).
+- Tighter panel headers + collapsible notes list (`410ddb3`).
+- Bump small font sizes for readability (`fb8d383`).
+- Move pre-flight checks to bottom of system page (`ddbf352`).
+
+### Fixes
+- Fix audit stream-consumed error on multipart uploads (`531db04`).
+- Fix auth redirect loop on login/setup pages (`59a5f6e`).
+- Add `--no-model-warmup` to hlh_infer — warmup crashed process (`e9e3f8a`).
+- Add v2 subcommand for infinity-emb 0.0.77 + bump mem to 6g (`39527df`).
+
+### Tooling
+- Drop HF token from UI, API, doctor, and compose (`b63d5e3`).
+
+---
+
 ## [v0.19.0] — 2026-05-24
 
 Built-in authentication. Username/password login with session cookies.

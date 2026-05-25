@@ -7,7 +7,7 @@ Phase numbering renumbers slightly so AI / Security / Safeguards each get
 their own track but interleave on a single dependency graph.
 
 Owner: Sam
-Last updated: 2026-05-24 (v0.19.0 shipped — built-in auth)
+Last updated: 2026-05-25 (v0.21.0 shipped — sources polish + reingest)
 
 -----
 
@@ -33,6 +33,8 @@ Three tracks. Phases interleave by dependency, not by track.
 
 ```
 Shipped releases (most recent → oldest):
+  v0.21.0   sources polish + reingest + bugfixes (2026-05-25)
+  v0.20.0   sources overhaul + PDF/OCR + safeguards hardening (2026-05-25)
   v0.19.0   built-in auth (username/password, sessions) (2026-05-24)
   v0.18.0   key auto-generation + HF token cleanup (2026-05-24)
   v0.17.0   C6  column encryption (2026-05-24)
