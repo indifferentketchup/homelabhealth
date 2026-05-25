@@ -255,23 +255,27 @@ async def _openai_short_chat_title(
         "max_tokens": 48,
     }
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
             r = await client.post(
                 f"{provider.base_url}/v1/chat/completions",
                 json=payload,
                 headers=build_headers(provider),
             )
             if r.status_code >= 400:
+                logger.warning("auto-title: LLM returned %d", r.status_code)
                 return None
             data = r.json()
             choices = data.get("choices") or []
             if not choices:
+                logger.warning("auto-title: no choices in response")
                 return None
             msg = choices[0].get("message") or {}
             raw = (msg.get("content") or "").strip()
             cleaned = _clean_auto_title(raw)
+            logger.info("auto-title: raw=%r cleaned=%r", raw[:80], cleaned)
             return cleaned or None
-    except Exception:
+    except Exception as e:
+        logger.warning("auto-title: failed: %s: %s", type(e).__name__, e)
         return None
 
 
