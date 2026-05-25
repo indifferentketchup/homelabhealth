@@ -79,7 +79,7 @@ Phase track in summary:
 **Ship-ready gate** = every security + safeguard phase shipped + tagged,
 built-in auth working, key auto-generation working, setup wizard tested.
 
-**Latest release:** `v0.22.0` (2026-05-25) — A3 Vision (MedGemma mmproj). See `CHANGELOG.md` for the per-tag rundown.
+**Latest release:** `v0.23.0` (2026-05-25) — B3 audit-logged refusals. See `CHANGELOG.md` for the per-tag rundown.
 
 **Active work:** none — B3 shipped, next planned work is A4 (STT).
 
