@@ -16,6 +16,12 @@ live under the `snapshot/` namespace.
 
 ## [Unreleased]
 
+_No entries yet._
+
+---
+
+## [v0.24.0] — 2026-05-25
+
 ### AI
 - **Token tracking:** capture `prompt_tokens` and `completion_tokens` from
   llama.cpp responses. Stored per message; `ctx_max` stored per chat from
