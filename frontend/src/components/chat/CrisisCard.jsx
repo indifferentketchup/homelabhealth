@@ -25,7 +25,7 @@ export function CrisisCard() {
         <Phone className="size-4" />
         Crisis Resources
       </div>
-      <p className="mb-3 text-xs text-muted-foreground">
+      <p className="mb-3 text-sm text-muted-foreground">
         If you or someone you know is in crisis, contact one of these resources now.
       </p>
       <div className="space-y-2">
@@ -33,7 +33,7 @@ export function CrisisCard() {
           <div key={h.number} className="flex items-baseline justify-between text-sm">
             <div>
               <span className="font-medium">{h.name}</span>
-              <span className="ml-2 text-xs text-muted-foreground">{h.description}</span>
+              <span className="ml-2 text-sm text-muted-foreground">{h.description}</span>
             </div>
             <a
               href={`tel:${h.number.replace(/[^0-9+]/g, '')}`}
