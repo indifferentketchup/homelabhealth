@@ -25,6 +25,16 @@ logger = logging.getLogger(__name__)
 UPLOADS_DIR = pathlib.Path("/data/uploads")
 
 
+def _try_delete_file(file_url: str | None) -> None:
+    """Delete a stored file from disk. Silently ignores missing files."""
+    if not file_url:
+        return
+    try:
+        pathlib.Path(file_url).unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def _ext_from_mime(mime: str) -> str:
     m = mime.lower().split(";")[0].strip()
     if m == "application/pdf":
@@ -367,12 +377,17 @@ async def delete_source(
 ) -> dict[str, str]:
     pool = await get_pool()
     async with pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT id, workspace_id FROM sources WHERE id = $1::uuid", source_id)
+        row = await conn.fetchrow("SELECT id, file_url, content_hash FROM sources WHERE id = $1::uuid", source_id)
         if not row:
             raise HTTPException(404, "Source not found")
     async with pool.acquire() as conn:
         await conn.execute("DELETE FROM sources WHERE id = $1::uuid", source_id)
-
+        others = await conn.fetchval(
+            "SELECT COUNT(*) FROM sources WHERE content_hash = $1",
+            row["content_hash"],
+        )
+    if others == 0:
+        _try_delete_file(row["file_url"])
     async with audit.targeting("source", source_id):
         pass
     return {"deleted": str(source_id)}
