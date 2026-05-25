@@ -16,6 +16,12 @@ live under the `snapshot/` namespace.
 
 ## [Unreleased]
 
+_No entries yet._
+
+---
+
+## [v0.23.0] — 2026-05-25
+
 ### Safeguards
 - **B3 Audit-logged refusals:** every guard refusal (input block or output
   flag) writes a hash-chained `audit_log` row with action
