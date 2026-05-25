@@ -120,7 +120,7 @@ CREATE TABLE IF NOT EXISTS sources (
     group_id UUID REFERENCES source_groups(id) ON DELETE SET NULL,
     name TEXT NOT NULL,
     source_type TEXT NOT NULL CHECK (source_type IN (
-        'pdf', 'docx', 'txt', 'csv', 'xlsx', 'html', 'md', 'url', 'code', 'note', 'bourbites'
+        'pdf', 'docx', 'txt', 'csv', 'xlsx', 'html', 'md', 'url', 'code', 'note', 'bourbites', 'image'
     )),
     file_url TEXT,
     original_url TEXT,
