@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { BookmarkPlus, Check, Copy, GitFork, Loader2, Pencil, RefreshCw } from 'lucide-react'
+import { AlertTriangle, BookmarkPlus, Check, Copy, GitFork, Loader2, Pencil, RefreshCw } from 'lucide-react'
 
 import { forkChat } from '@/api/chats.js'
 import { Button } from '@/components/ui/button'
@@ -146,6 +146,41 @@ function formatTimestamp(isoString) {
     d.toLocaleDateString([], { month: 'short', day: 'numeric' }) +
     ', ' +
     d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase()
+  )
+}
+
+const GUARD_FLAG_LABELS = {
+  pii_leak: 'Possible PII detected',
+  medical_advice: 'Medical advice content',
+  crisis_content: 'Crisis-related content',
+  hallucinated_id: 'Unverifiable identifier',
+}
+
+function GuardFlagsBadge({ flags }) {
+  const [expanded, setExpanded] = useState(false)
+  if (!flags || !Array.isArray(flags) || flags.length === 0) return null
+  return (
+    <div className="mt-1.5">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="inline-flex items-center gap-1 rounded-full bg-yellow-100 px-2 py-0.5 text-xs text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
+      >
+        <AlertTriangle className="size-3" />
+        <span>Content flagged</span>
+        <span className="ml-0.5 text-[0.65rem]">{expanded ? '▴' : '▾'}</span>
+      </button>
+      {expanded && (
+        <ul className="mt-1 space-y-0.5 pl-1 text-xs text-yellow-700 dark:text-yellow-400">
+          {flags.map((f, i) => (
+            <li key={i} className="flex items-start gap-1">
+              <span className="mt-0.5 block size-1 shrink-0 rounded-full bg-yellow-500" />
+              <span>{GUARD_FLAG_LABELS[f.category] || f.category}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }
 
@@ -363,6 +398,9 @@ export function MessageBubble({
             <p className="mt-2 border-t border-border/50 pt-1.5 text-xs text-muted-foreground/70">
               Not medical advice
             </p>
+          )}
+          {!isUser && !isPendingTyping && message.guard_flags && (
+            <GuardFlagsBadge flags={message.guard_flags} />
           )}
         </div>
         {tsLabel ? (
