@@ -118,7 +118,23 @@ def _resolve_upload_parse_mime(raw: bytes, declared: str | None, filename: str |
 async def _ingest_source(source_id: uuid.UUID, workspace_id: uuid.UUID, raw: bytes, mime: str, name: str) -> None:
     pool = await get_pool()
     try:
-        text = parse_source_bytes(raw, mime)
+        # Try vision extraction for PDFs and images
+        text = None
+        m = (mime or "").lower().split(";")[0].strip()
+        if m == "application/pdf":
+            from services.vision import extract_pdf_via_vision
+            text = await extract_pdf_via_vision(raw)
+            if text:
+                logger.info("vision extraction succeeded for source_id=%s (%d chars)", source_id, len(text))
+        elif m.startswith("image/"):
+            from services.vision import extract_image_via_vision
+            text = await extract_image_via_vision(raw, m)
+            if text:
+                logger.info("vision extraction succeeded for source_id=%s (%d chars)", source_id, len(text))
+
+        # Fall back to traditional parsing if vision didn't produce text
+        if not text:
+            text = parse_source_bytes(raw, mime)
         chunks = chunk_text(text, filename=name)
         if not chunks:
             async with pool.acquire() as conn:
