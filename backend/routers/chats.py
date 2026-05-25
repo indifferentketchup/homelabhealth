@@ -1,5 +1,6 @@
 """Chat CRUD, message listing, and streaming sends (OpenAI-compatible local inference or Claude)."""
 
+import pathlib
 import uuid
 
 import json
@@ -342,6 +343,7 @@ class ChatPatch(BaseModel):
 class MessageCreate(BaseModel):
     content: str = Field(..., min_length=1)
     model: str | None = None
+    attached_source_ids: list[str] | None = None
 
 
 def _scrub_pg_text(value: str) -> str:
@@ -1123,6 +1125,30 @@ async def append_message(
             system_blocks.append(
                 "## Web search results (use if relevant; the user enabled web search for this turn):\n" + extra_search
             )
+        if body.attached_source_ids:
+            attached_docs: list[str] = []
+            for sid in body.attached_source_ids:
+                try:
+                    src_path = pathlib.Path(f"/data/uploads")
+                    async with pool.acquire() as aconn:
+                        srow = await aconn.fetchrow(
+                            "SELECT name, mime_type, file_url FROM sources WHERE id = $1::uuid", uuid.UUID(sid)
+                        )
+                    if srow and srow["file_url"]:
+                        fp = pathlib.Path(srow["file_url"])
+                        if fp.exists():
+                            from services.chunking import parse_source_bytes as _parse
+                            txt = _parse(fp.read_bytes(), srow["mime_type"] or "text/plain")
+                            if deid_enabled():
+                                txt = redact_text(txt).text
+                            attached_docs.append(f"[DOCUMENT: {srow['name']}]\n{txt}")
+                except Exception as exc:
+                    logger.warning("attached source %s read failed: %s", sid, exc)
+            if attached_docs:
+                system_blocks.append(
+                    "### Attached documents (the user explicitly sent these to chat — read them fully):\n\n"
+                    + "\n\n---\n\n".join(attached_docs)
+                )
         if system_blocks:
             api_messages.append({"role": "system", "content": "\n\n".join(system_blocks)})
         for r in msg_rows:
