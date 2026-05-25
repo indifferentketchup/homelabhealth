@@ -16,7 +16,29 @@ live under the `snapshot/` namespace.
 
 ## [Unreleased]
 
-_No entries yet._
+### AI
+- **Token tracking:** capture `prompt_tokens` and `completion_tokens` from
+  llama.cpp responses. Stored per message; `ctx_max` stored per chat from
+  `HLH_CHAT_CTX` env.
+- **Auto-compaction:** when prompt tokens reach 85% of `ctx_max`, older
+  messages are summarized via the LLM and marked `compacted_at`. The
+  summary replaces them in future inference while originals remain visible
+  (collapsed) in the UI. Uses anchored rolling summarization — new
+  summaries merge with prior summary context.
+
+### UX
+- **Context indicator** (opt-in): small token usage pill under the chat
+  input showing "X / Y tokens" with color-coded dot (gray → amber →
+  orange → red). Enable in Settings → Layout → "Context usage indicator".
+- Compacted messages shown as collapsed group ("N earlier messages
+  summarized") with expand to view originals at reduced opacity.
+  Conversation summary displayed as a blue system bubble.
+
+### API
+- `prompt_tokens`, `completion_tokens`, `compacted_at` added to messages
+  API response.
+- `ctx_max` added to chat detail response.
+- `GET/PUT /api/settings/context-bar` for the opt-in toggle.
 
 ---
 
