@@ -1,6 +1,7 @@
-"""Audit log read endpoint.
+"""Audit log read endpoints.
 
 GET /api/audit/recent?limit=100&offset=0 — newest-first, no hash fields.
+GET /api/audit/refusals?limit=50&offset=0 — safeguard.* events only.
 Wrapped with audit_event so that reading the audit log is itself auditable.
 """
 
@@ -50,6 +51,47 @@ async def get_recent_audit(
                 "target_type": r["target_type"],
                 "target_id": r["target_id"],
                 "status_code": r["status_code"],
+            }
+            for r in rows
+        ],
+        "total": total,
+    }
+
+
+@router.get("/refusals")
+async def get_refusals(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    _owner: dict[str, Any] = Depends(require_owner),
+    audit: AuditEventHandle = Depends(audit_event),
+):
+    """Return audit_log rows where action starts with ``safeguard.``."""
+    async with audit.targeting("audit", None):
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id, ts, action, target_type, target_id
+                FROM audit_log
+                WHERE action LIKE 'safeguard.%'
+                ORDER BY ts DESC
+                LIMIT $1 OFFSET $2
+                """,
+                limit,
+                offset,
+            )
+            total = await conn.fetchval(
+                "SELECT COUNT(*)::int FROM audit_log WHERE action LIKE 'safeguard.%'"
+            )
+
+    return {
+        "rows": [
+            {
+                "id": r["id"],
+                "ts": r["ts"].isoformat() if r["ts"] else None,
+                "action": r["action"],
+                "target_type": r["target_type"],
+                "target_id": r["target_id"],
             }
             for r in rows
         ],

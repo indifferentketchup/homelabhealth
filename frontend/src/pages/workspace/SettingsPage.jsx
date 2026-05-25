@@ -4,6 +4,7 @@ import { X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import { deleteNonWorkspaceChats } from '@/api/chats.js'
+import RefusalReviewTab from '@/components/settings/RefusalReviewTab.jsx'
 import SearchSettingsTab from '@/components/settings/SearchSettingsTab.jsx'
 import SystemTab from '@/components/settings/SystemTab.jsx'
 import { Button } from '@/components/ui/button'
@@ -18,6 +19,7 @@ const TABS = [
   { id: 'layout', label: 'Layout' },
   { id: 'system', label: 'System' },
   { id: 'search', label: 'Search' },
+  { id: 'safety', label: 'Safety Log' },
 ]
 
 function clampTypographyFs(n, lo = 10, hi = 32) {
@@ -335,6 +337,8 @@ export default function SettingsPage({ onClose }) {
           {tab === 'system' && <SystemTab />}
 
           {tab === 'search' && <SearchSettingsTab />}
+
+          {tab === 'safety' && <RefusalReviewTab />}
         </div>
       </div>
     </div>
