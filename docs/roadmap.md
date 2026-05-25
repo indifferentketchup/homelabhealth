@@ -58,7 +58,6 @@ Shipped releases (most recent → oldest):
   v0.1.0    strip + homelabhealth identity (2026-05-02)
 
 Planned (dependency-ordered):
-  v0.20.0   B3  audit-logged refusals (on top of C4)                        ← active work
   v0.21.0   A3  vision (VLM) + MedSigLIP
   v0.22.0   A4  STT (whisper.cpp)
   v0.23.0?  A5  OCR — conditional on A3 eval
@@ -73,7 +72,7 @@ Deferred indefinitely (2026-05-24 posture-shift pass):
 
 Phase track in summary:
   A — Built-in AI:   A0 ✓ A1 ✓ A1.5 ✓ A1.6 ✓ A1.7 ✓ A2 ✓ A7 ✓ A3  │ A4 A5? A6
-  B — Safeguards:    B0 ✓ B1 ✓ B2 ✓                           │ B3             │ B4 deferred
+  B — Safeguards:    B0 ✓ B1 ✓ B2 ✓ B3                        │                │ B4 deferred
   C — Security:      C0 ✓ C1 ✓ C2 ✓ C3 ✓ C4 ✓ C5 ✓ C6 ✓ C7 ✓  │                │ C8 C9 deferred
 ```
 
@@ -82,9 +81,7 @@ built-in auth working, key auto-generation working, setup wizard tested.
 
 **Latest release:** `v0.22.0` (2026-05-25) — A3 Vision (MedGemma mmproj). See `CHANGELOG.md` for the per-tag rundown.
 
-**Active work — `v0.20.0` (B3 audit-logged refusals):**
-Refusal events recorded in `audit_log`. Retry-with-warning flow for
-blocked content. Refusal review panel in settings. Roadmap code: B3.
+**Active work:** none — B3 shipped, next planned work is A4 (STT).
 
 -----
 
