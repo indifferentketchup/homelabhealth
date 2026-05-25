@@ -33,6 +33,8 @@ export function SourcesPanel({ chatId, workspaceId }) {
 
   const [uploading, setUploading] = useState(false)
   const [status, setStatus] = useState('')
+  const [editingId, setEditingId] = useState(null)
+  const [editName, setEditName] = useState('')
 
   const { data: workspacesPack } = useQuery({
     queryKey: ['workspaces', 'list'],
@@ -144,6 +146,7 @@ export function SourcesPanel({ chatId, workspaceId }) {
             return (
               <div
                 key={src.id}
+                title={src.name}
                 className="group flex w-full items-stretch gap-1 rounded-md border border-transparent py-0.5 hover:border-sidebar-border hover:bg-sidebar-accent/30"
               >
                 <div className="flex min-w-0 flex-1 items-start gap-2 rounded-md px-1 py-1.5">
@@ -151,12 +154,40 @@ export function SourcesPanel({ chatId, workspaceId }) {
                     <span className="fs-nav flex items-center gap-1.5 font-medium text-foreground">
                       <EmbeddingStatusDot status={src.embedding_status} />
                       <FileStack className="size-3.5 shrink-0 opacity-70" aria-hidden />
-                      <span className="line-clamp-2">{src.name}</span>
+                      {editingId === src.id ? (
+                        <input
+                          type="text"
+                          className="fs-nav w-full rounded border border-border bg-background px-1 py-0.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
+                          value={editName}
+                          autoFocus
+                          onChange={e => setEditName(e.target.value)}
+                          onBlur={async () => {
+                            if (editName.trim() && editName.trim() !== src.name) {
+                              const { patchSource } = await import('@/api/sources.js')
+                              await patchSource(src.id, { name: editName.trim() })
+                              await queryClient.invalidateQueries({ queryKey: ['sources', effectiveWorkspaceId] })
+                            }
+                            setEditingId(null)
+                          }}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') e.target.blur()
+                            if (e.key === 'Escape') setEditingId(null)
+                          }}
+                        />
+                      ) : (
+                        <span
+                          className="line-clamp-2 cursor-pointer"
+                          onDoubleClick={() => { setEditingId(src.id); setEditName(src.name) }}
+                        >
+                          {src.name}
+                        </span>
+                      )}
                     </span>
-                    <span className="fs-nav block text-muted-foreground">
-                      {src.chunk_count ?? 0} chunks
-                      {src.embedding_status ? ` · ${src.embedding_status}` : ''}
-                    </span>
+                    {src.embedding_status !== 'complete' && (
+                      <span className="fs-nav block text-muted-foreground">
+                        {src.embedding_status === 'processing' ? 'Processing…' : src.embedding_status === 'pending' ? 'Pending…' : src.embedding_status === 'error' ? 'Error' : src.embedding_status || ''}
+                      </span>
+                    )}
                   </span>
                 </div>
                 <div className="flex shrink-0 items-center gap-0.5">

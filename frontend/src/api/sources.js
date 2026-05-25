@@ -17,3 +17,7 @@ export function listSources(workspaceId) {
 export function deleteSource(sourceId) {
   return apiFetch(`/api/sources/by-id/${sourceId}`, { method: 'DELETE' })
 }
+
+export function patchSource(sourceId, data) {
+  return apiFetch(`/api/sources/by-id/${sourceId}`, { method: 'PATCH', json: data })
+}
