@@ -32,7 +32,7 @@ const TIERS = [
     rerank: 'bge-reranker-v2-m3',
     vision: '— (not available)',
     stt: 'whisper tiny',
-    footprint: '~1.5 GB RAM peak · ~0.9 GB disk',
+    footprint: '~1.5 GB RAM peak · ~0.9 GB disk · 8K context',
     detect: '<16 GB RAM, no GPU',
   },
   {
@@ -43,7 +43,7 @@ const TIERS = [
     rerank: 'bge-reranker-base (CPU)',
     vision: 'MedGemma 1.5 4B (mmproj)',
     stt: 'whisper base',
-    footprint: '~4 GB RAM peak · ~2.8 GB disk',
+    footprint: '~4 GB RAM peak · ~2.8 GB disk · 32K context',
     detect: '≥16 GB RAM, no GPU',
   },
   {
@@ -54,7 +54,7 @@ const TIERS = [
     rerank: 'bge-reranker-v2-m3',
     vision: 'MedGemma 1.5 4B (mmproj)',
     stt: 'whisper small',
-    footprint: '~3.5 GB VRAM peak · ~2.8 GB disk',
+    footprint: '~3.5 GB VRAM peak · ~2.8 GB disk · 32K context',
     detect: '4–5 GB VRAM',
   },
   {
@@ -65,7 +65,7 @@ const TIERS = [
     rerank: 'bge-reranker-v2-m3',
     vision: 'MedGemma 1.5 4B (mmproj)',
     stt: 'whisper small',
-    footprint: '~6 GB VRAM peak · ~4.5 GB disk',
+    footprint: '~6 GB VRAM peak · ~4.5 GB disk · 32K context',
     detect: '6–11 GB VRAM',
   },
   {
@@ -76,7 +76,7 @@ const TIERS = [
     rerank: 'Qwen3-Reranker-0.6B',
     vision: 'MedGemma 27B (mmproj)',
     stt: 'whisper medium',
-    footprint: '~16 GB VRAM peak · ~16 GB disk',
+    footprint: '~16 GB VRAM peak · ~16 GB disk · 32K context',
     detect: '12–23 GB VRAM',
   },
   {
@@ -87,7 +87,7 @@ const TIERS = [
     rerank: 'Qwen3-Reranker-0.6B',
     vision: 'MedGemma 27B (mmproj)',
     stt: 'whisper large',
-    footprint: '~18 GB VRAM peak · ~18 GB disk',
+    footprint: '~18 GB VRAM peak · ~18 GB disk · 64K context',
     detect: '≥24 GB VRAM',
   },
   {
