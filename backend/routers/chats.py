@@ -1233,9 +1233,6 @@ async def append_message(
             except Exception:
                 new_title = None
             if not new_title:
-                first_line = (assistant_text or "").strip().split("\n")[0].strip()
-                new_title = _clean_auto_title(first_line)[:60] if first_line else None
-            if not new_title:
                 new_title = "New chat"
             try:
                 async with p.acquire() as conn_title:
