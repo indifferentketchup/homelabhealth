@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 MODELS_BASE_DIR = Path(os.environ.get("HLH_MODELS_DIR", "/models"))
 
 ALL_ROLES = ("chat", "embed", "rerank", "vision", "medsiglip", "stt", "ocr")
-ALL_TIERS = ("cpu-min", "cpu-std", "gpu-8gb", "gpu-16gb", "gpu-24gb+", "apple-mlx", "external")
+ALL_TIERS = ("cpu-min", "cpu-std", "gpu-4gb", "gpu-8gb", "gpu-16gb", "gpu-24gb+", "apple-mlx", "external")
 
 PULL_CHUNK_BYTES = 5 * 1024 * 1024
 PULL_TIMEOUT = httpx.Timeout(connect=15.0, read=300.0, write=60.0, pool=10.0)
@@ -87,6 +87,14 @@ MODEL_REGISTRY: dict[str, dict[str, ModelSpec | None]] = {
         # mirror exists yet). license_url points at Google's canonical repo
         # where the operator must click "Agree and access".
         "cpu-std": ModelSpec(
+            repo="unsloth/medgemma-1.5-4b-it-GGUF",
+            filename="medgemma-1.5-4b-it-Q4_K_M.gguf",
+            quant="Q4_K_M",
+            license=_GEMMA_LICENSE,
+            license_url="https://huggingface.co/google/medgemma-4b-it",
+            revision="main",
+        ),
+        "gpu-4gb": ModelSpec(
             repo="unsloth/medgemma-1.5-4b-it-GGUF",
             filename="medgemma-1.5-4b-it-Q4_K_M.gguf",
             quant="Q4_K_M",

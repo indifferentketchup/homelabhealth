@@ -42,6 +42,7 @@ BUNDLED_RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
 TIER_CHAT_MODELS = {
     "cpu-min": "Qwen3.5-0.8B-Q8_0.gguf",
     "cpu-std": "medgemma-1.5-4b-it-Q4_K_M.gguf",
+    "gpu-4gb": "medgemma-1.5-4b-it-Q4_K_M.gguf",
     "gpu-8gb": "medgemma-1.5-4b-it-Q8_0.gguf",
     "gpu-16gb": "medgemma-27b-it-Q4_K_M.gguf",
     "gpu-24gb+": "medgemma-27b-it-Q4_K_M.gguf",

@@ -47,6 +47,17 @@ const TIERS = [
     detect: '≥16 GB RAM, no GPU',
   },
   {
+    id: 'gpu-4gb',
+    label: 'GPU — 4 GB class',
+    chat: 'MedGemma 1.5 4B Q4_K_M',
+    embed: 'bge-m3 (1024-dim)',
+    rerank: 'bge-reranker-v2-m3',
+    vision: 'MedGemma 1.5 4B (mmproj)',
+    stt: 'whisper small',
+    footprint: '~3.5 GB VRAM peak · ~2.8 GB disk',
+    detect: '4–5 GB VRAM',
+  },
+  {
     id: 'gpu-8gb',
     label: 'GPU — 8 GB class',
     chat: 'MedGemma 1.5 4B Q8_0',
@@ -132,6 +143,8 @@ function rationaleFor(sysinfo, recommended) {
       return `${maxVramGb} GB VRAM detected → gpu-24gb+`
     case 'gpu-16gb':
       return `${maxVramGb} GB VRAM detected → gpu-16gb`
+    case 'gpu-4gb':
+      return `${maxVramGb} GB VRAM detected → gpu-4gb (partial offload)`
     case 'gpu-8gb':
       return `${maxVramGb} GB VRAM detected → gpu-8gb`
     case 'apple-mlx':

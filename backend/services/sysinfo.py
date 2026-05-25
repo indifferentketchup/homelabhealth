@@ -31,11 +31,12 @@ logger = logging.getLogger(__name__)
 # ──────────────────────────────────────────────────────────────────────────────
 
 ALL_TIERS: frozenset[str] = frozenset(
-    {"cpu-min", "cpu-std", "gpu-8gb", "gpu-16gb", "gpu-24gb+", "apple-mlx", "external"}
+    {"cpu-min", "cpu-std", "gpu-4gb", "gpu-8gb", "gpu-16gb", "gpu-24gb+", "apple-mlx", "external"}
 )
 
 _CPU_STD_MIN_RAM_GB = 16
 _APPLE_MIN_UNIFIED_RAM_GB = 16
+_GPU_4_MIN_VRAM_GB = 4
 _GPU_8_MIN_VRAM_GB = 6
 _GPU_16_MIN_VRAM_GB = 12
 _GPU_24_MIN_VRAM_GB = 24
@@ -201,6 +202,7 @@ def recommend_tier(sysinfo: Any) -> str:
         >= 24 GB VRAM → gpu-24gb+
         >= 12 GB VRAM → gpu-16gb
         >=  6 GB VRAM → gpu-8gb
+        >=  4 GB VRAM → gpu-4gb
         Apple Silicon + >= 16 GB unified RAM → apple-mlx
         >= 16 GB RAM (no usable GPU) → cpu-std
         otherwise → cpu-min
@@ -218,6 +220,8 @@ def recommend_tier(sysinfo: Any) -> str:
         return "gpu-16gb"
     if max_vram_gb >= _GPU_8_MIN_VRAM_GB:
         return "gpu-8gb"
+    if max_vram_gb >= _GPU_4_MIN_VRAM_GB:
+        return "gpu-4gb"
 
     ram_raw = sysinfo.get("ram_total_gb")
     ram_total_gb = ram_raw if isinstance(ram_raw, (int, float)) and not isinstance(ram_raw, bool) else 0
