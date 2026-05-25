@@ -143,10 +143,10 @@ function rationaleFor(sysinfo, recommended) {
       return `${maxVramGb} GB VRAM detected → gpu-24gb+`
     case 'gpu-16gb':
       return `${maxVramGb} GB VRAM detected → gpu-16gb`
-    case 'gpu-4gb':
-      return `${maxVramGb} GB VRAM detected → gpu-4gb (partial offload)`
     case 'gpu-8gb':
       return `${maxVramGb} GB VRAM detected → gpu-8gb`
+    case 'gpu-4gb':
+      return `${maxVramGb} GB VRAM detected → gpu-4gb (partial offload)`
     case 'apple-mlx':
       return `Apple Silicon, ${ram} GB unified memory → apple-mlx`
     case 'cpu-std':
