@@ -288,6 +288,10 @@ async def get_source_content(
 
     raw = file_path.read_bytes()
     text = parse_source_bytes(raw, row["mime_type"] or "text/plain")
+    if deid_enabled():
+        from services.deid import redact_text
+        result = redact_text(text)
+        text = result.text
     return {"id": str(row["id"]), "name": row["name"], "content": text}
 
 
