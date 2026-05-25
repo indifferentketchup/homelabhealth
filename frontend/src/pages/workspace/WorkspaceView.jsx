@@ -18,7 +18,7 @@ import { useLayoutStore } from '@/store/layoutStore.js'
 import { NotesPanel } from './NotesPanel.jsx'
 import { SourcesPanel } from './SourcesPanel.jsx'
 
-const { ChevronLeft, ChevronRight, PanelRight } = LucideIcons
+const { ChevronDown, ChevronLeft, ChevronRight, PanelRight } = LucideIcons
 
 function LandingLucide({ name, className, style }) {
   const C =
@@ -341,6 +341,7 @@ export function WorkspaceChat() {
   const sidebarW = useLayoutStore((s) => s.sidebarWidth) || 260
   const [filesPanelExpanded, setFilesPanelExpanded] = useState(true)
   const filesRailCollapsed = !filesPanelExpanded
+  const [notesOpen, setNotesOpen] = useState(false)
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
@@ -368,11 +369,19 @@ export function WorkspaceChat() {
         </div>
         {!filesRailCollapsed ? (
           <>
-            <div className="flex min-h-0 flex-[3] flex-col overflow-hidden">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               <SourcesPanel chatId={activeChatId} workspaceId={workspaceId} />
             </div>
-            <div className="flex min-h-0 flex-[2] flex-col overflow-hidden border-t border-sidebar-border">
-              <NotesPanel workspaceId={workspaceId} />
+            <div className={cn("flex flex-col overflow-hidden border-t border-sidebar-border", notesOpen ? "min-h-0 flex-[2]" : "shrink-0")}>
+              <button
+                type="button"
+                onClick={() => setNotesOpen(o => !o)}
+                className="flex w-full items-center justify-between px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:bg-sidebar-accent/30"
+              >
+                <span>Notes</span>
+                <ChevronDown className={cn("size-3 transition-transform", !notesOpen && "-rotate-90")} />
+              </button>
+              {notesOpen && <NotesPanel workspaceId={workspaceId} />}
             </div>
           </>
         ) : null}

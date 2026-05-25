@@ -1,13 +1,12 @@
 import { useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, FileStack, MessageSquare, Trash2, Upload } from 'lucide-react'
+import { FileStack, Trash2, Upload } from 'lucide-react'
 
 import { listWorkspaces } from '@/api/workspaces.js'
 import { deleteSource, listSources, uploadSource } from '@/api/sources.js'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
-import { useAppStore } from '@/store/index.js'
 
 function EmbeddingStatusDot({ status }) {
   const s = status ?? ''
@@ -31,11 +30,9 @@ function EmbeddingStatusDot({ status }) {
 export function SourcesPanel({ chatId, workspaceId }) {
   const queryClient = useQueryClient()
   const fileRef = useRef(null)
-  const setActiveWorkspaceId = useAppStore((s) => s.setActiveWorkspaceId)
 
   const [uploading, setUploading] = useState(false)
   const [status, setStatus] = useState('')
-  const [libraryOpen, setLibraryOpen] = useState(true)
 
   const { data: workspacesPack } = useQuery({
     queryKey: ['workspaces', 'list'],
@@ -45,6 +42,8 @@ export function SourcesPanel({ chatId, workspaceId }) {
   const workspaces = Array.isArray(workspacesPack?.items) ? workspacesPack.items : []
 
   const effectiveWorkspaceId = workspaceId ?? null
+
+  const workspaceName = workspaces.find(w => w.id === effectiveWorkspaceId)?.name || 'None'
 
   const { data: sources = [], isLoading } = useQuery({
     queryKey: ['sources', effectiveWorkspaceId],
@@ -127,115 +126,71 @@ export function SourcesPanel({ chatId, workspaceId }) {
           <span>Add source</span>
         </Button>
 
-        <label className="fs-nav block text-muted-foreground">Workspace</label>
-        <select
-          className="fs-input h-9 w-full rounded-md border border-sidebar-border bg-card px-2 text-foreground outline-none ring-sidebar-ring focus-visible:ring-2"
-          value={effectiveWorkspaceId || ''}
-          onChange={(e) => {
-            const v = e.target.value || null
-            setActiveWorkspaceId(v)
-            void syncSelection(new Set())
-          }}
-        >
-          <option value="">Select…</option>
-          {workspaces.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </select>
+        <p className="fs-nav px-2 text-muted-foreground truncate">Workspace: <span className="font-medium text-foreground">{workspaceName}</span></p>
 
         {status ? <p className="fs-nav text-muted-foreground">{status}</p> : null}
-        {!effectiveWorkspaceId ? (
-          <p className="fs-nav text-amber-600/90 dark:text-amber-400/90">Pick a workspace to manage sources.</p>
-        ) : null}
       </div>
 
       <div className="mx-2 border-t border-sidebar-border" />
 
       <ScrollArea className="min-h-0 flex-1 px-2">
         <div className="flex flex-col gap-1 pb-2">
-          <button
-            type="button"
-            onClick={() => setLibraryOpen((o) => !o)}
-            className="fs-nav mt-1 flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left font-medium uppercase tracking-wide text-muted-foreground outline-none ring-sidebar-ring hover:bg-sidebar-accent/50 focus-visible:ring-2"
-          >
-            <span>Library</span>
-            <ChevronDown
-              className={cn(
-                'size-4 shrink-0 transition-transform duration-150',
-                !libraryOpen && '-rotate-90',
-              )}
-              aria-hidden
-            />
-          </button>
-
-          <div className={cn(!libraryOpen && 'hidden')}>
-            {isLoading && <p className="fs-nav px-2 text-muted-foreground">Loading…</p>}
-            {!isLoading && sources.length === 0 && effectiveWorkspaceId && (
-              <p className="fs-nav px-2 text-muted-foreground">No sources yet.</p>
-            )}
-            {sources.map((src) => {
-              const ready = src.embedding_status === 'complete'
-              return (
-                <div
-                  key={src.id}
-                  className="group flex w-full items-stretch gap-1 rounded-md border border-transparent py-0.5 hover:border-sidebar-border hover:bg-sidebar-accent/30"
-                >
-                  <div className="flex min-w-0 flex-1 items-start gap-2 rounded-md px-1 py-1.5">
-                    <span className="min-w-0 flex-1">
-                      <span className="fs-nav flex items-center gap-1.5 font-medium text-foreground">
-                        <EmbeddingStatusDot status={src.embedding_status} />
-                        <FileStack className="size-3.5 shrink-0 opacity-70" aria-hidden />
-                        <span className="line-clamp-2">{src.name}</span>
-                      </span>
-                      <span className="fs-nav block text-muted-foreground">
-                        {src.chunk_count ?? 0} chunks
-                        {src.embedding_status ? ` · ${src.embedding_status}` : ''}
-                      </span>
+          {isLoading && <p className="fs-nav px-2 text-muted-foreground">Loading…</p>}
+          {!isLoading && sources.length === 0 && effectiveWorkspaceId && (
+            <p className="fs-nav px-2 text-muted-foreground">No sources yet.</p>
+          )}
+          {sources.map((src) => {
+            const ready = src.embedding_status === 'complete'
+            return (
+              <div
+                key={src.id}
+                className="group flex w-full items-stretch gap-1 rounded-md border border-transparent py-0.5 hover:border-sidebar-border hover:bg-sidebar-accent/30"
+              >
+                <div className="flex min-w-0 flex-1 items-start gap-2 rounded-md px-1 py-1.5">
+                  <span className="min-w-0 flex-1">
+                    <span className="fs-nav flex items-center gap-1.5 font-medium text-foreground">
+                      <EmbeddingStatusDot status={src.embedding_status} />
+                      <FileStack className="size-3.5 shrink-0 opacity-70" aria-hidden />
+                      <span className="line-clamp-2">{src.name}</span>
                     </span>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-0.5">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground hover:text-primary"
-                      title="Send to chat"
-                      disabled={!ready}
-                      onClick={() => {
-                        window.dispatchEvent(new CustomEvent('hlh:focus-source', {
-                          detail: { name: src.name, id: src.id },
-                        }))
-                      }}
-                    >
-                      <MessageSquare className="size-4" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                      title="Remove source"
-                      onClick={() => void onDeleteSource(src.id, src.name)}
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
-                  </div>
+                    <span className="fs-nav block text-muted-foreground">
+                      {src.chunk_count ?? 0} chunks
+                      {src.embedding_status ? ` · ${src.embedding_status}` : ''}
+                    </span>
+                  </span>
                 </div>
-              )
-            })}
-          </div>
+                <div className="flex shrink-0 items-center gap-0.5">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 shrink-0 px-1.5 text-xs text-muted-foreground hover:text-primary"
+                    title="Attach to chat"
+                    disabled={!ready}
+                    onClick={() => {
+                      window.dispatchEvent(new CustomEvent('hlh:attach-source', {
+                        detail: { name: src.name, id: src.id },
+                      }))
+                    }}
+                  >
+                    Send to Chat
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                    title="Remove source"
+                    onClick={() => void onDeleteSource(src.id, src.name)}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
+              </div>
+            )
+          })}
         </div>
       </ScrollArea>
-
-      {!chatId ? (
-        <div className="mt-auto border-t border-sidebar-border p-2">
-          <p className="fs-nav text-muted-foreground">
-            Open or start a chat to attach sources for RAG.
-          </p>
-        </div>
-      ) : null}
     </aside>
   )
 }

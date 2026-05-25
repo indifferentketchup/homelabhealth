@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Plus, Search, SendHorizontal, Square, Upload, X } from 'lucide-react'
+import { FileStack, Plus, Search, SendHorizontal, Square, Upload, X } from 'lucide-react'
 
 import { toggleWebSearch } from '@/api/chats.js'
 import { Button } from '@/components/ui/button'
@@ -50,6 +50,8 @@ export function ChatInput({
   onStop,
   activeChatId,
   chatMaxW,
+  attachedSources = [],
+  onRemoveAttached,
 }) {
   const taRef = useRef(null)
   const uploadInputRef = useRef(null)
@@ -281,6 +283,17 @@ export function ChatInput({
         {isDragOver && (
           <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary bg-primary/10">
             <span className="text-sm font-medium text-primary">Drop files to attach</span>
+          </div>
+        )}
+        {attachedSources.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 px-3 pt-2">
+            {attachedSources.map(src => (
+              <span key={src.id} className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2.5 py-0.5 text-xs text-foreground">
+                <FileStack className="size-3 opacity-60" />
+                {src.name}
+                <button type="button" onClick={() => onRemoveAttached(src.id)} className="ml-0.5 text-muted-foreground hover:text-foreground">×</button>
+              </span>
+            ))}
           </div>
         )}
         <div className="relative min-h-0">
