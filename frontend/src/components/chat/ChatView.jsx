@@ -65,6 +65,17 @@ function friendlyStreamError(msg) {
   return String(msg)
 }
 
+function categoryToReason(category) {
+  switch (category) {
+    case 'prompt_injection': return 'it appeared to contain a prompt injection attempt'
+    case 'pii_leak': return 'it may contain personally identifiable information'
+    case 'medical_advice': return 'it requested specific medical advice'
+    case 'crisis_content': return 'it contained crisis-related content'
+    case 'hallucinated_id': return 'it referenced an unverifiable identifier'
+    default: return `it was flagged for ${category}`
+  }
+}
+
 function normalizeWorkspaceUuid(raw) {
   if (raw == null || raw === '') return null
   const s = String(raw).trim()
@@ -261,7 +272,19 @@ export function ChatView({
           setStreamingRag(null)
           if (err?.name !== 'AbortError') {
             const raw = err instanceof Error ? err.message : String(err)
-            setSendError(friendlyStreamError(raw))
+            try {
+              const parsed = JSON.parse(raw)
+              if (parsed.error === 'input_blocked') {
+                const category = parsed.guard_flags?.[0]?.category || 'safety policy'
+                const reason = categoryToReason(category)
+                setSendError(`⚠ This message was blocked because ${reason}. You can rephrase as an educational question.`)
+                setDraft(lastUserMessageRef.current || '')
+              } else {
+                setSendError(friendlyStreamError(raw))
+              }
+            } catch {
+              setSendError(friendlyStreamError(raw))
+            }
           }
         })
         queryClient.invalidateQueries({ queryKey: ['messages', chatId] })
@@ -396,9 +419,14 @@ export function ChatView({
           </div>
           <div className="bc-chat-anchor w-full px-4">
             {sendError ? (
-              <div className="mb-2 flex items-center justify-center gap-2" role="alert">
-                <p className="text-sm text-destructive">{sendError}</p>
-                {lastUserMessageRef.current ? (
+              <div className={cn(
+                'mb-2 flex items-center justify-center gap-2 rounded-md border px-3 py-2',
+                sendError.startsWith('⚠')
+                  ? 'border-yellow-500/30 bg-yellow-500/5 text-yellow-700 dark:text-yellow-400'
+                  : 'border-transparent text-destructive',
+              )} role="alert">
+                <p className="text-sm">{sendError}</p>
+                {lastUserMessageRef.current && !sendError.startsWith('⚠') ? (
                   <button
                     type="button"
                     onClick={retryLastSend}
@@ -462,9 +490,14 @@ export function ChatView({
           }}
         >
           {sendError ? (
-            <div className="mb-2 flex items-center gap-2" role="alert">
-              <p className="flex-1 text-sm text-destructive">{sendError}</p>
-              {lastUserMessageRef.current ? (
+            <div className={cn(
+              'mb-2 flex items-center gap-2 rounded-md border px-3 py-2',
+              sendError.startsWith('⚠')
+                ? 'border-yellow-500/30 bg-yellow-500/5 text-yellow-700 dark:text-yellow-400'
+                : 'border-transparent text-destructive',
+            )} role="alert">
+              <p className="flex-1 text-sm">{sendError}</p>
+              {lastUserMessageRef.current && !sendError.startsWith('⚠') ? (
                 <button
                   type="button"
                   onClick={retryLastSend}
