@@ -194,5 +194,6 @@ async def post_acknowledge(
 @router.get("/doctor")
 async def get_doctor(_: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
     from hlh.doctor import run_checks, summarize
-    checks = await run_checks()
+    all_checks = await run_checks()
+    checks = [c for c in all_checks if not c.get("advanced")]
     return {"checks": checks, "summary": summarize(checks)}
