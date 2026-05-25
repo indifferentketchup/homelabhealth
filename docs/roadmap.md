@@ -80,7 +80,7 @@ Phase track in summary:
 **Ship-ready gate** = every security + safeguard phase shipped + tagged,
 built-in auth working, key auto-generation working, setup wizard tested.
 
-**Latest release:** `v0.19.0` (2026-05-24) — built-in auth. See `CHANGELOG.md` for the per-tag rundown.
+**Latest release:** `v0.22.0` (2026-05-25) — A3 Vision (MedGemma mmproj). See `CHANGELOG.md` for the per-tag rundown.
 
 **Active work — `v0.20.0` (B3 audit-logged refusals):**
 Refusal events recorded in `audit_log`. Retry-with-warning flow for
