@@ -194,13 +194,14 @@ export function WorkspaceLanding() {
                     )}
                   </Link>
                   {deleteId === d.id ? (
-                    <div className="workspace-landing-card__footer">
+                    <div className="flex items-center justify-between gap-3 px-4 py-3">
                       <p className="text-sm text-muted-foreground">Delete this workspace?</p>
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex gap-2">
                         <Button
                           type="button"
                           size="sm"
                           variant="outline"
+                          className="h-7 px-3 text-xs"
                           onClick={() => setDeleteId(null)}
                         >
                           Cancel
@@ -209,6 +210,7 @@ export function WorkspaceLanding() {
                           type="button"
                           size="sm"
                           variant="destructive"
+                          className="h-7 px-3 text-xs"
                           onClick={() => delMut.mutate(d.id)}
                           disabled={delMut.isPending}
                         >
@@ -217,8 +219,8 @@ export function WorkspaceLanding() {
                       </div>
                     </div>
                   ) : (
-                    <div className="workspace-landing-card__footer">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center justify-between gap-2 px-4 py-3">
+                      <div className="flex items-center">
                         <button
                           type="button"
                           title={pinned ? 'Unpin from sidebar' : 'Pin to sidebar'}
@@ -240,6 +242,7 @@ export function WorkspaceLanding() {
                             type="button"
                             size="sm"
                             variant="secondary"
+                            className="h-7 px-3 text-xs"
                             onClick={() => navigate(`/workspaces/${d.id}`)}
                           >
                             Edit
@@ -248,6 +251,7 @@ export function WorkspaceLanding() {
                             type="button"
                             size="sm"
                             variant="destructive"
+                            className="h-7 px-3 text-xs"
                             onClick={() => setDeleteId(d.id)}
                           >
                             Delete
