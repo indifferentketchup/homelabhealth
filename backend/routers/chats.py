@@ -402,6 +402,7 @@ def _message_row(r: asyncpg.Record) -> dict[str, Any]:
         "sources_used": r["sources_used"],
         "forked_from": str(r["forked_from"]) if r["forked_from"] else None,
         "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+        "guard_flags": r["guard_flags"] if r["guard_flags"] else None,
     }
 
 
@@ -846,7 +847,7 @@ async def list_messages(
             raise HTTPException(status_code=404, detail="Chat not found")
         rows = await conn.fetch(
             """
-            SELECT id, chat_id, role, content, model, tokens_used, sources_used, forked_from, created_at
+            SELECT id, chat_id, role, content, model, tokens_used, sources_used, forked_from, created_at, guard_flags
             FROM messages
             WHERE chat_id = $1::uuid
             ORDER BY created_at ASC, id ASC
