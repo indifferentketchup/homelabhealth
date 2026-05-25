@@ -16,6 +16,12 @@ live under the `snapshot/` namespace.
 
 ## [Unreleased]
 
+_No entries yet._
+
+---
+
+## [v0.22.0] — 2026-05-25
+
 ### AI
 - **A3 Vision (MedGemma mmproj):** enable MedGemma's built-in multimodal
   capabilities via `--mmproj` on `hlh_chat`. PDFs and images are rendered
