@@ -14,7 +14,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 VISION_URL = "http://hlh_chat:9610/v1/chat/completions"
-VISION_TIMEOUT = 120.0  # seconds — vision inference is slow on CPU
+VISION_TIMEOUT = 300.0  # seconds — vision inference is slow on CPU (~10 t/s + image encoding overhead)
 
 EXTRACTION_PROMPT = (
     "Extract all text from this medical document exactly as shown. "
