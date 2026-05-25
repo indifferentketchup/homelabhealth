@@ -1,6 +1,6 @@
 /**
- * Single-user app: every request is treated as the owner. Add a reverse proxy
- * (oauth2-proxy, Authelia, etc.) in front of the API for real auth.
+ * API fetch helper. Auth is built-in (hlh_session cookie from POST /api/auth/login).
+ * Optional: layer a reverse proxy (Authelia, oauth2-proxy) in front for defense in depth.
  * @param {string} path
  * @param {RequestInit & { json?: unknown }} options
  */

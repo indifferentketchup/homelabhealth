@@ -3,16 +3,17 @@
 ## Overview
 
 homelabhealth is a single-user, self-hosted RAG chat application for personal medical records.
-It runs as a Docker Compose stack on a homelab host, accessible through an operator-owned reverse
-proxy. The operator and the sole user are the same person.
+It runs as a Docker Compose stack. **Built-in username/password auth** (v0.19.0) validates
+`hlh_session` cookies on every API request. An operator may optionally layer a reverse proxy
+(Authelia, oauth2-proxy, nginx) in front for defense in depth — not required for default deploy.
 
 This project is MIT-licensed. It is not formally threat-modeled by a third party. It is not a
 HIPAA covered entity. HIPAA, HITRUST, and SOC 2 certification are explicitly out of scope — this
 is a personal tool, not a healthcare product. This document is a self-assessment by the
-maintainer; it reflects the state of the stack as of 2026-05-22 and is revised at every
+maintainer; it reflects the state of the stack as of 2026-05-25 and is revised at every
 minor-version tag.
 
-Last reviewed: 2026-05-22.
+Last reviewed: 2026-05-25.
 
 ---
 
@@ -20,15 +21,16 @@ Last reviewed: 2026-05-22.
 
 Three boundaries define the security perimeter.
 
-**Boundary 1 — Browser to reverse proxy.** The operator's reverse proxy (Authelia,
-oauth2-proxy, nginx basic auth, or equivalent) is responsible for authenticating the user before
-any request reaches `hlh_api`. The application trusts `Remote-User` from upstream without
-further validation. This boundary is operator-owned and operator-configured. The application
-documents this expectation but does not enforce it.
+**Boundary 1 — Browser to hlh_api.** The UI (`hlh_ui`, port 9604) and API (`hlh_api`, port 9600)
+communicate over HTTP(S) as configured by the operator. Authentication is enforced by
+`backend/deps.py`: every protected route requires a valid `hlh_session` cookie (argon2-backed
+password auth, v0.19.0). Unauthenticated requests receive 401. An optional reverse proxy
+(Authelia, oauth2-proxy, nginx) may sit in front — that layer is operator-owned and adds
+defense in depth but is not required.
 
-**Boundary 2 — Reverse proxy to hlh_api.** Traffic from the reverse proxy to `hlh_api`
-traverses the operator's Tailscale mesh or LAN. This boundary's security properties are
-operator-configured. `hlh_api` does not terminate TLS directly.
+**Boundary 2 — hlh_api to host network.** Traffic from the browser reaches `hlh_api` on the
+operator's LAN or Tailscale mesh. TLS termination is operator-configured (reverse proxy or
+direct). `hlh_api` binds `0.0.0.0:9600` by default.
 
 **Boundary 3 — hlh_api to bundled sidecars.** Two internal networks carry sidecar traffic.
 The `hlh_inference` network (`internal: true`) connects `hlh_api` to `hlh_chat` and
@@ -44,14 +46,13 @@ is a manual weight-pull procedure on every model update.
 
 ## What this defends
 
-### Operator auth perimeter
+### Built-in authentication (v0.19.0)
 
-The API is designed to run behind an operator-owned reverse proxy that handles authentication.
-`backend/deps.py` returns the seeded owner row from `users` for every request — it does not
-perform authentication itself. This posture is documented in `README.md` (Auth section) and
-is the explicit design choice for a single-user tool. The application trusts `Remote-User`
-from upstream without further validation; the operator is responsible for ensuring the proxy
-enforces it.
+`backend/deps.py` validates the `hlh_session` cookie on every protected request via
+`services/auth.py` (argon2 password hashing, server-side session rows). Setup wizard
+(`POST /api/auth/setup`) creates the owner account on first launch. There is no anonymous
+access to PHI endpoints. Session cookies are not yet `Secure`-flagged when HTTPS is absent
+(see `routers/auth.py` — operator should terminate TLS at a reverse proxy for production).
 
 ### Container hardening
 
@@ -92,10 +93,33 @@ v0.6.0.
 
 ### Operator pre-flight
 
-`python -m hlh.doctor` (also `GET /api/system/doctor`) runs 11 checks at first launch and on
-demand: DB pool, schema version, sidecar reachability, safeguard version import, disk free,
-encryption key presence, and HF token. The doctor exits 0 if all checks are green, 1 if any
-check is red. Surfaced in the UI at Settings → System → Pre-flight. Shipped in v0.8.0.
+`python -m hlh.doctor` (also `GET /api/system/doctor`) runs health checks at container start
+and on demand: DB pool, schema, sidecars, vision mmproj, safeguard version, disk free,
+encryption keys, audit chain integrity, guard scanners, de-id pipeline, column encryption,
+and more. Advanced host checks (LUKS, backrest) run in CLI only — hidden from the Settings UI.
+The doctor exits 0 if all checks are green/yellow, 1 if any check is red. Shipped in v0.8.0;
+expanded through v0.25.0.
+
+### Audit logging (C4, v0.11.0)
+
+Hash-chained `audit_log` table with insert-only Postgres role (`hlh_audit_writer`). Guard
+refusals (B3, v0.23.0) write `safeguard.refuse.input` and `safeguard.flag.output` rows.
+Verified by `backend/scripts/verify_audit_log.sh`.
+
+### De-identification pipeline (C5, v0.16.0)
+
+Regex-based PHI redaction (`services/deid.py`) with configurable policy levels. Pre-write
+redactor on ingest. Gates first real-record ingest — do not disable for non-operator deployments.
+
+### Column encryption (C6, v0.17.0)
+
+AES-256-GCM on sensitive columns via HKDF-derived DEKs from `HLH_MASTER_KEY`. Embedding
+vectors remain plaintext (cosine search requirement) — documented honestly.
+
+### I/O guard scanner (B1 + C7, v0.14.0)
+
+In-process input/output scanning (`services/guard.py`): prompt injection, PII, medical advice,
+crisis content, hallucinated identifiers. Not a separate sidecar — runs inside `hlh_api`.
 
 ---
 
@@ -109,20 +133,13 @@ anonymizes transport — no cookies, no user-agent leaks, no persistent session 
 to upstream engines — but query content is visible to whichever engine processes it. PHI in
 search queries is user-discipline-bound, not technically enforced. No content scanner runs
 against outbound search queries today. The operator bears this risk entirely; the application
-provides no guardrail. No mitigation is planned for v0.9.0; the risk is documented here so the
-operator understands the boundary. The A7 threat-model entry was deferred to C0 per the
-note in `docs/roadmap.md` (A7, v0.7.0).
+provides no guardrail. Documented in C0 (v0.9.0).
 
-### C5 first-real-ingest gate — open
+### Embedding vector invertibility
 
-`source_chunks` (pgvector) is empty at this writing. The embedding sidecar (`hlh_infer`, A2)
-shipped in v0.7.0 ahead of the de-identification pipeline (C5, planned v0.17.0). The operator
-must keep `source_chunks` empty until C5 ships. If any record is ingested before C5 lands,
-`TRUNCATE source_chunks` and re-run ingest after C5 is deployed. Embedding vectors are
-partially invertible; raw PHI captured in vectors is forever-PHI. This risk is borne entirely
-by the operator until v0.17.0. The second correction in the A1 section of `docs/roadmap.md`
-documents how this gate was originally worded and why it was retained despite A2 shipping
-first.
+De-identification (C5) runs before chunking, but embedding vectors in `source_chunks` are
+partially invertible. Source chunk text may be column-encrypted (C6); vectors stay plaintext
+for cosine search. Re-embed after policy changes if vectors may contain pre-redaction content.
 
 ### PROVIDER_KEY_ENCRYPTION_KEY cleartext fallback
 
@@ -132,42 +149,25 @@ in the Phase 2.A spec §10 — but it is fragile: anyone with database access ca
 secrets directly. The doctor check warns yellow when the key is unset, and reds when the key
 is present but malformed. Operators with real provider keys should set this variable.
 
-### Audit logging not yet implemented
+### B0 + guard are not cryptographic enforcement
 
-There is no `audit_log` table, no hash chain, and no insert-only Postgres role. Post-incident
-forensics relies on Postgres logs and container stdout, both of which are unstructured and
-subject to host-level access controls (or absence thereof). If the host is compromised, those
-logs may be tampered with or absent. The operator bears the forensic-capability gap until C4
-(v0.12.0) lands. Until then, the breach response playbook in `docs/breach-response.md`
-documents what evidence to capture at incident time using the tools that are available.
+The tiered-refusal preamble and in-process guard scanner are best-effort behavioral controls.
+A determined operator can craft prompts that subvert prompt-only layers. Treat safeguards as
+risk reduction, not a kernel boundary.
 
-### B0 safeguards are defeatable
+### Single-user scope
 
-The tiered-refusal preamble lives in the system prompt only. A determined operator — the only
-user — can craft prompts that subvert it. This is a structural limitation of prompt-only
-controls: the model sees the preamble as text, not as a kernel-level enforcement boundary.
-The output-scanner sidecar (`hlh_guard`, llm-guard) that will provide a second enforcement
-layer lands in B1 / C7 (v0.15.0). Until then, treat B0 as best-effort behavioral guidance,
-not a security control. The operator bears full responsibility for any misuse of the model
-before v0.15.0 ships.
-
-### Multi-user auth not in scope
-
-The app assumes a single user. Multi-user access is delegated entirely to the operator's
-reverse proxy (Authelia, oauth2-proxy, nginx basic auth). There is no `user` table beyond the
-seeded owner row, no session table, and no RBAC layer. `Remote-User` is trusted from upstream
-without further validation. Do not expose this app to untrusted users through a proxy that
-does not enforce authentication.
+The app supports one owner account (setup wizard). No multi-user RBAC. Do not expose to
+untrusted users without additional perimeter controls.
 
 ### Backups and disk-at-rest encryption
 
 Both are operator responsibility. The database holds personal medical records; if disk-at-rest
 encryption is absent and the host is stolen or decommissioned, that data is accessible to
 whoever holds the disk. The recommended stack is LUKS for disk encryption and backrest for
-backup management — these are documented in `docs/breach-response.md` but are not provisioned
-or enforced by the application. The operator bears both risks in full until C1 (v0.10.0) ships.
-C1 will add doctor checks confirming LUKS and backrest presence on the host, but will not
-provision them automatically.
+backup management — documented under `docs/operator/advanced/` but not provisioned by the app.
+Doctor checks for LUKS/backrest are advanced/optional (v0.10.1 demotion). The operator bears
+both risks unless configured on the host.
 
 ### No third-party threat model
 
@@ -197,4 +197,4 @@ The following are out of scope by design. These items will not be addressed:
 
 This document is reviewed at every minor-version tag and whenever the following change:
 hardening posture, network topology, encrypted columns, safeguard pipeline, or the C5 ingest
-gate. Owner: Sam. Last reviewed: 2026-05-22.
+gate. Owner: Sam. Last reviewed: 2026-05-25.

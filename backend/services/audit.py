@@ -203,7 +203,7 @@ class AuditEventHandle:
         if self._committed:
             return
         self._committed = True
-        actor = _DEFAULT_ACTOR  # TODO: derive from Remote-User when real auth lands
+        actor = _DEFAULT_ACTOR  # owner UUID default; session username not yet passed into audit handle
         route = self._request.scope.get("route")
         if route is not None:
             action = f"{self._request.method} {route.path}"

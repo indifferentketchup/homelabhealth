@@ -18,9 +18,9 @@ If you find a vulnerability, open a public issue on the repository describing it
 
 ## Out of scope
 
-- Third-party services reached by the app: HuggingFace, the search engines reached via SearXNG (Google, Brave, Mojeek, Startpage, arxiv, pubmed), and any external LLM provider the operator configures.
-- The operator-deployed reverse proxy and auth layer (Authelia, oauth2-proxy, nginx basic auth, etc). This is the operator's responsibility.
-- Self-hosted dependencies running on the operator's host: Postgres instances outside compose, the host OS, the Docker daemon.
+- Third-party services reached by the app: HuggingFace, SearXNG upstream engines, external LLM providers.
+- Optional operator reverse proxy (Authelia, oauth2-proxy, nginx) layered in front — not required; built-in auth ships in-app (v0.19.0).
+- Self-hosted dependencies outside compose: host OS, Docker daemon.
 - Denial-of-service against bundled inference. Resource exhaustion is an operator capacity-planning concern, not a vulnerability.
 - Social engineering of the maintainer.
 
