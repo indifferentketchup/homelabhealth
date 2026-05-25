@@ -305,7 +305,7 @@ export function MessageBubble({
           )}
         >
           {!isUser && (
-            <span className="mb-1 inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[0.65rem] font-medium text-primary">
+            <span className="mb-1 inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
               AI-generated
             </span>
           )}
@@ -352,7 +352,7 @@ export function MessageBubble({
                 <span className="inline-block w-[2px] h-[1em] bg-foreground animate-pulse align-text-bottom ml-0.5" />
               )}
               {streaming && message.content ? (
-                <div className="mt-1 inline-flex items-center gap-1.5 rounded-full border border-border bg-background/40 px-2 py-0.5 text-[0.7rem] text-muted-foreground">
+                <div className="mt-1 inline-flex items-center gap-1.5 rounded-full border border-border bg-background/40 px-2 py-0.5 text-xs text-muted-foreground">
                   <TypingDots />
                   <span>streaming</span>
                 </div>
@@ -360,7 +360,7 @@ export function MessageBubble({
             </div>
           )}
           {!isUser && !isPendingTyping && (
-            <p className="mt-2 border-t border-border/50 pt-1.5 text-[0.6rem] text-muted-foreground/70">
+            <p className="mt-2 border-t border-border/50 pt-1.5 text-xs text-muted-foreground/70">
               Not medical advice
             </p>
           )}
