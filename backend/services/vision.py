@@ -27,14 +27,19 @@ EXTRACTION_PROMPT = (
 )
 
 
-async def is_vision_available() -> bool:
-    """Check if hlh_chat is reachable and has multimodal capability."""
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get("http://hlh_chat:9610/health")
-            return resp.status_code == 200
-    except Exception:
-        return False
+def is_vision_available() -> bool:
+    """Check if the active mmproj symlink exists on the shared models volume.
+
+    This is a filesystem check, not a network probe. The symlink is managed
+    by bundled_providers.link_active_mmproj() and only exists when the
+    mmproj file has been pulled for the active tier. Checking the file
+    (rather than hlh_chat /health) avoids the case where hlh_chat is
+    running without --mmproj and would silently ignore image payloads.
+    """
+    from pathlib import Path
+    import os
+    models_base = Path(os.environ.get("HLH_MODELS_DIR", "/models"))
+    return (models_base / "vision" / "active-mmproj.gguf").exists()
 
 
 async def extract_via_vision(image_bytes: bytes, mime_type: str = "image/png") -> str | None:
@@ -83,7 +88,7 @@ async def extract_pdf_via_vision(file_bytes: bytes) -> str | None:
         logger.info("pdf2image not installed; skipping vision extraction")
         return None
 
-    if not await is_vision_available():
+    if not is_vision_available():
         return None
 
     try:
@@ -108,6 +113,6 @@ async def extract_pdf_via_vision(file_bytes: bytes) -> str | None:
 
 async def extract_image_via_vision(file_bytes: bytes, mime_type: str) -> str | None:
     """Extract text from an image file via vision model."""
-    if not await is_vision_available():
+    if not is_vision_available():
         return None
     return await extract_via_vision(file_bytes, mime_type)
