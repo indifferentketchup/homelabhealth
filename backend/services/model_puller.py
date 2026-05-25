@@ -131,7 +131,51 @@ MODEL_REGISTRY: dict[str, dict[str, ModelSpec | None]] = {
     },
     "embed":     {tier: None for tier in ALL_TIERS},  # Phase 2
     "rerank":    {tier: None for tier in ALL_TIERS},  # Phase 2
-    "vision":    {tier: None for tier in ALL_TIERS},  # Phase 3
+    "vision": {
+        "cpu-min": None,  # MTP model, mmproj incompatible
+        "cpu-std": ModelSpec(
+            repo="unsloth/medgemma-1.5-4b-it-GGUF",
+            filename="mmproj-F16.gguf",
+            quant="f16",
+            license=_GEMMA_LICENSE,
+            license_url="https://huggingface.co/google/medgemma-4b-it",
+            revision="main",
+        ),
+        "gpu-4gb": ModelSpec(
+            repo="unsloth/medgemma-1.5-4b-it-GGUF",
+            filename="mmproj-F16.gguf",
+            quant="f16",
+            license=_GEMMA_LICENSE,
+            license_url="https://huggingface.co/google/medgemma-4b-it",
+            revision="main",
+        ),
+        "gpu-8gb": ModelSpec(
+            repo="unsloth/medgemma-1.5-4b-it-GGUF",
+            filename="mmproj-F16.gguf",
+            quant="f16",
+            license=_GEMMA_LICENSE,
+            license_url="https://huggingface.co/google/medgemma-4b-it",
+            revision="main",
+        ),
+        "gpu-16gb": ModelSpec(
+            repo="unsloth/medgemma-27b-it-GGUF",
+            filename="mmproj-F16.gguf",
+            quant="f16",
+            license=_GEMMA_LICENSE,
+            license_url="https://huggingface.co/google/medgemma-27b-it",
+            revision="main",
+        ),
+        "gpu-24gb+": ModelSpec(
+            repo="unsloth/medgemma-27b-it-GGUF",
+            filename="mmproj-F16.gguf",
+            quant="f16",
+            license=_GEMMA_LICENSE,
+            license_url="https://huggingface.co/google/medgemma-27b-it",
+            revision="main",
+        ),
+        "apple-mlx": None,
+        "external": None,
+    },
     "medsiglip": {tier: None for tier in ALL_TIERS},  # Phase 3
     "stt":       {tier: None for tier in ALL_TIERS},  # Phase 4
     "ocr":       {tier: None for tier in ALL_TIERS},  # Phase 5

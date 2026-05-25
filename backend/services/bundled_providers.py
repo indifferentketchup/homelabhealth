@@ -13,10 +13,15 @@ Spec: docs/superpowers/specs/2026-05-22-bundled-system-takes-everything-design.m
 from __future__ import annotations
 
 import logging
+import os
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
+
+MODELS_BASE = Path(os.environ.get("HLH_MODELS_DIR", "/models"))
+ACTIVE_MMPROJ = MODELS_BASE / "vision" / "active-mmproj.gguf"
 
 BUNDLE_GROUP = "homelab-health-ai"
 
@@ -195,3 +200,27 @@ async def apply_bundled_bindings(conn, tier: str) -> None:
         "apply_bundled_bindings: tier=%s, rewrote globals + workspaces to chat_model=%s",
         tier, chat_model,
     )
+
+    # 4. Symlink active mmproj for the current tier so hlh_chat picks it up.
+    await link_active_mmproj(tier)
+
+
+async def link_active_mmproj(tier: str) -> None:
+    """Create/update symlink for the active tier's mmproj file."""
+    from services.model_puller import MODEL_REGISTRY
+    spec = MODEL_REGISTRY.get("vision", {}).get(tier)
+    if spec is None:
+        if ACTIVE_MMPROJ.is_symlink() or ACTIVE_MMPROJ.exists():
+            ACTIVE_MMPROJ.unlink()
+        return
+    target = MODELS_BASE / "vision" / tier / spec.filename
+    if not target.exists():
+        if ACTIVE_MMPROJ.is_symlink() or ACTIVE_MMPROJ.exists():
+            ACTIVE_MMPROJ.unlink()
+        return
+    ACTIVE_MMPROJ.parent.mkdir(parents=True, exist_ok=True)
+    tmp = ACTIVE_MMPROJ.with_suffix(".tmp")
+    if tmp.is_symlink() or tmp.exists():
+        tmp.unlink()
+    os.symlink(target, tmp)
+    os.rename(tmp, ACTIVE_MMPROJ)
