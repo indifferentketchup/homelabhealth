@@ -341,8 +341,56 @@ def _check_column_encryption() -> dict[str, Any]:
         return {"name": "column_encryption", "status": ERROR, "detail": f"{type(e).__name__}: {e}"}
 
 
+async def _check_vision_available() -> dict[str, Any]:
+    """Check that the mmproj file is present for the current tier."""
+    try:
+        from services.model_puller import MODEL_REGISTRY, MODELS_BASE_DIR
+
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT tier FROM system_profile WHERE id = 1")
+        if not row or not row["tier"]:
+            return {"name": "vision_available", "status": WARN, "detail": "tier not set in system_profile"}
+
+        tier = row["tier"]
+
+        # cpu-min uses an MTP model that is mmproj-incompatible
+        if tier == "cpu-min":
+            return {
+                "name": "vision_available",
+                "status": WARN,
+                "detail": "Vision not available on cpu-min tier (upgrade to cpu-std+ for image/PDF understanding)",
+            }
+
+        spec = MODEL_REGISTRY.get("vision", {}).get(tier)
+        if spec is None:
+            return {
+                "name": "vision_available",
+                "status": WARN,
+                "detail": f"no vision model spec for tier {tier}",
+            }
+
+        mmproj_path = MODELS_BASE_DIR / "vision" / tier / spec.filename
+        active_symlink = MODELS_BASE_DIR / "vision" / "active-mmproj.gguf"
+
+        if mmproj_path.exists() or active_symlink.exists():
+            return {
+                "name": "vision_available",
+                "status": OK,
+                "detail": "Vision available (MedGemma mmproj loaded)",
+            }
+
+        return {
+            "name": "vision_available",
+            "status": ERROR,
+            "detail": f"mmproj file not found at {mmproj_path}; pull the vision model from Settings → System",
+        }
+    except Exception as e:
+        return {"name": "vision_available", "status": ERROR, "detail": f"{type(e).__name__}: {e}"}
+
+
 async def run_checks() -> list[dict[str, Any]]:
-    """Run all 17 checks. Returns ordered list."""
+    """Run all 18 checks. Returns ordered list."""
     return [
         await _check_db_pool(),
         await _check_schema_applied(),
@@ -350,6 +398,7 @@ async def run_checks() -> list[dict[str, Any]]:
         await _check_sidecar("hlh_chat", "http://hlh_chat:9610/health"),
         await _check_sidecar("hlh_infer", "http://hlh_infer:9611/health"),
         await _check_sidecar("hlh_search", "http://hlh_search:8080/healthz"),
+        await _check_vision_available(),
         await _check_safeguard_version(),
         _check_disk_free("disk_free_data", "/data"),
         _check_disk_free("disk_free_models", "/models"),
