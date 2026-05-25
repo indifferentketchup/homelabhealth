@@ -1056,7 +1056,7 @@ async def append_message(
             """
             SELECT id, role, content
             FROM messages
-            WHERE chat_id = $1::uuid
+            WHERE chat_id = $1::uuid AND compacted_at IS NULL
             ORDER BY created_at ASC, id ASC
             """,
             chat_id,
@@ -1314,6 +1314,14 @@ async def append_message(
                     ))
                 except Exception:
                     logger.warning("audit insert failed for output guard flags", exc_info=True)
+
+        # Auto-compaction: summarize older messages when context usage is high.
+        # Best-effort — failures log and continue, never block the chat.
+        try:
+            from services.compaction import maybe_compact
+            await maybe_compact(chat_id, prompt_tokens_val, ctx_max)
+        except Exception as exc:
+            logger.error("compaction call failed: %s", exc)
 
         title_emit: str | None = None
         has_custom_title = bool((chat["title"] or "").strip())
