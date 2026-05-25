@@ -200,7 +200,7 @@ export function ChatView({
     }
   }, [activeChatId, pendingSend, abort])
 
-  async function runStream(chatId, content, assistantMessageIndex) {
+  async function runStream(chatId, content, assistantMessageIndex, sourceIds = null) {
     streamingChatRef.current = chatId
     streamAssistantIndexRef.current = assistantMessageIndex
     const model = selectedModel || undefined
@@ -305,7 +305,7 @@ export function ChatView({
         streamingChatRef.current = newChat.id
         hydrateFromChat(newChat)
         queryClient.invalidateQueries({ queryKey: ['chats'] })
-        await runStream(newChat.id, content, messages.length + 1)
+        await runStream(newChat.id, content, messages.length + 1, sourceIds)
       } catch (e) {
         console.error(e)
         setSendError(friendlyStreamError(e instanceof Error ? e.message : String(e)))
@@ -323,7 +323,7 @@ export function ChatView({
     setPendingSend(true)
     setStreamText('')
     setOptimisticUser({ id: '__optimistic_user__', role: 'user', content })
-    await runStream(activeChatId, content, messages.length + 1)
+    await runStream(activeChatId, content, messages.length + 1, sourceIds)
   }
 
   // Edit + regenerate both fork the current chat at a chosen message — fork creates a new chat
