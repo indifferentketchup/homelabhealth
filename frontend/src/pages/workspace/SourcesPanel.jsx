@@ -100,7 +100,7 @@ export function SourcesPanel({ chatId, workspaceId }) {
   return (
     <aside className="flex h-full min-h-0 w-full min-w-0 shrink-0 flex-col border-l border-sidebar-border bg-sidebar text-sidebar-foreground">
       <div className="border-b border-sidebar-border">
-        <div className="flex min-h-16 w-full items-center justify-center overflow-hidden px-2 py-2">
+        <div className="flex w-full items-center justify-center overflow-hidden px-2 py-1.5">
           <span className="fs-nav truncate text-center font-semibold uppercase tracking-wide text-muted-foreground">
             Sources
           </span>
