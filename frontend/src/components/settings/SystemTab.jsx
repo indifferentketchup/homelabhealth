@@ -30,7 +30,7 @@ const TIERS = [
     chat: 'Qwen3.5 0.8B Q8_0',
     embed: 'bge-m3 (1024-dim)',
     rerank: 'bge-reranker-v2-m3',
-    vision: '—',
+    vision: '— (not available)',
     stt: 'whisper tiny',
     footprint: '~1.5 GB RAM peak · ~0.9 GB disk',
     detect: '<16 GB RAM, no GPU',
@@ -41,7 +41,7 @@ const TIERS = [
     chat: 'MedGemma 1.5 4B Q4_K_M',
     embed: 'bge-large-en-v1.5 Q8',
     rerank: 'bge-reranker-base (CPU)',
-    vision: '—',
+    vision: 'MedGemma 1.5 4B (mmproj)',
     stt: 'whisper base',
     footprint: '~4 GB RAM peak · ~2.8 GB disk',
     detect: '≥16 GB RAM, no GPU',
@@ -63,7 +63,7 @@ const TIERS = [
     chat: 'MedGemma 1.5 4B Q8_0',
     embed: 'bge-large-en-v1.5 FP16',
     rerank: 'bge-reranker-v2-m3',
-    vision: '—',
+    vision: 'MedGemma 1.5 4B (mmproj)',
     stt: 'whisper small',
     footprint: '~6 GB VRAM peak · ~4.5 GB disk',
     detect: '6–11 GB VRAM',
@@ -74,7 +74,7 @@ const TIERS = [
     chat: 'MedGemma 27B Q4_K_M',
     embed: 'Harrier-0.6B Q8',
     rerank: 'Qwen3-Reranker-0.6B',
-    vision: 'Qwen2.5-VL-3B',
+    vision: 'MedGemma 27B (mmproj)',
     stt: 'whisper medium',
     footprint: '~16 GB VRAM peak · ~16 GB disk',
     detect: '12–23 GB VRAM',
@@ -85,7 +85,7 @@ const TIERS = [
     chat: 'MedGemma 27B Q4_K_M',
     embed: 'Harrier-0.6B Q8',
     rerank: 'Qwen3-Reranker-0.6B',
-    vision: 'Qwen2.5-VL-7B',
+    vision: 'MedGemma 27B (mmproj)',
     stt: 'whisper large',
     footprint: '~18 GB VRAM peak · ~18 GB disk',
     detect: '≥24 GB VRAM',
@@ -1006,6 +1006,23 @@ export default function SystemTab() {
         sysinfo={profile.sysinfo_json}
       />
 
+      {/* Step 3: GPU detected but <4 GB VRAM — falling back to CPU tier */}
+      {(() => {
+        const gpus = Array.isArray(profile.sysinfo_json?.gpus) ? profile.sysinfo_json.gpus : []
+        const maxVramMb = Math.max(0, ...gpus.map(g => Number(g?.memory_total_mb) || 0))
+        const hasGpu = gpus.length > 0 && maxVramMb > 0
+        const recommended = profile.recommended_tier
+        const isCpuTier = recommended === 'cpu-min' || recommended === 'cpu-std'
+        return hasGpu && isCpuTier ? (
+          <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-4">
+            <p className="text-sm text-blue-700 dark:text-blue-400">
+              A GPU was detected but has less than 4 GB VRAM, which isn&apos;t enough for GPU-accelerated
+              inference. HomeLab Health will run on CPU instead. The AI features still work — just slower.
+            </p>
+          </div>
+        ) : null
+      })()}
+
       <div className="space-y-2">
         <h3 className="text-sm font-medium text-foreground">Choose a tier</h3>
         <div className="grid grid-cols-1 gap-2">
@@ -1021,6 +1038,27 @@ export default function SystemTab() {
           ))}
         </div>
       </div>
+
+      {/* Step 1: cpu-min amber warning */}
+      {selectedTier === 'cpu-min' ? (
+        <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-4">
+          <p className="text-sm text-yellow-700 dark:text-yellow-400">
+            Minimal tier uses a small general-purpose model. Expect lower accuracy, higher hallucination
+            risk, and no vision (image/PDF understanding). Upgrade to cpu-std or higher for medical-grade
+            responses.
+          </p>
+        </div>
+      ) : null}
+
+      {/* Step 2: gpu-4gb info banner */}
+      {selectedTier === 'gpu-4gb' ? (
+        <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-4">
+          <p className="text-sm text-blue-700 dark:text-blue-400">
+            Your GPU has limited VRAM. HomeLab Health will use partial GPU offloading — some model layers
+            run on GPU (faster) while others run on CPU. This is normal and works automatically.
+          </p>
+        </div>
+      ) : null}
 
       {/* Phase 1: Models sub-section — show bundled artifacts for the
           currently-selected tier (so the operator sees what would be pulled
