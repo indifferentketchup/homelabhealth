@@ -223,6 +223,9 @@ INSERT INTO global_settings (key, value) VALUES
   ('memory_similarity_threshold', '0.45')
 ON CONFLICT (key) DO NOTHING;
 
+INSERT INTO global_settings (key, value) VALUES ('show_context_bar', 'false')
+ON CONFLICT (key) DO NOTHING;
+
 -- Single markdown blob for freeform notes; enforced as singleton.
 CREATE TABLE IF NOT EXISTS mode_memory (
     id SERIAL PRIMARY KEY,
@@ -574,3 +577,11 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE INDEX IF NOT EXISTS sessions_token_hash_idx ON sessions (token_hash);
 CREATE INDEX IF NOT EXISTS sessions_expires_idx ON sessions (expires_at);
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- Token tracking + auto-compaction support (TC track, 2026-05-25).
+-- ────────────────────────────────────────────────────────────────────────────
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS prompt_tokens INTEGER;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS completion_tokens INTEGER;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS compacted_at TIMESTAMPTZ;
+ALTER TABLE chats ADD COLUMN IF NOT EXISTS ctx_max INTEGER;

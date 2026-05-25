@@ -1,6 +1,7 @@
 """Chat CRUD, message listing, and streaming sends (OpenAI-compatible local inference or Claude)."""
 
 import hashlib
+import os
 import pathlib
 import uuid
 
@@ -385,6 +386,7 @@ def _chat_row(r: asyncpg.Record) -> dict[str, Any]:
         "pruning_summary": r["pruning_summary"],
         "message_count": r["message_count"],
         "is_main_chat": r["is_main_chat"],
+        "ctx_max": r["ctx_max"],
         "created_at": r["created_at"].isoformat() if r["created_at"] else None,
         "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
     }
@@ -399,6 +401,9 @@ def _message_row(r: asyncpg.Record) -> dict[str, Any]:
         "content": decrypt_column(raw_content, str(r["id"])) if raw_content else raw_content,
         "model": r["model"],
         "tokens_used": r["tokens_used"],
+        "prompt_tokens": r["prompt_tokens"],
+        "completion_tokens": r["completion_tokens"],
+        "compacted_at": r["compacted_at"].isoformat() if r.get("compacted_at") else None,
         "sources_used": r["sources_used"],
         "forked_from": str(r["forked_from"]) if r["forked_from"] else None,
         "created_at": r["created_at"].isoformat() if r["created_at"] else None,
@@ -457,7 +462,7 @@ async def list_chats(
     pool = await get_pool()
     cols = """
                 id, title, workspace_id, model, web_search_enabled, rag_enabled,
-                pruning_summary, message_count, is_main_chat, created_at, updated_at
+                pruning_summary, message_count, is_main_chat, ctx_max, created_at, updated_at
     """
     async with pool.acquire() as conn:
         if workspace_id is not None:
@@ -530,7 +535,7 @@ async def get_chat(
         row = await conn.fetchrow(
             """
             SELECT id, title, workspace_id, model, web_search_enabled, rag_enabled,
-                pruning_summary, message_count, is_main_chat, created_at, updated_at
+                pruning_summary, message_count, is_main_chat, ctx_max, created_at, updated_at
             FROM chats
             WHERE id = $1::uuid
             """,
@@ -646,7 +651,7 @@ async def patch_chat(
         row = await conn.fetchrow(
             """
             SELECT id, title, workspace_id, model, web_search_enabled, rag_enabled,
-                pruning_summary, message_count, is_main_chat, created_at, updated_at
+                pruning_summary, message_count, is_main_chat, ctx_max, created_at, updated_at
             FROM chats
             WHERE id = $1::uuid
             """,
@@ -847,7 +852,7 @@ async def list_messages(
             raise HTTPException(status_code=404, detail="Chat not found")
         rows = await conn.fetch(
             """
-            SELECT id, chat_id, role, content, model, tokens_used, sources_used, forked_from, created_at, guard_flags
+            SELECT id, chat_id, role, content, model, tokens_used, prompt_tokens, completion_tokens, compacted_at, sources_used, forked_from, created_at, guard_flags
             FROM messages
             WHERE chat_id = $1::uuid
             ORDER BY created_at ASC, id ASC
@@ -1051,7 +1056,7 @@ async def append_message(
             """
             SELECT id, role, content
             FROM messages
-            WHERE chat_id = $1::uuid
+            WHERE chat_id = $1::uuid AND compacted_at IS NULL
             ORDER BY created_at ASC, id ASC
             """,
             chat_id,
@@ -1206,6 +1211,8 @@ async def append_message(
 
         full: list[str] = []
         had_error = False
+        prompt_tokens_val: int | None = None
+        completion_tokens_val: int | None = None
         logger.info(
             "chat inference chat_id=%s model=%s workspace_id=%s",
             str(chat_id),
@@ -1242,6 +1249,10 @@ async def append_message(
                     had_error = True
                 if obj.get("content"):
                     full.append(obj["content"])
+                usage = obj.get("usage")
+                if usage:
+                    prompt_tokens_val = usage.get("prompt_tokens")
+                    completion_tokens_val = usage.get("completion_tokens")
         except Exception as e:
             yield _sse(json.dumps({"error": str(e)}))
             had_error = True
@@ -1261,8 +1272,8 @@ async def append_message(
         async with p.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO messages (id, chat_id, role, content, model, safeguard_version, ai_generated, guard_flags)
-                VALUES ($1::uuid, $2::uuid, 'assistant', $3, $4, $5, $6, $7)
+                INSERT INTO messages (id, chat_id, role, content, model, safeguard_version, ai_generated, guard_flags, prompt_tokens, completion_tokens, tokens_used)
+                VALUES ($1::uuid, $2::uuid, 'assistant', $3, $4, $5, $6, $7, $8, $9, $10)
                 """,
                 assist_id,
                 chat_id,
@@ -1271,6 +1282,9 @@ async def append_message(
                 current_version(),
                 True,
                 json.dumps(guard_flags_json) if guard_flags_json else None,
+                prompt_tokens_val,
+                completion_tokens_val,
+                completion_tokens_val,
             )
             await conn.execute(
                 """
@@ -1279,6 +1293,12 @@ async def append_message(
                 WHERE id = $1::uuid
                 """,
                 chat_id,
+            )
+            ctx_max = int(os.environ.get("HLH_CHAT_CTX", "32768"))
+            await conn.execute(
+                "UPDATE chats SET ctx_max = $2 WHERE id = $1::uuid AND ctx_max IS NULL",
+                chat_id,
+                ctx_max,
             )
             if output_scan.flags:
                 try:
@@ -1294,6 +1314,14 @@ async def append_message(
                     ))
                 except Exception:
                     logger.warning("audit insert failed for output guard flags", exc_info=True)
+
+        # Auto-compaction: summarize older messages when context usage is high.
+        # Best-effort — failures log and continue, never block the chat.
+        try:
+            from services.compaction import maybe_compact
+            await maybe_compact(chat_id, prompt_tokens_val, ctx_max)
+        except Exception as exc:
+            logger.error("compaction call failed: %s", exc)
 
         title_emit: str | None = None
         has_custom_title = bool((chat["title"] or "").strip())

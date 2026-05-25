@@ -1,8 +1,56 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Virtuoso } from 'react-virtuoso'
 
 import { CrisisCard, detectCrisis } from './CrisisCard.jsx'
 import { MessageBubble } from './MessageBubble.jsx'
+
+function CompactedGroup({ messages, summary, chatId, onSaveMessageAsNote, onEditUser, onRegenerate }) {
+  const [expanded, setExpanded] = useState(false)
+  const count = messages.length
+
+  return (
+    <div className="my-2 px-4">
+      {/* Collapsed header -- always visible */}
+      <div className="flex justify-center">
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs text-muted-foreground hover:bg-muted/50 transition-colors"
+        >
+          <span className="text-[10px]">{expanded ? '▾' : '▸'}</span>
+          {count} earlier message{count !== 1 ? 's' : ''} summarized
+        </button>
+      </div>
+
+      {/* Expanded: show original messages at reduced opacity */}
+      {expanded && (
+        <div className="mt-2 border-l-2 border-muted pl-3 opacity-50">
+          {messages.map((m) => (
+            <div key={m.id} className="pb-4">
+              <MessageBubble
+                chatId={chatId}
+                message={m}
+                onSaveMessageAsNote={onSaveMessageAsNote}
+                onEditUser={onEditUser}
+                onRegenerate={onRegenerate}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Summary bubble */}
+      {summary && (
+        <div className="mx-auto my-3 max-w-2xl rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200">
+          <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-blue-500">
+            Conversation summary
+          </div>
+          <div className="italic">{summary}</div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 function WebSourcesRow({ sources }) {
   const [open, setOpen] = useState(false)
@@ -45,7 +93,22 @@ export function MessageList({
   onSaveMessageAsNote,
   onEditUser,
   onRegenerate,
+  pruningSummary = null,
 }) {
+  // Separate compacted messages (consecutive from the start) from active messages.
+  const { compactedMessages, activeMessages } = useMemo(() => {
+    const compacted = []
+    const active = []
+    for (const m of messages) {
+      if (m.compacted_at) {
+        compacted.push(m)
+      } else {
+        active.push(m)
+      }
+    }
+    return { compactedMessages: compacted, activeMessages: active }
+  }, [messages])
+
   // Tail row while streaming: a synthetic message that either holds the in-flight tokens or, when
   // no token has arrived yet, renders a typing-dots placeholder via MessageBubble's __pending__ id.
   // ChatView commits the real-messages write and the stream-state clear in one flushSync, so by
@@ -57,7 +120,15 @@ export function MessageList({
         : [{ id: '__stream__', role: 'assistant', content: streamingAssistant }]
       : []
 
-  const all = [...messages, ...tail]
+  // Build the virtual list data: optional compacted-group sentinel, then active messages, then tail.
+  const all = useMemo(() => {
+    const items = []
+    if (compactedMessages.length > 0) {
+      items.push({ id: '__compacted_group__', _compactedGroup: true })
+    }
+    items.push(...activeMessages, ...tail)
+    return items
+  }, [compactedMessages, activeMessages, tail])
 
   return (
     <Virtuoso
@@ -72,6 +143,20 @@ export function MessageList({
       increaseViewportBy={{ top: 600, bottom: 600 }}
       computeItemKey={(_, m) => m.id ?? `idx-${_}`}
       itemContent={(i, m) => {
+        // Compacted group sentinel — render the collapsible group + summary.
+        if (m._compactedGroup) {
+          return (
+            <CompactedGroup
+              messages={compactedMessages}
+              summary={pruningSummary}
+              chatId={chatId}
+              onSaveMessageAsNote={onSaveMessageAsNote}
+              onEditUser={onEditUser}
+              onRegenerate={onRegenerate}
+            />
+          )
+        }
+
         const rowSources = m.role === 'assistant' ? sourcesByMessageIndex[i] : null
         const showRagPill =
           m.id === '__stream__' &&

@@ -12,6 +12,7 @@ import { useLayoutStore } from '@/store/layoutStore.js'
 
 import { AssistantGlyph } from './AssistantGlyph.jsx'
 import { ChatInput } from './ChatInput.jsx'
+import { ContextIndicator } from './ContextIndicator.jsx'
 import { DisclaimerBanner } from './DisclaimerBanner.jsx'
 import { MessageList } from './MessageList.jsx'
 import { ModelSelectorBar } from './ModelSelectorBar.jsx'
@@ -400,6 +401,10 @@ export function ChatView({
     await forkAndStream(prevUser.id, prevUser.content)
   }
 
+  const latestAssistant = [...(messages || [])].reverse().find(m => m.role === 'assistant' && m.prompt_tokens)
+  const promptTokens = latestAssistant?.prompt_tokens
+  const ctxMax = chat?.ctx_max
+
   if (!activeChatId) {
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-background">
@@ -476,6 +481,7 @@ export function ChatView({
               onSaveMessageAsNote={notesWorkspaceIdForSave ? saveMessageAsNote : undefined}
               onEditUser={handleEditUser}
               onRegenerate={handleRegenerate}
+              pruningSummary={chat?.pruning_summary ?? null}
             />
           )}
         </div>
@@ -521,6 +527,7 @@ export function ChatView({
             attachedSources={attachedSources}
             onRemoveAttached={removeAttachedSource}
           />
+          <ContextIndicator promptTokens={promptTokens} ctxMax={ctxMax} />
         </div>
       </div>
     </div>
