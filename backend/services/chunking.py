@@ -54,34 +54,67 @@ def chunk_text(text: str, filename: str | None = None) -> list[str]:
     return _splitter_for(filename).split_text(text)
 
 
-def _format_lab_tables(text: str) -> str:
-    """Post-process extracted PDF text to clarify lab result tables.
+_LAB_UNITS = r'(%|mg/dL|U/mL|g/dL|g/L|mEq/L|mmol/L|IU/mL|ng/mL|pg/mL|mcg/dL|cells/mcL|K/uL|M/uL|fL|pg|g/dL|thou/uL|mill/uL|mL/min)'
 
-    Detects common lab patterns where Value/Range/Units columns have
-    been flattened into a single line and reformats them as explicit
-    key-value pairs so the LLM can read them unambiguously.
-    """
+
+def _parse_lab_text(text: str) -> str:
+    """Parse text-extracted lab report: detect 'Value Range Units' header
+    and reformat following data rows as explicit key-value pairs."""
     import re
     lines = text.split("\n")
     out: list[str] = []
+    in_table = False
     for line in lines:
         stripped = line.strip()
-        # Pattern: "Test Name  >100  >=68  %" or "Test Name  37  22-37  mg/dL"
-        m = re.match(
-            r'^(.+?)\s{2,}([<>]?\d[\d.]*)\s{2,}([<>]=?\d[\d.–-]*)\s{2,}(%|mg/dL|U/mL|g/dL|mEq/L|mmol/L|IU/mL|ng/mL|pg/mL|mcg/dL|cells/mcL)$',
-            stripped,
-        )
-        if m:
-            test, value, ref_range, units = m.groups()
-            out.append(f"TEST: {test.strip()}")
-            out.append(f"  Value: {value} {units}")
-            out.append(f"  Reference Range: {ref_range} {units}")
+        if re.match(r'^Value\s+Range\s+Units?\s*$', stripped, re.IGNORECASE):
+            in_table = True
             continue
-        # Pattern: header row "Value  Range  Units" — skip (redundant after reformat)
-        if re.match(r'^Value\s+Range\s+Units\s*$', stripped):
-            continue
+        if in_table:
+            m = re.match(
+                r'^(.+?)\s+(\S+)\s+(\S+)\s+' + _LAB_UNITS + r'\s*$',
+                stripped,
+            )
+            if m and re.search(r'\d', m.group(2)):
+                test, value, ref_range, units = m.groups()
+                out.append(f"TEST: {test.strip()}")
+                out.append(f"  Patient Value: {value} {units}")
+                out.append(f"  Reference Range: {ref_range} {units}")
+                continue
+            else:
+                in_table = False
         out.append(line)
     return "\n".join(out)
+
+
+def _format_table_as_lab(table: list[list]) -> str | None:
+    """If this table has Value/Range/Units columns, format each row as
+    explicit key-value pairs. Returns None if not a lab-result table."""
+    if not table or len(table) < 2:
+        return None
+    header = [str(c or "").strip().lower() for c in table[0]]
+    val_idx = next((i for i, h in enumerate(header) if h == "value"), None)
+    range_idx = next((i for i, h in enumerate(header) if h == "range"), None)
+    units_idx = next((i for i, h in enumerate(header) if h in ("units", "unit")), None)
+    if val_idx is None:
+        return None
+    lines: list[str] = []
+    for row in table[1:]:
+        cells = [str(c or "").strip() for c in row]
+        if not any(cells):
+            continue
+        test_parts = [cells[i] for i in range(len(cells))
+                      if i not in (val_idx, range_idx, units_idx) and cells[i]]
+        test_name = " ".join(test_parts).strip()
+        value = cells[val_idx] if val_idx < len(cells) else ""
+        ref_range = cells[range_idx] if range_idx is not None and range_idx < len(cells) else ""
+        units = cells[units_idx] if units_idx is not None and units_idx < len(cells) else ""
+        if not value and not test_name:
+            continue
+        lines.append(f"TEST: {test_name}")
+        lines.append(f"  Patient Value: {value} {units}".rstrip())
+        if ref_range:
+            lines.append(f"  Reference Range: {ref_range} {units}".rstrip())
+    return "\n".join(lines) if lines else None
 
 
 def parse_pdf(file_bytes: bytes) -> str:
@@ -92,20 +125,36 @@ def parse_pdf(file_bytes: bytes) -> str:
         with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
             for page_num, page in enumerate(pdf.pages):
                 parts.append(f"\n[Page {page_num + 1}]\n")
-                # Extract tables separately for structure preservation
                 tables = page.extract_tables() or []
-                if tables:
-                    for table in tables:
+                has_lab_table = False
+                for table in tables:
+                    formatted = _format_table_as_lab(table)
+                    if formatted:
+                        parts.append(formatted)
+                        has_lab_table = True
+                    else:
                         for row in table:
                             cells = [str(c or "").strip() for c in row]
                             parts.append("  |  ".join(cells))
                         parts.append("")
-                # Also extract full text for non-table content
                 text = page.extract_text() or ""
                 if text.strip():
-                    parts.append(text)
-        raw = "\n".join(parts)
-        return _format_lab_tables(raw)
+                    if has_lab_table:
+                        import re
+                        filtered = []
+                        for line in text.split("\n"):
+                            s = line.strip()
+                            if re.match(r'^Value\s+Range\s+Units?\s*$', s, re.IGNORECASE):
+                                continue
+                            if re.match(r'^.+\s+\d[\d.]*\s+[\d<>].*\s+(mg/dL|%|U/mL|g/dL|mEq/L|mmol/L|IU/mL|ng/mL|pg/mL|mcg/dL|cells/mcL)\s*$', s):
+                                continue
+                            filtered.append(line)
+                        remainder = "\n".join(filtered).strip()
+                        if remainder:
+                            parts.append(remainder)
+                    else:
+                        parts.append(_parse_lab_text(text))
+        return "\n".join(parts)
     except ImportError:
         pass
     # Fallback to pypdf if pdfplumber not installed
