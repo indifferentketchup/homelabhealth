@@ -427,3 +427,36 @@ async def clear_workspace_chunks(
     async with audit.targeting("source", workspace_id):
         pass
     return {"deleted_chunks": deleted_count, "reset_sources": reset_count}
+
+
+@router.post("/reingest-all")
+async def reingest_all_sources(
+    _: dict = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
+) -> dict[str, Any]:
+    """Re-parse and re-embed every source that has a stored file on disk."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT id, workspace_id, name, mime_type, file_url FROM sources WHERE file_url IS NOT NULL"
+        )
+    queued = 0
+    skipped = 0
+    for row in rows:
+        fp = pathlib.Path(row["file_url"])
+        if not fp.exists():
+            skipped += 1
+            continue
+        raw = fp.read_bytes()
+        mime = row["mime_type"] or "application/octet-stream"
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM source_chunks WHERE source_id = $1::uuid", row["id"])
+            await conn.execute(
+                "UPDATE sources SET embedding_status = 'processing', chunk_count = 0, error_message = NULL, updated_at = NOW() WHERE id = $1::uuid",
+                row["id"],
+            )
+        asyncio.create_task(_ingest_source(row["id"], row["workspace_id"], raw, mime, row["name"]))
+        queued += 1
+    async with audit.targeting("source", None):
+        pass
+    return {"queued": queued, "skipped_no_file": skipped, "total": len(rows)}
