@@ -238,10 +238,13 @@ async def audit_event(request: Request) -> AsyncIterator[AuditEventHandle]:
     C3 / v0.12.0 will add the scrubber).
     """
     handle = AuditEventHandle(request)
-    # Capture the raw body once so endpoint can still consume it (FastAPI caches).
-    body_bytes = await request.body()
-    # FastAPI normally streams body; calling .body() forces a read. Subsequent
-    # reads inside the endpoint get the cached bytes.
+    # Capture the raw body for payload hashing. For multipart/form-data (file
+    # uploads), the stream is already consumed by FastAPI's file parser — fall
+    # back to an empty hash rather than crashing the request.
+    try:
+        body_bytes = await request.body()
+    except RuntimeError:
+        body_bytes = b""
     yield handle
     # After endpoint returns, we don't have the response status here directly
     # via dependency yield. Use a middleware to set request.state.status_code
