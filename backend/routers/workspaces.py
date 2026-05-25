@@ -459,7 +459,25 @@ async def delete_workspace(
             raise HTTPException(status_code=404, detail="Workspace not found")
     _delete_stored_icon(workspace_id)
     async with pool.acquire() as conn:
+        source_rows = await conn.fetch(
+            "SELECT id, file_url, content_hash FROM sources WHERE workspace_id = $1::uuid",
+            workspace_id,
+        )
         result = await conn.execute("DELETE FROM workspaces WHERE id = $1::uuid", workspace_id)
+    import pathlib
+    for sr in source_rows:
+        if sr["file_url"] and sr["content_hash"]:
+            remaining = 0
+            async with pool.acquire() as chk:
+                remaining = await chk.fetchval(
+                    "SELECT COUNT(*) FROM sources WHERE content_hash = $1",
+                    sr["content_hash"],
+                )
+            if remaining == 0:
+                try:
+                    pathlib.Path(sr["file_url"]).unlink(missing_ok=True)
+                except OSError:
+                    pass
     if result == "DELETE 0":
         raise HTTPException(status_code=404, detail="Workspace not found")
     async with audit.targeting("workspace", workspace_id):
