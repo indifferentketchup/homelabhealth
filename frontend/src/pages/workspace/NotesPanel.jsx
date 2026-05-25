@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, Trash2 } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
 
 import { createNote, deleteNote, listNotes, updateNote } from '@/api/notes.js'
 import { Button } from '@/components/ui/button'
@@ -10,7 +10,6 @@ import { cn } from '@/lib/utils'
 export function NotesPanel({ workspaceId }) {
   const queryClient = useQueryClient()
   const [selectedId, setSelectedId] = useState(null)
-  const [listOpen, setListOpen] = useState(true)
   const [localTitle, setLocalTitle] = useState('')
   const [localContent, setLocalContent] = useState('')
   const skipDebounceRef = useRef(false)
@@ -106,34 +105,12 @@ export function NotesPanel({ workspaceId }) {
 
   return (
     <aside className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-sidebar-border bg-sidebar text-sidebar-foreground">
-      <div className="border-b border-sidebar-border">
-        <div className="flex w-full items-center justify-between gap-2 overflow-hidden px-2 py-1.5">
-          <button
-            type="button"
-            onClick={() => setListOpen((o) => !o)}
-            className="fs-nav flex items-center gap-1 font-semibold uppercase tracking-wide text-muted-foreground outline-none"
-          >
-            <ChevronDown
-              className={cn('size-4 shrink-0 transition-transform duration-150', !listOpen && '-rotate-90')}
-              aria-hidden
-            />
-            Notes
-          </button>
-          <Button
-            type="button"
-            className="fs-nav h-7 shrink-0 px-2"
-            variant="secondary"
-            size="sm"
-            disabled={!workspaceId || createMut.isPending}
-            onClick={() => createMut.mutate()}
-          >
-            + New
-          </Button>
-        </div>
-      </div>
-
-      <ScrollArea className={cn("min-h-0 flex-[3]", !listOpen && "hidden")}>
+      <ScrollArea className="min-h-0 flex-[3]">
         <div className="flex flex-col gap-0.5 p-2 pb-2">
+          <div className="flex items-center justify-between px-2 py-1">
+            <span className="fs-nav text-sm text-muted-foreground">{notes.length} note{notes.length !== 1 ? 's' : ''}</span>
+            <Button type="button" className="h-6 px-2 text-xs" variant="secondary" size="sm" disabled={!workspaceId || createMut.isPending} onClick={() => createMut.mutate()}>+ New</Button>
+          </div>
           {!workspaceId ? (
             <p className="fs-nav px-1 text-muted-foreground">Open a workspace to see notes.</p>
           ) : isLoading ? (

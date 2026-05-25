@@ -119,18 +119,25 @@ export function ChatView({
 
   const messages = msgPack?.items ?? []
   const [draft, setDraft] = useState('')
+  const [attachedSources, setAttachedSources] = useState([])
 
   useEffect(() => {
-    function handleFocusSource(e) {
-      const name = e.detail?.name
-      if (name) {
-        setDraft(`Tell me about "${name}"`)
-        inputRef.current?.focus()
-      }
+    function handleAttach(e) {
+      const { name, id } = e.detail || {}
+      if (!name || !id) return
+      setAttachedSources(prev => {
+        if (prev.some(s => s.id === id)) return prev
+        return [...prev, { name, id }]
+      })
+      inputRef.current?.focus()
     }
-    window.addEventListener('hlh:focus-source', handleFocusSource)
-    return () => window.removeEventListener('hlh:focus-source', handleFocusSource)
+    window.addEventListener('hlh:attach-source', handleAttach)
+    return () => window.removeEventListener('hlh:attach-source', handleAttach)
   }, [])
+
+  function removeAttachedSource(id) {
+    setAttachedSources(prev => prev.filter(s => s.id !== id))
+  }
   const [streamText, setStreamText] = useState('')
   const [sendError, setSendError] = useState(null)
 
@@ -262,10 +269,16 @@ export function ChatView({
   }
 
   async function send(contentOverride) {
-    const content = (typeof contentOverride === 'string' ? contentOverride : draft).trim()
-    if (!content || busy) return
+    const rawContent = (typeof contentOverride === 'string' ? contentOverride : draft).trim()
+    if (!rawContent || busy) return
+    let content = rawContent
+    if (attachedSources.length > 0) {
+      const names = attachedSources.map(s => s.name).join(', ')
+      content = `[Attached: ${names}]\n\n${rawContent}`
+    }
     lastUserMessageRef.current = content
     setDraft('')
+    setAttachedSources([])
     setSendError(null)
 
     if (!activeChatId) {
@@ -404,6 +417,8 @@ export function ChatView({
               onStop={abort}
               activeChatId={null}
               chatMaxW={chatMaxW}
+              attachedSources={attachedSources}
+              onRemoveAttached={removeAttachedSource}
             />
           </div>
         </div>
@@ -468,6 +483,8 @@ export function ChatView({
             onStop={abort}
             activeChatId={activeChatId}
             chatMaxW={chatMaxW}
+            attachedSources={attachedSources}
+            onRemoveAttached={removeAttachedSource}
           />
         </div>
       </div>
