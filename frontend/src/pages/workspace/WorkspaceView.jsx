@@ -456,15 +456,22 @@ export function WorkspaceSourcesPage() {
   }
 
   async function onUpload(e) {
-    const file = e.target.files?.[0]
+    const files = Array.from(e.target.files || [])
     e.target.value = ''
-    if (!file || !workspaceId) return
+    if (!files.length || !workspaceId) return
     setUploading(true)
     setStatus('')
     try {
-      const res = await uploadSource(file, workspaceId)
-      if (res?.status === 'already_exists') setStatus('Already ingested (same file hash).')
-      else setStatus(`Ingesting ${file.name}…`)
+      if (files.length === 1) {
+        const res = await uploadSource(files[0], workspaceId)
+        if (res?.status === 'already_exists') setStatus('Already ingested (same file hash).')
+        else setStatus(`Ingesting ${files[0].name}…`)
+      } else {
+        const { uploadSources } = await import('@/api/sources.js')
+        const res = await uploadSources(files, workspaceId)
+        const count = res?.sources?.length || files.length
+        setStatus(`Ingesting ${count} file${count > 1 ? 's' : ''}…`)
+      }
       await queryClient.invalidateQueries({ queryKey: ['sources', workspaceId] })
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Upload failed')
@@ -509,6 +516,7 @@ export function WorkspaceSourcesPage() {
           <input
             ref={fileRef}
             type="file"
+            multiple
             accept=".txt,.md,.pdf,.docx,text/plain,text/markdown,application/pdf"
             className="sr-only"
             disabled={uploading || !workspaceId}

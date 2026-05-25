@@ -114,17 +114,24 @@ export function SourcesPanel({ chatId, workspaceId }) {
   }
 
   async function onUpload(e) {
-    const file = e.target.files?.[0]
+    const files = Array.from(e.target.files || [])
     e.target.value = ''
-    if (!file || !effectiveWorkspaceId) return
+    if (!files.length || !effectiveWorkspaceId) return
     setUploading(true)
     setStatus('')
     try {
-      const res = await uploadSource(file, effectiveWorkspaceId)
-      if (res?.status === 'already_exists') {
-        setStatus('Already ingested (same file hash).')
+      const res = await uploadSource(files[0], effectiveWorkspaceId)
+      if (files.length === 1) {
+        if (res?.status === 'already_exists') {
+          setStatus('Already ingested (same file hash).')
+        } else {
+          setStatus(`Ingesting ${files[0].name}…`)
+        }
       } else {
-        setStatus(`Ingesting ${file.name}…`)
+        const { uploadSources } = await import('@/api/sources.js')
+        const multi = await uploadSources(files, effectiveWorkspaceId)
+        const count = multi?.sources?.length || 1
+        setStatus(`Ingesting ${count} file${count > 1 ? 's' : ''}…`)
       }
       await queryClient.invalidateQueries({ queryKey: ['sources', effectiveWorkspaceId] })
     } catch (err) {
@@ -172,6 +179,7 @@ export function SourcesPanel({ chatId, workspaceId }) {
         <input
           ref={fileRef}
           type="file"
+          multiple
           accept=".txt,.md,.pdf,.docx,text/plain,text/markdown,application/pdf"
           className="sr-only"
           disabled={uploading || !effectiveWorkspaceId}

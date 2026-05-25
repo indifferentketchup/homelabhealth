@@ -174,20 +174,34 @@ async def _ingest_source(source_id: uuid.UUID, workspace_id: uuid.UUID, raw: byt
 @router.post("/{workspace_id}/upload")
 async def upload_source(
     workspace_id: uuid.UUID,
-    file: UploadFile = File(...),
+    files: list[UploadFile] = File(...),
     _: dict = Depends(get_principal),
     audit: AuditEventHandle = Depends(audit_event),
 ) -> dict[str, Any]:
+    if not files:
+        raise HTTPException(400, "No files provided")
+    results = []
+    for file in files:
+        result = await _upload_single(workspace_id, file)
+        results.append(result)
+    async with audit.targeting("source", None):
+        pass
+    if len(results) == 1:
+        return results[0]
+    return {"sources": results}
+
+
+async def _upload_single(workspace_id: uuid.UUID, file: UploadFile) -> dict[str, Any]:
     raw = await file.read()
     if not raw:
-        raise HTTPException(400, "Empty file")
+        return {"filename": file.filename, "error": "Empty file"}
     if len(raw) > 50 * 1024 * 1024:
-        raise HTTPException(413, "File too large")
+        return {"filename": file.filename, "error": "File too large (50MB max)"}
 
     try:
         mime = _resolve_upload_parse_mime(raw, file.content_type, file.filename)
     except ValueError as e:
-        raise HTTPException(400, str(e)) from e
+        return {"filename": file.filename, "error": str(e)}
 
     stype = _mime_to_source_type(mime)
     h = _sha256(raw)
@@ -195,10 +209,10 @@ async def upload_source(
     async with pool.acquire() as conn:
         workspace_exists = await conn.fetchval("SELECT 1 FROM workspaces WHERE id = $1::uuid", workspace_id)
         if not workspace_exists:
-            raise HTTPException(404, "Workspace not found")
+            return {"filename": file.filename, "error": "Workspace not found"}
         existing = await conn.fetchval("SELECT id FROM sources WHERE content_hash = $1 LIMIT 1", h)
         if existing:
-            return {"source_id": str(existing), "status": "already_exists"}
+            return {"source_id": str(existing), "filename": file.filename, "status": "already_exists"}
 
         source_id = uuid.uuid4()
         name = (file.filename or "upload").strip() or "upload"
@@ -220,9 +234,7 @@ async def upload_source(
         )
 
     asyncio.create_task(_ingest_source(source_id, workspace_id, raw, mime, name))
-    async with audit.targeting("source", source_id):
-        pass
-    return {"source_id": str(source_id), "status": "ingesting"}
+    return {"source_id": str(source_id), "filename": file.filename, "status": "ingesting"}
 
 
 @router.get("/{workspace_id}")
