@@ -35,6 +35,8 @@ def _mime_to_source_type(mime: str | None) -> str:
         return "pdf"
     if m == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
         return "docx"
+    if m.startswith("image/"):
+        return "image"
     return "txt"
 
 

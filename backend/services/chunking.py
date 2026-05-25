@@ -82,6 +82,22 @@ def parse_text(file_bytes: bytes) -> str:
     return file_bytes.decode("utf-8", errors="replace")
 
 
+def parse_image(file_bytes: bytes) -> str:
+    """OCR an image file using Tesseract. Returns extracted text."""
+    try:
+        from PIL import Image
+        import pytesseract
+        img = Image.open(io.BytesIO(file_bytes))
+        text = pytesseract.image_to_string(img)
+        if not text or not text.strip():
+            raise ValueError("OCR produced no text — image may be blank or unreadable")
+        return text.strip()
+    except ImportError as e:
+        raise ValueError(f"OCR dependencies not available: {e}") from e
+    except Exception as e:
+        raise ValueError(f"Image OCR failed: {e}") from e
+
+
 def parse_source_bytes(file_bytes: bytes, mime_type: str) -> str:
     m = (mime_type or "").lower().split(";")[0].strip()
     if m in ("text/plain", "text/markdown", "text/x-markdown"):
@@ -90,4 +106,6 @@ def parse_source_bytes(file_bytes: bytes, mime_type: str) -> str:
         return parse_pdf(file_bytes)
     if m == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
         return parse_docx(file_bytes)
+    if m.startswith("image/"):
+        return parse_image(file_bytes)
     raise ValueError(f"Unsupported MIME type: {mime_type}")

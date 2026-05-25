@@ -180,7 +180,7 @@ export function SourcesPanel({ chatId, workspaceId }) {
           ref={fileRef}
           type="file"
           multiple
-          accept=".txt,.md,.pdf,.docx,text/plain,text/markdown,application/pdf"
+          accept=".txt,.md,.pdf,.docx,.png,.jpg,.jpeg,.tiff,.bmp,text/plain,text/markdown,application/pdf,image/*"
           className="sr-only"
           disabled={uploading || !effectiveWorkspaceId}
           onChange={(ev) => void onUpload(ev)}
