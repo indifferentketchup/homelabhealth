@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { FileStack, Trash2, Upload } from 'lucide-react'
+import { FileStack, Upload } from 'lucide-react'
 
 import { listWorkspaces } from '@/api/workspaces.js'
 import { deleteSource, listSources, uploadSource } from '@/api/sources.js'
@@ -35,6 +35,8 @@ export function SourcesPanel({ chatId, workspaceId }) {
   const [status, setStatus] = useState('')
   const [editingId, setEditingId] = useState(null)
   const [editName, setEditName] = useState('')
+  const [ctx, setCtx] = useState(null)
+  const ctxRef = useRef(null)
 
   const { data: workspacesPack } = useQuery({
     queryKey: ['workspaces', 'list'],
@@ -59,6 +61,38 @@ export function SourcesPanel({ chatId, workspaceId }) {
         : false
     },
   })
+
+  useEffect(() => {
+    if (!ctx) return
+    function onKey(e) { if (e.key === 'Escape') setCtx(null) }
+    function onClick(e) { if (ctxRef.current && !ctxRef.current.contains(e.target)) setCtx(null) }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('mousedown', onClick)
+    return () => { document.removeEventListener('keydown', onKey); document.removeEventListener('mousedown', onClick) }
+  }, [ctx])
+
+  function onSourceContextMenu(e, src) {
+    e.preventDefault()
+    e.stopPropagation()
+    setCtx({ x: e.clientX, y: e.clientY, source: src })
+  }
+
+  function startRename(src) {
+    setCtx(null)
+    setEditingId(src.id)
+    setEditName(src.name)
+  }
+
+  async function confirmDelete(src) {
+    setCtx(null)
+    if (!window.confirm(`Remove source "${src.name}"?`)) return
+    try {
+      await deleteSource(src.id)
+      await queryClient.invalidateQueries({ queryKey: ['sources', effectiveWorkspaceId] })
+    } catch {
+      setStatus('Delete failed')
+    }
+  }
 
   async function onUpload(e) {
     const files = Array.from(e.target.files || [])
@@ -85,16 +119,6 @@ export function SourcesPanel({ chatId, workspaceId }) {
       setStatus(err instanceof Error ? err.message : 'Upload failed')
     } finally {
       setUploading(false)
-    }
-  }
-
-  async function onDeleteSource(id, name) {
-    if (!window.confirm(`Remove source "${name}"?`)) return
-    try {
-      await deleteSource(id)
-      await queryClient.invalidateQueries({ queryKey: ['sources', effectiveWorkspaceId] })
-    } catch {
-      setStatus('Delete failed')
     }
   }
 
@@ -146,8 +170,9 @@ export function SourcesPanel({ chatId, workspaceId }) {
             return (
               <div
                 key={src.id}
-                title={src.name}
                 className="group flex w-full items-stretch gap-1 rounded-md border border-transparent py-0.5 hover:border-sidebar-border hover:bg-sidebar-accent/30"
+                title={src.name}
+                onContextMenu={(e) => onSourceContextMenu(e, src)}
               >
                 <div className="flex min-w-0 flex-1 items-start gap-2 rounded-md px-1 py-1.5">
                   <span className="min-w-0 flex-1">
@@ -175,12 +200,7 @@ export function SourcesPanel({ chatId, workspaceId }) {
                           }}
                         />
                       ) : (
-                        <span
-                          className="line-clamp-2 cursor-pointer"
-                          onDoubleClick={() => { setEditingId(src.id); setEditName(src.name) }}
-                        >
-                          {src.name}
-                        </span>
+                        <span className="line-clamp-2">{src.name}</span>
                       )}
                     </span>
                     {src.embedding_status !== 'complete' && (
@@ -206,22 +226,43 @@ export function SourcesPanel({ chatId, workspaceId }) {
                   >
                     Send to Chat
                   </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                    title="Remove source"
-                    onClick={() => void onDeleteSource(src.id, src.name)}
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
                 </div>
               </div>
             )
           })}
         </div>
       </ScrollArea>
+
+      {ctx && (
+        <div
+          ref={ctxRef}
+          role="menu"
+          className="fixed z-50 min-w-[10rem] rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
+          style={{
+            left: Math.min(ctx.x, window.innerWidth - 180),
+            top: Math.min(ctx.y, window.innerHeight - 120),
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            className="fs-nav flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-left outline-none hover:bg-accent hover:text-accent-foreground"
+            onClick={() => startRename(ctx.source)}
+          >
+            Rename
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="fs-nav flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-left text-destructive outline-none hover:bg-destructive/10"
+            onClick={() => confirmDelete(ctx.source)}
+          >
+            Delete
+          </button>
+        </div>
+      )}
     </aside>
   )
 }
