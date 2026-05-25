@@ -164,7 +164,6 @@ services:
       INFINITY_PORT: "${HLH_INFER_PORT:-9611}"
       INFINITY_HOST: "0.0.0.0"
       INFINITY_URL_PREFIX: "/v1"   # serve at /v1/embeddings + /v1/rerank to match call-site paths
-      HF_TOKEN: "${HF_TOKEN:-}"   # not required for bge models (not gated); plumbed for future
     volumes:
       - hlh_models:/app/.cache   # infinity caches downloaded weights under HF_HOME (/app/.cache)
     user: "1000:1000"

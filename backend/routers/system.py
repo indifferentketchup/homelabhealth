@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field
 from db import get_pool
 from deps import require_admin
 from services.audit import AuditEventHandle, audit_event
-from services import bundled_providers, hf_token
+from services import bundled_providers
 from services.sysinfo import ALL_TIERS, collect, recommend_tier
 
 router = APIRouter()
@@ -41,8 +41,6 @@ class ProfilePut(BaseModel):
     tier_source: str = Field(default="manual", min_length=1, max_length=32)
 
 
-class HfTokenPut(BaseModel):
-    token: str = Field(..., min_length=10, max_length=200)
 
 
 def _profile_response(row: Any) -> dict[str, Any]:
@@ -175,46 +173,6 @@ async def redetect(
     return _profile_response(row)
 
 
-@router.get("/hf-token")
-async def get_hf_token(_: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        configured, masked, updated_at = await hf_token.masked(conn)
-    return {
-        "configured": configured,
-        "masked": masked,
-        "updated_at": updated_at.isoformat() if updated_at else None,
-    }
-
-
-@router.put("/hf-token")
-async def put_hf_token(
-    body: HfTokenPut,
-    _: dict[str, Any] = Depends(require_admin),
-    audit: AuditEventHandle = Depends(audit_event),
-):
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        try:
-            await hf_token.set_token(conn, body.token)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
-    async with audit.targeting("system", None):
-        pass
-    return Response(status_code=204)
-
-
-@router.delete("/hf-token")
-async def delete_hf_token(
-    _: dict[str, Any] = Depends(require_admin),
-    audit: AuditEventHandle = Depends(audit_event),
-):
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        await hf_token.clear(conn)
-    async with audit.targeting("system", None):
-        pass
-    return Response(status_code=204)
 
 
 @router.post("/acknowledge")

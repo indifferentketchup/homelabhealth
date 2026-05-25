@@ -113,25 +113,6 @@ def _check_provider_key() -> dict[str, Any]:
         return {"name": "provider_key", "status": ERROR, "detail": f"{type(e).__name__}: {e}"}
 
 
-async def _check_hf_token() -> dict[str, Any]:
-    """Configured via DB (hf_token.get) OR HF_TOKEN env."""
-    try:
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            from services.hf_token import get as hf_get
-            token = await hf_get(conn)
-        if token:
-            return {"name": "hf_token", "status": OK, "detail": "configured via DB"}
-        env_token = (os.environ.get("HF_TOKEN") or "").strip()
-        if env_token:
-            return {"name": "hf_token", "status": OK, "detail": "configured via env"}
-        return {
-            "name": "hf_token",
-            "status": OK,
-            "detail": "unset (optional — bundled models are on ungated repos)",
-        }
-    except Exception as e:
-        return {"name": "hf_token", "status": ERROR, "detail": f"{type(e).__name__}: {e}"}
 
 
 def _check_luks_status() -> dict[str, Any]:
@@ -361,7 +342,7 @@ def _check_column_encryption() -> dict[str, Any]:
 
 
 async def run_checks() -> list[dict[str, Any]]:
-    """Run all 18 checks. Returns ordered list."""
+    """Run all 17 checks. Returns ordered list."""
     return [
         await _check_db_pool(),
         await _check_schema_applied(),
@@ -373,7 +354,6 @@ async def run_checks() -> list[dict[str, Any]]:
         _check_disk_free("disk_free_data", "/data"),
         _check_disk_free("disk_free_models", "/models"),
         _check_provider_key(),
-        await _check_hf_token(),
         _check_luks_status(),
         _check_backrest_repo(),
         _check_master_key(),
