@@ -1009,8 +1009,6 @@ export default function SystemTab() {
         </div>
       </div>
 
-      <PreFlightCard />
-
       {/* Phase 1: Models sub-section — show bundled artifacts for the
           currently-selected tier (so the operator sees what would be pulled
           before they commit, and can drive pulls post-save). */}
@@ -1044,6 +1042,8 @@ export default function SystemTab() {
           </span>
         </span>
       </div>
+
+      <PreFlightCard />
     </section>
   )
 }
