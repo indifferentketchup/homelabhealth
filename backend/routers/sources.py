@@ -235,7 +235,7 @@ async def _upload_single(workspace_id: uuid.UUID, file: UploadFile) -> dict[str,
         workspace_exists = await conn.fetchval("SELECT 1 FROM workspaces WHERE id = $1::uuid", workspace_id)
         if not workspace_exists:
             return {"filename": file.filename, "error": "Workspace not found"}
-        existing = await conn.fetchval("SELECT id FROM sources WHERE content_hash = $1 LIMIT 1", h)
+        existing = await conn.fetchval("SELECT id FROM sources WHERE content_hash = $1 AND workspace_id = $2::uuid LIMIT 1", h, workspace_id)
         if existing:
             return {"source_id": str(existing), "filename": file.filename, "status": "already_exists"}
 
