@@ -481,6 +481,7 @@ export function ChatView({
               onSaveMessageAsNote={notesWorkspaceIdForSave ? saveMessageAsNote : undefined}
               onEditUser={handleEditUser}
               onRegenerate={handleRegenerate}
+              pruningSummary={chat?.pruning_summary ?? null}
             />
           )}
         </div>
