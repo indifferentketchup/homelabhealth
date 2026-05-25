@@ -1,5 +1,6 @@
 """Chat CRUD, message listing, and streaming sends (OpenAI-compatible local inference or Claude)."""
 
+import hashlib
 import pathlib
 import uuid
 
@@ -9,7 +10,7 @@ from typing import Any, AsyncIterator
 
 import asyncpg
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -18,7 +19,7 @@ from deps import (
     get_principal,
 )
 from db import get_pool
-from services.audit import AuditEventHandle, audit_event
+from services.audit import AuditEventHandle, AuditRecord, audit_event, insert_audit_event
 from services.deid import is_enabled as deid_enabled, redact_text
 from services.provider_client import (
     Provider,
@@ -966,6 +967,7 @@ async def fork_chat_at_message(
 async def append_message(
     chat_id: uuid.UUID,
     body: MessageCreate,
+    request: Request,
     principal: dict[str, Any] = Depends(get_principal),
     audit: AuditEventHandle = Depends(audit_event),
 ):
@@ -1088,6 +1090,20 @@ async def append_message(
     from services.guard import scan_input, scan_output
     input_scan = scan_input(user_message_text)
     if not input_scan.passed:
+        try:
+            _pool = await get_pool()
+            async with _pool.acquire() as _aconn:
+                await insert_audit_event(_aconn, AuditRecord(
+                    request_id=request.state.request_id,
+                    actor=principal.get("username", "unknown"),
+                    action="safeguard.refuse.input",
+                    target_type="chat",
+                    target_id=str(chat_id),
+                    status_code=422,
+                    payload_hash=hashlib.sha256(user_message_text.encode("utf-8")).digest(),
+                ))
+        except Exception:
+            logger.warning("audit insert failed for input guard refusal", exc_info=True)
         return JSONResponse(
             status_code=422,
             content={
@@ -1263,6 +1279,20 @@ async def append_message(
                 """,
                 chat_id,
             )
+            if output_scan.flags:
+                try:
+                    flags_bytes = json.dumps(guard_flags_json).encode("utf-8")
+                    await insert_audit_event(conn, AuditRecord(
+                        request_id=request.state.request_id,
+                        actor="system",
+                        action="safeguard.flag.output",
+                        target_type="message",
+                        target_id=str(assist_id),
+                        status_code=200,
+                        payload_hash=hashlib.sha256(flags_bytes).digest(),
+                    ))
+                except Exception:
+                    logger.warning("audit insert failed for output guard flags", exc_info=True)
 
         title_emit: str | None = None
         has_custom_title = bool((chat["title"] or "").strip())
