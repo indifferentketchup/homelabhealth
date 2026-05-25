@@ -1,3 +1,5 @@
+> **Historical (2026-05-22):** Superseded by bundled-system-takes-everything (v0.7.0) and subsequent phases through v0.25.0. Do not implement from this doc without checking [roadmap.md](roadmap.md) and [CONTEXT.md](CONTEXT.md).
+
 > **Note (2026-05-22):** The Phase 1 design's deferral of embed/rerank bundling has been superseded by [`2026-05-22-bundled-system-takes-everything-design.md`](superpowers/specs/2026-05-22-bundled-system-takes-everything-design.md). The `bundled-chat` provider has been renamed `HomeLab Health AI · Chat` (UUID preserved), and two sibling rows now exist for embed + rerank.
 
 # HLH Bundled-AI — Phase 1 Design

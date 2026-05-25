@@ -4,9 +4,9 @@ Self-hosted RAG chat app for personal health records. Upload medical documents (
 
 One `docker compose up` to run. Built-in username/password auth. Encryption keys auto-generate on first launch. No reverse proxy required.
 
-**Current release:** `v0.25.0` (2026-05-25). See [CHANGELOG.md](CHANGELOG.md) for the full history.
+**Current release:** `v0.26.0` (2026-05-25). See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
-Roadmap: [docs/roadmap.md](docs/roadmap.md). Ship-to-friend gate is **clear** — speech-to-text (A4) is explicitly deferred.
+Roadmap: [docs/roadmap.md](docs/roadmap.md). Architecture: [docs/architecture.md](docs/architecture.md). Agent bootstrap: [docs/CONTEXT.md](docs/CONTEXT.md), [AGENTS.md](AGENTS.md). Ship-to-friend gate is **clear** — speech-to-text (A4) is explicitly deferred.
 
 ## Quickstart
 
@@ -25,6 +25,8 @@ First launch walks you through setup: create your account, pick a hardware tier,
 **Doctor check:** `docker exec hlh_api python -m hlh.doctor` — shows DB, schema, sidecars, disk, encryption, vision, and more. Also at Settings → System → Pre-flight in the UI.
 
 ## What's included
+
+See [docs/architecture.md](docs/architecture.md) for container topology, request flows, and data model.
 
 | Feature | Details |
 |---------|---------|

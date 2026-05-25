@@ -7,7 +7,7 @@ Phase numbering renumbers slightly so AI / Security / Safeguards each get
 their own track but interleave on a single dependency graph.
 
 Owner: Sam
-Last updated: 2026-05-25 (`v0.25.0` — vision polish + STT defer; ship-to-friend gate clear)
+Last updated: 2026-05-25 (`v0.26.0` — architecture.md + doc sync)
 
 -----
 
@@ -33,6 +33,7 @@ Three tracks. Phases interleave by dependency, not by track.
 
 ```
 Shipped releases (most recent → oldest):
+  v0.26.0   architecture.md + agent docs + stale doc sync (2026-05-25)
   v0.25.0   two-pass vision + timeouts + STT defer + ship-to-friend clear (2026-05-25)
   v0.24.0   token tracking + auto-compaction + context indicator (2026-05-25)
   v0.23.1   per-tier context window sizes (HLH_CHAT_CTX) (2026-05-25)
@@ -89,8 +90,8 @@ Phase track in summary:
 **Ship-ready gate** = every security + safeguard phase shipped + tagged,
 built-in auth working, key auto-generation working, setup wizard tested.
 
-**Latest release:** `v0.25.0` (2026-05-25) — two-pass vision + ship-to-friend gate
-clear. See `CHANGELOG.md` for the per-tag rundown.
+**Latest release:** `v0.26.0` (2026-05-25) — architecture.md + doc sync. See `CHANGELOG.md`
+for the per-tag rundown.
 
 **Active work:** none. **Ship-to-friend gate is clear** (2026-05-25) — A4 STT
 deferred with operator consent. Next milestone: friend onboarding, then
@@ -339,8 +340,8 @@ plan required before any model swap to a different dim.
 infinity multi-model proves unreliable, split into `hlh_embed` +
 `hlh_rerank`. Not needed today.
 
-### A3 — Vision (VLM) via MedGemma mmproj — **shipped** (`v0.22.0`; two-pass
-image extraction in `[Unreleased]`)
+### A3 — Vision (VLM) via MedGemma mmproj — **shipped** (`v0.22.0` base;
+two-pass image extraction in `v0.25.0`)
 
 No separate vision sidecar. MedGemma (both 4B and 27B) is natively a
 vision-language model (SigLIP 400M medical image encoder, trained on
@@ -841,6 +842,8 @@ Open-ended timeline means this is the *floor*; reality is “until done right.�
 
 - This file: `docs/roadmap.md` — canonical source of truth for AI,
   safeguards, and security.
+- System design: `docs/architecture.md` — containers, request flows, data model.
+- Agent bootstrap: `docs/CONTEXT.md`, `AGENTS.md` (committed). `CLAUDE.md`, `.cursor/` local-only.
 - Phase 1 design + dispatch (historical): `docs/phase-1-design.md`,
   `docs/phase-1-dispatch.md`.
 - Phase 0 historical: `docs/hlh_phase0_design.md`,

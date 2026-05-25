@@ -20,14 +20,22 @@ backups/
 *.dump
 pre-*-migration-*
 
-# Agent / IDE state
+# Agent / IDE / Cursor (local only — not distributed)
 CLAUDE.md
+.cursor/
+.cursorignore
 .superpowers/
 .worktrees/
 
 # Repo-internal (not for distribution)
 docs/*
 !docs/*.md
+!docs/CONTEXT.md
+!docs/superpowers/
+docs/superpowers/*
+!docs/superpowers/specs/
+docs/superpowers/specs/*
+!docs/superpowers/specs/*.md
 !docs/operator/
 docs/operator/*
 !docs/operator/*.md

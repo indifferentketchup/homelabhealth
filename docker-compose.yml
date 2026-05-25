@@ -237,7 +237,7 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_OG_TITLE: "homelabhealth"
-        VITE_OG_DESCRIPTION: "Open up your DAW: Digital AI Workspace."
+        VITE_OG_DESCRIPTION: "Self-hosted RAG chat for personal health records."
     container_name: hlh_ui
     restart: unless-stopped
     environment:

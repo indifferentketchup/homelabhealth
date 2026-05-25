@@ -20,6 +20,22 @@ _No entries yet._
 
 ---
 
+## [v0.26.0] — 2026-05-25
+
+### Docs
+- **`docs/architecture.md`:** system design — container topology, chat/ingest SSE flows,
+  data model, security layers, release map (verified against git history through v0.25.0).
+- **`AGENTS.md` + `docs/CONTEXT.md`:** committed agent entry points and session bootstrap.
+- **Committed `docs/superpowers/specs/`** (design docs); plans remain local.
+- **Stale doc pass:** THREATMODEL auth updated for built-in sessions (v0.19.0); roadmap A3
+  two-pass → v0.25.0; shipped superpowers specs marked historical; frontend api comment,
+  `SECURITY.md` auth scope, docker-compose OG description (removed legacy DAW copy).
+
+### Tooling
+- **`.gitignore`:** `CLAUDE.md`, `.cursor/`, `.cursorignore` stay local-only.
+
+---
+
 ## [v0.25.0] — 2026-05-25
 
 ### AI
