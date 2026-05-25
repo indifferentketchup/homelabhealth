@@ -72,7 +72,7 @@ Deferred indefinitely (2026-05-24 posture-shift pass):
   B4  red-team eval — discipline only; never gets a tag.
 
 Phase track in summary:
-  A — Built-in AI:   A0 ✓ A1 ✓ A1.5 ✓ A1.6 ✓ A1.7 ✓ A2 ✓ A7 ✓ │ A3 A4 A5? A6
+  A — Built-in AI:   A0 ✓ A1 ✓ A1.5 ✓ A1.6 ✓ A1.7 ✓ A2 ✓ A7 ✓ A3  │ A4 A5? A6
   B — Safeguards:    B0 ✓ B1 ✓ B2 ✓                           │ B3             │ B4 deferred
   C — Security:      C0 ✓ C1 ✓ C2 ✓ C3 ✓ C4 ✓ C5 ✓ C6 ✓ C7 ✓  │                │ C8 C9 deferred
 ```
@@ -80,7 +80,7 @@ Phase track in summary:
 **Ship-ready gate** = every security + safeguard phase shipped + tagged,
 built-in auth working, key auto-generation working, setup wizard tested.
 
-**Latest release:** `v0.19.0` (2026-05-24) — built-in auth. See `CHANGELOG.md` for the per-tag rundown.
+**Latest release:** `v0.22.0` (2026-05-25) — A3 Vision (MedGemma mmproj). See `CHANGELOG.md` for the per-tag rundown.
 
 **Active work — `v0.20.0` (B3 audit-logged refusals):**
 Refusal events recorded in `audit_log`. Retry-with-warning flow for
@@ -329,17 +329,30 @@ plan required before any model swap to a different dim.
 infinity multi-model proves unreliable, split into `hlh_embed` +
 `hlh_rerank`. Not needed today.
 
-### `v0.18.0` — Vision (VLM) + MedSigLIP (roadmap code: A3)
+### A3 — Vision (VLM) via MedGemma mmproj — in progress
 
-Sidecar `hlh_vlm` running llama.cpp with `--mmproj`. Qwen2.5-VL-3B Q4
-(8gb tier) / Qwen2.5-VL-7B Q4 (16gb+).
+No separate vision sidecar. MedGemma (both 4B and 27B) is natively a
+vision-language model (SigLIP 400M medical image encoder, trained on
+chest X-rays, derm, ophthalmology, histo). Adding `--mmproj` to the
+existing `hlh_chat` sidecar enables image understanding at zero
+additional memory cost beyond the ~200-400 MB mmproj file.
 
-MedSigLIP for medical-image embeddings. License is HAI-DEF — review at
-impl. If redistribution is forbidden, surface a manual-download flow.
+**Architecture:** shell-based entrypoint in compose conditionally adds
+`--mmproj /models/vision/active-mmproj.gguf` if the file exists.
+`link_active_mmproj()` in `bundled_providers.py` manages the symlink
+on every tier save / lifespan boot. Vision extraction via
+`services/vision.py` sends page images to `/v1/chat/completions`
+with base64 image_url. Falls back to pdfplumber/Tesseract.
 
-**MTP + mmproj gotcha (locked):** cannot combine — fatal n_embd
-mismatch at load. VLM model configs must NOT use MTP variants. Bake
-this into `MODEL_REGISTRY` validation.
+**New tier: `gpu-4gb`** — MedGemma 4B Q4_K_M with partial GPU offload
+for 4-5 GB VRAM cards. `_GPU_4_MIN_VRAM_GB = 4` in sysinfo.py.
+
+**MedSigLIP: deferred.** Not part of A3. MedGemma's built-in SigLIP
+encoder handles the vision extraction use case. MedSigLIP for standalone
+medical image embeddings is a future enhancement.
+
+**MTP constraint (locked):** cpu-min runs Qwen3.5-0.8B (MTP variant).
+MTP + mmproj = fatal n_embd mismatch. Vision is None on cpu-min.
 
 ### `v0.19.0` — STT (whisper.cpp) (roadmap code: A4)
 

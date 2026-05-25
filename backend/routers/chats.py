@@ -1141,8 +1141,18 @@ async def append_message(
                     if srow and srow["file_url"]:
                         fp = pathlib.Path(srow["file_url"])
                         if fp.exists():
-                            from services.chunking import parse_source_bytes as _parse
-                            txt = _parse(fp.read_bytes(), srow["mime_type"] or "text/plain")
+                            file_raw = fp.read_bytes()
+                            smime = (srow["mime_type"] or "text/plain").lower().split(";")[0].strip()
+                            txt = None
+                            if smime == "application/pdf":
+                                from services.vision import extract_pdf_via_vision
+                                txt = await extract_pdf_via_vision(file_raw)
+                            elif smime.startswith("image/"):
+                                from services.vision import extract_image_via_vision
+                                txt = await extract_image_via_vision(file_raw, smime)
+                            if not txt:
+                                from services.chunking import parse_source_bytes as _parse
+                                txt = _parse(file_raw, srow["mime_type"] or "text/plain")
                             if deid_enabled():
                                 txt = redact_text(txt).text
                             attached_docs.append(f"[DOCUMENT: {srow['name']}]\n{txt}")

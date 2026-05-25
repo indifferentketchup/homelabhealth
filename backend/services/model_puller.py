@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 MODELS_BASE_DIR = Path(os.environ.get("HLH_MODELS_DIR", "/models"))
 
 ALL_ROLES = ("chat", "embed", "rerank", "vision", "medsiglip", "stt", "ocr")
-ALL_TIERS = ("cpu-min", "cpu-std", "gpu-8gb", "gpu-16gb", "gpu-24gb+", "apple-mlx", "external")
+ALL_TIERS = ("cpu-min", "cpu-std", "gpu-4gb", "gpu-8gb", "gpu-16gb", "gpu-24gb+", "apple-mlx", "external")
 
 PULL_CHUNK_BYTES = 5 * 1024 * 1024
 PULL_TIMEOUT = httpx.Timeout(connect=15.0, read=300.0, write=60.0, pool=10.0)
@@ -94,6 +94,14 @@ MODEL_REGISTRY: dict[str, dict[str, ModelSpec | None]] = {
             license_url="https://huggingface.co/google/medgemma-4b-it",
             revision="main",
         ),
+        "gpu-4gb": ModelSpec(
+            repo="unsloth/medgemma-1.5-4b-it-GGUF",
+            filename="medgemma-1.5-4b-it-Q4_K_M.gguf",
+            quant="Q4_K_M",
+            license=_GEMMA_LICENSE,
+            license_url="https://huggingface.co/google/medgemma-4b-it",
+            revision="main",
+        ),
         "gpu-8gb": ModelSpec(
             repo="unsloth/medgemma-1.5-4b-it-GGUF",
             filename="medgemma-1.5-4b-it-Q8_0.gguf",
@@ -123,7 +131,51 @@ MODEL_REGISTRY: dict[str, dict[str, ModelSpec | None]] = {
     },
     "embed":     {tier: None for tier in ALL_TIERS},  # Phase 2
     "rerank":    {tier: None for tier in ALL_TIERS},  # Phase 2
-    "vision":    {tier: None for tier in ALL_TIERS},  # Phase 3
+    "vision": {
+        "cpu-min": None,  # MTP model, mmproj incompatible
+        "cpu-std": ModelSpec(
+            repo="unsloth/medgemma-1.5-4b-it-GGUF",
+            filename="mmproj-F16.gguf",
+            quant="f16",
+            license=_GEMMA_LICENSE,
+            license_url="https://huggingface.co/google/medgemma-4b-it",
+            revision="main",
+        ),
+        "gpu-4gb": ModelSpec(
+            repo="unsloth/medgemma-1.5-4b-it-GGUF",
+            filename="mmproj-F16.gguf",
+            quant="f16",
+            license=_GEMMA_LICENSE,
+            license_url="https://huggingface.co/google/medgemma-4b-it",
+            revision="main",
+        ),
+        "gpu-8gb": ModelSpec(
+            repo="unsloth/medgemma-1.5-4b-it-GGUF",
+            filename="mmproj-F16.gguf",
+            quant="f16",
+            license=_GEMMA_LICENSE,
+            license_url="https://huggingface.co/google/medgemma-4b-it",
+            revision="main",
+        ),
+        "gpu-16gb": ModelSpec(
+            repo="unsloth/medgemma-27b-it-GGUF",
+            filename="mmproj-F16.gguf",
+            quant="f16",
+            license=_GEMMA_LICENSE,
+            license_url="https://huggingface.co/google/medgemma-27b-it",
+            revision="main",
+        ),
+        "gpu-24gb+": ModelSpec(
+            repo="unsloth/medgemma-27b-it-GGUF",
+            filename="mmproj-F16.gguf",
+            quant="f16",
+            license=_GEMMA_LICENSE,
+            license_url="https://huggingface.co/google/medgemma-27b-it",
+            revision="main",
+        ),
+        "apple-mlx": None,
+        "external": None,
+    },
     "medsiglip": {tier: None for tier in ALL_TIERS},  # Phase 3
     "stt":       {tier: None for tier in ALL_TIERS},  # Phase 4
     "ocr":       {tier: None for tier in ALL_TIERS},  # Phase 5
@@ -411,6 +463,9 @@ async def pull_model(pool_or_conn, model_uuid: str) -> dict[str, Any]:
                 await _update_bytes(pool_or_conn, model_uuid, bytes_written)
                 await _mark_finished(pool_or_conn, model_uuid, status="ready", error_message=None)
                 logger.info("model_puller: pulled %s/%s (%d bytes)", role, tier, bytes_written)
+                if role == "vision":
+                    from services.bundled_providers import link_active_mmproj
+                    link_active_mmproj(tier)
                 return dict(await _read_row(pool_or_conn, model_uuid))
 
             except _Cancelled:

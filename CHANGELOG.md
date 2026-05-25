@@ -20,6 +20,35 @@ _No entries yet._
 
 ---
 
+## [v0.22.0] — 2026-05-25
+
+### AI
+- **A3 Vision (MedGemma mmproj):** enable MedGemma's built-in multimodal
+  capabilities via `--mmproj` on `hlh_chat`. PDFs and images are rendered
+  as page images and sent to the vision model for structured text extraction
+  during ingest. Falls back to pdfplumber/Tesseract when vision is unavailable.
+- New `gpu-4gb` tier for 4–5 GB VRAM cards (MedGemma 4B Q4_K_M with partial
+  GPU offload).
+- Vision MODEL_REGISTRY entries (mmproj-F16.gguf) for cpu-std through gpu-24gb+.
+- `services/vision.py` — async vision extraction via `/v1/chat/completions`
+  with base64 image_url.
+- `pdf2image` + `poppler-utils` added for PDF→PNG page rendering.
+- Doctor check: `vision_available` — verifies mmproj file present for the
+  active tier.
+
+### UX
+- Tier picker: cpu-min accuracy warning, gpu-4gb partial offload info,
+  <4 GB VRAM GPU→CPU fallback explanation.
+- Updated vision fields in all tier cards to show MedGemma mmproj availability.
+
+### Tooling
+- `hlh_chat` compose command switched to shell entrypoint with conditional
+  `--mmproj` injection via `/models/vision/active-mmproj.gguf` symlink.
+- `link_active_mmproj()` in `bundled_providers.py` manages the symlink
+  atomically on every tier save and lifespan boot.
+
+---
+
 ## [v0.21.0] — 2026-05-25
 
 Sources pipeline polish: reingest, source injection into chat, and bugfixes.
