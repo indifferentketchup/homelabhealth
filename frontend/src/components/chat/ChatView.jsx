@@ -209,6 +209,7 @@ export function ChatView({
       body: {
         content,
         ...(model ? { model } : {}),
+        ...(sourceIds ? { attached_source_ids: sourceIds } : {}),
       },
       onToken: (t) => setStreamText((x) => x + t),
       onSearchSources: (sources) => {
@@ -272,19 +273,10 @@ export function ChatView({
     const rawContent = (typeof contentOverride === 'string' ? contentOverride : draft).trim()
     if (!rawContent || busy) return
     let content = rawContent
-    if (attachedSources.length > 0) {
-      const { getSourceContent } = await import('@/api/sources.js')
-      const docs = await Promise.all(
-        attachedSources.map(async (s) => {
-          try {
-            const res = await getSourceContent(s.id)
-            return `[DOCUMENT: ${s.name}]\n${res.content}`
-          } catch {
-            return `[DOCUMENT: ${s.name}]\n(content unavailable)`
-          }
-        })
-      )
-      content = docs.join('\n\n---\n\n') + '\n\n' + rawContent
+    const sourceIds = attachedSources.length > 0 ? attachedSources.map(s => s.id) : null
+    if (sourceIds) {
+      const names = attachedSources.map(s => s.name).join(', ')
+      content = rawContent + `\n\n📎 ${names}`
     }
     lastUserMessageRef.current = content
     setDraft('')

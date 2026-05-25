@@ -36,6 +36,9 @@ export function SourcesPanel({ chatId, workspaceId }) {
   const [status, setStatus] = useState('')
   const [editingId, setEditingId] = useState(null)
   const [editName, setEditName] = useState('')
+  const [viewingSource, setViewingSource] = useState(null)
+  const [viewContent, setViewContent] = useState('')
+  const [viewLoading, setViewLoading] = useState(false)
   const [ctx, setCtx] = useState(null)
   const ctxRef = useRef(null)
 
@@ -226,7 +229,25 @@ export function SourcesPanel({ chatId, workspaceId }) {
                           }}
                         />
                       ) : (
-                        <span className="line-clamp-2">{src.name}</span>
+                        <button
+                          type="button"
+                          className="line-clamp-2 text-left hover:underline"
+                          onClick={async () => {
+                            setViewingSource(src)
+                            setViewLoading(true)
+                            try {
+                              const { getSourceContent } = await import('@/api/sources.js')
+                              const res = await getSourceContent(src.id)
+                              setViewContent(res.content || '(empty)')
+                            } catch {
+                              setViewContent('(could not load content)')
+                            } finally {
+                              setViewLoading(false)
+                            }
+                          }}
+                        >
+                          {src.name}
+                        </button>
                       )}
                     </span>
                     {src.embedding_status !== 'complete' && (
@@ -287,6 +308,24 @@ export function SourcesPanel({ chatId, workspaceId }) {
           >
             Delete
           </button>
+        </div>
+      )}
+
+      {viewingSource && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setViewingSource(null)}>
+          <div className="mx-4 flex max-h-[80vh] w-full max-w-2xl flex-col rounded-lg border border-border bg-background shadow-xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <h3 className="text-sm font-semibold text-foreground truncate">{viewingSource.name}</h3>
+              <button type="button" onClick={() => setViewingSource(null)} className="text-muted-foreground hover:text-foreground text-lg">×</button>
+            </div>
+            <div className="flex-1 overflow-auto p-4">
+              {viewLoading ? (
+                <p className="text-sm text-muted-foreground">Loading…</p>
+              ) : (
+                <pre className="whitespace-pre-wrap text-sm text-foreground font-mono leading-relaxed">{viewContent}</pre>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </aside>
