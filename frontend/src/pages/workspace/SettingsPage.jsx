@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import { deleteNonWorkspaceChats } from '@/api/chats.js'
+import { getContextBarSetting, putContextBarSetting } from '@/api/settings.js'
 import RefusalReviewTab from '@/components/settings/RefusalReviewTab.jsx'
 import SearchSettingsTab from '@/components/settings/SearchSettingsTab.jsx'
 import SystemTab from '@/components/settings/SystemTab.jsx'
@@ -71,6 +72,52 @@ function layoutDraftToApiPayload(draft) {
   if (out.sidebarWidth != null) out.sidebarWidth = Math.round(Number(out.sidebarWidth)) || 260
   if (out.chatMaxWidth != null) out.chatMaxWidth = Math.round(Number(out.chatMaxWidth)) || 1200
   return out
+}
+
+function ContextBarToggle() {
+  const queryClient = useQueryClient()
+  const { data, isLoading } = useQuery({
+    queryKey: ['settings', 'context-bar'],
+    queryFn: getContextBarSetting,
+    staleTime: 30_000,
+  })
+  const enabled = data?.show_context_bar ?? false
+  const [saving, setSaving] = useState(false)
+
+  async function toggle() {
+    setSaving(true)
+    try {
+      const result = await putContextBarSetting(!enabled)
+      queryClient.setQueryData(['settings', 'context-bar'], result)
+    } catch {
+      /* ignore */
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="mt-10 space-y-3 border-t border-border pt-6">
+      <h2 className="fs-heading font-semibold uppercase tracking-wide text-muted-foreground">Display</h2>
+      <label className="flex items-start gap-3 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={() => void toggle()}
+          disabled={isLoading || saving}
+          className="mt-0.5 size-4 shrink-0 accent-primary"
+        />
+        <div className="space-y-1">
+          <span className="text-sm font-medium text-foreground">Context usage indicator</span>
+          <p className="text-xs text-muted-foreground">
+            Shows how much of the model&apos;s context window is used by the current conversation.
+            Helps you know when chats are getting long. The system automatically summarizes older
+            messages when usage reaches ~85%.
+          </p>
+        </div>
+      </label>
+    </div>
+  )
 }
 
 export default function SettingsPage({ onClose }) {
@@ -301,6 +348,8 @@ export default function SettingsPage({ onClose }) {
               <Button type="button" size="sm" onClick={() => void saveLayoutPrefs()}>
                 Save layout
               </Button>
+
+              <ContextBarToggle />
 
               <div className="mt-10 space-y-3 border-t border-border pt-6">
                 <h2 className="fs-heading font-semibold uppercase tracking-wide text-muted-foreground">Chats</h2>
