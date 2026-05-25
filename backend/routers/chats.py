@@ -239,13 +239,13 @@ def _clean_auto_title(raw: str) -> str:
 
 
 async def _openai_short_chat_title(
-    provider: Provider, model: str, user_message_text: str
+    provider: Provider, model: str, text: str
 ) -> str | None:
     """Non-streaming title via OpenAI-compatible /v1/chat/completions; returns None on failure."""
-    excerpt = (user_message_text or "")[:300]
+    excerpt = (text or "")[:300]
     prompt = (
-        "Generate a short chat title (4-6 words, no punctuation, no quotes) for a conversation "
-        f"that starts with this message: {excerpt}"
+        "Generate a short chat title (4-6 words, no punctuation, no quotes) summarizing "
+        f"this assistant response: {excerpt}"
     )
     payload = {
         "model": model,
@@ -1229,11 +1229,11 @@ async def append_message(
         if first_exchange_for_auto_title and assistant_text and not has_custom_title:
             new_title: str | None = None
             try:
-                new_title = await _openai_short_chat_title(provider, effective_model, user_message_text)
+                new_title = await _openai_short_chat_title(provider, effective_model, assistant_text)
             except Exception:
                 new_title = None
             if not new_title:
-                first_line = (user_message_text or "").strip().split("\n")[0].strip()
+                first_line = (assistant_text or "").strip().split("\n")[0].strip()
                 new_title = _clean_auto_title(first_line)[:60] if first_line else None
             if not new_title:
                 new_title = "New chat"
