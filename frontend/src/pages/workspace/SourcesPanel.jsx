@@ -32,6 +32,7 @@ export function SourcesPanel({ chatId, workspaceId }) {
   const fileRef = useRef(null)
 
   const [uploading, setUploading] = useState(false)
+  const [uploadQueue, setUploadQueue] = useState([])
   const [status, setStatus] = useState('')
   const [editingId, setEditingId] = useState(null)
   const [editName, setEditName] = useState('')
@@ -100,26 +101,27 @@ export function SourcesPanel({ chatId, workspaceId }) {
     if (!files.length || !effectiveWorkspaceId) return
     setUploading(true)
     setStatus('')
-    try {
-      const res = await uploadSource(files[0], effectiveWorkspaceId)
-      if (files.length === 1) {
-        if (res?.status === 'already_exists') {
-          setStatus('Already ingested (same file hash).')
-        } else {
-          setStatus(`Ingesting ${files[0].name}…`)
-        }
-      } else {
-        const { uploadSources } = await import('@/api/sources.js')
-        const multi = await uploadSources(files, effectiveWorkspaceId)
-        const count = multi?.sources?.length || 1
-        setStatus(`Ingesting ${count} file${count > 1 ? 's' : ''}…`)
+    const queue = files.map(f => ({ name: f.name, status: 'pending' }))
+    setUploadQueue(queue)
+    for (let i = 0; i < files.length; i++) {
+      setUploadQueue(prev => prev.map((item, idx) =>
+        idx === i ? { ...item, status: 'uploading' } : item
+      ))
+      try {
+        const res = await uploadSource(files[i], effectiveWorkspaceId)
+        const result = res?.error ? 'error' : res?.status === 'already_exists' ? 'exists' : 'done'
+        setUploadQueue(prev => prev.map((item, idx) =>
+          idx === i ? { ...item, status: result } : item
+        ))
+      } catch {
+        setUploadQueue(prev => prev.map((item, idx) =>
+          idx === i ? { ...item, status: 'error' } : item
+        ))
       }
-      await queryClient.invalidateQueries({ queryKey: ['sources', effectiveWorkspaceId] })
-    } catch (err) {
-      setStatus(err instanceof Error ? err.message : 'Upload failed')
-    } finally {
-      setUploading(false)
     }
+    await queryClient.invalidateQueries({ queryKey: ['sources', effectiveWorkspaceId] })
+    setUploading(false)
+    setTimeout(() => setUploadQueue([]), 5000)
   }
 
   return (
@@ -155,6 +157,30 @@ export function SourcesPanel({ chatId, workspaceId }) {
         <p className="fs-nav px-2 text-muted-foreground truncate">Workspace: <span className="font-medium text-foreground">{workspaceName}</span></p>
 
         {status ? <p className="fs-nav text-muted-foreground">{status}</p> : null}
+        {uploadQueue.length > 0 && (
+          <div className="flex flex-col gap-1">
+            {uploadQueue.map((item, i) => (
+              <div key={i} className="flex items-center gap-2 rounded px-2 py-1 text-xs">
+                <span className={cn(
+                  'size-2 shrink-0 rounded-full',
+                  item.status === 'done' ? 'bg-primary' :
+                  item.status === 'uploading' ? 'bg-amber-500 animate-pulse' :
+                  item.status === 'error' ? 'bg-destructive' :
+                  item.status === 'exists' ? 'bg-muted-foreground' :
+                  'bg-muted-foreground/40'
+                )} />
+                <span className="min-w-0 flex-1 truncate text-muted-foreground">{item.name}</span>
+                <span className="shrink-0 text-muted-foreground/70">
+                  {item.status === 'uploading' ? 'Uploading…' :
+                   item.status === 'done' ? '✓' :
+                   item.status === 'error' ? '✗' :
+                   item.status === 'exists' ? 'Exists' :
+                   'Waiting'}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="mx-2 border-t border-sidebar-border" />
