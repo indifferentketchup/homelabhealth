@@ -28,3 +28,10 @@ export const getRerankerSettings = () => apiFetch('/api/settings/reranker')
  */
 export const putRerankerSettings = (body) =>
   apiFetch('/api/settings/reranker', { method: 'PUT', json: body })
+
+/** GET /api/settings/context-bar → { show_context_bar: boolean } */
+export const getContextBarSetting = () => apiFetch('/api/settings/context-bar')
+
+/** PUT /api/settings/context-bar — toggle the context usage indicator. */
+export const putContextBarSetting = (show) =>
+  apiFetch('/api/settings/context-bar', { method: 'PUT', json: { show_context_bar: show } })

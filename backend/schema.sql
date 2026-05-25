@@ -223,6 +223,9 @@ INSERT INTO global_settings (key, value) VALUES
   ('memory_similarity_threshold', '0.45')
 ON CONFLICT (key) DO NOTHING;
 
+INSERT INTO global_settings (key, value) VALUES ('show_context_bar', 'false')
+ON CONFLICT (key) DO NOTHING;
+
 -- Single markdown blob for freeform notes; enforced as singleton.
 CREATE TABLE IF NOT EXISTS mode_memory (
     id SERIAL PRIMARY KEY,

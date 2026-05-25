@@ -371,3 +371,48 @@ async def put_reranker_settings(
     async with audit.targeting("settings", None):
         pass
     return result
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Context-bar toggle (opt-in display setting).
+# ──────────────────────────────────────────────────────────────────────────────
+
+_CONTEXT_BAR_KEY = "show_context_bar"
+
+
+@router.get("/context-bar")
+async def get_context_bar_setting() -> dict[str, bool]:
+    """Public (any authenticated user). Returns {"show_context_bar": bool}."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT value FROM global_settings WHERE key = $1", _CONTEXT_BAR_KEY
+        )
+    raw = (row["value"] if row else "false").strip().lower()
+    return {"show_context_bar": raw in ("1", "true", "yes", "on")}
+
+
+class ContextBarPut(BaseModel):
+    show_context_bar: bool
+
+
+@router.put("/context-bar")
+async def put_context_bar_setting(
+    body: ContextBarPut,
+    _: dict = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
+) -> dict[str, bool]:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO global_settings (key, value)
+            VALUES ($1, $2)
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+            """,
+            _CONTEXT_BAR_KEY,
+            "true" if body.show_context_bar else "false",
+        )
+    async with audit.targeting("settings", None):
+        pass
+    return {"show_context_bar": body.show_context_bar}
