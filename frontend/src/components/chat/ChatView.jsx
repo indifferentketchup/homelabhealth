@@ -273,8 +273,18 @@ export function ChatView({
     if (!rawContent || busy) return
     let content = rawContent
     if (attachedSources.length > 0) {
-      const names = attachedSources.map(s => s.name).join(', ')
-      content = `[Attached: ${names}]\n\n${rawContent}`
+      const { getSourceContent } = await import('@/api/sources.js')
+      const docs = await Promise.all(
+        attachedSources.map(async (s) => {
+          try {
+            const res = await getSourceContent(s.id)
+            return `[DOCUMENT: ${s.name}]\n${res.content}`
+          } catch {
+            return `[DOCUMENT: ${s.name}]\n(content unavailable)`
+          }
+        })
+      )
+      content = docs.join('\n\n---\n\n') + '\n\n' + rawContent
     }
     lastUserMessageRef.current = content
     setDraft('')

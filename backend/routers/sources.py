@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import pathlib
 import uuid
 from typing import Any
 
@@ -20,6 +21,27 @@ from services.embeddings import EmbeddingError, embed_batch, format_vector
 
 router = APIRouter(prefix="/sources", tags=["sources"])
 logger = logging.getLogger(__name__)
+
+UPLOADS_DIR = pathlib.Path("/data/uploads")
+
+
+def _ext_from_mime(mime: str) -> str:
+    m = mime.lower().split(";")[0].strip()
+    if m == "application/pdf":
+        return ".pdf"
+    if "wordprocessingml" in m:
+        return ".docx"
+    if m in ("text/markdown", "text/x-markdown"):
+        return ".md"
+    if m.startswith("image/png"):
+        return ".png"
+    if m.startswith("image/jpeg"):
+        return ".jpg"
+    if m.startswith("image/tiff"):
+        return ".tiff"
+    if m.startswith("image/bmp"):
+        return ".bmp"
+    return ".txt"
 
 
 def _sha256(data: bytes) -> str:
@@ -219,13 +241,14 @@ async def _upload_single(workspace_id: uuid.UUID, file: UploadFile) -> dict[str,
 
         source_id = uuid.uuid4()
         name = (file.filename or "upload").strip() or "upload"
+        file_url = f"/data/uploads/{source_id}{_ext_from_mime(mime)}"
         await conn.execute(
             """
             INSERT INTO sources (
                 id, workspace_id, name, source_type, mime_type, file_size_bytes,
-                content_hash, embedding_status, updated_at
+                content_hash, embedding_status, file_url, updated_at
             )
-            VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, 'processing', NOW())
+            VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, 'processing', $8, NOW())
             """,
             source_id,
             workspace_id,
@@ -234,10 +257,38 @@ async def _upload_single(workspace_id: uuid.UUID, file: UploadFile) -> dict[str,
             mime,
             len(raw),
             h,
+            file_url,
         )
+
+    upload_path = UPLOADS_DIR / f"{source_id}{_ext_from_mime(mime)}"
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    upload_path.write_bytes(raw)
 
     asyncio.create_task(_ingest_source(source_id, workspace_id, raw, mime, name))
     return {"source_id": str(source_id), "filename": file.filename, "status": "ingesting"}
+
+
+@router.get("/by-id/{source_id}/content")
+async def get_source_content(
+    source_id: uuid.UUID,
+    _: dict = Depends(get_principal),
+) -> dict[str, Any]:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id, name, mime_type, file_url FROM sources WHERE id = $1::uuid",
+            source_id,
+        )
+    if row is None:
+        raise HTTPException(404, "Source not found")
+
+    file_path = pathlib.Path(row["file_url"] or "")
+    if not file_path.exists():
+        raise HTTPException(404, "Source file not stored on disk")
+
+    raw = file_path.read_bytes()
+    text = parse_source_bytes(raw, row["mime_type"] or "text/plain")
+    return {"id": str(row["id"]), "name": row["name"], "content": text}
 
 
 @router.get("/{workspace_id}")

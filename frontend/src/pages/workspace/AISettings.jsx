@@ -1,163 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { getCustomInstructions, putCustomInstructions } from '@/api/customInstructions.js'
-import { getModelServerConfig, patchModelServerConfig } from '@/api/settings.js'
 import { embedAllMemories, extractMemory, getMemory, putMemory } from '@/api/memory.js'
 import { createMemoryEntry, deleteMemoryEntry, listMemoryEntries } from '@/api/memoryEntries.js'
-import { fetchModels, getModelSettings, patchModelSettings } from '@/api/inference.js'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-
-function WorkspaceModelsSection({ queryClient, selectClass }) {
-  const {
-    data: modelsData,
-    isLoading: modelsLoading,
-    isError: modelsError,
-  } = useQuery({
-    queryKey: ['inference', 'models'],
-    queryFn: fetchModels,
-    staleTime: 60_000,
-    retry: false,
-  })
-
-  const { data: modelSettings } = useQuery({
-    queryKey: ['inference', 'settings'],
-    queryFn: () => getModelSettings(),
-    staleTime: 30_000,
-  })
-
-  const modelEntries = useMemo(() => {
-    const raw = Array.isArray(modelsData?.data) ? modelsData.data : []
-    return raw
-      .map((m) => ({
-        id: typeof m?.id === 'string' ? m.id : '',
-      }))
-      .filter((m) => m.id)
-  }, [modelsData])
-
-  const hiddenSet = useMemo(
-    () => new Set(Array.isArray(modelSettings?.hidden_models) ? modelSettings.hidden_models : []),
-    [modelSettings],
-  )
-
-  async function onDefaultModelChange(value) {
-    try {
-      const out = await patchModelSettings({ default_model: value })
-      queryClient.setQueryData(['inference', 'settings'], out)
-    } catch {
-      /* ignore */
-    }
-  }
-
-  async function setModelVisibility(modelId, visible) {
-    const current = Array.isArray(modelSettings?.hidden_models) ? [...modelSettings.hidden_models] : []
-    let next
-    if (visible) {
-      next = current.filter((h) => h !== modelId)
-    } else if (!current.includes(modelId)) {
-      next = [...current, modelId]
-    } else {
-      next = current
-    }
-    try {
-      const out = await patchModelSettings({ hidden_models: next })
-      queryClient.setQueryData(['inference', 'settings'], out)
-    } catch {
-      /* ignore */
-    }
-  }
-
-  const defaultModel = useMemo(() => {
-    const api = String(modelSettings?.default_model ?? '').trim()
-    if (api && modelEntries.some((m) => m.id === api)) return api
-    return modelEntries[0]?.id ?? api
-  }, [modelSettings?.default_model, modelEntries])
-
-  return (
-    <section className="space-y-6">
-      <div>
-        <h2 className="text-sm font-medium text-foreground">Models</h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          OpenAI-compatible inference. Default model applies to this app.
-        </p>
-      </div>
-
-      <div className="space-y-3 rounded-lg border border-border bg-card/40 p-4">
-        <h3 className="text-sm font-medium text-foreground">Default model</h3>
-        {modelsError ? (
-          <p className="text-sm text-muted-foreground">Inference backend unavailable</p>
-        ) : (
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="sr-only">Choose default model</span>
-            <select
-              className={selectClass}
-              disabled={modelsLoading || modelEntries.length === 0}
-              value={defaultModel}
-              onChange={(e) => void onDefaultModelChange(e.target.value)}
-            >
-              {modelEntries.length === 0 && !modelsLoading ? (
-                <option value="">No models</option>
-              ) : null}
-              {modelEntries.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.id}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-      </div>
-
-      <div className="space-y-3 rounded-lg border border-border bg-card/40 p-4">
-        <h3 className="text-sm font-medium text-foreground">Visible models</h3>
-        {modelsError ? (
-          <p className="text-sm text-muted-foreground">Inference backend unavailable</p>
-        ) : modelsLoading ? (
-          <p className="text-sm text-muted-foreground">Loading models…</p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {modelEntries.map((m) => {
-              const visible = !hiddenSet.has(m.id)
-              return (
-                <li
-                  key={m.id}
-                  className={cn(
-                    'flex items-center justify-between gap-3 rounded-md px-2 py-2',
-                    visible && 'bg-accent/30',
-                  )}
-                >
-                  <div className="min-w-0 flex-1">
-                    <span className="text-sm font-medium text-foreground">{m.id}</span>
-                  </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={visible}
-                    aria-label={visible ? `Hide ${m.id}` : `Show ${m.id}`}
-                    onClick={() => void setModelVisibility(m.id, !visible)}
-                    className="relative inline-flex h-6 w-10 shrink-0 rounded-full border border-border transition-colors"
-                    style={{
-                      backgroundColor: visible ? 'var(--primary)' : 'var(--muted)',
-                    }}
-                  >
-                    <span
-                      className={cn(
-                        'pointer-events-none block size-5 translate-x-0.5 rounded-full shadow transition-transform',
-                        visible && 'translate-x-[1.15rem]',
-                      )}
-                      style={{ backgroundColor: 'var(--background)' }}
-                    />
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
-        )}
-      </div>
-    </section>
-  )
-}
 
 export default function AISettings() {
   const queryClient = useQueryClient()
@@ -258,33 +106,6 @@ export default function AISettings() {
     })
   }
 
-  const { data: modelServerConfig } = useQuery({
-    queryKey: ['settings', 'inference'],
-    queryFn: getModelServerConfig,
-    enabled: tab === 'model',
-    staleTime: 15_000,
-  })
-  const [ollFlash, setOllFlash] = useState(true)
-  const [ollMaxLoaded, setOllMaxLoaded] = useState(1)
-  const [ollKeepAlive, setOllKeepAlive] = useState('30m')
-  useEffect(() => {
-    if (!modelServerConfig) return
-    if (typeof modelServerConfig.flash_attention === 'boolean') setOllFlash(modelServerConfig.flash_attention)
-    const ml = modelServerConfig.max_loaded_models
-    if (typeof ml === 'number' && !Number.isNaN(ml)) setOllMaxLoaded(ml)
-    if (typeof modelServerConfig.keep_alive === 'string') setOllKeepAlive(modelServerConfig.keep_alive)
-  }, [modelServerConfig])
-
-  const saveModelServerConfigMut = useMutation({
-    mutationFn: () =>
-      patchModelServerConfig({
-        flash_attention: ollFlash,
-        max_loaded_models: ollMaxLoaded,
-        keep_alive: ollKeepAlive.trim() || '30m',
-      }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings', 'inference'] }),
-  })
-
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-auto bg-background">
       <div className="border-b border-border px-4 py-4">
@@ -295,7 +116,6 @@ export default function AISettings() {
         <div className="mt-4 flex gap-1 border-b border-border">
           {[
             { id: 'memory', label: 'Memory' },
-            { id: 'model', label: 'Model' },
             { id: 'instructions', label: 'Instructions' },
           ].map((t) => (
             <button
@@ -483,65 +303,6 @@ export default function AISettings() {
                   disabled={extractMem.isPending}
                 >
                   {extractMem.isPending ? 'Extracting…' : 'Extract from recent chat'}
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {tab === 'model' && (
-          <div className="flex flex-col gap-6">
-            <WorkspaceModelsSection
-              queryClient={queryClient}
-              selectClass="h-9 w-full max-w-md rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2"
-            />
-            <div className="rounded-lg border border-border bg-card p-4">
-              <h2 className="mb-2 text-sm font-medium text-foreground">Model Server Configuration</h2>
-              <p className="mb-3 text-xs text-muted-foreground">
-                Changes apply on next inference server restart.
-              </p>
-              <div className="flex flex-col gap-4 text-sm">
-                <label className="flex cursor-pointer items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={ollFlash}
-                    onChange={(e) => setOllFlash(e.target.checked)}
-                    className="size-4 rounded border-border accent-primary"
-                  />
-                  <span className="text-foreground">Flash attention</span>
-                </label>
-                <div className="flex flex-col gap-2">
-                  <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <span className="text-muted-foreground">Max loaded models</span>
-                    <span className="tabular-nums text-foreground">{ollMaxLoaded}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={1}
-                    max={8}
-                    step={1}
-                    value={ollMaxLoaded}
-                    onChange={(e) => setOllMaxLoaded(Number(e.target.value))}
-                    className="h-2 w-full max-w-md cursor-pointer accent-primary"
-                  />
-                </div>
-                <label className="flex max-w-md flex-col gap-1">
-                  <span className="text-muted-foreground">Keep alive</span>
-                  <input
-                    value={ollKeepAlive}
-                    onChange={(e) => setOllKeepAlive(e.target.value)}
-                    placeholder="30m, 1h, 0, …"
-                    className="h-9 rounded-md border border-border bg-background px-2 text-foreground outline-none ring-ring focus-visible:ring-2"
-                  />
-                </label>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="w-fit"
-                  onClick={() => saveModelServerConfigMut.mutate()}
-                  disabled={saveModelServerConfigMut.isPending}
-                >
-                  Save
                 </Button>
               </div>
             </div>
