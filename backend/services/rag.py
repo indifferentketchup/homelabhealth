@@ -272,9 +272,13 @@ async def retrieve_context(query: str, source_ids: list[str]) -> tuple[str, int]
         return "", 0
 
     block = (
-        "### Context from sources:\n"
-        "Answer using ONLY the provided source material below. Do not use outside knowledge. "
-        "Always cite the source label when referencing content. If the answer is not in the sources, say so.\n\n"
+        "### Retrieved source documents:\n"
+        "STRICT RULES for answering:\n"
+        "1. Use ONLY the exact information from the source documents below. Do NOT add, infer, or fabricate any details.\n"
+        "2. Quote values, names, locations, dates, and results EXACTLY as they appear in the source. Do not paraphrase numbers, lab names, addresses, or test results.\n"
+        "3. If a piece of information (lab name, location, provider, result value) is not explicitly stated in the sources, say \"not specified in the document\" — do NOT guess or fill in from general knowledge.\n"
+        "4. Cite the [SOURCE: ...] label when referencing content.\n"
+        "5. Never invent medical data, test results, reference ranges, or provider names.\n\n"
         + "\n\n".join(top_texts)
     )
     logger.info("RAG context injected chunks=%d chars=%d", len(top_texts), len(block))
