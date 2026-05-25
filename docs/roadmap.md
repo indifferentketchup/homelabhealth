@@ -33,6 +33,10 @@ Three tracks. Phases interleave by dependency, not by track.
 
 ```
 Shipped releases (most recent → oldest):
+  v0.24.0   token tracking + auto-compaction + context indicator (2026-05-25)
+  v0.23.1   per-tier context window sizes (HLH_CHAT_CTX) (2026-05-25)
+  v0.23.0   B3  audit-logged refusals + safety log (2026-05-25)
+  v0.22.0   A3  vision (MedGemma mmproj) + gpu-4gb tier (2026-05-25)
   v0.21.0   sources polish + reingest + bugfixes (2026-05-25)
   v0.20.0   sources overhaul + PDF/OCR + safeguards hardening (2026-05-25)
   v0.19.0   built-in auth (username/password, sessions) (2026-05-24)
@@ -58,11 +62,12 @@ Shipped releases (most recent → oldest):
   v0.1.0    strip + homelabhealth identity (2026-05-02)
 
 Planned (dependency-ordered):
-  v0.21.0   A3  vision (VLM) + MedSigLIP
-  v0.22.0   A4  STT (whisper.cpp)
-  v0.23.0?  A5  OCR — conditional on A3 eval
-  v0.24.0+  A6  Apple MLX — deferred indefinitely
+  A4  STT (whisper.cpp) — OR deferred with friend's consent
+  A6  Apple MLX — deferred indefinitely
   v1.0.0    public release
+
+Skipped:
+  A5  OCR — skipped; A3 vision (MedGemma mmproj) handles document reading.
 
 Deferred indefinitely (2026-05-24 posture-shift pass):
   C8  supply chain + ops — developer discipline, not user-facing. Revisit
@@ -71,17 +76,17 @@ Deferred indefinitely (2026-05-24 posture-shift pass):
   B4  red-team eval — discipline only; never gets a tag.
 
 Phase track in summary:
-  A — Built-in AI:   A0 ✓ A1 ✓ A1.5 ✓ A1.6 ✓ A1.7 ✓ A2 ✓ A7 ✓ A3  │ A4 A5? A6
-  B — Safeguards:    B0 ✓ B1 ✓ B2 ✓ B3                        │                │ B4 deferred
-  C — Security:      C0 ✓ C1 ✓ C2 ✓ C3 ✓ C4 ✓ C5 ✓ C6 ✓ C7 ✓  │                │ C8 C9 deferred
+  A — Built-in AI:   A0 ✓ A1 ✓ A1.5 ✓ A1.6 ✓ A1.7 ✓ A2 ✓ A7 ✓ A3 ✓  │ A4      A6
+  B — Safeguards:    B0 ✓ B1 ✓ B2 ✓ B3 ✓                               │ B4 deferred
+  C — Security:      C0 ✓ C1 ✓ C2 ✓ C3 ✓ C4 ✓ C5 ✓ C6 ✓ C7 ✓         │ C8 C9 deferred
 ```
 
 **Ship-ready gate** = every security + safeguard phase shipped + tagged,
 built-in auth working, key auto-generation working, setup wizard tested.
 
-**Latest release:** `v0.23.0` (2026-05-25) — B3 audit-logged refusals. See `CHANGELOG.md` for the per-tag rundown.
+**Latest release:** `v0.24.0` (2026-05-25) — token tracking + auto-compaction. See `CHANGELOG.md` for the per-tag rundown.
 
-**Active work:** none — B3 shipped, next planned work is A4 (STT).
+**Active work:** none. A4 (STT) is next if desired; otherwise ship-to-friend gate is nearly clear.
 
 -----
 
@@ -680,15 +685,15 @@ is checked.
 - [x] `v0.7.0` — A7 bundled search (default-on; threat-model entry lands in v0.9.0/C0)
 - [x] `v0.8.0` — A1.5 hardening + Phase 2.B visibility
 - [x] `v0.8.0` — A1.7 operator pre-flight + first-launch ack
-- [ ] `v0.18.0` — A3 vision (VLM) + MedSigLIP, OR explicitly deferred with friend's consent
-- [ ] `v0.19.0` — A4 STT, OR explicitly deferred
+- [x] `v0.22.0` — A3 vision (MedGemma mmproj) + gpu-4gb tier
+- [ ] A4 STT, OR explicitly deferred with friend's consent
 
 **Safeguards:**
 
 - [x] `v0.6.0` — B0 system prompt baseline (post-A1 reconciliation)
 - [x] `v0.13.0` — B2 UI disclaimers + crisis card  [MVP]
 - [x] `v0.14.0` — B1 output scanner sidecar (ships with C7)  [MVP]
-- [ ] `v0.15.0` — B3 audit-logged refusals (on top of C4/v0.11.0)
+- [x] `v0.23.0` — B3 audit-logged refusals + safety log
 - B4 red-team eval — **deferred indefinitely** per 2026-05-23 scope pass
 
 **Security:**

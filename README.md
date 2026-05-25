@@ -1,8 +1,12 @@
 # homelabhealth
 
-Self-hosted, single-user RAG chat app for personal records. Upload documents to a workspace, ask questions, get answers grounded in your sources via pgvector retrieval. Bring your own inference and embedding endpoints — anything OpenAI-compatible.
+Self-hosted RAG chat app for personal health records. Upload medical documents (PDFs, images, lab reports), ask questions, get answers grounded in your sources via pgvector retrieval. Built-in AI with bundled llama.cpp inference, MedGemma vision for document understanding, and automatic safeguards.
 
-Roadmap (built-in AI, safeguards, security): see [docs/roadmap.md](docs/roadmap.md) — the source of truth for both AI and security plans.
+One `docker compose up` to run. Built-in username/password auth. Encryption keys auto-generate on first launch. No reverse proxy required.
+
+**Current release:** `v0.24.0` (2026-05-25). See [CHANGELOG.md](CHANGELOG.md) for the full history.
+
+Roadmap: [docs/roadmap.md](docs/roadmap.md).
 
 ## Quickstart
 
@@ -10,84 +14,92 @@ Roadmap (built-in AI, safeguards, security): see [docs/roadmap.md](docs/roadmap.
 git clone <repo>
 cd homelabhealth
 cp .env.example .env
-# Edit .env: set INFERENCE_URL, DEFAULT_MODEL, EMBEDDING_URL
 docker compose up --build -d
-# Open http://localhost:<port>  (port set in .env / docker-compose.yml)
+# Open http://localhost:9604
 ```
 
-The schema applies on startup; no manual migrations.
+First launch walks you through setup: create your account, pick a hardware tier, and the system pulls the right models automatically.
 
-**First boot:** the embedding sidecar (`hlh_infer`) downloads model weights from HuggingFace on first start — `BAAI/bge-m3` + `BAAI/bge-reranker-v2-m3`, ~1–2 GB total. Expect **5–15 minutes** before chat works end-to-end; the container restart-loops as `unhealthy` until the pull finishes. After first boot, weights are cached in the `hlh_models` Docker volume — subsequent boots are instant.
+**First boot:** the embedding sidecar (`hlh_infer`) downloads model weights from HuggingFace — `BAAI/bge-m3` + `BAAI/bge-reranker-v2-m3`, ~1-2 GB total. Expect 5-15 minutes before chat works end-to-end. After first boot, weights are cached in the `hlh_models` Docker volume.
 
-**Doctor check:** run `docker exec hlh_api python -m hlh.doctor` any time to see the current state of the bundled stack — DB pool, schema, sidecars, disk, encryption key, HF token. Exits 0 if everything is green, 1 if any check is red. Also surfaced at `Settings → System → Pre-flight` in the UI.
+**Doctor check:** `docker exec hlh_api python -m hlh.doctor` — shows DB, schema, sidecars, disk, encryption, vision, and more. Also at Settings → System → Pre-flight in the UI.
 
-## Required env vars
+## What's included
 
-| Var | Purpose |
-|---|---|
-| `DATABASE_URL` | PostgreSQL connection string. Default points at the `db` service in compose. |
-| `INFERENCE_URL` | Base URL of an OpenAI-compatible chat completions endpoint. The API hits `${INFERENCE_URL}/v1/chat/completions` and `/v1/models`. |
-| `DEFAULT_MODEL` | Model id served by `INFERENCE_URL`. Required — the API raises if unset. |
-| `EMBEDDING_URL` | Base URL of an OpenAI-compatible `/embeddings` endpoint. Embeddings must produce 1024-dim vectors (default model: `BAAI/bge-m3`). |
-| `EMBEDDING_MODEL` | Model id served by `EMBEDDING_URL`. Default `BAAI/bge-m3`. |
-| `RERANKER_URL` | Optional. Rerank server for retrieved chunks. Falls back to in-process `flashrank` (CPU) if unset or unreachable. |
-| `SEARXNG_URL` | Optional. SearXNG instance for web search. Empty = web search disabled. |
-| `FRONTEND_ORIGIN` | Comma-separated extra CORS origins. |
+| Feature | Details |
+|---------|---------|
+| **Bundled AI** | llama.cpp chat sidecar with MedGemma (4B or 27B by tier). No external API needed. |
+| **Vision** | MedGemma multimodal — reads PDFs and images as page images for structured text extraction. Falls back to pdfplumber/Tesseract. |
+| **RAG** | Upload documents → chunk → embed (1024-dim, bge-m3) → pgvector → retrieve → rerank → inject into prompt. |
+| **Auto-compaction** | Long conversations auto-summarize at 85% context usage. Older messages collapsed in UI, summary preserved for model. |
+| **Safeguards** | Tiered refusal system prompt, I/O guard scanner (PII, medical advice, crisis, prompt injection), audit-logged refusals. |
+| **Security** | Column encryption (AES-256-GCM), de-identification pipeline, container hardening, hash-chained audit log. |
+| **Auth** | Built-in username/password. Sessions via `hlh_session` cookie. Setup wizard on first launch. |
+| **Web search** | Bundled SearXNG meta-search for grounding against current web results. |
 
-See `.env.example` for the full list with comments.
+## Hardware tiers
 
-## Bring your own inference
+The setup wizard detects your hardware and recommends a tier:
 
-`INFERENCE_URL` points at any OpenAI-compatible chat completions server:
+| Tier | Hardware | Chat model | Context | Vision |
+|------|----------|-----------|---------|--------|
+| cpu-min | <16 GB RAM, no GPU | Qwen3.5 0.8B | 8K | — |
+| cpu-std | ≥16 GB RAM, no GPU | MedGemma 4B Q4 | 32K | MedGemma 4B |
+| gpu-4gb | 4-5 GB VRAM | MedGemma 4B Q4 + offload | 32K | MedGemma 4B |
+| gpu-8gb | 6-11 GB VRAM | MedGemma 4B Q8 | 32K | MedGemma 4B |
+| gpu-16gb | 12-23 GB VRAM | MedGemma 27B Q4 | 32K | MedGemma 27B |
+| gpu-24gb+ | ≥24 GB VRAM | MedGemma 27B Q4 | 64K | MedGemma 27B |
+| external | Manual | Bring your own | Varies | Varies |
 
-- [llama-swap](https://github.com/mostlygeek/llama-swap) — multi-model swap proxy on top of llama.cpp.
-- [llama.cpp server](https://github.com/ggerganov/llama.cpp) — `llama-server -m <model.gguf> --host 0.0.0.0 --port 8080`.
-- [Ollama](https://ollama.com/) — set `INFERENCE_URL=http://localhost:11434`.
-- [vLLM](https://github.com/vllm-project/vllm) — `--api-server` mode with OpenAI compatibility.
-- Any server implementing `POST /v1/chat/completions` (streaming, SSE) and `GET /v1/models`.
-
-If your endpoint requires a bearer token, set `OPENAI_API_KEY` and the API forwards it as `Authorization: Bearer …`.
-
-## Bring your own embeddings
-
-`EMBEDDING_URL` points at any OpenAI-compatible `/embeddings` server. The schema is fixed at 1024-dimension vectors (pgvector column type). Match it with `BAAI/bge-m3` or any other 1024-dim model.
-
-- [infinity](https://github.com/michaelfeil/infinity) — fast embedding + rerank server with OpenAI API.
-- Hosted: any provider whose `POST /v1/embeddings` returns the OpenAI shape.
-
-## Auth
-
-Single-user app — every request is treated as the owner. For real authentication, put a reverse proxy in front of the API container: [oauth2-proxy](https://oauth2-proxy.github.io/), [Authelia](https://www.authelia.com/), nginx basic auth, etc. The principal returned to handlers is the seeded owner row from the `users` table.
+Tiers are set at first launch and can be changed in Settings → System.
 
 ## Stack
 
 | Area | Tech |
-|---|---|
-| API | FastAPI (Python 3.12), asyncpg |
-| Database | PostgreSQL 16 + pgvector |
-| Web | React 18, Vite, Tailwind, shadcn/ui, Zustand, TanStack Query |
-| Embeddings | OpenAI-compatible `/embeddings`; pgvector storage (1024 dim) |
-| Rerank | OpenAI-compatible `/rerank` with `flashrank` CPU fallback |
+|------|------|
+| API | FastAPI, Python 3.12, asyncpg |
+| Database | PostgreSQL 16 + pgvector (1024-dim vectors) |
+| Frontend | React 18, Vite, Tailwind, shadcn/ui, Zustand, TanStack Query |
+| Inference | llama.cpp (bundled) or any OpenAI-compatible endpoint |
+| Embeddings | infinity-emb (bundled) with bge-m3, or any OpenAI-compatible `/embeddings` |
+| Rerank | bge-reranker-v2-m3 (bundled) with flashrank CPU fallback |
+| Vision | MedGemma multimodal (mmproj), pdf2image + Poppler |
+| OCR fallback | pdfplumber (PDF tables), Tesseract (images) |
+| Search | SearXNG meta-search (bundled) |
+| Auth | argon2-cffi (password hashing), session cookies |
+| Encryption | HKDF-derived per-record DEKs, AES-256-GCM column encryption |
+| De-identification | Regex-based PHI redaction with configurable policy levels |
+
+## Configuration
+
+All configuration is via environment variables in `.env`. See `.env.example` for the full list with comments. Key vars:
+
+| Var | Purpose | Default |
+|-----|---------|---------|
+| `HLH_CHAT_CTX` | Context window size (tokens) | `32768` |
+| `HLH_CHAT_MEM` | Memory limit for chat sidecar | `6g` |
+| `HLH_CHAT_NGL` | GPU layers to offload | `0` |
+| `HLH_MASTER_KEY` | Encryption master key (auto-generated on first launch) | — |
+| `HLH_REDACTION_POLICY` | De-id policy: `strict`, `standard`, `permissive` | `standard` |
+
+Provider configuration (inference, embedding, reranker) is managed through the UI via Settings, not env vars. The five legacy env vars (`OPENAI_API_KEY`, `INFERENCE_URL`, `EMBEDDING_URL`, `RERANKER_URL`, `DEFAULT_MODEL`) are deprecated — the lifespan hook warns at startup if any are set.
 
 ## Security posture
 
-homelabhealth is a single-user homelab tool for personal medical records, MIT-licensed. It is not
-HIPAA-certified and has not been formally threat-modeled by a third party. Current major defenses:
-container hardening (`read_only`, `cap_drop: [ALL]`, `no-new-privileges`, internal inference
-network), bundled provider immutability (HTTP 403 on PATCH/DELETE), B0 safeguard preamble
-prepended to every assistant turn, and Fernet-encrypted provider secrets. Major open gaps: no
-audit logging (C4, v0.12.0), no output scanner (B1/C7, v0.15.0), search egress via SearXNG is
-user-discipline-bound with no PHI content scanner, and the C5 de-identification gate must land
-(v0.17.0) before any real medical record is ingested.
+homelabhealth is a single-user homelab tool for personal medical records, MIT-licensed. Not HIPAA-certified. Current defenses:
 
-- [`SECURITY.md`](SECURITY.md) — posture statement, reporting instructions, scope.
-- [`THREATMODEL.md`](THREATMODEL.md) — trust boundaries, defenses with file citations, open gaps.
-- [`docs/safe-harbor.md`](docs/safe-harbor.md) — what security research is and is not authorized.
-- [`docs/breach-response.md`](docs/breach-response.md) — operator playbook for suspected
-  compromise: isolate, snapshot, rotate, notify, document, recover.
+- **Container hardening:** `read_only`, `cap_drop: [ALL]`, `no-new-privileges`, internal inference network, pinned image tags
+- **Column encryption:** AES-256-GCM with HKDF-derived per-record DEKs from `HLH_MASTER_KEY`
+- **De-identification:** Regex-based PHI redaction on ingest (birthdate, SSN, MRN, NPI, DEA)
+- **I/O guard:** Input scanner (prompt injection, banned substrings), output scanner (PII leak, medical advice, crisis, hallucinated IDs)
+- **Audit log:** Hash-chained, insert-only (via restricted Postgres role), tamper-evident
+- **Safeguards:** Tiered refusal system prompt on every request, audit-logged refusals, crisis card
+- **Auth:** Built-in username/password with argon2 hashing, session management
 
-Last reviewed: 2026-05-22.
+See [`SECURITY.md`](SECURITY.md), [`THREATMODEL.md`](THREATMODEL.md), [`docs/safe-harbor.md`](docs/safe-harbor.md), [`docs/breach-response.md`](docs/breach-response.md).
+
+Last reviewed: 2026-05-25.
 
 ## License
 
-TBD
+MIT
