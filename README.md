@@ -4,9 +4,9 @@ Self-hosted RAG chat app for personal health records. Upload medical documents (
 
 One `docker compose up` to run. Built-in username/password auth. Encryption keys auto-generate on first launch. No reverse proxy required.
 
-**Current release:** `v0.24.0` (2026-05-25). See [CHANGELOG.md](CHANGELOG.md) for the full history.
+**Current release:** `v0.25.0` (2026-05-25). See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
-Roadmap: [docs/roadmap.md](docs/roadmap.md).
+Roadmap: [docs/roadmap.md](docs/roadmap.md). Ship-to-friend gate is **clear** — speech-to-text (A4) is explicitly deferred.
 
 ## Quickstart
 
@@ -29,7 +29,7 @@ First launch walks you through setup: create your account, pick a hardware tier,
 | Feature | Details |
 |---------|---------|
 | **Bundled AI** | llama.cpp chat sidecar with MedGemma (4B or 27B by tier). No external API needed. |
-| **Vision** | MedGemma multimodal — reads PDFs and images as page images for structured text extraction. Falls back to pdfplumber/Tesseract. |
+| **Vision** | MedGemma multimodal — PDFs via page rendering + text extraction; standalone images get two-pass extraction (visible text + clinical interpretation). Falls back to pdfplumber/Tesseract. |
 | **RAG** | Upload documents → chunk → embed (1024-dim, bge-m3) → pgvector → retrieve → rerank → inject into prompt. |
 | **Auto-compaction** | Long conversations auto-summarize at 85% context usage. Older messages collapsed in UI, summary preserved for model. |
 | **Safeguards** | Tiered refusal system prompt, I/O guard scanner (PII, medical advice, crisis, prompt injection), audit-logged refusals. |
@@ -76,7 +76,8 @@ All configuration is via environment variables in `.env`. See `.env.example` for
 
 | Var | Purpose | Default |
 |-----|---------|---------|
-| `HLH_CHAT_CTX` | Context window size (tokens) | `32768` |
+| `HLH_CHAT_CTX` | Context window size (tokens); set per tier at save time | `32768` |
+| `HLH_CHAT_TIMEOUT` | llama.cpp server request timeout (seconds); vision ingest can be slow | `300` |
 | `HLH_CHAT_MEM` | Memory limit for chat sidecar | `6g` |
 | `HLH_CHAT_NGL` | GPU layers to offload | `0` |
 | `HLH_MASTER_KEY` | Encryption master key (auto-generated on first launch) | — |
