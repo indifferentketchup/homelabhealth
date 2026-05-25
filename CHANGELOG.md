@@ -20,6 +20,32 @@ _No entries yet._
 
 ---
 
+## [v0.25.0] — 2026-05-25
+
+### AI
+- **Two-pass vision extraction** for standalone images: pass 1 extracts
+  visible text (labels, overlays, report text); pass 2 interprets medical
+  image content (modality, region, findings, impression). Output merged as
+  `[TEXT FROM IMAGE]` + `[IMAGE INTERPRETATION]`. PDFs keep a single
+  document-extraction pass per page.
+- **Vision inference timeouts:** `hlh_chat` `--timeout 300` (configurable
+  via `HLH_CHAT_TIMEOUT`); `services/vision.py` client timeout raised to
+  300 s to match.
+
+### UX
+- **Pre-flight UI:** LUKS, backrest, and master-key doctor checks tagged
+  `advanced=True` and hidden from Settings → System → Pre-flight. CLI
+  `python -m hlh.doctor` still shows them.
+
+### Docs
+- **A4 STT deferred** with operator consent — ship-to-friend gate closed
+  without whisper.cpp sidecar. Revisit if voice input is requested.
+- README rewritten for bundled-AI posture (v0.22–v0.24 features).
+- Roadmap synced through v0.24.0; ship-to-friend gate updated.
+- CHANGELOG backfill for `v0.23.1` (per-tier context windows).
+
+---
+
 ## [v0.24.0] — 2026-05-25
 
 ### AI
@@ -45,6 +71,16 @@ _No entries yet._
   API response.
 - `ctx_max` added to chat detail response.
 - `GET/PUT /api/settings/context-bar` for the opt-in toggle.
+
+---
+
+## [v0.23.1] — 2026-05-25
+
+### AI
+- **Per-tier context windows:** `HLH_CHAT_CTX` passed to `hlh_chat`
+  `--ctx-size` (default 32K; was llama.cpp's 512-token default).
+  Tier defaults: cpu-min 8K; cpu-std / gpu-4gb / gpu-8gb / gpu-16gb 32K;
+  gpu-24gb+ 64K. Context size shown in tier card footprints.
 
 ---
 

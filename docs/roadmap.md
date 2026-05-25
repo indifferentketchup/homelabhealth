@@ -7,7 +7,7 @@ Phase numbering renumbers slightly so AI / Security / Safeguards each get
 their own track but interleave on a single dependency graph.
 
 Owner: Sam
-Last updated: 2026-05-25 (v0.21.0 shipped — sources polish + reingest)
+Last updated: 2026-05-25 (`v0.25.0` — vision polish + STT defer; ship-to-friend gate clear)
 
 -----
 
@@ -33,6 +33,7 @@ Three tracks. Phases interleave by dependency, not by track.
 
 ```
 Shipped releases (most recent → oldest):
+  v0.25.0   two-pass vision + timeouts + STT defer + ship-to-friend clear (2026-05-25)
   v0.24.0   token tracking + auto-compaction + context indicator (2026-05-25)
   v0.23.1   per-tier context window sizes (HLH_CHAT_CTX) (2026-05-25)
   v0.23.0   B3  audit-logged refusals + safety log (2026-05-25)
@@ -62,31 +63,38 @@ Shipped releases (most recent → oldest):
   v0.1.0    strip + homelabhealth identity (2026-05-02)
 
 Planned (dependency-ordered):
-  A4  STT (whisper.cpp) — OR deferred with friend's consent
-  A6  Apple MLX — deferred indefinitely
   v1.0.0    public release
 
 Skipped:
   A5  OCR — skipped; A3 vision (MedGemma mmproj) handles document reading.
 
+Deferred (2026-05-25 — ship-to-friend gate closed with operator consent):
+  A4  STT (whisper.cpp) — tier cards show planned whisper models; no
+      hlh_stt sidecar or /api/transcribe yet. Revisit if voice input
+      is requested.
+
 Deferred indefinitely (2026-05-24 posture-shift pass):
+  A6  Apple MLX — no bundled MLX inference on Apple Silicon
   C8  supply chain + ops — developer discipline, not user-facing. Revisit
       for v1.0.0 public release prep.
   C9  right-to-erasure — defer until first concrete erasure request.
   B4  red-team eval — discipline only; never gets a tag.
 
 Phase track in summary:
-  A — Built-in AI:   A0 ✓ A1 ✓ A1.5 ✓ A1.6 ✓ A1.7 ✓ A2 ✓ A7 ✓ A3 ✓  │ A4      A6
-  B — Safeguards:    B0 ✓ B1 ✓ B2 ✓ B3 ✓                               │ B4 deferred
-  C — Security:      C0 ✓ C1 ✓ C2 ✓ C3 ✓ C4 ✓ C5 ✓ C6 ✓ C7 ✓         │ C8 C9 deferred
+  A — Built-in AI:   A0 ✓ A1 ✓ A1.5 ✓ A1.6 ✓ A1.7 ✓ A2 ✓ A7 ✓ A3 ✓  │ A4 defer  A6 defer
+  B — Safeguards:    B0 ✓ B1 ✓ B2 ✓ B3 ✓                               │ B4 defer
+  C — Security:      C0 ✓ C1 ✓ C2 ✓ C3 ✓ C4 ✓ C5 ✓ C6 ✓ C7 ✓         │ C8 C9 defer
 ```
 
 **Ship-ready gate** = every security + safeguard phase shipped + tagged,
 built-in auth working, key auto-generation working, setup wizard tested.
 
-**Latest release:** `v0.24.0` (2026-05-25) — token tracking + auto-compaction. See `CHANGELOG.md` for the per-tag rundown.
+**Latest release:** `v0.25.0` (2026-05-25) — two-pass vision + ship-to-friend gate
+clear. See `CHANGELOG.md` for the per-tag rundown.
 
-**Active work:** none. A4 (STT) is next if desired; otherwise ship-to-friend gate is nearly clear.
+**Active work:** none. **Ship-to-friend gate is clear** (2026-05-25) — A4 STT
+deferred with operator consent. Next milestone: friend onboarding, then
+v1.0.0 public-release prep when ready.
 
 -----
 
@@ -331,7 +339,8 @@ plan required before any model swap to a different dim.
 infinity multi-model proves unreliable, split into `hlh_embed` +
 `hlh_rerank`. Not needed today.
 
-### A3 — Vision (VLM) via MedGemma mmproj — in progress
+### A3 — Vision (VLM) via MedGemma mmproj — **shipped** (`v0.22.0`; two-pass
+image extraction in `[Unreleased]`)
 
 No separate vision sidecar. MedGemma (both 4B and 27B) is natively a
 vision-language model (SigLIP 400M medical image encoder, trained on
@@ -356,22 +365,23 @@ medical image embeddings is a future enhancement.
 **MTP constraint (locked):** cpu-min runs Qwen3.5-0.8B (MTP variant).
 MTP + mmproj = fatal n_embd mismatch. Vision is None on cpu-min.
 
-### `v0.19.0` — STT (whisper.cpp) (roadmap code: A4)
+### A4 — STT (whisper.cpp) — **deferred** (2026-05-25, operator consent)
 
-Sidecar `hlh_stt` on port 9640. Tier-keyed defaults (whisper-tiny.en →
-whisper-large-v3-turbo).
+Ship-to-friend gate closed without STT. Tier cards in Settings → System
+still show planned whisper model names per tier; no implementation yet.
 
-**Not a `providers` row.** Single internal endpoint. New
-`POST /api/transcribe`, mic button on chat input + record-notes
-editor.
+When revisited: sidecar `hlh_stt` on port 9640. Tier-keyed defaults
+(whisper-tiny.en → whisper-large-v3-turbo). **Not a `providers` row.**
+Single internal endpoint. New `POST /api/transcribe`, mic button on chat
+input + record-notes editor.
 
-Decision deferred: webm/opus transcode in browser vs in `hlh_api`.
+Open question: webm/opus transcode in browser vs in `hlh_api`.
 
-### `v0.20.0?` — OCR (conditional on A3 eval) (roadmap code: A5)
+### A5 — OCR — **skipped** (roadmap code: A5)
 
-Run only if A3 VLM eval on 5+ real medical document photos shows
-insufficient readability. Otherwise skip. If needed: Tesseract 5 or
-PaddleOCR. Custom HTTP shape.
+Run only if A3 VLM eval on 5+ real medical document photos showed
+insufficient readability. **Skipped:** A3 vision + pdfplumber/Tesseract
+fallback covers document reading.
 
 ### `v0.21.0+` — Apple MLX backend variant (deferred indefinitely; roadmap code: A6)
 
@@ -686,7 +696,8 @@ is checked.
 - [x] `v0.8.0` — A1.5 hardening + Phase 2.B visibility
 - [x] `v0.8.0` — A1.7 operator pre-flight + first-launch ack
 - [x] `v0.22.0` — A3 vision (MedGemma mmproj) + gpu-4gb tier
-- [ ] A4 STT, OR explicitly deferred with friend's consent
+- [x] A4 STT — **deferred** with operator consent (2026-05-25); tier cards
+  show planned whisper models; no sidecar shipped
 
 **Safeguards:**
 
