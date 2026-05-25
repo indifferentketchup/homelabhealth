@@ -54,16 +54,71 @@ def chunk_text(text: str, filename: str | None = None) -> list[str]:
     return _splitter_for(filename).split_text(text)
 
 
+def _format_lab_tables(text: str) -> str:
+    """Post-process extracted PDF text to clarify lab result tables.
+
+    Detects common lab patterns where Value/Range/Units columns have
+    been flattened into a single line and reformats them as explicit
+    key-value pairs so the LLM can read them unambiguously.
+    """
+    import re
+    lines = text.split("\n")
+    out: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        # Pattern: "Test Name  >100  >=68  %" or "Test Name  37  22-37  mg/dL"
+        m = re.match(
+            r'^(.+?)\s{2,}([<>]?\d[\d.]*)\s{2,}([<>]=?\d[\d.–-]*)\s{2,}(%|mg/dL|U/mL|g/dL|mEq/L|mmol/L|IU/mL|ng/mL|pg/mL|mcg/dL|cells/mcL)$',
+            stripped,
+        )
+        if m:
+            test, value, ref_range, units = m.groups()
+            out.append(f"TEST: {test.strip()}")
+            out.append(f"  Value: {value} {units}")
+            out.append(f"  Reference Range: {ref_range} {units}")
+            continue
+        # Pattern: header row "Value  Range  Units" — skip (redundant after reformat)
+        if re.match(r'^Value\s+Range\s+Units\s*$', stripped):
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
 def parse_pdf(file_bytes: bytes) -> str:
+    try:
+        import pdfplumber
+
+        parts: list[str] = []
+        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+            for page_num, page in enumerate(pdf.pages):
+                parts.append(f"\n[Page {page_num + 1}]\n")
+                # Extract tables separately for structure preservation
+                tables = page.extract_tables() or []
+                if tables:
+                    for table in tables:
+                        for row in table:
+                            cells = [str(c or "").strip() for c in row]
+                            parts.append("  |  ".join(cells))
+                        parts.append("")
+                # Also extract full text for non-table content
+                text = page.extract_text() or ""
+                if text.strip():
+                    parts.append(text)
+        raw = "\n".join(parts)
+        return _format_lab_tables(raw)
+    except ImportError:
+        pass
+    # Fallback to pypdf if pdfplumber not installed
     try:
         from pypdf import PdfReader
 
         reader = PdfReader(io.BytesIO(file_bytes))
-        parts: list[str] = []
+        parts = []
         for page_num, page in enumerate(reader.pages):
             parts.append(f"\n[Page {page_num + 1}]\n")
             parts.append(page.extract_text() or "")
-        return "".join(parts)
+        raw = "".join(parts)
+        return _format_lab_tables(raw)
     except Exception as e:
         raise ValueError(f"PDF parse failed: {e}") from e
 
