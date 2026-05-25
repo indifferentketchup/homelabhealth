@@ -124,7 +124,7 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    mem_limit: ${HLH_CHAT_MEM:-6g}   # cpu-min: 3g, cpu-std: 6g, gpu-8gb: 8g, gpu-16gb: 18g, gpu-24gb+: 22g
+    mem_limit: ${HLH_CHAT_MEM:-6g}   # cpu-min: 3g, cpu-std: 6g, gpu-4gb: 5g, gpu-8gb: 8g, gpu-16gb: 18g, gpu-24gb+: 22g
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:${HLH_CHAT_PORT:-9610}/v1/models || exit 1"]
       interval: 30s

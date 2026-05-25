@@ -463,6 +463,9 @@ async def pull_model(pool_or_conn, model_uuid: str) -> dict[str, Any]:
                 await _update_bytes(pool_or_conn, model_uuid, bytes_written)
                 await _mark_finished(pool_or_conn, model_uuid, status="ready", error_message=None)
                 logger.info("model_puller: pulled %s/%s (%d bytes)", role, tier, bytes_written)
+                if role == "vision":
+                    from services.bundled_providers import link_active_mmproj
+                    link_active_mmproj(tier)
                 return dict(await _read_row(pool_or_conn, model_uuid))
 
             except _Cancelled:
