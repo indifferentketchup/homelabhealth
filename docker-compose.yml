@@ -108,12 +108,14 @@ services:
       LD_LIBRARY_PATH: /app
     volumes:
       - hlh_models:/models:ro
-    command: >
-      --model ${HLH_CHAT_MODEL_PATH:-/models/chat/cpu-min/Qwen3-1.7B-Q8_0.gguf}
-      --host 0.0.0.0
-      --port ${HLH_CHAT_PORT:-9610}
-      --n-gpu-layers ${HLH_CHAT_NGL:-0}
-      --jinja
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        ARGS="--model $${HLH_CHAT_MODEL_PATH:-/models/chat/cpu-min/Qwen3.5-0.8B-Q8_0.gguf} --host 0.0.0.0 --port $${HLH_CHAT_PORT:-9610} --n-gpu-layers $${HLH_CHAT_NGL:-0} --jinja"
+        if [ -f /models/vision/active-mmproj.gguf ]; then
+          ARGS="$$ARGS --mmproj /models/vision/active-mmproj.gguf"
+        fi
+        exec /app/llama-server $$ARGS
     user: "1000:1000"
     read_only: true
     tmpfs:
