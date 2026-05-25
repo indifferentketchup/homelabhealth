@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, FileStack, Trash2, Upload } from 'lucide-react'
+import { ChevronDown, FileStack, MessageSquare, Trash2, Upload } from 'lucide-react'
 
-import { getChatSourceSelection, setChatSourceSelection } from '@/api/chats.js'
 import { listWorkspaces } from '@/api/workspaces.js'
 import { deleteSource, listSources, uploadSource } from '@/api/sources.js'
 import { Button } from '@/components/ui/button'
@@ -32,11 +31,9 @@ function EmbeddingStatusDot({ status }) {
 export function SourcesPanel({ chatId, workspaceId }) {
   const queryClient = useQueryClient()
   const fileRef = useRef(null)
-  const pendingSelectionRef = useRef(null)
   const setActiveWorkspaceId = useAppStore((s) => s.setActiveWorkspaceId)
 
   const [uploading, setUploading] = useState(false)
-  const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [status, setStatus] = useState('')
   const [libraryOpen, setLibraryOpen] = useState(true)
 
@@ -61,57 +58,6 @@ export function SourcesPanel({ chatId, workspaceId }) {
         : false
     },
   })
-
-  useEffect(() => {
-    if (!chatId) {
-      setSelectedIds(new Set())
-      return
-    }
-    let cancelled = false
-    ;(async () => {
-      try {
-        const pack = await getChatSourceSelection(chatId)
-        const ids = Array.isArray(pack?.source_ids) ? pack.source_ids : []
-        if (!cancelled) {
-          if (pendingSelectionRef.current) {
-            await setChatSourceSelection(chatId, Array.from(pendingSelectionRef.current))
-            setSelectedIds(pendingSelectionRef.current)
-            pendingSelectionRef.current = null
-          } else {
-            setSelectedIds(new Set(ids.map(String)))
-          }
-        }
-      } catch {
-        if (!cancelled) setSelectedIds(new Set())
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [chatId])
-
-  async function syncSelection(nextSet) {
-    setSelectedIds(nextSet)
-    if (chatId) {
-      try {
-        await setChatSourceSelection(
-          chatId,
-          Array.from(nextSet).map((id) => id),
-        )
-      } catch {
-        setStatus('Could not save source selection')
-      }
-    } else {
-      pendingSelectionRef.current = nextSet
-    }
-  }
-
-  function toggleSource(id) {
-    const next = new Set(selectedIds)
-    if (next.has(id)) next.delete(id)
-    else next.add(id)
-    void syncSelection(next)
-  }
 
   async function onUpload(e) {
     const files = Array.from(e.target.files || [])
@@ -145,25 +91,11 @@ export function SourcesPanel({ chatId, workspaceId }) {
     if (!window.confirm(`Remove source "${name}"?`)) return
     try {
       await deleteSource(id)
-      const next = new Set(selectedIds)
-      next.delete(id)
-      setSelectedIds(next)
-      if (chatId) {
-        await setChatSourceSelection(chatId, Array.from(next))
-      }
       await queryClient.invalidateQueries({ queryKey: ['sources', effectiveWorkspaceId] })
     } catch {
       setStatus('Delete failed')
     }
   }
-
-  const completeSourceIds = useMemo(() => {
-    return sources
-      .filter((s) => s.embedding_status === 'complete')
-      .map((s) => s.id)
-  }, [sources])
-
-  const allSelected = completeSourceIds.length > 0 && completeSourceIds.every((id) => selectedIds.has(id))
 
   return (
     <aside className="flex h-full min-h-0 w-full min-w-0 shrink-0 flex-col border-l border-sidebar-border bg-sidebar text-sidebar-foreground">
@@ -228,25 +160,7 @@ export function SourcesPanel({ chatId, workspaceId }) {
             onClick={() => setLibraryOpen((o) => !o)}
             className="fs-nav mt-1 flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left font-medium uppercase tracking-wide text-muted-foreground outline-none ring-sidebar-ring hover:bg-sidebar-accent/50 focus-visible:ring-2"
           >
-            <div className="flex items-center gap-2">
-              <span>Library</span>
-              {completeSourceIds.length > 0 && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    if (allSelected) {
-                      void syncSelection(new Set())
-                    } else {
-                      void syncSelection(new Set(completeSourceIds))
-                    }
-                  }}
-                  className="text-xs text-muted-foreground underline-offset-2 hover:underline hover:text-foreground"
-                >
-                  {allSelected ? 'none' : 'all'}
-                </button>
-              )}
-            </div>
+            <span>Library</span>
             <ChevronDown
               className={cn(
                 'size-4 shrink-0 transition-transform duration-150',
@@ -263,25 +177,12 @@ export function SourcesPanel({ chatId, workspaceId }) {
             )}
             {sources.map((src) => {
               const ready = src.embedding_status === 'complete'
-              const on = selectedIds.has(src.id)
               return (
                 <div
                   key={src.id}
                   className="group flex w-full items-stretch gap-1 rounded-md border border-transparent py-0.5 hover:border-sidebar-border hover:bg-sidebar-accent/30"
                 >
-                  <label
-                    className={cn(
-                      'flex min-w-0 flex-1 cursor-pointer items-start gap-2 rounded-md px-1 py-1.5',
-                      !ready ? 'cursor-not-allowed opacity-60' : '',
-                    )}
-                  >
-                    <input
-                      type="checkbox"
-                      className="mt-1.5 size-3.5 shrink-0"
-                      checked={on}
-                      disabled={!ready}
-                      onChange={() => ready && toggleSource(src.id)}
-                    />
+                  <div className="flex min-w-0 flex-1 items-start gap-2 rounded-md px-1 py-1.5">
                     <span className="min-w-0 flex-1">
                       <span className="fs-nav flex items-center gap-1.5 font-medium text-foreground">
                         <EmbeddingStatusDot status={src.embedding_status} />
@@ -293,17 +194,34 @@ export function SourcesPanel({ chatId, workspaceId }) {
                         {src.embedding_status ? ` · ${src.embedding_status}` : ''}
                       </span>
                     </span>
-                  </label>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
-                    title="Remove source"
-                    onClick={() => void onDeleteSource(src.id, src.name)}
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground hover:text-primary"
+                      title="Send to chat"
+                      disabled={!ready}
+                      onClick={() => {
+                        window.dispatchEvent(new CustomEvent('hlh:focus-source', {
+                          detail: { name: src.name, id: src.id },
+                        }))
+                      }}
+                    >
+                      <MessageSquare className="size-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      title="Remove source"
+                      onClick={() => void onDeleteSource(src.id, src.name)}
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </div>
                 </div>
               )
             })}

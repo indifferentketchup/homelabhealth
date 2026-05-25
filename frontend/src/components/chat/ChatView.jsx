@@ -119,6 +119,18 @@ export function ChatView({
 
   const messages = msgPack?.items ?? []
   const [draft, setDraft] = useState('')
+
+  useEffect(() => {
+    function handleFocusSource(e) {
+      const name = e.detail?.name
+      if (name) {
+        setDraft(`Tell me about "${name}"`)
+        inputRef.current?.focus()
+      }
+    }
+    window.addEventListener('hlh:focus-source', handleFocusSource)
+    return () => window.removeEventListener('hlh:focus-source', handleFocusSource)
+  }, [])
   const [streamText, setStreamText] = useState('')
   const [sendError, setSendError] = useState(null)
 
