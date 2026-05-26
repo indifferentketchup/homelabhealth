@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, Outlet, matchPath, useLocation, useNavigate } from 'react-router-dom'
+import { Outlet, matchPath, useLocation, useNavigate } from 'react-router-dom'
 import { FileStack, Menu } from 'lucide-react'
 
 import { getModelSettings } from '@/api/inference.js'
@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import SystemAcknowledgeModal from '@/components/settings/SystemAcknowledgeModal.jsx'
 import { applyWorkspaceLayoutToDom, clearWorkspaceLayoutLiveDraft } from '@/lib/workspaceLayout.js'
-import { PATH_HOME, workspacePath } from '@/routes/paths.js'
+import { PATH_HOME } from '@/routes/paths.js'
 import SettingsPage from '@/pages/workspace/SettingsPage.jsx'
 import { useAppStore } from '@/store/index.js'
 import { useLayoutStore } from '@/store/layoutStore.js'
@@ -127,8 +127,13 @@ export default function WorkspaceApp() {
     const onKey = (e) => {
       if (e.key === 'Escape') setMobileSourcesOpen(false)
     }
+    const onClose = () => setMobileSourcesOpen(false)
     document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
+    window.addEventListener('hlh:mobile-sources-close', onClose)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      window.removeEventListener('hlh:mobile-sources-close', onClose)
+    }
   }, [mobileSourcesOpen])
 
   useEffect(() => {
@@ -186,15 +191,13 @@ export default function WorkspaceApp() {
                 variant="ghost"
                 size="icon"
                 className="shrink-0"
-                asChild
-                aria-label="Sources"
+                aria-label="Open sources panel"
+                onClick={() => {
+                  setMobileSidebar(false)
+                  setMobileSourcesOpen(true)
+                }}
               >
-                <Link
-                  to={workspacePath(activeWorkspaceId, 'sources')}
-                  onClick={() => setMobileSourcesOpen(false)}
-                >
-                  <FileStack className="size-5" />
-                </Link>
+                <FileStack className="size-5" />
               </Button>
             ) : null}
           </header>

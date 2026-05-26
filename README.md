@@ -46,7 +46,7 @@ The setup wizard detects your hardware and recommends a tier:
 | Tier | Hardware | Chat model | Context | Vision |
 |------|----------|-----------|---------|--------|
 | cpu-min | <16 GB RAM, no GPU | Qwen3.5 0.8B | 8K | — |
-| cpu-std | ≥16 GB RAM, no GPU | MedGemma 4B Q4 | 32K | MedGemma 4B |
+| cpu-std | ≥16 GB RAM, no GPU | MedGemma 4B Q4 | 8K | MedGemma 4B |
 | gpu-4gb | 4-5 GB VRAM | MedGemma 4B Q4 + offload | 32K | MedGemma 4B |
 | gpu-8gb | 6-11 GB VRAM | MedGemma 4B Q8 | 32K | MedGemma 4B |
 | gpu-16gb | 12-23 GB VRAM | MedGemma 27B Q4 | 32K | MedGemma 27B |

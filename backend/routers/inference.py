@@ -25,6 +25,7 @@ from services.provider_client import (
     resolve_provider,
     resolve_provider_for_workspace,
 )
+from services.reasoning_strip import ThinkingStreamFilter
 
 router = APIRouter()
 
@@ -136,6 +137,7 @@ async def _stream_openai_chat_completions(
         yield _sse("[DONE]")
         return
     payload: dict[str, Any] = {"model": model, "messages": messages, "stream": True}
+    filt = ThinkingStreamFilter()
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:
             async with client.stream(
@@ -171,10 +173,13 @@ async def _stream_openai_chat_completions(
                             delta = (choices[0] or {}).get("delta") or {}
                             piece = delta.get("content") or ""
                             if piece:
-                                yield _sse(json.dumps({"content": piece}))
+                                for out in filt.feed(piece):
+                                    yield _sse(json.dumps({"content": out}))
     except httpx.HTTPError as e:
         yield _sse(json.dumps({"error": f"Inference request failed: {e}"}))
         return
+    for out in filt.flush():
+        yield _sse(json.dumps({"content": out}))
     yield _sse("[DONE]")
 
 

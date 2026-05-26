@@ -17,6 +17,7 @@ from fastapi import HTTPException
 
 from db import get_pool
 from services.provider_client import build_headers, resolve_provider_for_workspace
+from services.reasoning_strip import strip_thinking_text
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ async def _openai_summarize(
     if not choices:
         return ""
     msg = choices[0].get("message") or {}
-    return (msg.get("content") or "").strip()
+    return strip_thinking_text((msg.get("content") or "").strip())
 
 
 async def summarize_and_compress(

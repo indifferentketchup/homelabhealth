@@ -226,6 +226,9 @@ ON CONFLICT (key) DO NOTHING;
 INSERT INTO global_settings (key, value) VALUES ('show_context_bar', 'false')
 ON CONFLICT (key) DO NOTHING;
 
+INSERT INTO global_settings (key, value) VALUES ('durable_streaming_enabled', 'false')
+ON CONFLICT (key) DO NOTHING;
+
 -- Single markdown blob for freeform notes; enforced as singleton.
 CREATE TABLE IF NOT EXISTS mode_memory (
     id SERIAL PRIMARY KEY,
@@ -585,3 +588,25 @@ ALTER TABLE messages ADD COLUMN IF NOT EXISTS prompt_tokens INTEGER;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS completion_tokens INTEGER;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS compacted_at TIMESTAMPTZ;
 ALTER TABLE chats ADD COLUMN IF NOT EXISTS ctx_max INTEGER;
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- Durable streaming: message lifecycle status (Phase A, 2026-05-26).
+-- status tracks the assistant message through its streaming lifecycle.
+-- content is nullable so we can insert an empty row before inference starts.
+-- ────────────────────────────────────────────────────────────────────────────
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'complete';
+DO $$ BEGIN
+  ALTER TABLE messages ADD CONSTRAINT messages_status_check
+    CHECK (status IN ('streaming', 'complete', 'failed', 'cancelled'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS finished_at TIMESTAMPTZ;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS error_message TEXT;
+
+ALTER TABLE messages ALTER COLUMN content DROP NOT NULL;
+
+CREATE INDEX IF NOT EXISTS messages_chat_status_streaming_idx
+  ON messages (chat_id, status)
+  WHERE status = 'streaming';

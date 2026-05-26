@@ -72,3 +72,11 @@ export function setChatSourceSelection(chatId, sourceIds) {
     json: { source_ids: sourceIds },
   })
 }
+
+export function stopChatInference(chatId) {
+  return apiFetch(`/api/chats/${chatId}/stop`, { method: 'POST' })
+}
+
+export function discardStaleMessage(chatId, messageId) {
+  return apiFetch(`/api/chats/${chatId}/messages/${messageId}/discard-stale`, { method: 'POST' })
+}

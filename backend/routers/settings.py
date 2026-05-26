@@ -396,6 +396,22 @@ class ContextBarPut(BaseModel):
     show_context_bar: bool
 
 
+@router.get("/durable-streaming")
+async def get_durable_streaming(
+    _: dict = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
+):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT value FROM global_settings WHERE key = 'durable_streaming_enabled'"
+        )
+    enabled = row is not None and (row["value"] or "").lower() in ("true", "1", "yes")
+    async with audit.targeting("settings", None):
+        pass
+    return {"enabled": enabled}
+
+
 @router.put("/context-bar")
 async def put_context_bar_setting(
     body: ContextBarPut,

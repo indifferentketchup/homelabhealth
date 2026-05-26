@@ -35,3 +35,6 @@ export const getContextBarSetting = () => apiFetch('/api/settings/context-bar')
 /** PUT /api/settings/context-bar — toggle the context usage indicator. */
 export const putContextBarSetting = (show) =>
   apiFetch('/api/settings/context-bar', { method: 'PUT', json: { show_context_bar: show } })
+
+/** GET /api/settings/durable-streaming → { enabled: boolean } */
+export const getDurableStreamingSetting = () => apiFetch('/api/settings/durable-streaming')
