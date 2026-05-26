@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from contextlib import asynccontextmanager
 
@@ -77,6 +78,32 @@ def _cors_origins() -> list[str]:
     return raw
 
 
+async def _streaming_sweeper() -> None:
+    """Mark streaming messages older than 5 minutes as failed (orphan cleanup)."""
+    from db import get_pool
+    from services.chat_jobs import job_registry
+    while True:
+        await asyncio.sleep(60)
+        try:
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                swept = await conn.fetch(
+                    """
+                    UPDATE messages
+                    SET status = 'failed', finished_at = NOW(), error_message = 'inference timed out'
+                    WHERE status = 'streaming'
+                      AND COALESCE(started_at, created_at) < NOW() - INTERVAL '5 minutes'
+                    RETURNING chat_id
+                    """,
+                )
+            if swept:
+                logger.info("sweeper: marked %d stale streaming rows as failed", len(swept))
+                for row in swept:
+                    await job_registry.cancel(row["chat_id"], timeout=2.0)
+        except Exception as exc:
+            logger.warning("sweeper error: %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     ensure_keys()       # first: ensure encryption keys are in os.environ
@@ -93,9 +120,15 @@ async def lifespan(_app: FastAPI):
         if profile_row is not None:
             await bundled_providers.apply_bundled_bindings(conn, profile_row["tier"] or "external")
     logger.info("model_puller: seeded %d bundled_models rows", seeded)
+    sweeper_task = asyncio.create_task(_streaming_sweeper())
     try:
         yield
     finally:
+        sweeper_task.cancel()
+        try:
+            await sweeper_task
+        except asyncio.CancelledError:
+            pass
         await close_pool()
 
 

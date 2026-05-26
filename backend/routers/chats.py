@@ -1,5 +1,6 @@
 """Chat CRUD, message listing, and streaming sends (OpenAI-compatible local inference or Claude)."""
 
+import asyncio
 import hashlib
 import os
 import pathlib
@@ -33,11 +34,22 @@ from services.rag import (
     retrieve_memory_facts,
 )
 from services.crypto import encrypt_column, decrypt_column
+from services.reasoning_strip import ThinkingStreamFilter, strip_thinking_text
 from services.safeguards import current_version, prepend_safeguard
 from services.searx import searx_search_sources
+from services.chat_jobs import job_registry
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+async def _durable_streaming_enabled() -> bool:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT value FROM global_settings WHERE key = 'durable_streaming_enabled'"
+        )
+        return row is not None and (row["value"] or "").lower() in ("true", "1", "yes")
 
 
 _AUTO_MEMORY_TRIGGERS = (
@@ -272,7 +284,7 @@ async def _openai_short_chat_title(
                 logger.warning("auto-title: no choices in response")
                 return None
             msg = choices[0].get("message") or {}
-            raw = (msg.get("content") or "").strip()
+            raw = strip_thinking_text((msg.get("content") or "").strip())
             cleaned = _clean_auto_title(raw)
             logger.info("auto-title: raw=%r cleaned=%r", raw[:80], cleaned)
             return cleaned or None
@@ -281,17 +293,51 @@ async def _openai_short_chat_title(
         return None
 
 
+def _normalize_messages_for_inference(messages: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Merge consecutive same-role turns for strict user/assistant templates (MedGemma jinja).
+
+    Retries after a failed inference can leave multiple user rows in a row; llama.cpp's
+    peg-native template rejects that with a 400.
+    """
+    merged: list[dict[str, str]] = []
+    for msg in messages:
+        role = msg.get("role")
+        content = (msg.get("content") or "").strip()
+        if role == "system":
+            if merged and merged[-1]["role"] == "system":
+                merged[-1]["content"] = f"{merged[-1]['content']}\n\n{content}".strip()
+            else:
+                merged.append({"role": "system", "content": content})
+            continue
+        if role not in ("user", "assistant"):
+            continue
+        if not content:
+            continue
+        if merged and merged[-1]["role"] == role:
+            merged[-1]["content"] = f"{merged[-1]['content']}\n\n{content}".strip()
+        else:
+            merged.append({"role": role, "content": content})
+
+    first_body = next((i for i, m in enumerate(merged) if m["role"] != "system"), None)
+    if first_body is not None and merged[first_body]["role"] == "assistant":
+        merged.insert(first_body, {"role": "user", "content": "Continue from the prior context."})
+
+    return merged
+
+
 async def _stream_inference(
     provider: Provider,
     model: str,
     messages: list[dict[str, str]],
 ) -> AsyncIterator[bytes]:
+    messages = _normalize_messages_for_inference(messages)
     payload: dict[str, Any] = {
         "model": model,
         "messages": messages,
         "stream": True,
     }
     logger.info("openai /v1/chat/completions provider=%s model=%s", provider.name, model)
+    filt = ThinkingStreamFilter()
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:
             async with client.stream(
@@ -323,12 +369,16 @@ async def _stream_inference(
                         choices = chunk.get("choices")
                         if isinstance(choices, list) and len(choices) > 0:
                             delta = (choices[0] or {}).get("delta") or {}
+                            # reasoning_content intentionally ignored (internal planning).
                             piece = delta.get("content") or ""
                             if piece:
-                                yield _sse(json.dumps({"content": piece}))
+                                for out in filt.feed(piece):
+                                    yield _sse(json.dumps({"content": out}))
     except httpx.HTTPError as e:
         yield _sse(json.dumps({"error": f"Inference request failed: {e}"}))
         return
+    for out in filt.flush():
+        yield _sse(json.dumps({"content": out}))
     yield _sse("[DONE]")
 
 
@@ -350,6 +400,7 @@ class MessageCreate(BaseModel):
     content: str = Field(..., min_length=1)
     model: str | None = None
     attached_source_ids: list[str] | None = None
+    retry_last: bool = False
 
 
 def _scrub_pg_text(value: str) -> str:
@@ -394,11 +445,11 @@ def _chat_row(r: asyncpg.Record) -> dict[str, Any]:
 
 def _message_row(r: asyncpg.Record) -> dict[str, Any]:
     raw_content = r["content"] or ""
-    return {
+    out = {
         "id": str(r["id"]),
         "chat_id": str(r["chat_id"]),
         "role": r["role"],
-        "content": decrypt_column(raw_content, str(r["id"])) if raw_content else raw_content,
+        "content": decrypt_column(raw_content, str(r["id"])) if raw_content else "",
         "model": r["model"],
         "tokens_used": r["tokens_used"],
         "prompt_tokens": r["prompt_tokens"],
@@ -408,7 +459,14 @@ def _message_row(r: asyncpg.Record) -> dict[str, Any]:
         "forked_from": str(r["forked_from"]) if r["forked_from"] else None,
         "created_at": r["created_at"].isoformat() if r["created_at"] else None,
         "guard_flags": r["guard_flags"] if r["guard_flags"] else None,
+        "status": r.get("status", "complete"),
+        "started_at": r["started_at"].isoformat() if r.get("started_at") else None,
+        "finished_at": r["finished_at"].isoformat() if r.get("finished_at") else None,
     }
+    err = r.get("error_message")
+    if err:
+        out["error_message"] = err
+    return out
 
 
 @router.post("/")
@@ -437,7 +495,7 @@ async def create_chat(
                 $6,
                 $5)
             RETURNING id, title, workspace_id, model, web_search_enabled, rag_enabled,
-                pruning_summary, message_count, is_main_chat, created_at, updated_at
+                pruning_summary, message_count, is_main_chat, ctx_max, created_at, updated_at
             """,
             body.title,
             body.workspace_id,
@@ -676,7 +734,7 @@ async def patch_chat(
                 workspace_id = $5, updated_at = NOW()
             WHERE id = $1::uuid
             RETURNING id, title, workspace_id, model, web_search_enabled, rag_enabled,
-                pruning_summary, message_count, is_main_chat, created_at, updated_at
+                pruning_summary, message_count, is_main_chat, ctx_max, created_at, updated_at
             """,
             chat_id,
             new_title,
@@ -852,7 +910,7 @@ async def list_messages(
             raise HTTPException(status_code=404, detail="Chat not found")
         rows = await conn.fetch(
             """
-            SELECT id, chat_id, role, content, model, tokens_used, prompt_tokens, completion_tokens, compacted_at, sources_used, forked_from, created_at, guard_flags
+            SELECT id, chat_id, role, content, model, tokens_used, prompt_tokens, completion_tokens, compacted_at, sources_used, forked_from, created_at, guard_flags, status, started_at, finished_at, error_message
             FROM messages
             WHERE chat_id = $1::uuid
             ORDER BY created_at ASC, id ASC
@@ -926,7 +984,7 @@ async def fork_chat_at_message(
                 )
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
                 RETURNING id, title, workspace_id, model, web_search_enabled, rag_enabled,
-                    pruning_summary, message_count, is_main_chat, created_at, updated_at
+                    pruning_summary, message_count, is_main_chat, ctx_max, created_at, updated_at
                 """,
                 fork_title,
                 src["workspace_id"],
@@ -1029,28 +1087,45 @@ async def append_message(
 
         first_exchange_for_auto_title = int(chat["message_count"] or 0) == 0
 
-        user_msg_id = uuid.uuid4()
-        async with conn.transaction():
-            await conn.execute(
+        scrubbed_user_content = _scrub_pg_text(body.content.strip())
+        skip_user_insert = False
+        if body.retry_last:
+            last_row = await conn.fetchrow(
                 """
-                INSERT INTO messages (id, chat_id, role, content, model, ai_generated)
-                VALUES ($1::uuid, $2::uuid, 'user', $3, $4, $5)
-                """,
-                user_msg_id,
-                chat_id,
-                encrypt_column(_scrub_pg_text(body.content.strip()), str(user_msg_id)),
-                effective_model,
-                False,
-            )
-            await conn.execute(
-                """
-                UPDATE chats
-                SET message_count = message_count + 1,
-                    updated_at = NOW()
-                WHERE id = $1::uuid
+                SELECT id, role FROM messages
+                WHERE chat_id = $1::uuid AND compacted_at IS NULL
+                ORDER BY created_at DESC, id DESC
+                LIMIT 1
                 """,
                 chat_id,
             )
+            if last_row and last_row["role"] == "user":
+                skip_user_insert = True
+                user_msg_id = last_row["id"]
+
+        if not skip_user_insert:
+            user_msg_id = uuid.uuid4()
+            async with conn.transaction():
+                await conn.execute(
+                    """
+                    INSERT INTO messages (id, chat_id, role, content, model, ai_generated)
+                    VALUES ($1::uuid, $2::uuid, 'user', $3, $4, $5)
+                    """,
+                    user_msg_id,
+                    chat_id,
+                    encrypt_column(scrubbed_user_content, str(user_msg_id)),
+                    effective_model,
+                    False,
+                )
+                await conn.execute(
+                    """
+                    UPDATE chats
+                    SET message_count = message_count + 1,
+                        updated_at = NOW()
+                    WHERE id = $1::uuid
+                    """,
+                    chat_id,
+                )
 
         msg_rows = await conn.fetch(
             """
@@ -1060,13 +1135,6 @@ async def append_message(
             ORDER BY created_at ASC, id ASC
             """,
             chat_id,
-        )
-
-        assembled, rag_sse_meta = await _assembled_system_prompt(
-            conn,
-            chat,
-            user_query_for_rag=_scrub_pg_text(body.content.strip()),
-            include_site_private=True,
         )
 
         user_profile_block = ""
@@ -1091,7 +1159,7 @@ async def append_message(
             user_profile_block = ""
 
     summary = chat["pruning_summary"]
-    user_message_text = _scrub_pg_text(body.content.strip())
+    user_message_text = scrubbed_user_content
 
     from services.guard import scan_input, scan_output
     input_scan = scan_input(user_message_text)
@@ -1119,7 +1187,93 @@ async def append_message(
             },
         )
 
+    # --- Durable streaming path (Phase A) ---
+    if await _durable_streaming_enabled():
+        # 409 if another streaming assistant exists
+        async with pool.acquire() as conn:
+            existing = await conn.fetchval(
+                "SELECT id FROM messages WHERE chat_id = $1::uuid AND role = 'assistant' AND status = 'streaming'",
+                chat_id,
+            )
+        if existing:
+            raise HTTPException(
+                status_code=409,
+                detail="Another response is still streaming. Stop it first or wait for it to finish.",
+            )
+
+        # Insert assistant placeholder row
+        assist_id = uuid.uuid4()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO messages (id, chat_id, role, content, model, ai_generated, status)
+                VALUES ($1::uuid, $2::uuid, 'assistant', '', $3, TRUE, 'streaming')
+                """,
+                assist_id, chat_id, effective_model,
+            )
+
+        # Fetch messages for inference context (exclude streaming rows)
+        async with pool.acquire() as conn:
+            job_msg_rows = await conn.fetch(
+                """
+                SELECT id, role, content, status
+                FROM messages
+                WHERE chat_id = $1::uuid AND compacted_at IS NULL AND status != 'streaming'
+                ORDER BY created_at ASC, id ASC
+                """,
+                chat_id,
+            )
+
+        chat_dict = {
+            "id": chat["id"],
+            "title": chat["title"],
+            "model": chat["model"],
+            "pruning_summary": chat["pruning_summary"],
+            "web_search_enabled": chat["web_search_enabled"],
+            "workspace_id": chat["workspace_id"],
+            "message_count": chat["message_count"],
+            "rag_enabled": chat["rag_enabled"],
+        }
+
+        import services.inference_job as ij
+
+        async def _run_job():
+            reg = job_registry.get(chat_id)
+            if reg is None:
+                return
+            await ij.run_inference_job(
+                registration=reg,
+                chat_id=chat_id,
+                assistant_id=assist_id,
+                provider=provider,
+                effective_model=effective_model,
+                chat_record=chat_dict,
+                msg_rows=[dict(r) for r in job_msg_rows],
+                user_message_text=user_message_text,
+                user_profile_block=user_profile_block,
+                provider_is_bundled=provider_is_bundled,
+                first_exchange_for_auto_title=first_exchange_for_auto_title,
+                request_id=getattr(getattr(request, 'state', None), 'request_id', None),
+                principal_username=principal.get("username", "unknown"),
+            )
+
+        task = asyncio.create_task(_run_job())
+        job_registry.register(chat_id, assist_id, task)
+
+        async with audit.targeting("chat", chat_id):
+            pass
+        return JSONResponse(
+            status_code=202,
+            content={
+                "user_message_id": str(user_msg_id),
+                "assistant_message_id": str(assist_id),
+                "status": "streaming",
+            },
+        )
+    # --- End durable streaming path ---
+
     async def gen() -> AsyncIterator[bytes]:
+        yield _sse(json.dumps({"type": "phase", "phase": "preparing"}))
         sources_list: list[dict[str, str]] = []
         extra_search = ""
         if bool(chat["web_search_enabled"]):
@@ -1127,7 +1281,26 @@ async def append_message(
                 user_message_text,
             )
         if sources_list:
+            yield _sse(json.dumps({"type": "phase", "phase": "search"}))
             yield _sse(json.dumps({"type": "search_sources", "sources": sources_list}))
+
+        yield _sse(json.dumps({"type": "phase", "phase": "rag"}))
+        assembled = ""
+        rag_sse_meta: dict[str, int] | None = None
+        try:
+            async with pool.acquire() as rag_conn:
+                assembled, rag_sse_meta = await _assembled_system_prompt(
+                    rag_conn,
+                    chat,
+                    user_query_for_rag=user_message_text,
+                    include_site_private=True,
+                )
+        except Exception as exc:
+            logger.error("RAG assembly failed chat_id=%s: %s", chat_id, exc)
+            yield _sse(json.dumps({"error": "Document retrieval failed. Try again or start a fresh chat."}))
+            yield _sse("[DONE]")
+            return
+
         if rag_sse_meta:
             yield _sse(
                 json.dumps(
@@ -1219,6 +1392,7 @@ async def append_message(
             effective_model,
             str(chat["workspace_id"]) if chat["workspace_id"] else None,
         )
+        yield _sse(json.dumps({"type": "phase", "phase": "inference"}))
         stream = _stream_inference(
             provider,
             effective_model,
@@ -1258,10 +1432,19 @@ async def append_message(
             had_error = True
 
         if had_error:
+            yield _sse("[DONE]")
             return
 
-        assistant_text = "".join(full).strip()
+        assistant_text = strip_thinking_text("".join(full).strip())
         if not assistant_text:
+            yield _sse(json.dumps({
+                "error": (
+                    "The model returned no response — the connection may have dropped or "
+                    "inference was interrupted. On CPU, wait 1–2 minutes before Retry, "
+                    "or start a fresh chat if this keeps happening."
+                ),
+            }))
+            yield _sse("[DONE]")
             return
 
         output_scan = scan_output(assistant_text)
@@ -1294,7 +1477,10 @@ async def append_message(
                 """,
                 chat_id,
             )
-            ctx_max = int(os.environ.get("HLH_CHAT_CTX", "32768"))
+            tier_row = await conn.fetchrow("SELECT tier FROM system_profile WHERE id = 1")
+            from services.sysinfo import chat_ctx_for_tier
+
+            ctx_max = chat_ctx_for_tier(tier_row["tier"] if tier_row else None)
             await conn.execute(
                 "UPDATE chats SET ctx_max = $2 WHERE id = $1::uuid AND ctx_max IS NULL",
                 chat_id,
@@ -1400,3 +1586,64 @@ async def append_message(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/{chat_id}/stop")
+async def stop_chat_inference(
+    chat_id: uuid.UUID,
+    principal: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
+):
+    cancelled = await job_registry.cancel(chat_id)
+    if not cancelled:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE messages SET status = 'cancelled', finished_at = NOW()
+                WHERE chat_id = $1::uuid AND role = 'assistant' AND status = 'streaming'
+                """,
+                chat_id,
+            )
+    async with audit.targeting("chat", chat_id):
+        pass
+    return {"ok": True}
+
+
+@router.post("/{chat_id}/messages/{message_id}/discard-stale")
+async def discard_stale_message(
+    chat_id: uuid.UUID,
+    message_id: uuid.UUID,
+    principal: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
+):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT id, status, created_at, started_at
+            FROM messages
+            WHERE id = $1::uuid AND chat_id = $2::uuid AND role = 'assistant'
+            """,
+            message_id, chat_id,
+        )
+        if row is None:
+            raise HTTPException(status_code=404, detail="Message not found")
+        if row["status"] != "streaming":
+            raise HTTPException(status_code=409, detail="Message is not streaming")
+        from datetime import datetime, timezone
+        anchor = row["started_at"] or row["created_at"]
+        age_s = (datetime.now(timezone.utc) - anchor).total_seconds()
+        if age_s < 60:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Message is only {int(age_s)}s old — must be at least 60s to discard.",
+            )
+        await job_registry.cancel(chat_id, timeout=3.0)
+        await conn.execute(
+            "UPDATE messages SET status = 'failed', finished_at = NOW(), error_message = 'discarded as stale' WHERE id = $1::uuid",
+            message_id,
+        )
+    async with audit.targeting("chat", chat_id):
+        pass
+    return {"ok": True}

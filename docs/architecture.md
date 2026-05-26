@@ -273,7 +273,7 @@ Doctor: `python -m hlh.doctor` / `GET /api/system/doctor` — pre-flight checks.
 | Tier | Chat | Context | Vision (mmproj) |
 |------|------|---------|-----------------|
 | cpu-min | Qwen3.5 0.8B | 8K | — |
-| cpu-std | MedGemma 4B Q4 | 32K | MedGemma 4B |
+| cpu-std | MedGemma 4B Q4 | 8K | MedGemma 4B |
 | gpu-4gb | MedGemma 4B Q4 + offload | 32K | MedGemma 4B |
 | gpu-8gb | MedGemma 4B Q8 | 32K | MedGemma 4B |
 | gpu-16gb | MedGemma 27B Q4 | 32K | MedGemma 27B |

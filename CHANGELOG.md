@@ -16,7 +16,52 @@ live under the `snapshot/` namespace.
 
 ## [Unreleased]
 
-_No entries yet._
+---
+
+## [v0.27.0] — 2026-05-26
+
+### AI
+- **Durable streaming inference (Phase A)** — inference runs as a
+  background task detached from the HTTP connection; partial content
+  flushed to Postgres every 500ms with chained writes; mobile Safari
+  backgrounding no longer loses the assistant response. Feature-flagged
+  (`durable_streaming_enabled` in `global_settings`; default off).
+  New endpoints: `POST /stop`, `POST /discard-stale`.
+  New modules: `services/chat_jobs.py`, `services/inference_job.py`.
+  Frontend: `useDurableChat` polling hook with adaptive intervals
+  (1s/2s/5s) and visibility-change refetch.
+- **`hlh_chat --reasoning on --reasoning-format deepseek`** plus API-layer
+  **`reasoning_strip`** — MedGemma 1.5 ``thought`` blocks are dropped from
+  SSE and saved assistant rows (llama.cpp b9282 still mixes peg-native
+  thinking into ``content``; strip is the effective fix).
+- **cpu-std context window lowered to 8K** (8192 tokens) — matches
+  `cpu-min` footprint; reduces KV-cache RAM pressure on CPU-only hosts.
+  GPU tiers unchanged. `TIER_CHAT_CTX` in `services/sysinfo.py`; env
+  `HLH_CHAT_CTX` still overrides.
+- **Chat role normalization** before inference — merge consecutive
+  user/assistant turns so MedGemma's jinja template accepts retries
+  after failed completions.
+- **Stream status UX** — phase events over SSE (`preparing`, `search`,
+  `rag`, `inference`), elapsed-time status bar, stale-stream banner
+  (60s), and `retry_last` on message POST to re-run inference without
+  duplicating the user row.
+- **Lifespan sweeper** — 60s background loop marks streaming messages
+  older than 5 minutes as failed (orphan cleanup).
+
+### UX
+- **Mobile sources panel:** header FileStack opens the sources drawer (with
+  Send to Chat) instead of the legacy `/sources` checkbox page; drawer rows
+  stack the button on narrow widths; long-press context menu adds Send to Chat.
+- `StreamStatusBar` + `StaleStreamBanner` in chat (pattern from BooCode
+  v1.12.3).
+- Fix blank page: restore missing `ModelSelectorBar` import in `ChatView.jsx`.
+- Map Safari **Load failed** to a actionable retry message; emit SSE errors
+  when inference returns empty; start SSE stream before RAG so mobile
+  clients get bytes immediately.
+
+### Tooling
+- `verify_durable_streaming.py` — end-to-end verification for Phase A
+  (202 send, poll-to-complete, stop, 409 double-send).
 
 ---
 

@@ -34,6 +34,28 @@ ALL_TIERS: frozenset[str] = frozenset(
     {"cpu-min", "cpu-std", "gpu-4gb", "gpu-8gb", "gpu-16gb", "gpu-24gb+", "apple-mlx", "external"}
 )
 
+# Per-tier llama.cpp --ctx-size defaults (tokens). HLH_CHAT_CTX env overrides when set.
+TIER_CHAT_CTX: dict[str, int] = {
+    "cpu-min": 8192,
+    "cpu-std": 8192,
+    "gpu-4gb": 32768,
+    "gpu-8gb": 32768,
+    "gpu-16gb": 32768,
+    "gpu-24gb+": 65536,
+}
+
+
+def chat_ctx_for_tier(tier: str | None) -> int:
+    """Context window (tokens) for a tier. Env HLH_CHAT_CTX wins when set."""
+    import os
+
+    raw = os.environ.get("HLH_CHAT_CTX")
+    if raw is not None and str(raw).strip():
+        return int(raw)
+    if tier and tier in TIER_CHAT_CTX:
+        return TIER_CHAT_CTX[tier]
+    return 32768
+
 _CPU_STD_MIN_RAM_GB = 16
 _APPLE_MIN_UNIFIED_RAM_GB = 16
 _GPU_4_MIN_VRAM_GB = 4

@@ -266,6 +266,12 @@ main {
    * input's resting height (1-line + padding) plus the same bottom inset.
    */
   .bc-chat-messages-mobile {
-    padding-bottom: calc(102px + max(env(safe-area-inset-bottom, 0px), var(--bc-keyboard-pad, 0px)));
+    padding-bottom: calc(
+      102px + var(--bc-chat-anchor-extra, 0px) +
+      max(env(safe-area-inset-bottom, 0px), var(--bc-keyboard-pad, 0px))
+    );
+  }
+  .bc-chat-anchor {
+    background: hsl(var(--background));
   }
 }

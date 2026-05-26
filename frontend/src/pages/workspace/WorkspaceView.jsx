@@ -6,7 +6,6 @@ import * as LucideIcons from 'lucide-react'
 
 import { createWorkspace, deleteWorkspace, listWorkspaces, pinWorkspace } from '@/api/workspaces.js'
 import { deleteSource, listSources, uploadSource } from '@/api/sources.js'
-import { getChatSourceSelection, setChatSourceSelection } from '@/api/chats.js'
 import { ChatView } from '@/components/chat/ChatView.jsx'
 import { Button } from '@/components/ui/button'
 import { APP_GLYPH, APP_TAGLINE, APP_TITLE } from '@/config/identity.js'
@@ -427,12 +426,10 @@ export function WorkspaceChat() {
 
 export function WorkspaceSourcesPage() {
   const { workspaceId } = useParams()
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const fileRef = useRef(null)
-  const pendingSelectionRef = useRef(null)
-  const activeChatId = useAppStore((s) => s.activeChatId)
   const [uploading, setUploading] = useState(false)
-  const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [status, setStatus] = useState('')
 
   const { data: sources = [], isLoading } = useQuery({
@@ -448,55 +445,11 @@ export function WorkspaceSourcesPage() {
     },
   })
 
-  useEffect(() => {
-    if (!activeChatId) {
-      setSelectedIds(new Set())
-      return
-    }
-    let cancelled = false
-    ;(async () => {
-      try {
-        const pack = await getChatSourceSelection(activeChatId)
-        const ids = Array.isArray(pack?.source_ids) ? pack.source_ids : []
-        if (!cancelled) {
-          if (pendingSelectionRef.current) {
-            await setChatSourceSelection(activeChatId, Array.from(pendingSelectionRef.current))
-            setSelectedIds(pendingSelectionRef.current)
-            pendingSelectionRef.current = null
-          } else {
-            setSelectedIds(new Set(ids.map(String)))
-          }
-        }
-      } catch {
-        if (!cancelled) setSelectedIds(new Set())
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [activeChatId])
-
-  async function syncSelection(nextSet) {
-    setSelectedIds(nextSet)
-    if (activeChatId) {
-      try {
-        await setChatSourceSelection(
-          activeChatId,
-          Array.from(nextSet).map((id) => id),
-        )
-      } catch {
-        setStatus('Could not save source selection')
-      }
-    } else {
-      pendingSelectionRef.current = nextSet
-    }
-  }
-
-  function toggleSource(id) {
-    const next = new Set(selectedIds)
-    if (next.has(id)) next.delete(id)
-    else next.add(id)
-    void syncSelection(next)
+  function sendToChat(src) {
+    window.dispatchEvent(new CustomEvent('hlh:attach-source', {
+      detail: { name: src.name || src.filename, id: src.id },
+    }))
+    navigate(workspacePath(workspaceId))
   }
 
   async function onUpload(e) {
@@ -534,14 +487,6 @@ export function WorkspaceSourcesPage() {
     }
   }
 
-  const completeSourceIds = useMemo(() => {
-    return sources
-      .filter((s) => s.embedding_status === 'complete')
-      .map((s) => s.id)
-  }, [sources])
-
-  const allSelected = completeSourceIds.length > 0 && completeSourceIds.every((id) => selectedIds.has(id))
-
   const backPath = workspacePath(workspaceId)
 
   return (
@@ -573,19 +518,6 @@ export function WorkspaceSourcesPage() {
           >
             Upload
           </Button>
-          {completeSourceIds.length > 0 ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="px-0"
-              onClick={() => {
-                void syncSelection(allSelected ? new Set() : new Set(completeSourceIds))
-              }}
-            >
-              {allSelected ? 'Deselect all' : 'Select all'}
-            </Button>
-          ) : null}
           {status ? <span className="text-sm text-muted-foreground">{status}</span> : null}
         </div>
 
@@ -599,32 +531,35 @@ export function WorkspaceSourcesPage() {
             return (
               <li
                 key={s.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-3"
+                className="flex flex-col gap-2 rounded-lg border border-border bg-card px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
               >
-                <div className="flex items-start gap-3 min-w-0">
-                  <input
-                    type="checkbox"
-                    className="mt-0.5 size-4 shrink-0"
-                    checked={selectedIds.has(s.id)}
-                    disabled={!ready}
-                    onChange={() => ready && toggleSource(s.id)}
-                  />
-                  <div className="min-w-0">
-                    <p className="truncate font-medium text-foreground">{s.name || s.filename || 'Source'}</p>
-                    {s.embedding_status ? (
-                      <p className="text-xs text-muted-foreground">{s.embedding_status}</p>
-                    ) : null}
-                  </div>
+                <div className="min-w-0">
+                  <p className="truncate font-medium text-foreground">{s.name || s.filename || 'Source'}</p>
+                  {s.embedding_status ? (
+                    <p className="text-xs text-muted-foreground">{s.embedding_status}</p>
+                  ) : null}
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0 text-destructive hover:bg-destructive/10"
-                  onClick={() => onDeleteSource(s.id, s.name || s.filename)}
-                >
-                  Delete
-                </Button>
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="min-w-[7.5rem] flex-1 sm:flex-none"
+                    disabled={!ready}
+                    onClick={() => sendToChat(s)}
+                  >
+                    Send to Chat
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0 text-destructive hover:bg-destructive/10"
+                    onClick={() => onDeleteSource(s.id, s.name || s.filename)}
+                  >
+                    Delete
+                  </Button>
+                </div>
               </li>
             )
           })}

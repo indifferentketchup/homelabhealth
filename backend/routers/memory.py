@@ -17,6 +17,7 @@ from deps import get_principal, require_admin
 from db import get_pool
 from services.audit import AuditEventHandle, audit_event
 from services.provider_client import build_headers, resolve_provider_for_workspace
+from services.reasoning_strip import strip_thinking_text
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -173,7 +174,7 @@ async def extract_memory(
     choices = data.get("choices") or []
     msg = choices[0].get("message") if choices else {}
     msg = msg or {}
-    updated = (msg.get("content") or "").strip()
+    updated = strip_thinking_text((msg.get("content") or "").strip())
     if not updated:
         raise HTTPException(status_code=502, detail="Model returned empty memory")
 

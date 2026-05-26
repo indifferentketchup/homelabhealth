@@ -43,7 +43,7 @@ const TIERS = [
     rerank: 'bge-reranker-base (CPU)',
     vision: 'MedGemma 1.5 4B (mmproj)',
     stt: 'whisper base',
-    footprint: '~4 GB RAM peak · ~2.8 GB disk · 32K context',
+    footprint: '~4 GB RAM peak · ~2.8 GB disk · 8K context',
     detect: '≥16 GB RAM, no GPU',
   },
   {

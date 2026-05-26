@@ -43,8 +43,9 @@ export function useStream() {
      *   body?: unknown
      *   onToken?: (chunk: string) => void
      *   onSearchSources?: (sources: Array<{ title: string; url: string }>) => void
-     *   onRagContext?: (info: { count: number; chunks: number }) => void
-     *   onTitleUpdate?: (title: string) => void
+   *   onRagContext?: (info: { count: number; chunks: number }) => void
+   *   onPhase?: (phase: string) => void
+   *   onTitleUpdate?: (title: string) => void
      *   onDone?: () => void
      *   onError?: (err: Error) => void
      * }} opts
@@ -58,6 +59,7 @@ export function useStream() {
         onToken,
         onSearchSources,
         onRagContext,
+        onPhase,
         onTitleUpdate,
         onDone,
         onError,
@@ -90,6 +92,10 @@ export function useStream() {
               count: typeof obj.count === 'number' ? obj.count : 0,
               chunks: typeof obj.chunks === 'number' ? obj.chunks : 0,
             })
+            return { kind: 'ok' }
+          }
+          if (obj.type === 'phase' && typeof obj.phase === 'string') {
+            onPhase?.(obj.phase)
             return { kind: 'ok' }
           }
           if (obj.type === 'title_update' && typeof obj.title === 'string') {

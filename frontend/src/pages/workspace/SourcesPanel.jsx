@@ -6,7 +6,15 @@ import { listWorkspaces } from '@/api/workspaces.js'
 import { deleteSource, listSources, uploadSource } from '@/api/sources.js'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { useLongPress } from '@/hooks/useLongPress.js'
 import { cn } from '@/lib/utils'
+
+function sendSourceToChat(src) {
+  window.dispatchEvent(new CustomEvent('hlh:attach-source', {
+    detail: { name: src.name, id: src.id },
+  }))
+  window.dispatchEvent(new CustomEvent('hlh:mobile-sources-close'))
+}
 
 function EmbeddingStatusDot({ status }) {
   const s = status ?? ''
@@ -24,6 +32,100 @@ function EmbeddingStatusDot({ status }) {
       title={s || 'unknown'}
       aria-hidden
     />
+  )
+}
+
+function SourceRow({
+  src,
+  ready,
+  editingId,
+  editName,
+  setEditName,
+  setEditingId,
+  effectiveWorkspaceId,
+  queryClient,
+  onSourceContextMenu,
+  setViewingSource,
+  setViewLoading,
+  setViewContent,
+}) {
+  const longPress = useLongPress((e) => onSourceContextMenu(e, src))
+
+  return (
+    <div
+      className="group flex w-full flex-col gap-1 rounded-md border border-transparent py-0.5 hover:border-sidebar-border hover:bg-sidebar-accent/30 sm:flex-row sm:items-stretch"
+      title={src.name}
+      onContextMenu={(e) => onSourceContextMenu(e, src)}
+      {...longPress}
+    >
+      <div className="flex min-w-0 flex-1 items-start gap-2 rounded-md px-1 py-1.5">
+        <span className="min-w-0 flex-1">
+          <span className="fs-nav flex items-center gap-1.5 font-medium text-foreground">
+            <EmbeddingStatusDot status={src.embedding_status} />
+            <FileStack className="size-3.5 shrink-0 opacity-70" aria-hidden />
+            {editingId === src.id ? (
+              <input
+                type="text"
+                className="fs-nav w-full rounded border border-border bg-background px-1 py-0.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
+                value={editName}
+                autoFocus
+                onChange={e => setEditName(e.target.value)}
+                onBlur={async () => {
+                  if (editName.trim() && editName.trim() !== src.name) {
+                    const { patchSource } = await import('@/api/sources.js')
+                    await patchSource(src.id, { name: editName.trim() })
+                    await queryClient.invalidateQueries({ queryKey: ['sources', effectiveWorkspaceId] })
+                  }
+                  setEditingId(null)
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') e.target.blur()
+                  if (e.key === 'Escape') setEditingId(null)
+                }}
+              />
+            ) : (
+              <button
+                type="button"
+                className="line-clamp-2 text-left hover:underline"
+                onClick={async () => {
+                  setViewingSource(src)
+                  setViewLoading(true)
+                  try {
+                    const { getSourceContent } = await import('@/api/sources.js')
+                    const res = await getSourceContent(src.id)
+                    setViewContent(res.content || '(empty)')
+                  } catch {
+                    setViewContent('(could not load content)')
+                  } finally {
+                    setViewLoading(false)
+                  }
+                }}
+              >
+                {src.name}
+              </button>
+            )}
+          </span>
+          {src.embedding_status !== 'complete' && (
+            <span className="fs-nav block text-muted-foreground">
+              {src.embedding_status === 'processing' ? 'Processing…' : src.embedding_status === 'pending' ? 'Pending…' : src.embedding_status === 'error' ? 'Error' : src.embedding_status || ''}
+            </span>
+          )}
+        </span>
+      </div>
+      <div className="flex shrink-0 items-center px-1 pb-1 sm:px-0 sm:pb-0">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 w-full shrink-0 text-xs sm:h-6 sm:w-auto sm:px-1.5"
+          title="Attach to chat"
+          disabled={!ready}
+          onClick={() => sendSourceToChat(src)}
+        >
+          Send to Chat
+        </Button>
+      </div>
+    </div>
   )
 }
 
@@ -194,89 +296,23 @@ export function SourcesPanel({ chatId, workspaceId }) {
           {!isLoading && sources.length === 0 && effectiveWorkspaceId && (
             <p className="fs-nav px-2 text-muted-foreground">No sources yet.</p>
           )}
-          {sources.map((src) => {
-            const ready = src.embedding_status === 'complete'
-            return (
-              <div
-                key={src.id}
-                className="group flex w-full items-stretch gap-1 rounded-md border border-transparent py-0.5 hover:border-sidebar-border hover:bg-sidebar-accent/30"
-                title={src.name}
-                onContextMenu={(e) => onSourceContextMenu(e, src)}
-              >
-                <div className="flex min-w-0 flex-1 items-start gap-2 rounded-md px-1 py-1.5">
-                  <span className="min-w-0 flex-1">
-                    <span className="fs-nav flex items-center gap-1.5 font-medium text-foreground">
-                      <EmbeddingStatusDot status={src.embedding_status} />
-                      <FileStack className="size-3.5 shrink-0 opacity-70" aria-hidden />
-                      {editingId === src.id ? (
-                        <input
-                          type="text"
-                          className="fs-nav w-full rounded border border-border bg-background px-1 py-0.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
-                          value={editName}
-                          autoFocus
-                          onChange={e => setEditName(e.target.value)}
-                          onBlur={async () => {
-                            if (editName.trim() && editName.trim() !== src.name) {
-                              const { patchSource } = await import('@/api/sources.js')
-                              await patchSource(src.id, { name: editName.trim() })
-                              await queryClient.invalidateQueries({ queryKey: ['sources', effectiveWorkspaceId] })
-                            }
-                            setEditingId(null)
-                          }}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') e.target.blur()
-                            if (e.key === 'Escape') setEditingId(null)
-                          }}
-                        />
-                      ) : (
-                        <button
-                          type="button"
-                          className="line-clamp-2 text-left hover:underline"
-                          onClick={async () => {
-                            setViewingSource(src)
-                            setViewLoading(true)
-                            try {
-                              const { getSourceContent } = await import('@/api/sources.js')
-                              const res = await getSourceContent(src.id)
-                              setViewContent(res.content || '(empty)')
-                            } catch {
-                              setViewContent('(could not load content)')
-                            } finally {
-                              setViewLoading(false)
-                            }
-                          }}
-                        >
-                          {src.name}
-                        </button>
-                      )}
-                    </span>
-                    {src.embedding_status !== 'complete' && (
-                      <span className="fs-nav block text-muted-foreground">
-                        {src.embedding_status === 'processing' ? 'Processing…' : src.embedding_status === 'pending' ? 'Pending…' : src.embedding_status === 'error' ? 'Error' : src.embedding_status || ''}
-                      </span>
-                    )}
-                  </span>
-                </div>
-                <div className="flex shrink-0 items-center gap-0.5">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 shrink-0 px-1.5 text-xs text-muted-foreground hover:text-primary"
-                    title="Attach to chat"
-                    disabled={!ready}
-                    onClick={() => {
-                      window.dispatchEvent(new CustomEvent('hlh:attach-source', {
-                        detail: { name: src.name, id: src.id },
-                      }))
-                    }}
-                  >
-                    Send to Chat
-                  </Button>
-                </div>
-              </div>
-            )
-          })}
+          {sources.map((src) => (
+            <SourceRow
+              key={src.id}
+              src={src}
+              ready={src.embedding_status === 'complete'}
+              editingId={editingId}
+              editName={editName}
+              setEditName={setEditName}
+              setEditingId={setEditingId}
+              effectiveWorkspaceId={effectiveWorkspaceId}
+              queryClient={queryClient}
+              onSourceContextMenu={onSourceContextMenu}
+              setViewingSource={setViewingSource}
+              setViewLoading={setViewLoading}
+              setViewContent={setViewContent}
+            />
+          ))}
         </div>
       </ScrollArea>
 
@@ -292,6 +328,18 @@ export function SourcesPanel({ chatId, workspaceId }) {
           onClick={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
         >
+          <button
+            type="button"
+            role="menuitem"
+            disabled={ctx.source.embedding_status !== 'complete'}
+            className="fs-nav flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-left outline-none hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
+            onClick={() => {
+              sendSourceToChat(ctx.source)
+              setCtx(null)
+            }}
+          >
+            Send to Chat
+          </button>
           <button
             type="button"
             role="menuitem"

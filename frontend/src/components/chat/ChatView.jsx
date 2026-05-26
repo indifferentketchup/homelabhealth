@@ -5,6 +5,8 @@ import { useSearchParams } from 'react-router-dom'
 
 import { createChat, forkChat, getChat, listMessages, patchRecentChatsListCache } from '@/api/chats.js'
 import { createNote } from '@/api/notes.js'
+import { getDurableStreamingSetting } from '@/api/settings.js'
+import { useDurableChat } from '@/hooks/useDurableChat.js'
 import { useStream } from '@/hooks/useStream.js'
 import { cn } from '@/lib/utils.js'
 import { useAppStore } from '@/store/index.js'
@@ -16,6 +18,19 @@ import { ContextIndicator } from './ContextIndicator.jsx'
 import { DisclaimerBanner } from './DisclaimerBanner.jsx'
 import { MessageList } from './MessageList.jsx'
 import { ModelSelectorBar } from './ModelSelectorBar.jsx'
+import { StaleStreamBanner } from './StaleStreamBanner.jsx'
+import { StreamStatusBar } from './StreamStatusBar.jsx'
+
+const STALE_STREAM_MS = 60_000
+const THINKING_PHASE_MS = 3_000
+
+function mapStreamPhase(raw) {
+  if (raw === 'inference') return 'thinking'
+  if (raw === 'preparing' || raw === 'rag' || raw === 'search' || raw === 'thinking' || raw === 'generating') {
+    return raw
+  }
+  return 'preparing'
+}
 
 function sameUserBubbleContent(serverText, optimisticText) {
   return String(serverText ?? '').trim() === String(optimisticText ?? '').trim()
@@ -63,7 +78,18 @@ function MessageListSkeleton() {
 
 function friendlyStreamError(msg) {
   if (!msg) return 'Something went wrong.'
-  return String(msg)
+  const s = String(msg)
+  if (/load failed|network error|failed to fetch|network connection was lost/i.test(s)) {
+    return (
+      'Connection lost while waiting for the model. Retrieval and CPU inference can take '
+      + '1–2 minutes — tap Retry and keep this tab open, or start a fresh chat.'
+    )
+  }
+  if (s.includes('The model returned no response')) return s
+  if (s.includes('Inference error')) {
+    return s.length > 200 ? `${s.slice(0, 200)}…` : s
+  }
+  return s
 }
 
 function categoryToReason(category) {
@@ -152,8 +178,28 @@ export function ChatView({
   }
   const [streamText, setStreamText] = useState('')
   const [sendError, setSendError] = useState(null)
+  const [streamPhase, setStreamPhase] = useState(null)
+  const [streamStartedAt, setStreamStartedAt] = useState(null)
+  const [streamStale, setStreamStale] = useState(false)
 
   const { consumeStream, abort } = useStream()
+
+  const { data: durableConfig } = useQuery({
+    queryKey: ['settings', 'durable-streaming'],
+    queryFn: getDurableStreamingSetting,
+    staleTime: 5 * 60_000,
+  })
+  const durableEnabled = durableConfig?.enabled === true
+  const durable = useDurableChat()
+
+  const effectiveStop = useCallback(() => {
+    if (durableEnabled && durable.busy) {
+      durable.stop()
+    } else {
+      abort()
+    }
+  }, [durableEnabled, durable, abort])
+
   const [pendingSend, setPendingSend] = useState(false)
   const [optimisticUser, setOptimisticUser] = useState(null)
   const [sourcesByMessageIndex, setSourcesByMessageIndex] = useState({})
@@ -161,6 +207,7 @@ export function ChatView({
   const streamAssistantIndexRef = useRef(0)
   /** Chat id for the in-flight POST /messages stream (not null only while consumeStream runs). */
   const streamingChatRef = useRef(null)
+  const lastStreamActivityRef = useRef(null)
   const inputRef = useRef(null)
   /** Last outgoing user message content — used to power the Retry button on stream errors. */
   const lastUserMessageRef = useRef(null)
@@ -209,26 +256,125 @@ export function ChatView({
       setOptimisticUser(null)
       setPendingSend(false)
       setStreamText('')
+      clearStreamUi()
     }
   }, [activeChatId, pendingSend, abort])
 
-  async function runStream(chatId, content, assistantMessageIndex, sourceIds = null) {
+  function touchStreamActivity(nextLen) {
+    lastStreamActivityRef.current = { len: nextLen, at: Date.now() }
+    setStreamStale(false)
+  }
+
+  function beginStreamUi() {
+    const startedAt = Date.now()
+    setStreamPhase('preparing')
+    setStreamStartedAt(startedAt)
+    setStreamStale(false)
+    touchStreamActivity(0)
+  }
+
+  function clearStreamUi() {
+    setStreamPhase(null)
+    setStreamStartedAt(null)
+    setStreamStale(false)
+    lastStreamActivityRef.current = null
+  }
+
+  useEffect(() => {
+    if (!busy || streamPhase === 'generating') return undefined
+    const t = window.setTimeout(() => {
+      setStreamPhase((phase) => (
+        phase === 'preparing' || phase === 'rag' || phase === 'search' ? 'thinking' : phase
+      ))
+    }, THINKING_PHASE_MS)
+    return () => window.clearTimeout(t)
+  }, [busy, streamPhase])
+
+  useEffect(() => {
+    if (!busy) {
+      setStreamStale(false)
+      return undefined
+    }
+    const interval = window.setInterval(() => {
+      const activity = lastStreamActivityRef.current
+      if (!activity) return
+      if (Date.now() - activity.at >= STALE_STREAM_MS) {
+        setStreamStale(true)
+      }
+    }, 5_000)
+    return () => window.clearInterval(interval)
+  }, [busy, streamText])
+
+  // Sync durable hook state → existing ChatView UI state
+  useEffect(() => {
+    if (!durableEnabled) return
+    if (durable.busy) {
+      setPendingSend(true)
+      if (durable.streamingContent) {
+        setStreamText(durable.streamingContent)
+        setStreamPhase('generating')
+        touchStreamActivity(durable.streamingContent.length)
+      } else if (streamPhase !== 'generating') {
+        setStreamPhase('thinking')
+      }
+    } else if (pendingSend && durable.streamingStatus === null) {
+      const cid = activeChatId
+      if (cid) {
+        listMessages(cid).then((data) => {
+          if (data) queryClient.setQueryData(['messages', cid], data)
+          flushSync(() => {
+            setOptimisticUser(null)
+            setPendingSend(false)
+            setStreamText('')
+            setStreamingRag(null)
+            clearStreamUi()
+            setSendError(null)
+          })
+          queryClient.invalidateQueries({ queryKey: ['chats'] })
+          queryClient.invalidateQueries({ queryKey: ['chat', cid] })
+        }).catch(console.error)
+      }
+    }
+    if (durable.stale) setStreamStale(true)
+    if (durable.sendError && !sendError) setSendError(friendlyStreamError(durable.sendError))
+  }, [durableEnabled, durable.busy, durable.streamingContent, durable.stale, durable.sendError, durable.streamingStatus])
+
+  async function runStream(chatId, content, assistantMessageIndex, sourceIds = null, { retryLast = false } = {}) {
     streamingChatRef.current = chatId
     streamAssistantIndexRef.current = assistantMessageIndex
+    beginStreamUi()
     const model = selectedModel || undefined
     await consumeStream({
       url: `/api/chats/${chatId}/messages`,
       body: {
         content,
+        retry_last: retryLast,
         ...(model ? { model } : {}),
         ...(sourceIds ? { attached_source_ids: sourceIds } : {}),
       },
-      onToken: (t) => setStreamText((x) => x + t),
+      onToken: (t) => {
+        setStreamPhase('generating')
+        setStreamText((x) => {
+          const next = x + t
+          touchStreamActivity(next.length)
+          return next
+        })
+      },
       onSearchSources: (sources) => {
+        setStreamPhase('search')
+        touchStreamActivity(0)
         const idx = streamAssistantIndexRef.current
         setSourcesByMessageIndex((prev) => ({ ...prev, [idx]: sources }))
       },
-      onRagContext: (info) => setStreamingRag(info),
+      onRagContext: (info) => {
+        setStreamPhase('rag')
+        touchStreamActivity(0)
+        setStreamingRag(info)
+      },
+      onPhase: (raw) => {
+        setStreamPhase(mapStreamPhase(raw))
+        touchStreamActivity(0)
+      },
       onTitleUpdate: (title) => {
         const id = String(chatId)
         setChats(
@@ -257,6 +403,7 @@ export function ChatView({
           setStreamingRag(null)
           setStreamText('')
           setSendError(null)
+          clearStreamUi()
         })
         if (!nextData) {
           queryClient.invalidateQueries({ queryKey: ['messages', chatId] })
@@ -271,6 +418,7 @@ export function ChatView({
           setPendingSend(false)
           setStreamText('')
           setStreamingRag(null)
+          clearStreamUi()
           if (err?.name !== 'AbortError') {
             const raw = err instanceof Error ? err.message : String(err)
             try {
@@ -307,8 +455,64 @@ export function ChatView({
     setAttachedSources([])
     setSendError(null)
 
+    // --- Durable streaming path ---
+    if (durableEnabled) {
+      setPendingSend(true)
+      beginStreamUi()
+      setStreamText('')
+      setOptimisticUser({ id: '__optimistic_user__', role: 'user', content })
+
+      let targetChatId = activeChatId
+      if (!targetChatId) {
+        try {
+          const { activeWorkspaceId } = useAppStore.getState()
+          const workspaceForCreate =
+            normalizeWorkspaceUuid(activeWorkspaceId) || resolvedWorkspaceId || undefined
+          const modelForCreate = selectedModel || undefined
+          const newChat = await createChat({
+            ...(modelForCreate ? { model: modelForCreate } : {}),
+            ...(workspaceForCreate ? { workspace_id: workspaceForCreate } : {}),
+            ...(webSearchEnabled ? { web_search_enabled: true } : {}),
+          })
+          if (newChat?.id == null) throw new Error('Create chat returned no id')
+          queryClient.setQueryData(['messages', newChat.id], { items: [] })
+          setActiveChatId(newChat.id)
+          hydrateFromChat(newChat)
+          queryClient.invalidateQueries({ queryKey: ['chats'] })
+          targetChatId = newChat.id
+        } catch (e) {
+          console.error(e)
+          setSendError(friendlyStreamError(e instanceof Error ? e.message : String(e)))
+          setOptimisticUser(null)
+          setPendingSend(false)
+          setStreamText('')
+          clearStreamUi()
+          setDraft(content)
+          setActiveChatId(null)
+          return
+        }
+      }
+
+      try {
+        await durable.sendMessage(targetChatId, content, {
+          model: selectedModel || undefined,
+          attachedSourceIds: sourceIds,
+        })
+      } catch (e) {
+        console.error(e)
+        setSendError(friendlyStreamError(e instanceof Error ? e.message : String(e)))
+        setOptimisticUser(null)
+        setPendingSend(false)
+        setStreamText('')
+        clearStreamUi()
+        setDraft(content)
+      }
+      return
+    }
+
     if (!activeChatId) {
       setPendingSend(true)
+      beginStreamUi()
       setStreamText('')
       setOptimisticUser({ id: '__optimistic_user__', role: 'user', content })
       try {
@@ -336,6 +540,7 @@ export function ChatView({
         setOptimisticUser(null)
         setPendingSend(false)
         setStreamText('')
+        clearStreamUi()
         setDraft(content)
         setActiveChatId(null)
         streamingChatRef.current = null
@@ -345,6 +550,7 @@ export function ChatView({
     }
 
     setPendingSend(true)
+    beginStreamUi()
     setStreamText('')
     setOptimisticUser({ id: '__optimistic_user__', role: 'user', content })
     await runStream(activeChatId, content, messages.length + 1, sourceIds)
@@ -363,6 +569,7 @@ export function ChatView({
       setActiveChatId(newChat.id)
       hydrateFromChat(newChat)
       setPendingSend(true)
+      beginStreamUi()
       setStreamText('')
       setOptimisticUser({ id: '__optimistic_user__', role: 'user', content: newContent })
       await runStream(newChat.id, newContent, 1)
@@ -377,8 +584,48 @@ export function ChatView({
 
   function retryLastSend() {
     const last = lastUserMessageRef.current
-    if (!last || busy) return
-    void send(last)
+    if (!last || busy || !activeChatId) return
+    effectiveStop()
+    setSendError(null)
+    setStreamStale(false)
+    if (durableEnabled) {
+      setPendingSend(true)
+      beginStreamUi()
+      setStreamText('')
+      setOptimisticUser(null)
+      durable.sendMessage(activeChatId, last, {
+        retryLast: true,
+        model: selectedModel || undefined,
+      }).catch((e) => {
+        console.error(e)
+        setSendError(friendlyStreamError(e instanceof Error ? e.message : String(e)))
+        setPendingSend(false)
+        clearStreamUi()
+      })
+      return
+    }
+    setPendingSend(true)
+    beginStreamUi()
+    setStreamText('')
+    const lastMsg = messages[messages.length - 1]
+    const skipOptimistic = lastMsg?.role === 'user' && sameUserBubbleContent(lastMsg.content, last)
+    setOptimisticUser(skipOptimistic ? null : { id: '__optimistic_user__', role: 'user', content: last })
+    void runStream(activeChatId, last, messages.length, null, { retryLast: true })
+  }
+
+  function dismissStaleStream() {
+    if (durableEnabled) {
+      durable.discardStale()
+    } else {
+      abort()
+    }
+    clearStreamUi()
+    setPendingSend(false)
+    setStreamText('')
+    setOptimisticUser(null)
+    if (activeChatId) {
+      queryClient.invalidateQueries({ queryKey: ['messages', activeChatId] })
+    }
   }
 
   async function handleEditUser(message, newContent) {
@@ -405,6 +652,16 @@ export function ChatView({
   const promptTokens = latestAssistant?.prompt_tokens
   const ctxMax = chat?.ctx_max
 
+  // While the status bar shows prefill/thinking, skip the duplicate pending assistant bubble.
+  const streamingTail = busy
+    ? (streamText !== '' ? streamText : (streamPhase ? null : ''))
+    : null
+
+  const anchorExtraPx =
+    (busy && streamPhase ? 52 : 0)
+    + (streamStale && busy ? 56 : 0)
+    + (sendError ? 44 : 0)
+
   if (!activeChatId) {
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-background">
@@ -423,6 +680,12 @@ export function ChatView({
             <h1 className="fs-heading text-center font-semibold tracking-tight text-foreground">Assistant</h1>
           </div>
           <div className="bc-chat-anchor w-full px-4">
+            {busy && streamPhase ? (
+              <StreamStatusBar phase={streamPhase} startedAt={streamStartedAt} />
+            ) : null}
+            {streamStale && busy ? (
+              <StaleStreamBanner onRetry={retryLastSend} onDiscard={dismissStaleStream} />
+            ) : null}
             {sendError ? (
               <div className={cn(
                 'mb-2 flex items-center justify-center gap-2 rounded-md border px-3 py-2',
@@ -449,7 +712,7 @@ export function ChatView({
               onSend={send}
               disabled={false}
               streaming={busy}
-              onStop={abort}
+              onStop={effectiveStop}
               activeChatId={null}
               chatMaxW={chatMaxW}
               attachedSources={attachedSources}
@@ -466,7 +729,7 @@ export function ChatView({
       <div className="hidden shrink-0 justify-center border-b border-border py-2 md:flex">
         <ModelSelectorBar />
       </div>
-      <div className="mx-auto flex min-h-0 w-full flex-1 flex-col" style={{ maxWidth: chatMaxW }}>
+      <div className="mx-auto flex min-h-0 w-full flex-1 flex-col" style={{ maxWidth: chatMaxW, '--bc-chat-anchor-extra': `${anchorExtraPx}px` }}>
         <DisclaimerBanner />
         <div className="bc-chat-messages-mobile min-h-0 flex-1">
           {isLoading && !busy ? (
@@ -475,7 +738,7 @@ export function ChatView({
             <MessageList
               chatId={activeChatId}
               messages={displayMessages}
-              streamingAssistant={busy ? streamText : null}
+              streamingAssistant={streamingTail}
               sourcesByMessageIndex={sourcesByMessageIndex}
               streamingRagContext={busy ? streamingRag : null}
               onSaveMessageAsNote={notesWorkspaceIdForSave ? saveMessageAsNote : undefined}
@@ -495,6 +758,12 @@ export function ChatView({
               'max(0px, calc(1rem + env(safe-area-inset-bottom, 0px) - var(--bc-keyboard-pad, 0px)))',
           }}
         >
+          {busy && streamPhase ? (
+            <StreamStatusBar phase={streamPhase} startedAt={streamStartedAt} />
+          ) : null}
+          {streamStale && busy ? (
+            <StaleStreamBanner onRetry={retryLastSend} onDiscard={dismissStaleStream} />
+          ) : null}
           {sendError ? (
             <div className={cn(
               'mb-2 flex items-center gap-2 rounded-md border px-3 py-2',
@@ -521,7 +790,7 @@ export function ChatView({
             onSend={send}
             disabled={false}
             streaming={busy}
-            onStop={abort}
+            onStop={effectiveStop}
             activeChatId={activeChatId}
             chatMaxW={chatMaxW}
             attachedSources={attachedSources}
