@@ -226,7 +226,7 @@ ON CONFLICT (key) DO NOTHING;
 INSERT INTO global_settings (key, value) VALUES ('show_context_bar', 'false')
 ON CONFLICT (key) DO NOTHING;
 
-INSERT INTO global_settings (key, value) VALUES ('durable_streaming_enabled', 'false')
+INSERT INTO global_settings (key, value) VALUES ('durable_streaming_enabled', 'true')
 ON CONFLICT (key) DO NOTHING;
 
 -- Single markdown blob for freeform notes; enforced as singleton.
