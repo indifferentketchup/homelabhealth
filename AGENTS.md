@@ -23,7 +23,7 @@ auth. One Docker Compose stack.
 ## Hard rules
 
 1. **Check `frontend/src/components/ui/`** before importing shadcn primitives — only use what exists.
-2. **Never modify `frontend/src/hooks/useStream.js`.** Fragile SSE path; breaks all chat streaming.
+2. **`frontend/src/hooks/useStream.js` — modify with care.** Update ALL call sites (`grep -rn useStream frontend/src/`) and smoke test streaming in the same batch.
 3. **Schema changes:** idempotent only (`ADD COLUMN IF NOT EXISTS`). Reason before renaming/dropping.
 4. **`CREATE EXTENSION IF NOT EXISTS vector;`** must precede any `vector(N)` column in `schema.sql`.
 5. **Python in Docker:** `docker compose build --no-cache hlh_api` after backend source changes — plain `--build` can serve stale code.

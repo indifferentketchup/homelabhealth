@@ -44,7 +44,7 @@ export function useStream() {
      *   onToken?: (chunk: string) => void
      *   onSearchSources?: (sources: Array<{ title: string; url: string }>) => void
    *   onRagContext?: (info: { count: number; chunks: number }) => void
-   *   onPhase?: (phase: string) => void
+   *   onPhase?: (phase: string, meta?: { model?: string; estimate_ms?: number }) => void
    *   onTitleUpdate?: (title: string) => void
      *   onDone?: () => void
      *   onError?: (err: Error) => void
@@ -95,7 +95,10 @@ export function useStream() {
             return { kind: 'ok' }
           }
           if (obj.type === 'phase' && typeof obj.phase === 'string') {
-            onPhase?.(obj.phase)
+            onPhase?.(obj.phase, {
+              model: obj.model,
+              estimate_ms: obj.estimate_ms,
+            })
             return { kind: 'ok' }
           }
           if (obj.type === 'title_update' && typeof obj.title === 'string') {
