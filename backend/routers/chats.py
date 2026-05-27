@@ -1273,6 +1273,8 @@ async def append_message(
     # --- End durable streaming path ---
 
     async def gen() -> AsyncIterator[bytes]:
+        from services.pipeline_status import stage, model_is_loaded
+
         yield _sse(json.dumps({"type": "phase", "phase": "preparing"}))
         sources_list: list[dict[str, str]] = []
         extra_search = ""
@@ -1283,6 +1285,20 @@ async def append_message(
         if sources_list:
             yield _sse(json.dumps({"type": "phase", "phase": "search"}))
             yield _sse(json.dumps({"type": "search_sources", "sources": sources_list}))
+
+        async with pool.acquire() as status_conn:
+            embed_model = await status_conn.fetchval(
+                "SELECT value FROM global_settings WHERE key = 'embedding_model'"
+            ) or "bge-m3"
+            if not await model_is_loaded(embed_model):
+                async with stage(status_conn, "loading", model=embed_model) as frame:
+                    yield _sse(json.dumps(frame))
+                    from services.embeddings import embed_text as _warm_embed
+                    try:
+                        await _warm_embed("warmup")
+                    except Exception:
+                        pass
+                yield _sse(json.dumps({"type": "phase", "phase": "ready", "model": embed_model}))
 
         yield _sse(json.dumps({"type": "phase", "phase": "rag"}))
         assembled = ""
@@ -1392,7 +1408,22 @@ async def append_message(
             effective_model,
             str(chat["workspace_id"]) if chat["workspace_id"] else None,
         )
-        yield _sse(json.dumps({"type": "phase", "phase": "inference"}))
+        async with pool.acquire() as status_conn:
+            if not await model_is_loaded(effective_model):
+                async with stage(status_conn, "loading", model=effective_model) as frame:
+                    yield _sse(json.dumps(frame))
+                    try:
+                        async with httpx.AsyncClient(timeout=httpx.Timeout(180.0)) as warm_client:
+                            await warm_client.post(
+                                f"{provider.base_url}/v1/chat/completions",
+                                json={"model": effective_model, "messages": [{"role": "user", "content": "."}], "max_tokens": 1, "stream": False},
+                                headers=build_headers(provider),
+                            )
+                    except Exception:
+                        pass
+                yield _sse(json.dumps({"type": "phase", "phase": "ready", "model": effective_model}))
+
+        yield _sse(json.dumps({"type": "phase", "phase": "generating"}))
         stream = _stream_inference(
             provider,
             effective_model,

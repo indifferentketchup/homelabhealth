@@ -389,14 +389,61 @@ async def _check_vision_available() -> dict[str, Any]:
         return {"name": "vision_available", "status": ERROR, "detail": f"{type(e).__name__}: {e}"}
 
 
+async def _check_vision_embed_sidecar() -> dict[str, Any] | None:
+    """Probe hlh_vision_embed. Returns None (skip) if no vision_embed provider row exists."""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT id FROM providers WHERE role = 'vision_embed' AND is_bundled = true"
+            )
+        if row is None:
+            return None
+        result = await _check_sidecar("hlh_vision_embed", "http://hlh_vision_embed:7997/health")
+        if result["status"] == ERROR:
+            result["status"] = WARN
+            result["detail"] = f"provider row exists but sidecar unreachable — {result['detail']}"
+        return result
+    except Exception as e:
+        return {"name": "hlh_vision_embed_reachable", "status": WARN, "detail": f"{type(e).__name__}: {e}"}
+
+
+async def _check_image_tier_match() -> dict[str, Any]:
+    """Check that HLH_CHAT_IMAGE matches the expected image for the current tier."""
+    try:
+        from services.image_config import TIER_IMAGE_MAP
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT tier FROM system_profile WHERE id = 1")
+        if not row or not row["tier"]:
+            return {"name": "image_tier_match", "status": WARN, "detail": "tier not set"}
+        tier = row["tier"]
+        expected = TIER_IMAGE_MAP.get(tier)
+        if not expected:
+            return {"name": "image_tier_match", "status": WARN, "detail": f"unknown tier {tier}"}
+        actual_chat = os.environ.get("HLH_CHAT_IMAGE", "")
+        actual_infer = os.environ.get("HLH_INFER_IMAGE", "")
+        mismatches = []
+        if actual_chat and actual_chat != expected.chat_image:
+            mismatches.append(f"chat: {actual_chat} != {expected.chat_image}")
+        if actual_infer and actual_infer != expected.infer_image:
+            mismatches.append(f"infer: {actual_infer} != {expected.infer_image}")
+        if mismatches:
+            return {"name": "image_tier_match", "status": WARN, "detail": f"stale .env — {'; '.join(mismatches)}"}
+        if not actual_chat and not actual_infer:
+            return {"name": "image_tier_match", "status": OK, "detail": f"using defaults (tier={tier})"}
+        return {"name": "image_tier_match", "status": OK, "detail": f"images match tier={tier}"}
+    except Exception as e:
+        return {"name": "image_tier_match", "status": WARN, "detail": f"{type(e).__name__}: {e}"}
+
+
 async def run_checks() -> list[dict[str, Any]]:
-    """Run all 18 checks. Returns ordered list."""
-    return [
+    """Run all health checks. Returns ordered list."""
+    checks = [
         await _check_db_pool(),
         await _check_schema_applied(),
         await _check_setup_complete(),
         await _check_sidecar("hlh_chat", "http://hlh_chat:9610/health"),
-        await _check_sidecar("hlh_infer", "http://hlh_infer:9611/health"),
         await _check_sidecar("hlh_search", "http://hlh_search:8080/healthz"),
         await _check_vision_available(),
         await _check_safeguard_version(),
@@ -410,7 +457,12 @@ async def run_checks() -> list[dict[str, Any]]:
         _check_guard_scanners(),
         _check_deid_pipeline(),
         _check_column_encryption(),
+        await _check_image_tier_match(),
     ]
+    vision_check = await _check_vision_embed_sidecar()
+    if vision_check is not None:
+        checks.insert(7, vision_check)
+    return checks
 
 
 def summarize(checks: list[dict[str, Any]]) -> dict[str, int]:

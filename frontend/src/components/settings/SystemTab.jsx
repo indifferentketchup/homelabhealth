@@ -362,7 +362,7 @@ function syntheticStatus(row, attempts) {
   if (lvs && lvs.startsWith('ok')) return { state: 'ready', msg: '' }
   if (lvs && lvs.startsWith('error:')) return { state: 'error', msg: lvs }
   if ((attempts || 0) >= MAX_SYNTH_ATTEMPTS) {
-    return { state: 'error', msg: "sidecar didn't come up within 5 min — check `docker logs hlh_infer`" }
+    return { state: 'error', msg: "sidecar didn't come up within 5 min — check `docker logs hlh_embed` / `hlh_rerank`" }
   }
   return { state: 'loading', msg: '' }
 }
@@ -412,26 +412,23 @@ function ModelsPanel({ currentTier }) {
   })
   const providers = providersData?.items ?? []
 
-  // Synthesize embed + rerank rows from bundled providers
+  const SYNTH_ROLE_META = {
+    embed: { model: 'BAAI/bge-m3', license: 'mit', license_url: 'https://huggingface.co/BAAI/bge-m3' },
+    rerank: { model: 'BAAI/bge-reranker-v2-m3', license: 'apache-2.0', license_url: 'https://huggingface.co/BAAI/bge-reranker-v2-m3' },
+    vision_embed: { model: 'google/medsiglip-448', license: 'apache-2.0', license_url: 'https://huggingface.co/google/medsiglip-448' },
+  }
+
   const syntheticRows = useMemo(
     () =>
       providers
-        .filter((p) => p.is_bundled && (p.role === 'embed' || p.role === 'rerank'))
+        .filter((p) => p.is_bundled && SYNTH_ROLE_META[p.role])
         .map((p) => ({
           id: p.id,
           role: p.role,
-          model:
-            p.role === 'embed'
-              ? 'BAAI/bge-m3'
-              : p.role === 'rerank'
-              ? 'BAAI/bge-reranker-v2-m3'
-              : p.name,
+          model: SYNTH_ROLE_META[p.role].model,
           last_verified_status: p.last_verified_status,
-          license: p.role === 'embed' ? 'mit' : 'apache-2.0',
-          license_url:
-            p.role === 'embed'
-              ? 'https://huggingface.co/BAAI/bge-m3'
-              : 'https://huggingface.co/BAAI/bge-reranker-v2-m3',
+          license: SYNTH_ROLE_META[p.role].license,
+          license_url: SYNTH_ROLE_META[p.role].license_url,
         })),
     [providers],
   )
@@ -552,8 +549,8 @@ function ModelsPanel({ currentTier }) {
         license click at the linked HF page.
       </p>
       <p className="text-xs text-muted-foreground">
-        Embed and rerank weights are downloaded automatically by{' '}
-        <span className="font-mono">hlh_infer</span> on first boot. They appear as{' '}
+        Embed, rerank, and vision embed weights are downloaded automatically by their
+        sidecars on first boot. They appear as{' '}
         <span className="font-mono">loading</span> until the sidecar reports healthy, then{' '}
         <span className="font-mono">ready</span>. No Pull button — the sidecar manages itself.
       </p>

@@ -1,6 +1,58 @@
 # All-in-one convenience (same Docker network). For split deploy: docker-compose.core.yml + docker-compose.ui.yml
 name: homelabhealth
 
+x-infinity-base: &infinity-base
+  image: ${HLH_INFER_IMAGE:-michaelf34/infinity:0.0.77-cpu}
+  command: ["v2", "--no-model-warmup"]
+  restart: unless-stopped
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  networks:
+    - hlh_default
+    - hlh_inference
+
+x-hlh-chat-base: &hlh-chat-base
+  container_name: hlh_chat
+  restart: unless-stopped
+  env_file:
+    - .env
+  environment:
+    LD_LIBRARY_PATH: /app
+  volumes:
+    - hlh_models:/models:ro
+    - ./hlh_chat/models.ini:/config/models.ini:ro
+  command:
+    - --models-preset
+    - /config/models.ini
+    - --host
+    - "0.0.0.0"
+    - --port
+    - "${HLH_CHAT_PORT:-9610}"
+  user: "1000:1000"
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  mem_limit: ${HLH_CHAT_MEM:-7g}
+  healthcheck:
+    test: ["CMD-SHELL", "curl -fsS http://localhost:${HLH_CHAT_PORT:-9610}/v1/models || exit 1"]
+    interval: 30s
+    timeout: 5s
+    retries: 3
+    start_period: 60s
+  depends_on:
+    - hlh_api
+  networks:
+    - hlh_inference
+
 services:
   hlh_db:
     image: pgvector/pgvector:pg16
@@ -66,6 +118,7 @@ services:
       - hlh_branding:/data/branding
       - hlh_history:/data/history
       - hlh_models:/models               # Phase 1: model_puller writes here
+      - ./.env:/data/.env                # write_tier_env updates image tags on tier change
     user: "1000:1000"
     read_only: true
     tmpfs:
@@ -86,108 +139,48 @@ services:
   # Only reachable inside hlh_inference. The api proxies to it as a registered
   # provider at http://hlh_chat:${HLH_CHAT_PORT}.
   #
-  # Profile `bundled`: omit COMPOSE_PROFILES (or use external-only) to skip
-  # the bundled sidecars entirely. Default in .env.example includes `bundled`.
-  hlh_chat:
-    # llama.cpp moved from ghcr.io/ggerganov/ to ghcr.io/ggml-org/ in 2025.
-    # Pinned to server-b9282 (2026-05-22; b9284 is the latest GitHub release but
-    # its GHCR image had not propagated at pin time — b9282 is the highest tag
-    # on ghcr.io/ggml-org/llama.cpp). To upgrade: bump the tag, run
-    # `docker compose pull hlh_chat && docker compose up -d hlh_chat`, then
-    # validate with backend/scripts/verify_a1_5_hardening.sh.
-    image: ghcr.io/ggml-org/llama.cpp:server-b9282
-    container_name: hlh_chat
-    restart: unless-stopped
+  hlh_chat_cpu:
+    <<: *hlh-chat-base
+    image: ${HLH_CHAT_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-b9282}
     profiles: [bundled]
-    env_file:
-      - .env
-    environment:
-      # llama.cpp b9282+ ships its shared libs in /app but doesn't register
-      # /app in ldconfig. With read_only:true we can't run ldconfig at boot,
-      # so we set LD_LIBRARY_PATH so the dynamic linker finds them directly.
-      LD_LIBRARY_PATH: /app
-    volumes:
-      - hlh_models:/models:ro
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        ARGS="--model $${HLH_CHAT_MODEL_PATH:-/models/chat/cpu-min/Qwen3.5-0.8B-Q8_0.gguf} --host 0.0.0.0 --port $${HLH_CHAT_PORT:-9610} --n-gpu-layers $${HLH_CHAT_NGL:-0} --ctx-size $${HLH_CHAT_CTX:-32768} --timeout $${HLH_CHAT_TIMEOUT:-300} --jinja --reasoning on --reasoning-format deepseek"
-        if [ -f /models/vision/active-mmproj.gguf ]; then
-          ARGS="$$ARGS --mmproj /models/vision/active-mmproj.gguf"
-        fi
-        exec /app/llama-server $$ARGS
-    user: "1000:1000"
-    read_only: true
-    tmpfs:
-      - /tmp
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
-    mem_limit: ${HLH_CHAT_MEM:-6g}   # cpu-min: 3g, cpu-std: 6g, gpu-4gb: 5g, gpu-8gb: 8g, gpu-16gb: 18g, gpu-24gb+: 24g
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:${HLH_CHAT_PORT:-9610}/v1/models || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
-    depends_on:
-      - hlh_api
-    networks:
-      - hlh_inference
 
-  # Phase 2: bundled embed + rerank (infinity-emb). Serves /v1/embeddings
-  # (bge-m3, 1024-dim) AND /v1/rerank (bge-reranker-v2-m3) from one process.
-  # INFINITY_URL_PREFIX="/v1" aligns infinity's native /embeddings + /rerank
-  # paths with the /v1/* paths used by call sites in embeddings.py, providers.py,
-  # and settings.py (which also serve TEI / OpenAI-compatible external providers).
-  # Internal-only on hlh_inference. First boot downloads ~1-2 GB from HF (~5-15 min).
-  # Joins hlh_default as well so HF egress works on first boot (see spec §1 network note).
-  #
-  # Spec: docs/superpowers/specs/2026-05-22-bundled-system-takes-everything-design.md §1
-  hlh_infer:
-    # michaelf34/infinity — CPU variant; confirmed tag 0.0.77-cpu (2025-08-22).
-    # Multi-model via INFINITY_MODEL_ID with ";" separator (infinity env.py convention).
-    # Default engine for -cpu image is `optimum` (ONNX); works without NVIDIA drivers.
-    # v0.0.77 requires the `v2` subcommand (deprecated the implicit default since 0.0.32).
-    image: michaelf34/infinity:0.0.77-cpu
-    command: ["v2", "--no-model-warmup"]
-    container_name: hlh_infer
-    restart: unless-stopped
-    profiles: [bundled]
+  hlh_chat_gpu:
+    <<: *hlh-chat-base
+    image: ${HLH_CHAT_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda-b9282}
+    profiles: [bundled-gpu]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # Phase A3: vision_embed sidecar (infinity-emb MedSigLIP). Internal-only.
+  # embed + rerank now served by hlh_chat router (orchestrator phase 1).
+
+  hlh_vision_embed:
+    <<: *infinity-base
+    container_name: hlh_vision_embed
+    profiles: [vision]
     env_file:
       - .env
     environment:
-      INFINITY_MODEL_ID: "BAAI/bge-m3;BAAI/bge-reranker-v2-m3"
-      # bge-m3 has ONNX exports → optimum. bge-reranker-v2-m3 does NOT ship
-      # ONNX files, so its slot must use torch (PyTorch CPU, no ONNX needed).
-      # Semicolon-separated list is broadcast 1-to-1 with INFINITY_MODEL_ID order.
-      INFINITY_ENGINE: "optimum;torch"
-      INFINITY_PORT: "${HLH_INFER_PORT:-9611}"
+      INFINITY_MODEL_ID: ${HLH_MEDSIGLIP_MODEL:-google/medsiglip-448}
+      INFINITY_ENGINE: "torch"
       INFINITY_HOST: "0.0.0.0"
-      INFINITY_URL_PREFIX: "/v1"   # serve at /v1/embeddings + /v1/rerank to match call-site paths
+      INFINITY_URL_PREFIX: "/v1"
+      # TEMPORARY: remove HF_TOKEN when medsiglip hosted ungated
+      HF_TOKEN: ${HF_TOKEN:-}
     volumes:
-      - hlh_models:/app/.cache   # infinity caches downloaded weights under HF_HOME (/app/.cache)
-    user: "1000:1000"
-    read_only: true
-    tmpfs:
-      - /tmp
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
-    mem_limit: 6g
+      - hlh_vision_cache:/app/.cache
+    mem_limit: 5g
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:${HLH_INFER_PORT:-9611}/health || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:7997/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 15m   # bge-m3 + reranker first download ~5-15 min from HF
-    depends_on:
-      - hlh_api
-    networks:
-      - hlh_default
-      - hlh_inference
+      start_period: 15m
 
   # Phase 2: bundled SearXNG for web search. Internal-only on hlh_default.
   # JSON format is enabled via searxng/settings.yml (default config has it off,
@@ -201,7 +194,7 @@ services:
     image: searxng/searxng:2026.5.22-c57f772ad
     container_name: hlh_search
     restart: unless-stopped
-    profiles: [bundled]
+    profiles: [bundled, bundled-gpu]
     environment:
       # Internal-only secret; SearXNG requires it to be set. Not a security
       # boundary in this deployment — the service is unreachable from outside hlh_default.
@@ -281,3 +274,4 @@ volumes:
   hlh_branding:
   hlh_history:
   hlh_models:
+  hlh_vision_cache:

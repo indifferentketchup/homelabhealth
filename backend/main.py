@@ -36,6 +36,7 @@ from routers.notes import router as notes_router
 from routers.sources import router as sources_router
 from routers.audit import router as audit_router
 from routers.auth import router as auth_router
+from routers.vision_embed import router as vision_embed_router
 
 import logging
 logging.basicConfig(level=logging.INFO)
@@ -284,6 +285,7 @@ api.include_router(notes_router, tags=["notes"])
 api.include_router(sources_router, tags=["sources"])
 api.include_router(history_router, prefix="/history", tags=["history"])
 api.include_router(audit_router, prefix="/audit", tags=["audit"])
+api.include_router(vision_embed_router, prefix="/vision", tags=["vision"])
 
 
 app.include_router(api)
