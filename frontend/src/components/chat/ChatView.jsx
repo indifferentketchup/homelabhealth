@@ -377,10 +377,14 @@ export function ChatView({
         touchStreamActivity(0)
         setStreamingRag(info)
       },
-      onPhase: (raw) => {
+      onPhase: (raw, meta = {}) => {
         const mapped = mapStreamPhase(raw)
         setStreamPhase(mapped)
-        setPipelineEvents((prev) => [...prev, { phase: mapped }])
+        setPipelineEvents((prev) => [...prev, {
+          phase: mapped,
+          model: meta.model,
+          estimate_ms: meta.estimate_ms,
+        }])
         touchStreamActivity(0)
       },
       onTitleUpdate: (title) => {
