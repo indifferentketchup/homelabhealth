@@ -28,6 +28,7 @@ from db import get_pool
 from deps import require_admin
 from services.audit import AuditEventHandle, audit_event
 from services import bundled_providers
+from services.image_config import write_tier_env
 from services.sysinfo import ALL_TIERS, collect, recommend_tier
 
 router = APIRouter()
@@ -138,9 +139,16 @@ async def put_profile(
         if row is None:
             raise HTTPException(status_code=503, detail="system_profile row missing")
         await bundled_providers.apply_bundled_bindings(conn, body.tier)
+    write_tier_env(body.tier)
     async with audit.targeting("system", None):
         pass
-    return _profile_response(row)
+    resp = _profile_response(row)
+    resp["restart_required"] = True
+    resp["restart_message"] = (
+        f"Docker images updated for {body.tier} tier. "
+        "Run: docker compose pull && docker compose up -d"
+    )
+    return resp
 
 
 @router.post("/redetect")

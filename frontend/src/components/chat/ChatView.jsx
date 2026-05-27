@@ -24,11 +24,14 @@ import { StreamStatusBar } from './StreamStatusBar.jsx'
 const STALE_STREAM_MS = 60_000
 const THINKING_PHASE_MS = 3_000
 
+const KNOWN_PHASES = new Set([
+  'preparing', 'loading', 'ready', 'rag', 'search', 'embedding',
+  'searching', 'reranking', 'thinking', 'generating',
+])
+
 function mapStreamPhase(raw) {
   if (raw === 'inference') return 'thinking'
-  if (raw === 'preparing' || raw === 'rag' || raw === 'search' || raw === 'thinking' || raw === 'generating') {
-    return raw
-  }
+  if (KNOWN_PHASES.has(raw)) return raw
   return 'preparing'
 }
 
@@ -180,6 +183,7 @@ export function ChatView({
   const [sendError, setSendError] = useState(null)
   const [streamPhase, setStreamPhase] = useState(null)
   const [streamStartedAt, setStreamStartedAt] = useState(null)
+  const [pipelineEvents, setPipelineEvents] = useState([])
   const [streamStale, setStreamStale] = useState(false)
 
   const { consumeStream, abort } = useStream()
@@ -269,6 +273,7 @@ export function ChatView({
     const startedAt = Date.now()
     setStreamPhase('preparing')
     setStreamStartedAt(startedAt)
+    setPipelineEvents([])
     setStreamStale(false)
     touchStreamActivity(0)
   }
@@ -276,6 +281,7 @@ export function ChatView({
   function clearStreamUi() {
     setStreamPhase(null)
     setStreamStartedAt(null)
+    setPipelineEvents([])
     setStreamStale(false)
     lastStreamActivityRef.current = null
   }
@@ -372,7 +378,9 @@ export function ChatView({
         setStreamingRag(info)
       },
       onPhase: (raw) => {
-        setStreamPhase(mapStreamPhase(raw))
+        const mapped = mapStreamPhase(raw)
+        setStreamPhase(mapped)
+        setPipelineEvents((prev) => [...prev, { phase: mapped }])
         touchStreamActivity(0)
       },
       onTitleUpdate: (title) => {
@@ -681,7 +689,7 @@ export function ChatView({
           </div>
           <div className="bc-chat-anchor w-full px-4">
             {busy && streamPhase ? (
-              <StreamStatusBar phase={streamPhase} startedAt={streamStartedAt} />
+              <StreamStatusBar phase={streamPhase} startedAt={streamStartedAt} pipelineEvents={pipelineEvents} />
             ) : null}
             {streamStale && busy ? (
               <StaleStreamBanner onRetry={retryLastSend} onDiscard={dismissStaleStream} />
@@ -759,7 +767,7 @@ export function ChatView({
           }}
         >
           {busy && streamPhase ? (
-            <StreamStatusBar phase={streamPhase} startedAt={streamStartedAt} />
+            <StreamStatusBar phase={streamPhase} startedAt={streamStartedAt} pipelineEvents={pipelineEvents} />
           ) : null}
           {streamStale && busy ? (
             <StaleStreamBanner onRetry={retryLastSend} onDiscard={dismissStaleStream} />

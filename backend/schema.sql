@@ -368,16 +368,10 @@ ALTER TABLE providers
 ALTER TABLE providers
     ADD COLUMN IF NOT EXISTS bundle_group TEXT;  -- 'homelab-health-ai' for bundled rows; NULL otherwise
 
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'providers_role_check'
-    ) THEN
-        ALTER TABLE providers
-            ADD CONSTRAINT providers_role_check
-            CHECK (role IN ('chat', 'embed', 'rerank'));
-    END IF;
-END $$;
+-- A3: update role CHECK to include 'vision_embed' (idempotent drop+re-add).
+ALTER TABLE providers DROP CONSTRAINT IF EXISTS providers_role_check;
+ALTER TABLE providers ADD CONSTRAINT providers_role_check
+    CHECK (role IN ('chat', 'embed', 'rerank', 'vision_embed'));
 
 -- Backfill the existing bundled-chat row on first apply. Guarded so subsequent
 -- applies are no-ops. Order-safe: this runs in schema.sql before
@@ -610,3 +604,41 @@ ALTER TABLE messages ALTER COLUMN content DROP NOT NULL;
 CREATE INDEX IF NOT EXISTS messages_chat_status_streaming_idx
   ON messages (chat_id, status)
   WHERE status = 'streaming';
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- Phase A3: MedSigLIP vision embeddings (2026-05-27).
+-- image_chunks stores per-image embeddings from MedSigLIP (1152-dim).
+-- Separate from source_chunks (text, 1024-dim bge-m3).
+-- ────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS image_chunks (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    source_id       UUID REFERENCES sources(id) ON DELETE CASCADE,
+    embedding       vector(1152),
+    page_number     INT,
+    image_path      TEXT,
+    description     TEXT,
+    metadata        JSONB DEFAULT '{}',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
+);
+
+CREATE INDEX IF NOT EXISTS idx_image_chunks_embedding
+    ON image_chunks USING hnsw (embedding vector_cosine_ops);
+
+CREATE INDEX IF NOT EXISTS idx_image_chunks_source_id
+    ON image_chunks (source_id);
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- Orchestrator Phase 2: pipeline status time estimates (rolling averages).
+-- ────────────────────────────────────────────────────────────────────────────
+INSERT INTO global_settings (key, value) VALUES
+    ('estimate_ms_load_medgemma',     '12000'),
+    ('estimate_ms_load_qwen-chat',    '4000'),
+    ('estimate_ms_load_gemma-tasks',  '1500'),
+    ('estimate_ms_load_bge-m3',       '8000'),
+    ('estimate_ms_load_bge-reranker', '5000'),
+    ('estimate_ms_embed_query',       '500'),
+    ('estimate_ms_rerank',            '300'),
+    ('estimate_ms_rag_search',        '1500'),
+    ('estimate_ms_chat_first_token',  '2000')
+ON CONFLICT (key) DO NOTHING;

@@ -2,12 +2,23 @@ import { useEffect, useState } from 'react'
 
 import { cn } from '@/lib/utils'
 
-const PHASE_LABELS = {
-  preparing: 'Preparing',
-  rag: 'Retrieving documents',
-  search: 'Searching web',
-  thinking: 'Thinking',
-  generating: 'Generating',
+const PHASE_CONFIG = {
+  preparing:  { label: 'Preparing',            icon: '⏳' },
+  loading:    { label: (m) => `Loading ${m || 'model'}`, icon: '⏳' },
+  ready:      { label: (m) => `${m || 'Model'} ready`, icon: '✅' },
+  rag:        { label: 'Retrieving documents',  icon: '🔄' },
+  search:     { label: 'Searching web',         icon: '🔍' },
+  embedding:  { label: 'Embedding query',       icon: '🔄' },
+  searching:  { label: 'Searching records',     icon: '🔄' },
+  reranking:  { label: 'Reranking results',     icon: '🔄' },
+  thinking:   { label: 'Thinking',              icon: '🧠' },
+  generating: { label: 'Generating',            icon: '💬' },
+}
+
+function phaseLabel(phase, model) {
+  const cfg = PHASE_CONFIG[phase]
+  if (!cfg) return 'Working'
+  return typeof cfg.label === 'function' ? cfg.label(model) : cfg.label
 }
 
 function formatElapsed(ms) {
@@ -17,7 +28,13 @@ function formatElapsed(ms) {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-export function StreamStatusBar({ phase, startedAt, className }) {
+function formatEstimate(ms) {
+  if (!ms || ms <= 0) return null
+  const sec = Math.max(1, Math.round(ms / 1000))
+  return `~${sec}s`
+}
+
+export function StreamStatusBar({ phase, startedAt, pipelineEvents = [], className }) {
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
@@ -27,25 +44,44 @@ export function StreamStatusBar({ phase, startedAt, className }) {
   }, [phase, startedAt])
 
   if (!phase || !startedAt) return null
-  const label = PHASE_LABELS[phase] ?? 'Working'
+
+  const completedStages = pipelineEvents.filter(
+    (e) => e.phase !== phase && e.phase !== 'preparing' && e.phase !== 'ready',
+  )
+  const currentEvent = pipelineEvents.findLast((e) => e.phase === phase)
+  const estimateMs = currentEvent?.estimate_ms
+  const currentModel = currentEvent?.model
   const elapsed = now - startedAt
 
   return (
     <div
       className={cn(
-        'mb-2 flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm text-muted-foreground shadow-sm',
+        'mb-2 flex flex-col gap-1 rounded-md border border-border bg-background px-3 py-2 text-sm text-muted-foreground shadow-sm',
         className,
       )}
       role="status"
       aria-live="polite"
       data-testid="stream-status-bar"
     >
-      <span
-        className="inline-block size-2 shrink-0 animate-pulse rounded-full bg-primary"
-        aria-hidden
-      />
-      <span className="text-foreground">{label}…</span>
-      <span className="font-mono text-xs tabular-nums">{formatElapsed(elapsed)}</span>
+      {completedStages.map((e, i) => (
+        <div key={i} className="flex items-center gap-2 text-xs text-muted-foreground/70">
+          <span>✅</span>
+          <span>{phaseLabel(e.phase, e.model)}</span>
+        </div>
+      ))}
+      <div className="flex items-center gap-2">
+        <span
+          className="inline-block size-2 shrink-0 animate-pulse rounded-full bg-primary"
+          aria-hidden
+        />
+        <span className="text-foreground">{phaseLabel(phase, currentModel)}…</span>
+        <span className="ml-auto flex items-center gap-2">
+          {estimateMs ? (
+            <span className="text-xs text-muted-foreground/60">{formatEstimate(estimateMs)}</span>
+          ) : null}
+          <span className="font-mono text-xs tabular-nums">{formatElapsed(elapsed)}</span>
+        </span>
+      </div>
       {phase === 'thinking' ? (
         <span className="text-xs">(CPU inference can take 1–2 min)</span>
       ) : null}
