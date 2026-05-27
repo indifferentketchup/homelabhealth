@@ -7,6 +7,7 @@ import * as LucideIcons from 'lucide-react'
 import { createWorkspace, deleteWorkspace, listWorkspaces, pinWorkspace } from '@/api/workspaces.js'
 import { deleteSource, listSources, uploadSource } from '@/api/sources.js'
 import { ChatView } from '@/components/chat/ChatView.jsx'
+import ModelStateSidebar from '@/components/chat/ModelStateSidebar.jsx'
 import { Button } from '@/components/ui/button'
 import { APP_GLYPH, APP_TAGLINE, APP_TITLE } from '@/config/identity.js'
 import { workspacePath } from '@/routes/paths.js'
@@ -403,6 +404,9 @@ export function WorkspaceChat() {
         </div>
         {!filesRailCollapsed ? (
           <>
+            <div className="shrink-0 border-b border-sidebar-border p-2">
+              <ModelStateSidebar />
+            </div>
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               <SourcesPanel chatId={activeChatId} workspaceId={workspaceId} />
             </div>

@@ -29,6 +29,7 @@ def _estimate_key(stage: str, model: str | None = None) -> str:
         "reranking": "estimate_ms_rerank",
         "searching": "estimate_ms_rag_search",
         "generating": "estimate_ms_chat_first_token",
+        "unloading": "estimate_ms_unload",
     }.get(stage, "")
 
 

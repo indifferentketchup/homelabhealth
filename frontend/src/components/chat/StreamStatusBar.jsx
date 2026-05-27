@@ -6,6 +6,7 @@ const PHASE_CONFIG = {
   preparing:  { label: 'Preparing',            icon: '⏳' },
   loading:    { label: (m) => `Loading ${m || 'model'}`, icon: '⏳' },
   ready:      { label: (m) => `${m || 'Model'} ready`, icon: '✅' },
+  unloading:  { label: (m) => `Unloading ${m || 'model'}`, icon: '🗑️' },
   rag:        { label: 'Retrieving documents',  icon: '🔄' },
   search:     { label: 'Searching web',         icon: '🔍' },
   embedding:  { label: 'Embedding query',       icon: '🔄' },

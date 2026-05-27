@@ -39,7 +39,7 @@ BUNDLED_RERANK_MODEL = "bge-reranker"
 BUNDLED_VISION_EMBED_NAME = "HomeLab Health AI · Vision Embed"
 BUNDLED_VISION_EMBED_BASE_URL = "http://hlh_vision_embed:7997"
 # TODO: replace with Sam's ungated repo
-MEDSIGLIP_MODEL_ID = os.environ.get("HLH_MEDSIGLIP_MODEL", "google/medsiglip-448")
+MEDSIGLIP_MODEL_ID = os.environ.get("HLH_MEDSIGLIP_MODEL", "indifferentketchup/medsiglip-448-fp16")
 
 
 # Per-tier chat model aliases — must match the [section] names in

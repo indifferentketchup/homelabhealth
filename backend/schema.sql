@@ -640,5 +640,6 @@ INSERT INTO global_settings (key, value) VALUES
     ('estimate_ms_embed_query',       '500'),
     ('estimate_ms_rerank',            '300'),
     ('estimate_ms_rag_search',        '1500'),
-    ('estimate_ms_chat_first_token',  '2000')
+    ('estimate_ms_chat_first_token',  '2000'),
+    ('estimate_ms_unload',            '500')
 ON CONFLICT (key) DO NOTHING;

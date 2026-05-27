@@ -24,6 +24,7 @@ class TierImages:
     chat_image: str
     infer_image: str
     compose_profiles: str
+    models_max: int
 
 
 TIER_IMAGE_MAP: dict[str, TierImages] = {
@@ -31,48 +32,56 @@ TIER_IMAGE_MAP: dict[str, TierImages] = {
         chat_image=f"ghcr.io/ggml-org/llama.cpp:server-{LLAMA_CPP_VERSION}",
         infer_image=f"michaelf34/infinity:{INFINITY_VERSION}-cpu",
         compose_profiles="bundled",
+        models_max=1,
     ),
     "cpu-std": TierImages(
         chat_image=f"ghcr.io/ggml-org/llama.cpp:server-{LLAMA_CPP_VERSION}",
         infer_image=f"michaelf34/infinity:{INFINITY_VERSION}-cpu",
         compose_profiles="bundled",
+        models_max=2,
     ),
     "gpu-4gb": TierImages(
         chat_image=f"ghcr.io/ggml-org/llama.cpp:server-cuda-{LLAMA_CPP_VERSION}",
         infer_image=f"michaelf34/infinity:{INFINITY_VERSION}",
         compose_profiles="bundled-gpu",
+        models_max=2,
     ),
     "gpu-8gb": TierImages(
         chat_image=f"ghcr.io/ggml-org/llama.cpp:server-cuda-{LLAMA_CPP_VERSION}",
         infer_image=f"michaelf34/infinity:{INFINITY_VERSION}",
         compose_profiles="bundled-gpu",
+        models_max=3,
     ),
     "gpu-16gb": TierImages(
         chat_image=f"ghcr.io/ggml-org/llama.cpp:server-cuda-{LLAMA_CPP_VERSION}",
         infer_image=f"michaelf34/infinity:{INFINITY_VERSION}",
         compose_profiles="bundled-gpu",
+        models_max=3,
     ),
     "gpu-24gb+": TierImages(
         chat_image=f"ghcr.io/ggml-org/llama.cpp:server-cuda-{LLAMA_CPP_VERSION}",
         infer_image=f"michaelf34/infinity:{INFINITY_VERSION}",
         compose_profiles="bundled-gpu,vision",
+        models_max=4,
     ),
     "apple-mlx": TierImages(
         chat_image=f"ghcr.io/ggml-org/llama.cpp:server-{LLAMA_CPP_VERSION}",
         infer_image=f"michaelf34/infinity:{INFINITY_VERSION}-cpu",
         compose_profiles="bundled",
+        models_max=2,
     ),
     "external": TierImages(
         chat_image=f"ghcr.io/ggml-org/llama.cpp:server-{LLAMA_CPP_VERSION}",
         infer_image=f"michaelf34/infinity:{INFINITY_VERSION}-cpu",
         compose_profiles="",
+        models_max=2,
     ),
 }
 
 
 ENV_PATH = os.environ.get("HLH_ENV_PATH", "/data/.env")
 
-_MANAGED_KEYS = ("HLH_CHAT_IMAGE", "HLH_INFER_IMAGE", "COMPOSE_PROFILES")
+_MANAGED_KEYS = ("HLH_CHAT_IMAGE", "HLH_INFER_IMAGE", "COMPOSE_PROFILES", "HLH_MODELS_MAX")
 
 
 def write_tier_env(tier: str) -> bool:
@@ -118,6 +127,7 @@ def write_tier_env(tier: str) -> bool:
         "HLH_CHAT_IMAGE": images.chat_image,
         "HLH_INFER_IMAGE": images.infer_image,
         "COMPOSE_PROFILES": ",".join(sorted(new_profiles)) if new_profiles else "",
+        "HLH_MODELS_MAX": str(images.models_max),
     }
 
     found: set[str] = set()

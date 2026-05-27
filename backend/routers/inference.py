@@ -29,6 +29,25 @@ from services.reasoning_strip import ThinkingStreamFilter
 
 router = APIRouter()
 
+import time as _time
+_state_cache: dict[str, Any] = {"data": None, "ts": 0.0}
+
+
+@router.get("/state")
+async def inference_state(_: dict[str, Any] = Depends(require_admin)):
+    now = _time.monotonic()
+    if _state_cache["data"] and (now - _state_cache["ts"]) < 1.0:
+        return _state_cache["data"]
+    from services.model_inventory import get_inventory
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT tier FROM system_profile WHERE id = 1")
+    tier = row["tier"] if row else "cpu-std"
+    data = await get_inventory(tier)
+    _state_cache["data"] = data
+    _state_cache["ts"] = now
+    return data
+
 
 def _sse(data: str) -> bytes:
     return f"data: {data}\n\n".encode("utf-8")
