@@ -25,8 +25,8 @@ const STALE_STREAM_MS = 60_000
 const THINKING_PHASE_MS = 3_000
 
 const KNOWN_PHASES = new Set([
-  'preparing', 'loading', 'ready', 'rag', 'search', 'embedding',
-  'searching', 'reranking', 'thinking', 'generating',
+  'preparing', 'loading', 'ready', 'unloading', 'rag', 'search',
+  'embedding', 'searching', 'reranking', 'thinking', 'generating',
 ])
 
 function mapStreamPhase(raw) {

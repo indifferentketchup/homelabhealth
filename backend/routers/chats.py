@@ -1410,6 +1410,17 @@ async def append_message(
         )
         async with pool.acquire() as status_conn:
             if not await model_is_loaded(effective_model):
+                from services.model_inventory import get_inventory, MODEL_RAM_MIB
+                tier_row = await status_conn.fetchrow("SELECT tier FROM system_profile WHERE id = 1")
+                _tier = tier_row["tier"] if tier_row else "cpu-std"
+                inv = await get_inventory(_tier)
+                target_ram = MODEL_RAM_MIB.get(effective_model, 0)
+                if inv["loaded_ram_mib"] + target_ram > inv["budget_mib"]:
+                    loaded = [m for m in inv["models"] if m["state"] == "loaded" and m["provider"] == "router" and m["id"] != effective_model]
+                    if loaded:
+                        lru = min(loaded, key=lambda m: m.get("last_used_ms") or 0)
+                        async with stage(status_conn, "unloading", model=lru["id"]) as uframe:
+                            yield _sse(json.dumps(uframe))
                 async with stage(status_conn, "loading", model=effective_model) as frame:
                     yield _sse(json.dumps(frame))
                     try:

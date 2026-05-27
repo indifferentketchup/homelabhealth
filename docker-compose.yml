@@ -33,6 +33,8 @@ x-hlh-chat-base: &hlh-chat-base
     - "0.0.0.0"
     - --port
     - "${HLH_CHAT_PORT:-9610}"
+    - --models-max
+    - "${HLH_MODELS_MAX:-2}"
   user: "1000:1000"
   read_only: true
   tmpfs:
@@ -166,12 +168,10 @@ services:
     env_file:
       - .env
     environment:
-      INFINITY_MODEL_ID: ${HLH_MEDSIGLIP_MODEL:-google/medsiglip-448}
+      INFINITY_MODEL_ID: ${HLH_MEDSIGLIP_MODEL:-indifferentketchup/medsiglip-448-fp16}
       INFINITY_ENGINE: "torch"
       INFINITY_HOST: "0.0.0.0"
       INFINITY_URL_PREFIX: "/v1"
-      # TEMPORARY: remove HF_TOKEN when medsiglip hosted ungated
-      HF_TOKEN: ${HF_TOKEN:-}
     volumes:
       - hlh_vision_cache:/app/.cache
     mem_limit: 5g
