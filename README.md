@@ -10,13 +10,26 @@ Roadmap: [docs/roadmap.md](docs/roadmap.md). Architecture: [docs/architecture.md
 
 ## Quickstart
 
+**Option A: Pull pre-built images (recommended)**
+
+```bash
+git clone <repo>
+cd homelabhealth
+cp .env.example .env
+docker compose up -d
+# Open http://localhost:9604
+```
+
+**Option B: Build from source (contributors)**
+
 ```bash
 git clone <repo>
 cd homelabhealth
 cp .env.example .env
 docker compose up --build -d
-# Open http://localhost:9604
 ```
+
+The frontend build needs ~1.5 GB RAM. Use Option A on low-memory hosts.
 
 First launch walks you through setup: create your account, pick a hardware tier, and the system pulls the right models automatically.
 
