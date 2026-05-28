@@ -184,6 +184,54 @@ function GuardFlagsBadge({ flags }) {
   )
 }
 
+const THINKING_CLOSED_RE = /^<THINKING>([\s\S]*?)<\/THINKING>\s*/
+const THINKING_OPEN_RE = /^<THINKING>([\s\S]*)$/
+
+function splitThinking(text, streaming = false) {
+  if (!text) return { thinking: null, answer: text || '', thinkingInProgress: false }
+  // Completed thinking block
+  const closed = text.match(THINKING_CLOSED_RE)
+  if (closed) return { thinking: closed[1].trim(), answer: text.slice(closed[0].length), thinkingInProgress: false }
+  // In-progress thinking (streaming — no closing tag yet)
+  if (streaming) {
+    const open = text.match(THINKING_OPEN_RE)
+    if (open) return { thinking: open[1].trim(), answer: '', thinkingInProgress: true }
+  }
+  return { thinking: null, answer: text, thinkingInProgress: false }
+}
+
+function ThinkingBlock({ text, mdComponents, inProgress = false }) {
+  const [userClosed, setUserClosed] = useState(false)
+  if (!text) return null
+  const isOpen = inProgress ? !userClosed : false
+  return (
+    <details
+      className="mb-3 rounded-md border border-border/50 bg-muted/30"
+      open={isOpen || undefined}
+      onToggle={(e) => {
+        if (inProgress && !e.currentTarget.open) setUserClosed(true)
+        if (!inProgress) setUserClosed(!e.currentTarget.open)
+      }}
+    >
+      <summary className="cursor-pointer select-none px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">
+        {inProgress ? (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="size-1.5 animate-pulse rounded-full bg-primary" />
+            Reasoning…
+          </span>
+        ) : (
+          <>{isOpen ? 'Hide' : 'Show'} reasoning</>
+        )}
+      </summary>
+      <div className="border-t border-border/30 px-3 py-2 text-xs leading-relaxed text-muted-foreground/80">
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+          {text}
+        </ReactMarkdown>
+      </div>
+    </details>
+  )
+}
+
 function TypingDots() {
   return (
     <span className="inline-flex items-center gap-1 py-1" aria-label="Assistant is typing">
@@ -341,7 +389,9 @@ export function MessageBubble({
         >
           {!isUser && (
             <span className="mb-1 inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-              AI-generated
+              {message.model === 'medgemma' ? 'MedGemma AI'
+                : message.model === 'qwen-chat' ? 'Qwen AI'
+                : 'AI-generated'}
             </span>
           )}
           {isUser ? (
@@ -380,9 +430,17 @@ export function MessageBubble({
             <TypingDots />
           ) : (
             <div className="prose-chat w-full max-w-full overflow-x-hidden break-words leading-relaxed">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-                {message.content || (streaming ? '' : '')}
-              </ReactMarkdown>
+              {(() => {
+                const { thinking, answer, thinkingInProgress } = splitThinking(message.content, streaming)
+                return (
+                  <>
+                    <ThinkingBlock text={thinking} mdComponents={mdComponents} inProgress={thinkingInProgress} />
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                      {answer || (streaming ? '' : '')}
+                    </ReactMarkdown>
+                  </>
+                )
+              })()}
               {streaming && (
                 <span className="inline-block w-[2px] h-[1em] bg-foreground animate-pulse align-text-bottom ml-0.5" />
               )}

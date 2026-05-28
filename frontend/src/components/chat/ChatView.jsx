@@ -159,6 +159,19 @@ export function ChatView({
   })
 
   const messages = msgPack?.items ?? []
+
+  // Reconnect to an in-progress durable stream after page refresh
+  const resumedRef = useRef(null)
+  useEffect(() => {
+    if (!durableEnabled || durable.busy || !activeChatId || !messages.length) return
+    if (resumedRef.current === activeChatId) return
+    const streaming = messages.find((m) => m.role === 'assistant' && m.status === 'streaming')
+    if (streaming) {
+      resumedRef.current = activeChatId
+      durable.resume(activeChatId, streaming.id)
+    }
+  }, [durableEnabled, durable.busy, activeChatId, messages])
+
   const [draft, setDraft] = useState('')
   const [attachedSources, setAttachedSources] = useState([])
 
@@ -224,15 +237,16 @@ export function ChatView({
     }
   }, [busy])
 
-  // Avoid double user bubbles: new-chat flow enables the messages query as the stream runs, so the
-  // server copy of the user message can appear in `messages` while `optimisticUser` is still set.
   const serverHasPendingUserBubble =
     messages.length > 0 &&
-    messages[messages.length - 1]?.role === 'user' &&
-    sameUserBubbleContent(messages[messages.length - 1]?.content, optimisticUser?.content)
+    optimisticUser &&
+    messages.some((m) => m.role === 'user' && sameUserBubbleContent(m.content, optimisticUser.content))
   const showOptimistic =
     Boolean(pendingSend && optimisticUser) && !serverHasPendingUserBubble
-  const displayMessages = showOptimistic ? [...messages, optimisticUser] : messages
+  const baseMessages = busy
+    ? messages.filter((m) => !(m.role === 'assistant' && m.status === 'streaming'))
+    : messages
+  const displayMessages = showOptimistic ? [...baseMessages, optimisticUser] : baseMessages
 
   useEffect(() => {
     if (!pendingSend || !optimisticUser) return

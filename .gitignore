@@ -43,3 +43,9 @@ docs/operator/*
 docs/operator/advanced/*
 !docs/operator/advanced/*.md
 /history/
+
+# Syncthing
+.stfolder/
+
+# Claude Code
+.claude/

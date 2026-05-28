@@ -8,12 +8,12 @@ It runs as a Docker Compose stack. **Built-in username/password auth** (v0.19.0)
 in front for defense in depth. Not required for default deploy.
 
 This project is MIT-licensed. It is not formally threat-modeled by a third party. It is not a
-HIPAA covered entity. HIPAA, HITRUST, and SOC 2 certification are explicitly out of scope. this
+HIPAA covered entity. HIPAA, HITRUST, and SOC 2 certification are explicitly out of scope. This
 is a personal tool, not a healthcare product. This document is a self-assessment by the
-maintainer; it reflects the state of the stack as of 2026-05-25 and is revised at every
+maintainer; it reflects the state of the stack as of 2026-05-28 and is revised at every
 minor-version tag.
 
-Last reviewed: 2026-05-25.
+Last reviewed: 2026-05-28.
 
 ---
 

@@ -4,16 +4,16 @@ Self-hosted RAG chat app for personal health records. Upload medical documents (
 
 One `docker compose up` to run. Built-in username/password auth. Encryption keys auto-generate on first launch. No reverse proxy required.
 
-**Current release:** `v0.26.0` (2026-05-25). See [CHANGELOG.md](CHANGELOG.md) for the full history.
+**Current release:** `v1.0.0` (2026-05-28). See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
-Roadmap: [docs/roadmap.md](docs/roadmap.md). Architecture: [docs/architecture.md](docs/architecture.md). Agent bootstrap: [docs/CONTEXT.md](docs/CONTEXT.md), [AGENTS.md](AGENTS.md). Ship-to-friend gate is **clear** — speech-to-text (A4) is explicitly deferred.
+Roadmap: [docs/roadmap.md](docs/roadmap.md). Architecture: [docs/architecture.md](docs/architecture.md). Session bootstrap: [docs/CONTEXT.md](docs/CONTEXT.md).
 
 ## Quickstart
 
 **Option A: Pull pre-built images (recommended)**
 
 ```bash
-git clone <repo>
+git clone https://git.indifferentketchup.com/indifferentketchup/homelabhealth.git
 cd homelabhealth
 cp .env.example .env
 docker compose up -d
@@ -23,7 +23,6 @@ docker compose up -d
 **Option B: Build from source (contributors)**
 
 ```bash
-git clone <repo>
 cd homelabhealth
 cp .env.example .env
 docker compose up --build -d

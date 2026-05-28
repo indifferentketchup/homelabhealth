@@ -185,12 +185,30 @@ export function useDurableChat() {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
   }, [streamingMessageId, pollOnce])
 
+  const resume = useCallback((chatId, assistantMessageId) => {
+    if (busy) return
+    chatIdRef.current = chatId
+    sendTimeRef.current = Date.now()
+    lastContentLenRef.current = 0
+    lastContentChangeRef.current = Date.now()
+    setStreamingMessageId(assistantMessageId)
+    setStreamingStatus('streaming')
+    setBusy(true)
+    setStale(false)
+    setSendError(null)
+    pollRef.current = setTimeout(
+      () => pollOnce(chatId, assistantMessageId),
+      POLL_FAST_MS,
+    )
+  }, [busy, pollOnce])
+
   useEffect(() => {
     return () => stopPolling()
   }, [stopPolling])
 
   return {
     sendMessage,
+    resume,
     stop,
     discardStale,
     streamingMessageId,

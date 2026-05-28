@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, ChevronDown, Search } from 'lucide-react'
+import { Check, Search } from 'lucide-react'
 
 import { listWorkspaces } from '@/api/workspaces.js'
 import { fetchModels, getModelSettings } from '@/api/inference.js'
@@ -215,9 +215,13 @@ export function ModelSelectorBar({ className }) {
   }
 
   const displayName = (modelLocked ? workspacePinnedModel : selectedModel) || 'Select model'
+  const workspaceName = displayWorkspace?.name || null
 
   return (
     <div className={cn('flex min-w-0 flex-wrap items-center justify-center gap-2', className)}>
+      {workspaceName ? (
+        <span className="text-sm font-medium text-foreground">{workspaceName}</span>
+      ) : null}
       <div ref={modelWrapRef} className="relative">
         <span ref={modelBtnRef} className="inline-flex">
           <Button
@@ -225,7 +229,7 @@ export function ModelSelectorBar({ className }) {
             variant="ghost"
             disabled={modelLocked}
             title={modelLocked ? 'Model pinned by workspace (change on workspace detail page)' : undefined}
-            className="h-9 max-w-full gap-2 px-3 font-normal text-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-60"
+            className="h-9 max-w-full gap-2 px-3 font-normal text-muted-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-60"
             aria-expanded={modelOpen}
             aria-haspopup="dialog"
             onClick={() => {
@@ -233,8 +237,7 @@ export function ModelSelectorBar({ className }) {
               setModelOpen((o) => !o)
             }}
           >
-            <span className="truncate text-sm font-medium">{displayName}</span>
-            <ChevronDown className="size-4 shrink-0 opacity-70" aria-hidden />
+            <span className="truncate text-xs">{displayName}</span>
           </Button>
         </span>
         {modelOpen && (
