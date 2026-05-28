@@ -1,0 +1,17 @@
+QUEST DIAGNOSTICS
+Final Report
+
+Patient: TAYLOR, ALEX                    DOB: 06/12/1990
+Accession: Q1212-51904                   Collected: 12/12/2024 0830
+Ordering: DR. PATEL, RAVI (ALLERGY/IMMUNOLOGY)
+                                         Reported:  12/13/2024 1145
+
+TEST                          RESULT     FLAG    REFERENCE RANGE    UNITS
+---------------------------------------------------------------------------
+
+Tryptase, Serum                4.8                 <11.4           ng/mL
+
+Within normal limits. Elevated tryptase may indicate mast cell
+activation or systemic mastocytosis. Normal result does not exclude
+mast cell disorders if clinical suspicion is high, as tryptase may
+be normal between episodes.

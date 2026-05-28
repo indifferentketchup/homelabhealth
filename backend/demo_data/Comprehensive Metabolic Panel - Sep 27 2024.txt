@@ -1,0 +1,31 @@
+QUEST DIAGNOSTICS
+Final Report
+
+Patient: TAYLOR, ALEX                    DOB: 06/12/1990
+Accession: Q9927-44822                   Collected: 09/27/2024 0742
+Ordering: DR. MARTINEZ, ELENA            Received:  09/27/2024 0915
+                                         Reported:  09/27/2024 1430
+
+TEST                          RESULT     FLAG    REFERENCE RANGE    UNITS
+---------------------------------------------------------------------------
+COMPREHENSIVE METABOLIC PANEL
+
+Glucose                        142        H       70-100           mg/dL
+BUN                             16                7-20             mg/dL
+Creatinine                     0.92               0.60-1.20        mg/dL
+eGFR                           >90                >60              mL/min
+Sodium                         140                136-145          mmol/L
+Potassium                      4.3                3.5-5.1          mmol/L
+Chloride                       102                98-106           mmol/L
+CO2                             24                20-29            mmol/L
+Calcium                        9.4                8.6-10.2         mg/dL
+Total Protein                  7.1                6.0-8.3          g/dL
+Albumin                        4.2                3.5-5.0          g/dL
+Total Bilirubin                0.8                0.1-1.2          mg/dL
+Alkaline Phosphatase            72                44-147           U/L
+AST (SGOT)                      22                10-40            U/L
+ALT (SGPT)                      28                7-56             U/L
+
+Comment: Fasting glucose elevated at 142 mg/dL. Consistent with
+diabetes management. Recommend correlation with HbA1c. Renal function
+within normal limits.

@@ -7,7 +7,7 @@ Phase numbering renumbers slightly so AI / Security / Safeguards each get
 their own track but interleave on a single dependency graph.
 
 Owner: Sam
-Last updated: 2026-05-28 (`v1.0.0` — public release)
+Last updated: 2026-05-28 (`v1.1.0` — smart orchestra bootstrap)
 
 -----
 
@@ -33,6 +33,8 @@ Three tracks. Phases interleave by dependency, not by track.
 
 ```
 Shipped releases (most recent → oldest):
+  v1.1.0    smart orchestra bootstrap + demo data overhaul (2026-05-28)
+  v1.0.0    public release (2026-05-28)
   v0.26.0   architecture.md + agent docs + stale doc sync (2026-05-25)
   v0.25.0   two-pass vision + timeouts + STT defer + ship-to-friend clear (2026-05-25)
   v0.24.0   token tracking + auto-compaction + context indicator (2026-05-25)
@@ -89,9 +91,10 @@ Phase track in summary:
 **Ship-ready gate** = every security + safeguard phase shipped + tagged,
 built-in auth working, key auto-generation working, setup wizard tested.
 
-**Latest release:** `v1.0.0` (2026-05-28). See `CHANGELOG.md` for the per-tag rundown.
+**Latest release:** `v1.1.0` (2026-05-28). See `CHANGELOG.md` for the per-tag rundown.
 
-**Active work:** none. All roadmap phases shipped. v1.0.0 tagged 2026-05-28.
+**Active work:** none. All roadmap phases shipped. v1.0.0 tagged 2026-05-28;
+v1.1.0 added smart bootstrap (single `docker run`) and demo data overhaul.
 
 -----
 

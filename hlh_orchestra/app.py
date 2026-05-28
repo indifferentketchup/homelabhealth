@@ -1,7 +1,11 @@
-"""hlh_orchestra — minimal Docker container manager for vision lifecycle.
+"""hlh_orchestra — Docker container manager + smart bootstrap.
 
-SCOPE: Can ONLY start/stop hlh_vision_embed. Hardcoded allowlist —
-adding containers requires a code change + image rebuild.
+SCOPE for the vision lifecycle API: can ONLY start/stop hlh_vision_embed.
+Hardcoded allowlist — adding containers requires a code change + image rebuild.
+
+The container is also the smart-bootstrap entry point when the env var
+HLH_BOOTSTRAP=1 is set: it brings up the entire stack before starting the
+FastAPI server. See bootstrap.py.
 """
 
 from __future__ import annotations
@@ -19,6 +23,14 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger("orchestra")
 
 ALLOWED_CONTAINERS = frozenset({"hlh_vision_embed"})
+
+# Bootstrap mode: bring up the full stack and harvest the orchestra token
+# from the generated secrets file before the FastAPI server starts.
+if os.environ.get("HLH_BOOTSTRAP") == "1":
+    import bootstrap
+    secrets_dict = bootstrap.run()
+    os.environ["ORCHESTRA_TOKEN"] = secrets_dict["ORCHESTRA_TOKEN"]
+
 ORCHESTRA_TOKEN = os.environ.get("ORCHESTRA_TOKEN", "")
 if not ORCHESTRA_TOKEN:
     raise SystemExit("ORCHESTRA_TOKEN env var is required")

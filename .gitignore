@@ -49,3 +49,6 @@ docs/operator/advanced/*
 
 # Claude Code
 .claude/
+
+# Codecontext (local tooling artifact)
+.codecontextignore

@@ -1,0 +1,37 @@
+QUEST DIAGNOSTICS
+Final Report
+
+Patient: TAYLOR, ALEX                    DOB: 06/12/1990
+Accession: Q9927-44821                   Collected: 09/27/2024 0742
+Ordering: DR. MARTINEZ, ELENA            Received:  09/27/2024 0915
+                                         Reported:  09/27/2024 1423
+
+TEST                          RESULT     FLAG    REFERENCE RANGE    UNITS
+---------------------------------------------------------------------------
+CBC WITH DIFFERENTIAL
+
+WBC                            6.8                3.8-10.8         x10^3/uL
+RBC                            4.12       L       4.20-5.80        x10^6/uL
+Hemoglobin                    11.2        L       12.0-16.0        g/dL
+Hematocrit                    34.1        L       36.0-46.0        %
+MCV                           82.8                80.0-100.0       fL
+MCH                           27.2                27.0-33.0        pg
+MCHC                          32.8                32.0-36.0        g/dL
+RDW                           15.8        H       11.5-14.5        %
+Platelet Count                245                 150-400          x10^3/uL
+MPV                            9.4                7.5-12.5         fL
+
+DIFFERENTIAL
+Neutrophils %                  58                  40-70            %
+Lymphocytes %                  31                  20-45            %
+Monocytes %                     7                  2-10             %
+Eosinophils %                   3                  0-6              %
+Basophils %                     1                  0-2              %
+Neutrophils Abs               3.94                 1.50-7.80       x10^3/uL
+Lymphocytes Abs               2.11                 0.85-3.90       x10^3/uL
+Monocytes Abs                 0.48                 0.20-0.95       x10^3/uL
+Eosinophils Abs               0.20                 0.00-0.50       x10^3/uL
+Basophils Abs                 0.07                 0.00-0.20       x10^3/uL
+
+Comment: Low hemoglobin and hematocrit with elevated RDW. Pattern
+consistent with iron deficiency. Recommend iron studies and ferritin.

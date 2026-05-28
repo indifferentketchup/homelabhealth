@@ -1,4 +1,4 @@
-"""Demo data loader: synthetic patient records for trying HLH.
+"""Demo data loader: synthetic health records for trying HLH.
 
 POST /api/demo/load    -- create a Demo workspace with synthea fixtures
 DELETE /api/demo/unload -- remove the Demo workspace and its records
@@ -49,6 +49,38 @@ def _fhir_bundle_to_text(data: dict) -> str:
             onset = r.get("onsetDateTime", "")
             if onset:
                 parts.append(f"Onset: {onset}")
+        elif rtype == "Observation":
+            codings = r.get("code", {}).get("coding", [])
+            display = codings[0].get("display", "Lab") if codings else "Lab"
+            vq = r.get("valueQuantity", {})
+            value = f"{vq.get('value', '')} {vq.get('unit', '')}".strip()
+            ref = r.get("referenceRange", [{}])[0].get("text", "") if r.get("referenceRange") else ""
+            date = r.get("effectiveDateTime", "")
+            line = f"Lab: {display} = {value}"
+            if ref:
+                line += f" (ref: {ref})"
+            if date:
+                line += f" [{date}]"
+            parts.append(line)
+        elif rtype == "DiagnosticReport":
+            codings = r.get("code", {}).get("coding", [])
+            display = codings[0].get("display", "Report") if codings else "Report"
+            conclusion = r.get("conclusion", "")
+            date = r.get("effectiveDateTime", "")
+            line = f"Report: {display}"
+            if date:
+                line += f" [{date}]"
+            parts.append(line)
+            if conclusion:
+                parts.append(f"  Findings: {conclusion}")
+        elif rtype == "MedicationStatement":
+            codings = r.get("medicationCodeableConcept", {}).get("coding", [])
+            med = codings[0].get("display", "Unknown") if codings else "Unknown"
+            dosage = r.get("dosage", [{}])[0].get("text", "") if r.get("dosage") else ""
+            line = f"Medication: {med}"
+            if dosage:
+                line += f" — {dosage}"
+            parts.append(line)
         else:
             parts.append(f"{rtype}: {json.dumps(r, indent=2)[:500]}")
     return "\n".join(parts)
@@ -69,7 +101,7 @@ async def load_demo(
         ws_id = await conn.fetchval(
             """
             INSERT INTO workspaces (name, description, system_prompt)
-            VALUES ($1, 'Synthetic patient records for demo purposes.', '')
+            VALUES ($1, 'Synthetic health records for demo purposes.', '')
             RETURNING id
             """,
             DEMO_WS_NAME,
@@ -79,9 +111,16 @@ async def load_demo(
         raise HTTPException(status_code=500, detail="demo data directory not found in image")
 
     loaded = 0
-    for f in sorted(DEMO_DIR.glob("*.json")):
-        data = json.loads(f.read_text())
-        text = _fhir_bundle_to_text(data)
+    from routers.sources import _ingest_source
+
+    for f in sorted(DEMO_DIR.iterdir()):
+        if f.suffix == ".json":
+            data = json.loads(f.read_text())
+            text = _fhir_bundle_to_text(data)
+        elif f.suffix == ".txt":
+            text = f.read_text()
+        else:
+            continue
         if not text.strip():
             continue
 
@@ -94,10 +133,9 @@ async def load_demo(
                                      file_size_bytes, embedding_status)
                 VALUES ($1::uuid, $2::uuid, $3, 'txt', 'text/plain', $4, 'pending')
                 """,
-                source_id, ws_id, f.stem.replace("_", " ").title(), len(raw),
+                source_id, ws_id, f.stem, len(raw),
             )
 
-        from routers.sources import _ingest_source
         asyncio.create_task(_ingest_source(source_id, ws_id, raw, "text/plain", f.stem))
         loaded += 1
 

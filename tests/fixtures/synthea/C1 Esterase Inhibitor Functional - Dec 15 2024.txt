@@ -1,0 +1,16 @@
+QUEST DIAGNOSTICS
+Final Report
+
+Patient: TAYLOR, ALEX                    DOB: 06/12/1990
+Accession: Q1215-52088                   Collected: 12/15/2024 0900
+Ordering: DR. PATEL, RAVI (ALLERGY/IMMUNOLOGY)
+                                         Reported:  12/19/2024 1415
+
+TEST                          RESULT     FLAG    REFERENCE RANGE    UNITS
+---------------------------------------------------------------------------
+
+C1 Esterase Inhibitor           62        L       70-130           %
+  (Functional), Serum
+
+C1 esterase inhibitor functional activity is below reference range.
+Please correlate with clinical presentation.
