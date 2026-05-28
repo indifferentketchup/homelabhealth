@@ -18,6 +18,40 @@ live under the `snapshot/` namespace.
 
 ---
 
+## [v1.1.0] — 2026-05-28
+
+### Infrastructure
+- **Smart bootstrap (single `docker run`)** — `hlh_orchestra` now doubles as a
+  bootstrap entrypoint when started with `HLH_BOOTSTRAP=1`. It creates
+  networks, volumes, generates `HLH_MASTER_KEY` and `ORCHESTRA_TOKEN`, pulls
+  every image, and starts the stack in dependency order. Auto-detects GPU.
+  Eliminates the clone + `.env` + compose flow for end users — one command
+  on a fresh host brings the whole stack up. Compose workflow remains
+  available for contributors and existing installs.
+  New modules: `hlh_orchestra/bootstrap.py`, `hlh_orchestra/templates/`
+  (baked-in `models.ini` and `searxng_settings.yml`), `hlh_orchestra/entrypoint.sh`.
+
+### Demo
+- **Demo data overhauled** — replaced two FHIR JSON bundles framed as a
+  doctor's patient list (Jane Doe, John Smith) with twelve individual
+  scanned-report-style text files for one synthetic person (Alex Taylor):
+  CBC, CMP, TSH, lipid panel, A1c, complement panel, tryptase, MRI brain,
+  CTA head, abdominal US. Each file looks like what a real upload from a
+  patient portal would contain.
+- Demo loader (`routers/demo.py`) now handles `.txt` files in addition to
+  FHIR JSON.
+
+### Docs
+- `architecture.md` updated: `hlh_vision_embed` + `hlh_orchestra` rows added
+  to the container topology, `hlh_config` + `hlh_vision_cache` volumes
+  documented, smart-bootstrap note added.
+- `CLAUDE.md` Conventions section gained eight entries from session learnings
+  (reasoning strip fallback, durable-stream resume, vision_embed upsert,
+  GHCR token gotcha, etc.).
+- New design doc: `docs/superpowers/specs/2026-05-28-smart-orchestra-bootstrap-design.md`.
+
+---
+
 ## [v1.0.0] — 2026-05-28
 
 ### UX

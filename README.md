@@ -10,7 +10,23 @@ Roadmap: [docs/roadmap.md](docs/roadmap.md). Architecture: [docs/architecture.md
 
 ## Quickstart
 
-**Option A: Pull pre-built images (recommended)**
+**Option A: One command (smart bootstrap)**
+
+```bash
+docker run --rm -it \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -e HLH_BOOTSTRAP=1 \
+  ghcr.io/indifferentketchup/hlh_orchestra:latest
+# Open http://localhost:9604
+```
+
+The orchestra container creates networks and volumes, generates encryption
+keys, pulls every other image, and starts the stack in dependency order.
+Auto-detects GPU. Stays running as the lifecycle manager — `Ctrl-C` stops it
+(other containers keep running independently). Re-run the same command to
+pick up where you left off.
+
+**Option B: Compose (clone + edit config)**
 
 ```bash
 git clone https://git.indifferentketchup.com/indifferentketchup/homelabhealth.git
@@ -20,7 +36,7 @@ docker compose up -d
 # Open http://localhost:9604
 ```
 
-**Option B: Build from source (contributors)**
+**Option C: Build from source (contributors)**
 
 ```bash
 cd homelabhealth
@@ -28,7 +44,7 @@ cp .env.example .env
 docker compose up --build -d
 ```
 
-The frontend build needs ~1.5 GB RAM. Use Option A on low-memory hosts.
+The frontend build needs ~1.5 GB RAM. Use Option A or B on low-memory hosts.
 
 First launch walks you through setup: create your account, pick a hardware tier, and the system pulls the right models automatically.
 

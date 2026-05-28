@@ -1,0 +1,65 @@
+# Bundled SearXNG for homelabhealth — internal-only, JSON API enabled.
+# Spec: docs/superpowers/specs/2026-05-22-bundled-system-takes-everything-design.md (search addendum)
+# The image's entrypoint substitutes ${SEARXNG_SECRET_KEY} at boot.
+
+use_default_settings: true
+
+general:
+  instance_name: "HomeLab Health · Search"
+  privacypolicy_url: false
+  donation_url: false
+  contact_url: false
+  enable_metrics: false
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "en"
+  formats:
+    - html
+    - json     # required for hlh_api's POST /api/search calls
+
+server:
+  secret_key: "${SEARXNG_SECRET_KEY}"
+  limiter: false
+  image_proxy: false
+  port: 8080
+  bind_address: "0.0.0.0"
+  base_url: false
+  public_instance: false
+  default_http_headers:
+    X-Content-Type-Options: nosniff
+    X-Download-Options: noopen
+    X-Robots-Tag: noindex, nofollow
+    Referrer-Policy: no-referrer
+
+ui:
+  static_use_hash: true
+  default_theme: simple
+  theme_args:
+    simple_style: auto
+
+# Engines listed match AVAILABLE_ENGINES in SearchSettingsTab.jsx so the UI's
+# toggle list is meaningful. Per-engine `disabled: false` overrides the default
+# (some engines like brave/mojeek ship disabled in the upstream defaults).
+engines:
+  - name: wikipedia
+    disabled: false
+  - name: brave
+    disabled: false
+  - name: mojeek
+    disabled: false
+  - name: startpage
+    disabled: false
+  - name: qwant
+    disabled: false
+  - name: presearch
+    disabled: false
+  - name: marginalia
+    disabled: false
+  - name: github
+    disabled: false
+  - name: arxiv
+    disabled: false
+  - name: pubmed
+    disabled: false

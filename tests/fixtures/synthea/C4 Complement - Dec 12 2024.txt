@@ -1,0 +1,14 @@
+QUEST DIAGNOSTICS
+Final Report
+
+Patient: TAYLOR, ALEX                    DOB: 06/12/1990
+Accession: Q1212-51903                   Collected: 12/12/2024 0830
+Ordering: DR. PATEL, RAVI (ALLERGY/IMMUNOLOGY)
+                                         Reported:  12/13/2024 0912
+
+TEST                          RESULT     FLAG    REFERENCE RANGE    UNITS
+---------------------------------------------------------------------------
+
+C4, Complement                  12        L       14-40            mg/dL
+
+Low C4 complement level. Clinical correlation recommended.

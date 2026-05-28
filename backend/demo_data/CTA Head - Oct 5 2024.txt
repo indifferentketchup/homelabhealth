@@ -1,0 +1,38 @@
+RADIOLOGY REPORT
+
+EXAM: CT ANGIOGRAPHY HEAD
+Date: 10/05/2024
+
+CLINICAL HISTORY: Recurrent headaches. Evaluate intracranial vasculature.
+
+TECHNIQUE: Helical CT angiography of the head was performed following
+IV contrast administration (75mL Omnipaque 350). 3D reformatted images
+were reviewed.
+
+COMPARISON: None.
+
+FINDINGS:
+
+Intracranial arteries: The internal carotid arteries, anterior cerebral
+arteries, middle cerebral arteries, and posterior cerebral arteries are
+patent without stenosis or occlusion. The basilar artery and vertebral
+arteries are normal in caliber.
+
+Circle of Willis: Complete and symmetric. No aneurysm identified
+(threshold 3mm).
+
+Venous structures: Superior sagittal sinus and transverse sinuses are
+patent.
+
+Brain parenchyma (limited evaluation): No acute hemorrhage or large
+territorial infarct. No midline shift.
+
+Calvarium: No fracture.
+
+IMPRESSION:
+1. No intracranial aneurysm, stenosis, or occlusion.
+2. Normal circle of Willis anatomy.
+3. No acute intracranial hemorrhage.
+
+Dictated by: DR. CHEN, WILLIAM (NEURORADIOLOGY)
+Electronically signed: 10/05/2024 1415

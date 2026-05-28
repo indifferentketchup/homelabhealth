@@ -1,0 +1,24 @@
+LABCORP
+Patient Report
+
+Name: TAYLOR, ALEX                       MRN: 449281
+DOB: 06/12/1990                           Acct#: LC-20241115-8813
+Physician: MARTINEZ, ELENA MD
+
+Specimen collected: 11/15/2024 (fasting)
+Report date:        11/15/2024
+
+TEST                          RESULT     FLAG    REFERENCE RANGE    UNITS
+---------------------------------------------------------------------------
+LIPID PANEL
+
+Total Cholesterol              218        H       <200 desirable   mg/dL
+Triglycerides                  165        H       <150             mg/dL
+HDL Cholesterol                 42        L       >40              mg/dL
+LDL Cholesterol (calc)         143        H       <100 optimal     mg/dL
+VLDL Cholesterol (calc)         33                 5-40            mg/dL
+Total Chol/HDL Ratio           5.2        H       <5.0
+
+Comment: LDL above optimal range. Consider statin therapy per
+AHA/ACC guidelines given diabetes and hypertension comorbidities.
+Discuss with provider.

@@ -1,0 +1,30 @@
+LABCORP
+Patient Report
+
+Name: TAYLOR, ALEX                       MRN: 449281
+DOB: 06/12/1990                           Acct#: LC-20241115-8812
+Physician: MARTINEZ, ELENA MD
+
+Specimen collected: 11/15/2024
+Specimen received:  11/15/2024
+Report date:        11/15/2024
+
+TEST                          RESULT     FLAG    REFERENCE RANGE    UNITS
+---------------------------------------------------------------------------
+
+Hemoglobin A1c                 7.2        H       4.0-5.6          %
+Est. Average Glucose           160                                 mg/dL
+
+   A1c       Est. Avg Glucose    Interpretation
+   <5.7%                         Normal
+   5.7-6.4%                      Increased risk for diabetes
+   >=6.5%                        Consistent with diabetes
+
+   ADA recommended A1c goal for most adults with diabetes: <7.0%
+
+Previous A1c results on file:
+   05/10/2024:  7.5%
+   11/22/2023:  7.8%
+   05/15/2023:  8.1%
+
+Trend: improving
