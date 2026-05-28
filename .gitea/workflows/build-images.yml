@@ -1,0 +1,60 @@
+name: Build and Publish Images
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: hlh_api
+            context: ./backend
+            file: ./backend/Dockerfile
+          - name: hlh_ui
+            context: ./frontend
+            file: ./frontend/Dockerfile
+            args: VITE_OG_TITLE=homelabhealth,VITE_OG_DESCRIPTION=Self-hosted RAG chat for personal health records.
+          - name: hlh_orchestra
+            context: ./hlh_orchestra
+            file: ./hlh_orchestra/Dockerfile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve tags
+        id: meta
+        run: |
+          REG="${{ secrets.GITEA_REGISTRY_HOST }}"
+          OWNER="indifferentketchup"
+          IMG="${REG}/${OWNER}/${{ matrix.name }}"
+          VERSION="${GITHUB_REF_NAME:-latest}"
+          echo "image=${IMG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to registry
+        run: |
+          echo "${{ secrets.GITEA_REGISTRY_TOKEN }}" | \
+            docker login "${{ secrets.GITEA_REGISTRY_HOST }}" \
+              -u "${{ secrets.GITEA_REGISTRY_USER }}" --password-stdin
+
+      - name: Build and push
+        run: |
+          BUILD_ARGS=""
+          if [ -n "${{ matrix.args }}" ]; then
+            for arg in $(echo "${{ matrix.args }}" | tr ',' ' '); do
+              BUILD_ARGS="$BUILD_ARGS --build-arg $arg"
+            done
+          fi
+          docker build \
+            -t "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}" \
+            -t "${{ steps.meta.outputs.image }}:latest" \
+            -f "${{ matrix.file }}" \
+            $BUILD_ARGS \
+            "${{ matrix.context }}"
+          docker push "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}"
+          docker push "${{ steps.meta.outputs.image }}:latest"
