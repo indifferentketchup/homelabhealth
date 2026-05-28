@@ -33,6 +33,7 @@ const TIERS = [
     vision: '— (not available)',
     stt: 'whisper tiny',
     footprint: '~1.5 GB RAM peak · ~0.9 GB disk · 8K context',
+    diskGb: 1,
     detect: '<16 GB RAM, no GPU',
   },
   {
@@ -44,6 +45,7 @@ const TIERS = [
     vision: 'MedGemma 1.5 4B (mmproj)',
     stt: 'whisper base',
     footprint: '~4 GB RAM peak · ~2.8 GB disk · 8K context',
+    diskGb: 3,
     detect: '≥16 GB RAM, no GPU',
   },
   {
@@ -55,6 +57,7 @@ const TIERS = [
     vision: 'MedGemma 1.5 4B (mmproj)',
     stt: 'whisper small',
     footprint: '~3.5 GB VRAM peak · ~2.8 GB disk · 32K context',
+    diskGb: 3,
     detect: '4–5 GB VRAM',
   },
   {
@@ -66,6 +69,7 @@ const TIERS = [
     vision: 'MedGemma 1.5 4B (mmproj)',
     stt: 'whisper small',
     footprint: '~6 GB VRAM peak · ~4.5 GB disk · 32K context',
+    diskGb: 5,
     detect: '6–11 GB VRAM',
   },
   {
@@ -77,6 +81,7 @@ const TIERS = [
     vision: 'MedGemma 27B (mmproj)',
     stt: 'whisper medium',
     footprint: '~16 GB VRAM peak · ~16 GB disk · 32K context',
+    diskGb: 16,
     detect: '12–23 GB VRAM',
   },
   {
@@ -88,6 +93,7 @@ const TIERS = [
     vision: 'MedGemma 27B (mmproj)',
     stt: 'whisper large',
     footprint: '~18 GB VRAM peak · ~18 GB disk · 64K context',
+    diskGb: 18,
     detect: '≥24 GB VRAM',
   },
   {
@@ -99,6 +105,7 @@ const TIERS = [
     vision: 'Qwen2.5-VL MLX',
     stt: 'whisper.cpp Metal',
     footprint: '~12–16 GB unified · varies',
+    diskGb: 12,
     detect: 'Apple Silicon, ≥16 GB unified',
   },
   {
@@ -110,6 +117,7 @@ const TIERS = [
     vision: '—',
     stt: '—',
     footprint: 'No local model footprint',
+    diskGb: 0,
     detect: 'Operator chose external only',
   },
 ]
@@ -1056,6 +1064,22 @@ export default function SystemTab() {
           </p>
         </div>
       ) : null}
+
+      {/* Disk space warning */}
+      {(() => {
+        const tierMeta = TIERS.find((t) => t.id === selectedTier)
+        const diskFree = profile?.sysinfo_json?.disk_free_gb
+        const needed = tierMeta?.diskGb || 0
+        if (!needed || diskFree == null || diskFree >= needed + 5) return null
+        return (
+          <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-4">
+            <p className="text-sm text-yellow-700 dark:text-yellow-400">
+              This tier needs ~{needed} GB plus headroom. You have {diskFree} GB free.
+              The model download may fail. Free up space or pick a smaller tier.
+            </p>
+          </div>
+        )
+      })()}
 
       {/* Phase 1: Models sub-section — show bundled artifacts for the
           currently-selected tier (so the operator sees what would be pulled
