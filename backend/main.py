@@ -37,6 +37,7 @@ from routers.sources import router as sources_router
 from routers.audit import router as audit_router
 from routers.auth import router as auth_router
 from routers.vision_embed import router as vision_embed_router
+from routers.demo import router as demo_router
 
 import logging
 logging.basicConfig(level=logging.INFO)
@@ -137,6 +138,8 @@ async def _streaming_sweeper() -> None:
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     ensure_keys()       # first: ensure encryption keys are in os.environ
+    from services.key_manager import ensure_orchestra_token
+    ensure_orchestra_token()
     install_redactor()
     _warn_deprecated_env_vars()
     await init_pool()
@@ -321,6 +324,7 @@ api.include_router(sources_router, tags=["sources"])
 api.include_router(history_router, prefix="/history", tags=["history"])
 api.include_router(audit_router, prefix="/audit", tags=["audit"])
 api.include_router(vision_embed_router, prefix="/vision", tags=["vision"])
+api.include_router(demo_router, prefix="/demo", tags=["demo"])
 
 
 app.include_router(api)

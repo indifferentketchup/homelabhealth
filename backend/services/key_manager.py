@@ -100,3 +100,53 @@ def ensure_keys() -> None:
 
     if generated_any:
         _write_keys_file(file_keys)
+
+
+ENV_PATH = Path(os.environ.get("HLH_ENV_PATH", "/data/.env"))
+
+
+def ensure_orchestra_token() -> None:
+    """Generate ORCHESTRA_TOKEN in .env if absent.
+
+    Shared secret between hlh_api and hlh_orchestra. Both read it from
+    the compose environment, which sources .env. If absent on first
+    boot, generate a 32-byte hex token and write it. hlh_orchestra
+    picks it up on its next start.
+    """
+    if not ENV_PATH.exists():
+        return
+
+    lines: list[str] = []
+    try:
+        lines = ENV_PATH.read_text().splitlines(keepends=True)
+    except OSError:
+        return
+
+    for line in lines:
+        if line.startswith("ORCHESTRA_TOKEN="):
+            val = line.split("=", 1)[1].strip()
+            if val:
+                os.environ.setdefault("ORCHESTRA_TOKEN", val)
+                return
+
+    token = secrets.token_hex(32)
+    new_lines = []
+    replaced = False
+    for line in lines:
+        if line.startswith("ORCHESTRA_TOKEN="):
+            new_lines.append(f"ORCHESTRA_TOKEN={token}\n")
+            replaced = True
+        else:
+            new_lines.append(line)
+    if not replaced:
+        new_lines.append(f"ORCHESTRA_TOKEN={token}\n")
+
+    tmp = str(ENV_PATH) + ".tmp"
+    with open(tmp, "w") as f:
+        f.writelines(new_lines)
+    os.replace(tmp, str(ENV_PATH))
+    os.environ["ORCHESTRA_TOKEN"] = token
+    logger.info(
+        "key_manager: ORCHESTRA_TOKEN auto-generated. "
+        "Restart hlh_orchestra to enable vision: docker compose restart hlh_orchestra"
+    )
