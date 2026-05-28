@@ -10,7 +10,7 @@ confer any protection or authorization.
 ## At your own risk
 
 Any security research on homelabhealth is conducted at the researcher's own risk. Research must be
-performed against the researcher's own deployments only — instances the researcher has provisioned,
+performed against the researcher's own deployments only: instances the researcher has provisioned,
 controls, and has loaded exclusively with non-PHI test data.
 
 ## Not authorized by this document

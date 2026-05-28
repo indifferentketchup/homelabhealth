@@ -62,20 +62,41 @@ async def fetch_router_state() -> list[dict[str, Any]]:
 
 async def fetch_vision_state() -> dict[str, Any]:
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(2.0)) as client:
-            r = await client.get(f"{VISION_URL}/health")
-            r.raise_for_status()
-            return {
-                "provider": "vision",
-                "id": "medsiglip",
-                "state": "loaded",
-                "ram_mib": MODEL_RAM_MIB["medsiglip"],
-            }
-    except Exception:
+        from services.vision_lifecycle import vision_status
+        s = await vision_status()
+        is_running = s.get("status") == "running"
+        is_loaded = False
+        if is_running:
+            try:
+                async with httpx.AsyncClient(timeout=httpx.Timeout(2.0)) as client:
+                    r = await client.get(f"{VISION_URL}/health")
+                    is_loaded = r.status_code == 200
+            except Exception:
+                pass
         return {
             "provider": "vision",
             "id": "medsiglip",
-            "state": "unloaded",
+            "state": "loaded" if is_loaded else "unloaded",
+            "ram_mib": MODEL_RAM_MIB["medsiglip"] if is_loaded else 0,
+            "last_used_ms": None,
+        }
+    except Exception:
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(2.0)) as client:
+                r = await client.get(f"{VISION_URL}/health")
+                if r.status_code == 200:
+                    return {
+                        "provider": "vision",
+                        "id": "medsiglip",
+                        "state": "loaded",
+                        "ram_mib": MODEL_RAM_MIB["medsiglip"],
+                    }
+        except Exception:
+            pass
+        return {
+            "provider": "vision",
+            "id": "medsiglip",
+            "state": "unknown",
             "ram_mib": 0,
         }
 

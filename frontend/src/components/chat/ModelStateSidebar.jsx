@@ -1,32 +1,51 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { cn } from '@/lib/utils'
 
 export default function ModelStateSidebar({ className }) {
   const [state, setState] = useState(null)
+  const [stopping, setStopping] = useState(false)
+
+  const fetchState = useCallback(async () => {
+    try {
+      const r = await fetch('/api/inference/state')
+      if (!r.ok) return
+      const data = await r.json()
+      setState(data)
+    } catch {
+      /* ignore */
+    }
+  }, [])
 
   useEffect(() => {
     let stopped = false
-    async function poll() {
-      try {
-        const r = await fetch('/api/inference/state')
-        if (!r.ok) return
-        const data = await r.json()
-        if (!stopped) setState(data)
-      } catch {
-        /* ignore */
-      }
-    }
+    const poll = () => { if (!stopped) fetchState() }
     poll()
     const id = setInterval(poll, 3000)
     return () => { stopped = true; clearInterval(id) }
-  }, [])
+  }, [fetchState])
+
+  async function handleForceStop() {
+    if (!window.confirm('Stop vision container? It will restart on the next image request.')) return
+    setStopping(true)
+    try {
+      const r = await fetch('/api/inference/vision/stop', { method: 'POST' })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      await fetchState()
+    } catch (e) {
+      console.error('force stop failed', e)
+    } finally {
+      setStopping(false)
+    }
+  }
 
   if (!state) return null
 
   const { tier, budget_mib, loaded_ram_mib, budget_pct, models } = state
   const loaded = models.filter((m) => m.state === 'loaded')
   const sleeping = models.filter((m) => m.state === 'sleeping')
+  const unloaded = models.filter((m) => m.state === 'unloaded' && m.id === 'medsiglip')
+  const unknown = models.filter((m) => m.state === 'unknown')
 
   const barState = budget_pct > 90 ? 'critical' : budget_pct > 70 ? 'warn' : 'ok'
   const barColor = {
@@ -60,6 +79,17 @@ export default function ModelStateSidebar({ className }) {
             <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" />
             <span className="flex-1 text-foreground">{m.id}</span>
             <span className="text-[10px] text-muted-foreground">{(m.ram_mib / 1024).toFixed(1)}G</span>
+            {m.id === 'medsiglip' && (
+              <button
+                type="button"
+                onClick={handleForceStop}
+                disabled={stopping}
+                className="ml-1 rounded border border-border px-1 text-[10px] leading-snug text-muted-foreground hover:border-destructive hover:text-destructive disabled:opacity-50"
+                title="Stop vision to free memory"
+              >
+                {stopping ? '...' : '✕'}
+              </button>
+            )}
           </li>
         ))}
         {sleeping.map((m) => (
@@ -69,7 +99,21 @@ export default function ModelStateSidebar({ className }) {
             <span className="text-[10px]">sleep</span>
           </li>
         ))}
-        {loaded.length === 0 && sleeping.length === 0 && (
+        {unloaded.map((m) => (
+          <li key={`${m.provider}-${m.id}`} className="flex items-center gap-1.5 text-muted-foreground">
+            <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/30" />
+            <span className="flex-1">{m.id}</span>
+            <span className="text-[10px]" title="Starts on first image request">on-demand</span>
+          </li>
+        ))}
+        {unknown.map((m) => (
+          <li key={`${m.provider}-${m.id}`} className="flex items-center gap-1.5 text-muted-foreground">
+            <span className="size-1.5 shrink-0 rounded-full bg-yellow-500" />
+            <span className="flex-1">{m.id}</span>
+            <span className="text-[10px]">unavailable</span>
+          </li>
+        ))}
+        {loaded.length === 0 && sleeping.length === 0 && unloaded.length === 0 && unknown.length === 0 && (
           <li className="italic text-muted-foreground">No models loaded</li>
         )}
       </ul>

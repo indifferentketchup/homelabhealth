@@ -194,10 +194,11 @@ def main() -> int:
 
     banner("Bring up hlh_chat with the pulled model")
     # COMPOSE_PROFILES=chat is in .env; just `up -d hlh_chat`.
+    _project_root = str(Path(__file__).resolve().parents[2])
     subprocess.run(
         ["docker", "compose", "up", "-d", "hlh_chat"],
         check=True, capture_output=True, text=True,
-        cwd="/home/samkintop/opt/homelabhealth",
+        cwd=_project_root,
     )
     # Wait for healthcheck.
     t0 = time.time()

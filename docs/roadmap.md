@@ -244,8 +244,8 @@ Policy reversal from the original roadmap's "NOT doing" list.
   "sensible defaults, no foot-guns").
 
 **Rationale:** the original "operator picks explicitly" stance
-assumed an operator who wanted control. The friend deployment is the
-opposite case — she wants it to just work. The lockdown removes
+assumed an operator who wanted control. Non-maintainer deployments are the
+opposite case — the user wants it to just work. The lockdown removes
 configuration surface area, which removes ways to break it.
 
 **Reversibility:** revert is a frontend-only change (re-enable the
@@ -280,8 +280,8 @@ is entered.
   - `hf_token` — DB-stored token OR `HF_TOKEN` env present.
 
   **Deferred-to-later checks** (per spec §2 non-goals):
-  `HLH_MASTER_KEY` (lands with C6), Authelia reachability (Sam-
-  specific), LUKS / backrest snapshot freshness (defer to C1).
+  `HLH_MASTER_KEY` (lands with C6), reverse-proxy reachability
+  (operator-specific), LUKS / backrest snapshot freshness (defer to C1).
 - Output: green/yellow/red per check + actionable remediation line.
   No PHI in output. Exits 0 (all green/yellow), 1 (any red).
 - `GET /api/system/doctor` endpoint — returns JSON equivalent.
@@ -424,8 +424,8 @@ ground responses against current web results without operator setup.
 - **No UI confirmation modal yet.** Threat-model entry in
   `THREATMODEL.md` at C0 ship will document the PHI-in-query risk;
   the modal proposed in the diff lands then.
-- **Friend default deferred.** When the friend-deployment work picks
-  up, decide whether to gate search behind the first-launch ack
+- **Non-maintainer default deferred.** When onboarding non-maintainer
+  operators, decide whether to gate search behind the first-launch ack
   modal (A1.7) or keep it on.
 
 **Known posture risk:** operator search queries reach third-party
@@ -496,8 +496,8 @@ remains the next-up safeguards work.
 - Same sidecar serves C7 (LLM I/O guardrails — prompt injection,
   token limit, PII input scanning).
 
-**Gate:** must land before any external exposure (friend deployment
-or public release). Same sidecar as C7 — ship once.
+**Gate:** must land before any external exposure (non-maintainer
+deployments or public release). Same sidecar as C7 — ship once.
 
 ### `v0.13.0` — UI disclaimers + crisis card (roadmap code: B2)
 
@@ -528,9 +528,9 @@ Depends on C4 (audit logging infrastructure).
 
 ### B4 — Red-team eval — **deferred indefinitely** (2026-05-23)
 
-Per the 2026-05-23 MVP defer pass: deferred indefinitely. Friend is on LAN
-behind Authelia; real risk is operator error, not adversarial prompts at
-scale. Revisit if posture changes (public release, multi-user, untrusted
+Per the 2026-05-23 MVP defer pass: deferred indefinitely. Current deployments
+are auth-protected single-user; real risk is operator error, not adversarial
+prompts at scale. Revisit if posture changes (public release, multi-user, untrusted
 operators). Spec below is preserved for that contingency.
 
 Original intent:
@@ -571,7 +571,7 @@ doc. Shipped in `v0.10.0` (2026-05-22) — three doctor checks
 The three checks ship as **advanced/optional** —
 docs relocated under `docs/operator/advanced/`, and checks adjusted
 so they never produce ERROR status (downgraded ERROR cases to
-WARN). MVP friend deployment is on LAN behind Authelia; LUKS +
+WARN). Current deployments are auth-protected; LUKS +
 backrest are operator-prudence, not blockers. C6 (`HLH_MASTER_KEY`)
 still gates column encryption when that lands.
 
@@ -618,8 +618,8 @@ for SSN/NPI/DEA/MRN/dates/ZIP/IP/MAC), Layer B (clinical NER —
 
 Integration:
 
-- Pre-write redactor (optional, off by default for Sam, **on** by
-  default for friend deployment — env-defaulted).
+- Pre-write redactor (optional, off by default for maintainer, **on** by
+  default for new deployments — env-defaulted).
 - Pre-inference redactor (off for local llama-swap, on for any
   external provider).
 - Log scrubber upgrade: S3’s regex replaced by Presidio pipeline.
@@ -654,7 +654,7 @@ with B1), hallucinated identifiers.
 
 ### Supply chain + ops (roadmap code: C8) — **deferred indefinitely** (2026-05-23)
 
-**Defer rationale:** friend is on LAN behind Authelia, not a CVE target.
+**Defer rationale:** current deployments are auth-protected and private, not a CVE target.
 Real risk is operator error, not a Postgres CVE or a malicious npm dep
 landing in the bundled stack. The five C8 items (trivy + pip-audit + npm
 audit + syft SBOM + Renovate + SOPS + age for `.env`) are all defenses
@@ -786,9 +786,9 @@ Resolve at the phase where they become blocking.
   manual-download flow.
 - **A4 Q:** STT input transcode browser-side vs `hlh_api`-side.
 - **A5 Q:** dedicated OCR needed at all? End-of-A3 eval decides.
-- **A7 Q:** search egress posture for friend deployment. Shipped
-  default-on. Revisit if she finds it confusing, if PHI-in-query
-  incidents occur, or at A1.7 when first-launch ack lands.
+- **A7 Q:** search egress posture for non-maintainer deployments.
+  Shipped default-on. Revisit if operators find it confusing, if
+  PHI-in-query incidents occur, or at A1.7 when first-launch ack lands.
 - **B1 Q:** llm-guard scanner threshold tuning. Iterate via B4 eval
   history.
 - **B2 Q:** crisis hotline numbers per locale. Friend is US; expand

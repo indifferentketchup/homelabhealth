@@ -641,5 +641,6 @@ INSERT INTO global_settings (key, value) VALUES
     ('estimate_ms_rerank',            '300'),
     ('estimate_ms_rag_search',        '1500'),
     ('estimate_ms_chat_first_token',  '2000'),
-    ('estimate_ms_unload',            '500')
+    ('estimate_ms_unload',            '500'),
+    ('enforce_ram_budget',            'true')
 ON CONFLICT (key) DO NOTHING;

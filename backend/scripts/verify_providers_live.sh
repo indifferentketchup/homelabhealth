@@ -13,15 +13,21 @@ set -euo pipefail
 API="${API:-http://localhost:9600/api}"
 
 # GPU-host backends (tailnet-internal, no API key required).
-LLAMA_SWAP_URL="http://100.101.41.16:8401"
-INFINITY_EMB_URL="http://100.90.172.55:7997"
-INFINITY_RERANK_URL="http://100.90.172.55:7996"
+# Set these env vars to point at your own GPU host; defaults are empty → skip.
+LLAMA_SWAP_URL="${LLAMA_SWAP_URL:-}"
+INFINITY_EMB_URL="${INFINITY_EMB_URL:-}"
+INFINITY_RERANK_URL="${INFINITY_RERANK_URL:-}"
 BROKEN_URL="http://does-not-exist.invalid:9999"
 
+if [[ -z "$LLAMA_SWAP_URL" || -z "$INFINITY_EMB_URL" || -z "$INFINITY_RERANK_URL" ]]; then
+    echo "SKIP: LLAMA_SWAP_URL, INFINITY_EMB_URL, and INFINITY_RERANK_URL must all be set for live provider tests."
+    exit 0
+fi
+
 # Expected model ids on each backend.
-EXPECTED_CHAT_MODEL="qwen3.6-35b-a3b-mxfp4"
-EXPECTED_EMB_MODEL="harrier"
-EXPECTED_RRK_MODEL="qwen3-rerank"
+EXPECTED_CHAT_MODEL="${EXPECTED_CHAT_MODEL:-qwen3.6-35b-a3b-mxfp4}"
+EXPECTED_EMB_MODEL="${EXPECTED_EMB_MODEL:-harrier}"
+EXPECTED_RRK_MODEL="${EXPECTED_RRK_MODEL:-qwen3-rerank}"
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT

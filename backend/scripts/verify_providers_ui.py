@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import uuid
@@ -30,8 +31,12 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 UI_URL = os.environ.get("UI_URL", "http://localhost:9604")
-LLAMA_SWAP_URL = "http://100.101.41.16:8401"
+LLAMA_SWAP_URL = os.environ.get("LLAMA_SWAP_URL", "")
 CLEAR_KEY = "sk-STEP6-ZZZTESTREDACT-clearvalue-12345"
+
+if not LLAMA_SWAP_URL:
+    print("SKIP: LLAMA_SWAP_URL must be set for providers UI tests.")
+    sys.exit(0)
 
 EVID_DIR = Path("/tmp/step6-evidence")
 EVID_DIR.mkdir(parents=True, exist_ok=True)
@@ -105,11 +110,15 @@ def failbail(label: str, detail: str = "") -> None:
 def main() -> None:
     cleanup_db()
 
-    chrome_path = Path(
-        "/home/samkintop/.cache/ms-playwright/chromium-1217/chrome-linux64/chrome"
-    )
-    if not chrome_path.exists():
-        failbail("playwright chromium binary not found", str(chrome_path))
+    _chrome_env = os.environ.get("CHROMIUM_PATH", "")
+    chrome_path = Path(_chrome_env) if _chrome_env else None
+    if not chrome_path or not chrome_path.exists():
+        for candidate in (shutil.which("chromium"), shutil.which("google-chrome")):
+            if candidate:
+                chrome_path = Path(candidate)
+                break
+    if not chrome_path or not chrome_path.exists():
+        failbail("playwright chromium binary not found; set CHROMIUM_PATH env var")
 
     network_log: list[dict] = []
 

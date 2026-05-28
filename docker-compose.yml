@@ -106,9 +106,8 @@ services:
       - .env
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql://hlh:hlh@hlh_db:5432/hlh}
-      # Bundled SearXNG (hlh_search). Override SEARXNG_URL from .env so the
-      # operator can't accidentally point at a broken external instance.
       SEARXNG_URL: "http://hlh_search:8080"
+      ORCHESTRA_TOKEN: ${ORCHESTRA_TOKEN:-}
     depends_on:
       hlh_db:
         condition: service_healthy
@@ -164,6 +163,7 @@ services:
   hlh_vision_embed:
     <<: *infinity-base
     container_name: hlh_vision_embed
+    restart: "no"
     profiles: [vision]
     env_file:
       - .env
@@ -181,6 +181,37 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15m
+
+  # Phase 4: orchestra — minimal Docker container manager for vision lifecycle.
+  # Scoped to hlh_vision_embed only (hardcoded allowlist in app.py).
+  # Docker socket bind-mounted HERE only — hlh_api never touches it.
+  hlh_orchestra:
+    build:
+      context: ./hlh_orchestra
+      dockerfile: Dockerfile
+    container_name: hlh_orchestra
+    restart: unless-stopped
+    profiles: [vision]
+    environment:
+      ORCHESTRA_TOKEN: ${ORCHESTRA_TOKEN}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - hlh_default
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9620/health', timeout=2)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   # Phase 2: bundled SearXNG for web search. Internal-only on hlh_default.
   # JSON format is enabled via searxng/settings.yml (default config has it off,

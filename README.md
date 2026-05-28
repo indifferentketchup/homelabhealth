@@ -20,7 +20,7 @@ docker compose up --build -d
 
 First launch walks you through setup: create your account, pick a hardware tier, and the system pulls the right models automatically.
 
-**First boot:** the embedding sidecar (`hlh_infer`) downloads model weights from HuggingFace — `BAAI/bge-m3` + `BAAI/bge-reranker-v2-m3`, ~1-2 GB total. Expect 5-15 minutes before chat works end-to-end. After first boot, weights are cached in the `hlh_models` Docker volume.
+**First boot:** the chat router (`hlh_chat`) loads model weights on demand. Embedding (bge-m3) and reranking (bge-reranker-v2-m3) GGUFs are included in the models volume. Expect the first chat message to take 30-60 seconds while the model loads. After first load, models stay cached.
 
 **Doctor check:** `docker exec hlh_api python -m hlh.doctor` — shows DB, schema, sidecars, disk, encryption, vision, and more. Also at Settings → System → Pre-flight in the UI.
 
@@ -101,7 +101,7 @@ homelabhealth is a single-user homelab tool for personal medical records, MIT-li
 
 See [`SECURITY.md`](SECURITY.md), [`THREATMODEL.md`](THREATMODEL.md), [`docs/safe-harbor.md`](docs/safe-harbor.md), [`docs/breach-response.md`](docs/breach-response.md).
 
-Last reviewed: 2026-05-25.
+Last reviewed: 2026-05-28.
 
 ## License
 

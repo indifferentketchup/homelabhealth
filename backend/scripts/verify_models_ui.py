@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -39,7 +40,16 @@ from playwright.sync_api import sync_playwright
 UI = "http://localhost:9604"
 EVID_DIR = Path("/tmp/phase1-evidence")
 EVID_DIR.mkdir(parents=True, exist_ok=True)
-CHROMIUM = Path("/home/samkintop/.cache/ms-playwright/chromium-1217/chrome-linux64/chrome")
+
+_chrome_env = os.environ.get("CHROMIUM_PATH", "")
+CHROMIUM = Path(_chrome_env) if _chrome_env else None
+if not CHROMIUM or not CHROMIUM.exists():
+    for _candidate in (shutil.which("chromium"), shutil.which("google-chrome")):
+        if _candidate:
+            CHROMIUM = Path(_candidate)
+            break
+if not CHROMIUM:
+    CHROMIUM = Path("/dev/null")  # will fail at exists() check in main()
 
 TEST_TIER_ROW_REPO = "hf-internal-testing/tiny-random-bert"
 TEST_TIER_ROW_FILE = "config.json"

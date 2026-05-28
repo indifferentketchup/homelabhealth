@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import urllib.request
@@ -28,8 +29,12 @@ from playwright.sync_api import sync_playwright
 
 UI_URL = os.environ.get("UI_URL", "http://localhost:9604")
 API_URL = os.environ.get("API_URL", "http://localhost:9600")
-LLAMA_SWAP_URL = "http://100.101.41.16:8401"
-EXPECTED_CHAT_MODEL = "qwen3.6-35b-a3b-mxfp4"
+LLAMA_SWAP_URL = os.environ.get("LLAMA_SWAP_URL", "")
+EXPECTED_CHAT_MODEL = os.environ.get("EXPECTED_CHAT_MODEL", "qwen3.6-35b-a3b-mxfp4")
+
+if not LLAMA_SWAP_URL:
+    print("SKIP: LLAMA_SWAP_URL must be set for workspace provider picker tests.")
+    sys.exit(0)
 
 EVID_DIR = Path("/tmp/step8-evidence")
 EVID_DIR.mkdir(parents=True, exist_ok=True)
@@ -132,9 +137,15 @@ def main() -> None:
     uuid.UUID(chat_id)
     print(f"chat: {chat_id}")
 
-    chrome_path = Path(
-        "/home/samkintop/.cache/ms-playwright/chromium-1217/chrome-linux64/chrome"
-    )
+    _chrome_env = os.environ.get("CHROMIUM_PATH", "")
+    chrome_path = Path(_chrome_env) if _chrome_env else None
+    if not chrome_path or not chrome_path.exists():
+        for candidate in (shutil.which("chromium"), shutil.which("google-chrome")):
+            if candidate:
+                chrome_path = Path(candidate)
+                break
+    if not chrome_path or not chrome_path.exists():
+        failbail("playwright chromium binary not found; set CHROMIUM_PATH env var")
 
     with sync_playwright() as p:
         browser = p.chromium.launch(executable_path=str(chrome_path), headless=True)

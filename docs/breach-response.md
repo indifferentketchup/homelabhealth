@@ -1,19 +1,18 @@
 # Breach Response Playbook
 
-Operator playbook for a suspected compromise of the homelabhealth stack. Written for the single
-operator (Sam). Not a SOC runbook.
+Operator playbook for a suspected compromise of the homelabhealth stack. Not a SOC runbook.
 
 ---
 
-## Step 0 — Decide if this is a breach
+## Step 0: Decide if this is a breach
 
 Investigate before acting. Signals worth taking seriously:
 
 Unexpected outbound traffic from the host (check via `ss -tnp` or host-level firewall logs).
 Unfamiliar processes visible inside containers (`docker top hlh_api`, `docker top hlh_db`).
-Unexpected modifications to `bundled_models` or `providers` rows in the database — bundled rows
+Unexpected modifications to `bundled_models` or `providers` rows in the database: bundled rows
 should never change without an explicit `docker compose up --build`. Unexpected rows in
-`source_chunks` when C5 has not shipped — this table must stay empty until v0.17.0. Doctor
+`source_chunks` when C5 has not shipped: this table must stay empty until v0.17.0. Doctor
 pre-flight checks (`python -m hlh.doctor`) turning red on checks that were green at the last
 run, with no corresponding code change.
 
@@ -21,9 +20,9 @@ If in doubt, treat it as a breach and proceed to Step 1.
 
 ---
 
-## Step 1 — Isolate the host
+## Step 1: Isolate the host
 
-Stop the stack without removing volumes or network state — you want those intact for forensics:
+Stop the stack without removing volumes or network state: you want those intact for forensics:
 
 ```bash
 docker compose -f /opt/homelabhealth/docker-compose.yml stop
@@ -32,18 +31,14 @@ docker compose -f /opt/homelabhealth/docker-compose.yml stop
 Use `stop`, not `down`. Volumes and network interfaces survive `stop`; `down` removes them,
 destroying forensic state.
 
-If you suspect credential compromise — Tailscale node key, SSH key, or similar — disconnect
-from Tailscale before proceeding:
-
-```bash
-sudo tailscale down
-```
+If you suspect credential compromise (VPN key, SSH key, or similar), disconnect
+from your network overlay before proceeding.
 
 Do not reboot the host until you have completed Step 2.
 
 ---
 
-## Step 2 — Snapshot evidence before changing anything
+## Step 2: Snapshot evidence before changing anything
 
 Capture container logs and inspect data before any rotation, rebuild, or restart:
 
@@ -52,7 +47,7 @@ docker compose logs --no-color > /tmp/hlh-incident-$(date +%Y%m%d-%H%M%S)-compos
 ```
 
 ```bash
-docker inspect hlh_api hlh_chat hlh_infer hlh_search hlh_ui hlh_db \
+docker inspect hlh_api hlh_chat hlh_vision_embed hlh_orchestra hlh_search hlh_ui hlh_db \
   > /tmp/hlh-incident-$(date +%Y%m%d-%H%M%S)-inspect.json
 ```
 
@@ -75,9 +70,9 @@ git -C /opt/homelabhealth describe --tags
 
 ---
 
-## Step 3 — Rotate keys
+## Step 3: Rotate keys
 
-Rotate in dependency order — least-coupled first. Swapping a key while dependents still hold
+Rotate in dependency order: least-coupled first. Swapping a key while dependents still hold
 the old key causes service failures; follow this order.
 
 **1. HF_TOKEN.** Revoke the existing token at huggingface.co/settings/tokens. Generate a new
@@ -101,7 +96,7 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 ```
 
 Before swapping the env var, re-encrypt all existing encrypted rows using the new key. Swapping
-the env var without re-encryption bricks all stored secrets — the API cannot decrypt them with
+the env var without re-encryption bricks all stored secrets: the API cannot decrypt them with
 the new key. If you cannot re-encrypt safely, wipe the `providers` table and re-enter all keys
 after bringing the stack back up with the new key.
 
@@ -112,25 +107,24 @@ your slot count before proceeding (`cryptsetup luksDump`).
 **5. Backrest repo passphrase.** If backups may have been accessed or if the passphrase was
 co-located with the LUKS key, rotate the backrest repo passphrase and re-seal the repo.
 
-**6. Reverse-proxy auth credentials.** Rotate Authelia secrets, oauth2-proxy cookie secrets, or
-nginx basic auth passwords as appropriate for your setup. These are operator-owned and not managed
-by homelabhealth.
+**6. Reverse-proxy auth credentials.** Rotate any reverse-proxy secrets (oauth2-proxy cookie
+secrets, nginx basic auth passwords, etc.) as appropriate for your setup. These are operator-owned
+and not managed by homelabhealth.
 
 ---
 
-## Step 4 — Notify
+## Step 4: Notify
 
-**Sam-only deployment:** no third party requires notification. Record the incident for personal
-records (see Step 5).
+**Single-operator deployment:** no third party requires notification. Record the incident for
+personal records (see Step 5).
 
-**Friend deployment (when applicable):** notify the friend in writing. State what was exposed,
-when, what was rotated, and what she should do (re-enter her provider keys, regenerate any
-shared credentials, watch for downstream effects on any external accounts connected to providers
-she used). Do this within 72 hours of identifying the breach.
+**Multi-user deployment:** notify all affected users in writing. State what was exposed,
+when, what was rotated, and what they should do (re-enter provider keys, regenerate any
+shared credentials). Do this within 72 hours of identifying the breach.
 
 ---
 
-## Step 5 — Document the timeline
+## Step 5: Document the timeline
 
 Write a plain-text incident file:
 
@@ -149,11 +143,11 @@ Include:
 - Fix or patch landed (commit SHA or tag)
 
 Commit this file to a separate private repository. Do not commit it to the homelabhealth
-repository — it may reference credential rotation details or personal information.
+repository: it may reference credential rotation details or personal information.
 
 ---
 
-## Step 6 — Recover
+## Step 6: Recover
 
 Restore from the most recent pre-incident backrest snapshot if data integrity is in doubt.
 Verify the snapshot's timestamp against the incident timeline before restoring.
