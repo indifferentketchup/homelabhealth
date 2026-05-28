@@ -79,6 +79,35 @@ def _cors_origins() -> list[str]:
     return raw
 
 
+VISION_IDLE_TIMEOUT_MS = 30 * 60 * 1000
+
+
+async def _vision_idle_evictor() -> None:
+    """Stop vision container after 30min idle."""
+    import time as _time
+    while True:
+        await asyncio.sleep(60)
+        try:
+            from services.vision_lifecycle import vision_last_used_ms, stop_vision, vision_status
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                last = await vision_last_used_ms(conn)
+            if last == 0:
+                continue
+            idle_ms = _time.time() * 1000 - last
+            if idle_ms < VISION_IDLE_TIMEOUT_MS:
+                continue
+            status_data = await vision_status()
+            if status_data.get("status") != "running":
+                continue
+            logger.info("vision idle %.1fmin, stopping", idle_ms / 60000)
+            await stop_vision()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            pass
+
+
 async def _streaming_sweeper() -> None:
     """Mark streaming messages older than 5 minutes as failed (orphan cleanup)."""
     from db import get_pool
@@ -122,12 +151,18 @@ async def lifespan(_app: FastAPI):
             await bundled_providers.apply_bundled_bindings(conn, profile_row["tier"] or "external")
     logger.info("model_puller: seeded %d bundled_models rows", seeded)
     sweeper_task = asyncio.create_task(_streaming_sweeper())
+    evictor_task = asyncio.create_task(_vision_idle_evictor())
     try:
         yield
     finally:
         sweeper_task.cancel()
+        evictor_task.cancel()
         try:
             await sweeper_task
+        except asyncio.CancelledError:
+            pass
+        try:
+            await evictor_task
         except asyncio.CancelledError:
             pass
         await close_pool()

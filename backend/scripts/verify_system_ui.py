@@ -30,6 +30,8 @@ Run from project root:
 
 from __future__ import annotations
 
+import os
+import shutil
 import subprocess
 import sys
 import time
@@ -42,9 +44,15 @@ UI = "http://localhost:9604"
 EVID_DIR = Path("/tmp/phase0-evidence")
 EVID_DIR.mkdir(parents=True, exist_ok=True)
 
-CHROMIUM = Path(
-    "/home/samkintop/.cache/ms-playwright/chromium-1217/chrome-linux64/chrome"
-)
+_chrome_env = os.environ.get("CHROMIUM_PATH", "")
+CHROMIUM = Path(_chrome_env) if _chrome_env else None
+if not CHROMIUM or not CHROMIUM.exists():
+    for _candidate in (shutil.which("chromium"), shutil.which("google-chrome")):
+        if _candidate:
+            CHROMIUM = Path(_candidate)
+            break
+if not CHROMIUM:
+    CHROMIUM = Path("/dev/null")  # will fail at exists() check in main()
 
 
 def _psql(args: list[str]) -> str:

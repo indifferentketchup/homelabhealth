@@ -47,6 +47,48 @@ class ClassifyRequest(BaseModel):
     mime_type: str = Field(default="image/png")
 
 
+async def _check_vision_budget() -> None:
+    """Hard 503 if vision would exceed RAM budget (when enforce_ram_budget=true)."""
+    from services.model_inventory import get_inventory, MODEL_RAM_MIB
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT tier FROM system_profile WHERE id = 1")
+        tier = row["tier"] if row else "cpu-std"
+        enforce = await conn.fetchval(
+            "SELECT value FROM global_settings WHERE key = 'enforce_ram_budget'"
+        )
+    enforce = (enforce or "true").lower() == "true"
+    inv = await get_inventory(tier)
+    vision_ram = MODEL_RAM_MIB.get("medsiglip", 3800)
+    vision_already_loaded = any(
+        m["id"] == "medsiglip" and m["state"] == "loaded" for m in inv["models"]
+    )
+    if vision_already_loaded:
+        return
+    overflow = (inv["loaded_ram_mib"] + vision_ram) - inv["budget_mib"]
+    if overflow > 0:
+        if enforce:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": "ram_budget_exceeded",
+                    "message": (
+                        f"Vision would exceed RAM budget by {overflow} MiB. "
+                        "Stop a loaded model or disable enforce_ram_budget in settings."
+                    ),
+                    "loaded_ram_mib": inv["loaded_ram_mib"],
+                    "requested_ram_mib": vision_ram,
+                    "budget_mib": inv["budget_mib"],
+                    "tier": tier,
+                },
+            )
+        else:
+            logger.warning(
+                "vision start would exceed budget by %d MiB (enforce_ram_budget=false, proceeding)",
+                overflow,
+            )
+
+
 def _require_setup_complete():
     async def _check(_: dict[str, Any] = Depends(get_principal)):
         pool = await get_pool()
@@ -65,10 +107,16 @@ async def vision_embed(
     if not body.image and not body.text:
         raise HTTPException(status_code=400, detail="Provide either 'image' or 'text'")
     try:
+        await _check_vision_budget()
+        from services.vision_lifecycle import ensure_vision_running, mark_vision_used
+        await ensure_vision_running()
         if body.image:
             embedding = await embed_image(body.image, body.mime_type)
         else:
             embedding = await embed_text(body.text)
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await mark_vision_used(conn)
         return {"embedding": embedding, "dim": len(embedding)}
     except VisionEmbedError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
@@ -82,10 +130,16 @@ async def vision_search(
     if not body.image and not body.text:
         raise HTTPException(status_code=400, detail="Provide either 'image' or 'text'")
     try:
+        await _check_vision_budget()
+        from services.vision_lifecycle import ensure_vision_running, mark_vision_used
+        await ensure_vision_running()
         if body.image:
             embedding = await embed_image(body.image, body.mime_type)
         else:
             embedding = await embed_text(body.text)
+        pool_mark = await get_pool()
+        async with pool_mark.acquire() as conn_mark:
+            await mark_vision_used(conn_mark)
     except VisionEmbedError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
 
@@ -123,7 +177,13 @@ async def vision_classify(
     _: None = _require_setup_complete(),
 ):
     try:
+        await _check_vision_budget()
+        from services.vision_lifecycle import ensure_vision_running, mark_vision_used
+        await ensure_vision_running()
         classifications = await classify_image(body.image, body.labels, body.mime_type)
+        pool_mark = await get_pool()
+        async with pool_mark.acquire() as conn_mark:
+            await mark_vision_used(conn_mark)
         return {"classifications": classifications}
     except VisionEmbedError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
