@@ -133,14 +133,10 @@ async def ensure_bundled_providers(conn) -> dict[str, str] | None:
         conn, name=BUNDLED_RERANK_NAME, base_url=BUNDLED_RERANK_BASE_URL, role="rerank"
     )
 
-    vision_embed_id = None
-    if await _is_vision_sidecar_enabled():
-        vision_embed_id = await _upsert_bundled_row(
-            conn, name=BUNDLED_VISION_EMBED_NAME, base_url=BUNDLED_VISION_EMBED_BASE_URL, role="vision_embed"
-        )
-        logger.info("bundled_providers: vision sidecar reachable, seeded vision_embed=%s", vision_embed_id)
-    else:
-        logger.info("bundled_providers: vision sidecar not reachable, skipping vision_embed seed")
+    vision_embed_id = await _upsert_bundled_row(
+        conn, name=BUNDLED_VISION_EMBED_NAME, base_url=BUNDLED_VISION_EMBED_BASE_URL, role="vision_embed"
+    )
+    logger.info("bundled_providers: seeded vision_embed=%s", vision_embed_id)
 
     logger.info(
         "bundled_providers: ensured chat=%s embed=%s rerank=%s",

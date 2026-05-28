@@ -18,6 +18,64 @@ live under the `snapshot/` namespace.
 
 ---
 
+## [v1.0.0] — 2026-05-28
+
+### UX
+- **Inference tracker friendly names** — model IDs (`bge-m3`, `medsiglip`,
+  etc.) replaced with role-based labels (Search, Vision, Chat, etc.) with
+  hover tooltips showing the plain-English description and technical ID.
+- **Models table friendly roles** — Role column in Settings → System uses
+  the same friendly labels with tooltips. MedSigLIP row grayed out with
+  "Not available on this tier" when the current tier can't support it.
+- **Top bar shows workspace name** — model selector demoted to small
+  muted text; workspace name is the primary header.
+- **Model name on assistant messages** — "AI-generated" badge replaced
+  with "MedGemma AI" or "Qwen AI" based on the model that generated the
+  response.
+- **Crisis resources in sidebar** — always visible in the nav panel with
+  clickable phone numbers (988, Poison Control, 911). Collapses to a
+  phone icon when sidebar is collapsed.
+- **Live reasoning box** — thinking content streams in real time in an
+  open collapsible block with a pulsing "Reasoning…" indicator. Collapses
+  to "Show reasoning" after completion. Answer streams below.
+- **STT removed from tier cards** — whisper not implemented; removed
+  aspirational references.
+- **Vision Search in tier cards** — MedSigLIP availability shown per tier
+  (gpu-8gb+ only).
+
+### AI
+- **Reasoning strip rewrite** — replaced brittle hardcoded answer-start
+  patterns with paragraph-level heuristic that detects when thinking ends
+  and the user-facing answer begins. Falls back to showing raw text
+  instead of discarding the response.
+- **Streaming thinking filter** — `ThinkingStreamFilter` now emits
+  `<THINKING>` immediately on detection and streams content live, instead
+  of buffering silently. `</THINKING>` emitted on answer transition.
+- **Tier-filtered inference tracker** — sidebar only shows the chat model
+  for the active tier (no more duplicate "Chat" entries).
+
+### Infrastructure
+- **Thin-client resume** — refreshing the page or opening on another
+  device automatically reconnects to an in-progress durable stream.
+  `useDurableChat.resume()` detects `status: 'streaming'` messages on
+  mount and starts polling.
+- **Duplicate message fix** — optimistic user message dedup now checks
+  all messages, not just the last one. Streaming assistant placeholders
+  filtered from display during active inference.
+- **Blank response fix** — empty assistant bubble no longer renders
+  during durable streaming; server-side `status: 'streaming'` rows
+  filtered from `displayMessages` while busy.
+- **Vision embed provider lifecycle** — always seeded on boot regardless
+  of sidecar reachability; no more deletion/re-creation race.
+
+### Docs
+- README final pass — real clone URL, removed AGENTS.md reference,
+  version bumped to v1.0.0.
+- THREATMODEL.md review date updated, typo fixed.
+- Roadmap v1.0.0 checklist completed.
+
+---
+
 ## [v0.27.0] — 2026-05-26
 
 ### AI

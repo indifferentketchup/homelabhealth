@@ -14,7 +14,35 @@ import {
 } from '@/api/models.js'
 import { listProviders, testProvider } from '@/api/providers.js'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+
+const ROLE_DISPLAY = {
+  chat:         { label: 'Chat',      desc: 'Answers your questions using health context' },
+  tasks:        { label: 'Tasks',     desc: 'Handles background jobs like summarization' },
+  embed:        { label: 'Search',    desc: 'Converts text into vectors so documents can be found' },
+  rerank:       { label: 'Relevance', desc: 'Re-scores search results for accuracy' },
+  vision:       { label: 'Vision',    desc: 'Understands medical images for chat' },
+  vision_embed: { label: 'Vision Search', desc: 'Converts medical images into searchable vectors' },
+}
+
+function RoleCell({ role }) {
+  const display = ROLE_DISPLAY[role]
+  if (!display) return <span className="font-medium text-foreground">{role}</span>
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="font-medium text-foreground cursor-default border-b border-dotted border-muted-foreground/30">
+          {display.label}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top">
+        <p className="text-xs">{display.desc}</p>
+        <p className="font-mono text-[10px] text-muted-foreground mt-0.5">{role}</p>
+      </TooltipContent>
+    </Tooltip>
+  )
+}
 
 /**
  * Per-tier metadata for the picker.
@@ -31,7 +59,7 @@ const TIERS = [
     embed: 'bge-m3 (1024-dim)',
     rerank: 'bge-reranker-v2-m3',
     vision: '— (not available)',
-    stt: 'whisper tiny',
+    visionSearch: '— (not enough RAM)',
     footprint: '~1.5 GB RAM peak · ~0.9 GB disk · 8K context',
     diskGb: 1,
     detect: '<16 GB RAM, no GPU',
@@ -43,7 +71,7 @@ const TIERS = [
     embed: 'bge-large-en-v1.5 Q8',
     rerank: 'bge-reranker-base (CPU)',
     vision: 'MedGemma 1.5 4B (mmproj)',
-    stt: 'whisper base',
+    visionSearch: '— (not enough RAM)',
     footprint: '~4 GB RAM peak · ~2.8 GB disk · 8K context',
     diskGb: 3,
     detect: '≥16 GB RAM, no GPU',
@@ -55,7 +83,7 @@ const TIERS = [
     embed: 'bge-m3 (1024-dim)',
     rerank: 'bge-reranker-v2-m3',
     vision: 'MedGemma 1.5 4B (mmproj)',
-    stt: 'whisper small',
+    visionSearch: '— (not enough VRAM)',
     footprint: '~3.5 GB VRAM peak · ~2.8 GB disk · 32K context',
     diskGb: 3,
     detect: '4–5 GB VRAM',
@@ -67,7 +95,7 @@ const TIERS = [
     embed: 'bge-large-en-v1.5 FP16',
     rerank: 'bge-reranker-v2-m3',
     vision: 'MedGemma 1.5 4B (mmproj)',
-    stt: 'whisper small',
+    visionSearch: 'MedSigLIP (opt-in, vision profile)',
     footprint: '~6 GB VRAM peak · ~4.5 GB disk · 32K context',
     diskGb: 5,
     detect: '6–11 GB VRAM',
@@ -79,7 +107,7 @@ const TIERS = [
     embed: 'Harrier-0.6B Q8',
     rerank: 'Qwen3-Reranker-0.6B',
     vision: 'MedGemma 27B (mmproj)',
-    stt: 'whisper medium',
+    visionSearch: 'MedSigLIP (opt-in, vision profile)',
     footprint: '~16 GB VRAM peak · ~16 GB disk · 32K context',
     diskGb: 16,
     detect: '12–23 GB VRAM',
@@ -91,7 +119,7 @@ const TIERS = [
     embed: 'Harrier-0.6B Q8',
     rerank: 'Qwen3-Reranker-0.6B',
     vision: 'MedGemma 27B (mmproj)',
-    stt: 'whisper large',
+    visionSearch: 'MedSigLIP (opt-in, vision profile)',
     footprint: '~18 GB VRAM peak · ~18 GB disk · 64K context',
     diskGb: 18,
     detect: '≥24 GB VRAM',
@@ -103,7 +131,7 @@ const TIERS = [
     embed: 'bge-large-en-v1.5 MLX',
     rerank: 'bge-reranker-v2-m3 MLX',
     vision: 'Qwen2.5-VL MLX',
-    stt: 'whisper.cpp Metal',
+    visionSearch: '—',
     footprint: '~12–16 GB unified · varies',
     diskGb: 12,
     detect: 'Apple Silicon, ≥16 GB unified',
@@ -115,7 +143,7 @@ const TIERS = [
     embed: '—',
     rerank: '—',
     vision: '—',
-    stt: '—',
+    visionSearch: '—',
     footprint: 'No local model footprint',
     diskGb: 0,
     detect: 'Operator chose external only',
@@ -307,7 +335,7 @@ function TierRadio({ tier, selected, onSelect, isRecommended, disabled }) {
         <div>Embed: <span className="text-foreground">{tier.embed}</span></div>
         <div>Rerank: <span className="text-foreground">{tier.rerank}</span></div>
         <div>Vision: <span className="text-foreground">{tier.vision}</span></div>
-        <div>STT: <span className="text-foreground">{tier.stt}</span></div>
+        <div>Vision Search: <span className="text-foreground">{tier.visionSearch}</span></div>
       </div>
     </label>
   )
@@ -350,6 +378,8 @@ function StatusBadge({ status }) {
   else if (status === 'pulling') cls = 'bg-sky-500/15 text-sky-700 dark:text-sky-300'
   else if (status === 'failed') cls = 'bg-rose-500/15 text-rose-700 dark:text-rose-300'
   else if (status === 'skipped') cls = 'bg-muted text-muted-foreground'
+  else if (status === 'unavailable') cls = 'bg-muted text-muted-foreground'
+  else if (status === 'inactive') cls = 'bg-muted text-muted-foreground'
   else if (status === 'loading') cls = 'bg-sky-500/15 text-sky-700 dark:text-sky-300'
   else if (status === 'error') cls = 'bg-rose-500/15 text-rose-700 dark:text-rose-300'
   return (
@@ -365,14 +395,36 @@ function StatusBadge({ status }) {
  * @param {number} attempts - number of poll attempts so far
  * @returns {{ state: 'ready'|'loading'|'error', msg: string }}
  */
-function syntheticStatus(row, attempts) {
-  const lvs = row.last_verified_status
-  if (lvs && lvs.startsWith('ok')) return { state: 'ready', msg: '' }
-  if (lvs && lvs.startsWith('error:')) return { state: 'error', msg: lvs }
-  if ((attempts || 0) >= MAX_SYNTH_ATTEMPTS) {
-    return { state: 'error', msg: "sidecar didn't come up within 5 min — check `docker logs hlh_embed` / `hlh_rerank`" }
+const VISION_SEARCH_TIERS = new Set(['gpu-8gb', 'gpu-16gb', 'gpu-24gb+'])
+
+function friendlyError(raw) {
+  if (!raw) return null
+  if (/ConnectError|Name or service not known|Connection refused/i.test(raw)) {
+    return 'Service is starting up — it can take a few minutes to load the model. Try the Test button shortly.'
   }
-  return { state: 'loading', msg: '' }
+  if (/timeout|timed out/i.test(raw)) return 'Service is taking a while to respond — the model may still be loading.'
+  if (/HTTP 5\d\d/.test(raw)) return 'Service returned a server error. Check container logs for details.'
+  return null
+}
+
+function syntheticStatus(row, attempts, currentTier) {
+  if (row.role === 'vision_embed' && !VISION_SEARCH_TIERS.has(currentTier)) {
+    return { state: 'unavailable', msg: 'Not available on this tier', rawMsg: '' }
+  }
+  const lvs = row.last_verified_status
+  if (lvs && lvs.startsWith('ok')) return { state: 'ready', msg: '', rawMsg: '' }
+  if (lvs && lvs.startsWith('inactive:')) {
+    const reason = lvs.slice('inactive: '.length)
+    return { state: 'inactive', msg: reason.charAt(0).toUpperCase() + reason.slice(1), rawMsg: '' }
+  }
+  if (lvs && lvs.startsWith('error:')) {
+    const friendly = friendlyError(lvs)
+    return { state: 'error', msg: friendly || lvs, rawMsg: friendly ? lvs : '' }
+  }
+  if ((attempts || 0) >= MAX_SYNTH_ATTEMPTS) {
+    return { state: 'error', msg: "Sidecar didn't come up within 5 min. Check container logs.", rawMsg: '' }
+  }
+  return { state: 'loading', msg: '', rawMsg: '' }
 }
 
 
@@ -598,6 +650,7 @@ function ModelsPanel({ currentTier }) {
           No bundled artifacts for this tier (or you picked <span className="font-mono">external</span>).
         </p>
       ) : (
+        <TooltipProvider>
         <div className="overflow-x-auto rounded-md border border-border">
           <table className="w-full table-auto text-sm">
             <thead className="bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
@@ -616,7 +669,7 @@ function ModelsPanel({ currentTier }) {
                 const frac = progressFraction(row)
                 return (
                   <tr key={row.id} className="border-t border-border align-top">
-                    <td className="px-3 py-2 font-medium text-foreground">{row.role}</td>
+                    <td className="px-3 py-2"><RoleCell role={row.role} /></td>
                     <td className="px-3 py-2 font-mono text-xs text-muted-foreground" title={row.model_id}>
                       <div>{row.repo}</div>
                       <div className="text-[11px]">{row.filename}{row.quant ? ` · ${row.quant}` : ''}</div>
@@ -707,26 +760,39 @@ function ModelsPanel({ currentTier }) {
 
               {/* Synthetic embed + rerank rows (Phase 2.B) */}
               {syntheticRows.map((row) => {
-                const { state, msg } = syntheticStatus(row, synthAttempts[row.id])
+                const { state, msg, rawMsg } = syntheticStatus(row, synthAttempts[row.id], currentTier)
                 return (
                   <tr
                     key={row.id}
-                    className="border-t border-border align-top"
+                    className={cn('border-t border-border align-top', state === 'unavailable' && 'opacity-40')}
                     data-testid={`system-synth-row-${row.role}`}
                   >
-                    <td className="px-3 py-2 font-medium text-foreground">{row.role}</td>
+                    <td className="px-3 py-2"><RoleCell role={row.role} /></td>
                     <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
                       {row.model}
                     </td>
                     <td className="px-3 py-2">
                       <StatusBadge status={state} />
-                      {state === 'error' && msg ? (
-                        <div
-                          className="mt-1 text-xs text-destructive"
-                          data-testid={`system-synth-error-${row.role}`}
-                        >
-                          {msg}
-                        </div>
+                      {state === 'unavailable' && msg ? (
+                        <div className="mt-1 text-xs text-muted-foreground">{msg}</div>
+                      ) : state === 'inactive' && msg ? (
+                        <div className="mt-1 text-xs text-muted-foreground">{msg}</div>
+                      ) : state === 'error' && msg ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div
+                              className="mt-1 text-xs text-destructive cursor-default"
+                              data-testid={`system-synth-error-${row.role}`}
+                            >
+                              {msg}
+                            </div>
+                          </TooltipTrigger>
+                          {rawMsg ? (
+                            <TooltipContent side="bottom" className="max-w-sm">
+                              <p className="font-mono text-[11px] break-all">{rawMsg}</p>
+                            </TooltipContent>
+                          ) : null}
+                        </Tooltip>
                       ) : null}
                     </td>
                     <td className="px-3 py-2 text-xs">
@@ -774,6 +840,7 @@ function ModelsPanel({ currentTier }) {
             </tbody>
           </table>
         </div>
+        </TooltipProvider>
       )}
     </div>
   )

@@ -1,6 +1,24 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { cn } from '@/lib/utils'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+
+const MODEL_DISPLAY = {
+  'medgemma':     { label: 'Chat',       desc: 'Answers your questions using health context' },
+  'qwen-chat':    { label: 'Chat (lite)', desc: 'Smaller chat model for low-RAM systems' },
+  'gemma-tasks':  { label: 'Tasks',      desc: 'Handles background jobs like summarization' },
+  'bge-m3':       { label: 'Search',     desc: 'Finds relevant documents for your question' },
+  'bge-reranker': { label: 'Relevance',  desc: 'Re-scores search results for accuracy' },
+  'medsiglip':    { label: 'Vision',     desc: 'Reads and understands medical images' },
+}
+
+function modelLabel(id) {
+  return MODEL_DISPLAY[id]?.label ?? id
+}
+
+function modelDesc(id) {
+  return MODEL_DISPLAY[id]?.desc ?? id
+}
 
 export default function ModelStateSidebar({ className }) {
   const [state, setState] = useState(null)
@@ -44,7 +62,7 @@ export default function ModelStateSidebar({ className }) {
   const { tier, budget_mib, loaded_ram_mib, budget_pct, models } = state
   const loaded = models.filter((m) => m.state === 'loaded')
   const sleeping = models.filter((m) => m.state === 'sleeping')
-  const unloaded = models.filter((m) => m.state === 'unloaded' && m.id === 'medsiglip')
+  const unloaded = models.filter((m) => m.state === 'unloaded')
   const unknown = models.filter((m) => m.state === 'unknown')
 
   const barState = budget_pct > 90 ? 'critical' : budget_pct > 70 ? 'warn' : 'ok'
@@ -73,11 +91,17 @@ export default function ModelStateSidebar({ className }) {
         </div>
       </div>
 
+      <TooltipProvider>
       <ul className="flex flex-col gap-1">
         {loaded.map((m) => (
           <li key={`${m.provider}-${m.id}`} className="flex items-center gap-1.5">
             <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" />
-            <span className="flex-1 text-foreground">{m.id}</span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="flex-1 text-foreground cursor-default border-b border-dotted border-muted-foreground/30">{modelLabel(m.id)}</span>
+              </TooltipTrigger>
+              <TooltipContent side="top"><p className="font-sans text-xs">{modelDesc(m.id)}</p><p className="font-mono text-[10px] text-muted-foreground mt-0.5">{m.id}</p></TooltipContent>
+            </Tooltip>
             <span className="text-[10px] text-muted-foreground">{(m.ram_mib / 1024).toFixed(1)}G</span>
             {m.id === 'medsiglip' && (
               <button
@@ -95,21 +119,36 @@ export default function ModelStateSidebar({ className }) {
         {sleeping.map((m) => (
           <li key={`${m.provider}-${m.id}`} className="flex items-center gap-1.5 text-muted-foreground">
             <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/40" />
-            <span className="flex-1">{m.id}</span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="flex-1 cursor-default border-b border-dotted border-muted-foreground/20">{modelLabel(m.id)}</span>
+              </TooltipTrigger>
+              <TooltipContent side="top"><p className="font-sans text-xs">{modelDesc(m.id)}</p><p className="font-mono text-[10px] text-muted-foreground mt-0.5">{m.id}</p></TooltipContent>
+            </Tooltip>
             <span className="text-[10px]">sleep</span>
           </li>
         ))}
         {unloaded.map((m) => (
           <li key={`${m.provider}-${m.id}`} className="flex items-center gap-1.5 text-muted-foreground">
             <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/30" />
-            <span className="flex-1">{m.id}</span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="flex-1 cursor-default border-b border-dotted border-muted-foreground/20">{modelLabel(m.id)}</span>
+              </TooltipTrigger>
+              <TooltipContent side="top"><p className="font-sans text-xs">{modelDesc(m.id)}</p><p className="font-mono text-[10px] text-muted-foreground mt-0.5">{m.id}</p></TooltipContent>
+            </Tooltip>
             <span className="text-[10px]" title="Starts on first image request">on-demand</span>
           </li>
         ))}
         {unknown.map((m) => (
           <li key={`${m.provider}-${m.id}`} className="flex items-center gap-1.5 text-muted-foreground">
             <span className="size-1.5 shrink-0 rounded-full bg-yellow-500" />
-            <span className="flex-1">{m.id}</span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="flex-1 cursor-default border-b border-dotted border-muted-foreground/20">{modelLabel(m.id)}</span>
+              </TooltipTrigger>
+              <TooltipContent side="top"><p className="font-sans text-xs">{modelDesc(m.id)}</p><p className="font-mono text-[10px] text-muted-foreground mt-0.5">{m.id}</p></TooltipContent>
+            </Tooltip>
             <span className="text-[10px]">unavailable</span>
           </li>
         ))}
@@ -117,6 +156,7 @@ export default function ModelStateSidebar({ className }) {
           <li className="italic text-muted-foreground">No models loaded</li>
         )}
       </ul>
+      </TooltipProvider>
     </div>
   )
 }

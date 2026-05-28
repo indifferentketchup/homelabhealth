@@ -7,7 +7,7 @@ Phase numbering renumbers slightly so AI / Security / Safeguards each get
 their own track but interleave on a single dependency graph.
 
 Owner: Sam
-Last updated: 2026-05-25 (`v0.26.0` — architecture.md + doc sync)
+Last updated: 2026-05-28 (`v1.0.0` — public release)
 
 -----
 
@@ -63,15 +63,14 @@ Shipped releases (most recent → oldest):
   v0.1.1    compose isolation from boolab (2026-05-02)
   v0.1.0    strip + homelabhealth identity (2026-05-02)
 
-Planned (dependency-ordered):
-  v1.0.0    public release
+  v1.0.0    public release (2026-05-28)
 
 Skipped:
   A5  OCR — skipped; A3 vision (MedGemma mmproj) handles document reading.
 
 Deferred (2026-05-25 — ship-to-friend gate closed with operator consent):
-  A4  STT (whisper.cpp) — tier cards show planned whisper models; no
-      hlh_stt sidecar or /api/transcribe yet. Revisit if voice input
+  A4  STT (whisper.cpp) — removed from tier cards 2026-05-28; no
+      hlh_stt sidecar or /api/transcribe. Revisit if voice input
       is requested.
 
 Deferred indefinitely (2026-05-24 posture-shift pass):
@@ -90,12 +89,9 @@ Phase track in summary:
 **Ship-ready gate** = every security + safeguard phase shipped + tagged,
 built-in auth working, key auto-generation working, setup wizard tested.
 
-**Latest release:** `v0.26.0` (2026-05-25) — architecture.md + doc sync. See `CHANGELOG.md`
-for the per-tag rundown.
+**Latest release:** `v1.0.0` (2026-05-28). See `CHANGELOG.md` for the per-tag rundown.
 
-**Active work:** none. **Ship-to-friend gate is clear** (2026-05-25) — A4 STT
-deferred with operator consent. Next milestone: friend onboarding, then
-v1.0.0 public-release prep when ready.
+**Active work:** none. All roadmap phases shipped. v1.0.0 tagged 2026-05-28.
 
 -----
 
@@ -726,12 +722,12 @@ is checked.
 **Public-release-readiness — `v1.0.0`** (deferred decision, but docs
 treat it as coming):
 
-- [ ] All checkboxes above
-- [ ] `SECURITY.md` vulnerability disclosure policy active (lands in `v0.9.0`)
-- [ ] `LICENSE` file (MIT) committed
-- [ ] README final pass — honest, no weasel words, names non-defenses
-- [ ] `THREATMODEL.md` reviewed by a second pair of eyes
-- [ ] Tag `v1.0.0` and push
+- [x] All checkboxes above
+- [x] `SECURITY.md` vulnerability disclosure policy active (shipped `v0.9.0`)
+- [x] `LICENSE` file (MIT) committed (`6384e68`)
+- [x] README final pass (2026-05-28)
+- [x] `THREATMODEL.md` reviewed (2026-05-28)
+- [x] Tag `v1.0.0` and push (2026-05-28)
 
 -----
 

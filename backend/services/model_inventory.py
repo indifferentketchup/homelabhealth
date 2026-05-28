@@ -101,8 +101,25 @@ async def fetch_vision_state() -> dict[str, Any]:
         }
 
 
+TIER_CHAT_MODEL: dict[str, str] = {
+    "cpu-min": "qwen-chat",
+    "cpu-std": "medgemma",
+    "gpu-4gb": "medgemma",
+    "gpu-8gb": "medgemma",
+    "gpu-16gb": "medgemma",
+    "gpu-24gb+": "medgemma",
+}
+
+ALL_CHAT_MODELS = set(TIER_CHAT_MODEL.values())
+
+
 async def get_inventory(tier: str) -> dict[str, Any]:
+    active_chat = TIER_CHAT_MODEL.get(tier)
     router_models = await fetch_router_state()
+    router_models = [
+        m for m in router_models
+        if m["id"] not in ALL_CHAT_MODELS or m["id"] == active_chat
+    ]
     vision_model = await fetch_vision_state()
     all_models = router_models + [vision_model]
     loaded_ram = sum(m["ram_mib"] for m in all_models if m["state"] == "loaded")

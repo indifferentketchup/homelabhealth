@@ -10,6 +10,7 @@ import {
   MessageSquarePlus,
   MessagesSquare,
   PanelLeft,
+  Phone,
   Settings,
   User,
 } from 'lucide-react'
@@ -573,6 +574,24 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
         </ScrollArea>
 
         <div className="mt-auto flex flex-col gap-1 border-t border-sidebar-border p-2">
+          {!desktopCollapsed && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-2 text-[11px]">
+              <div className="mb-1 flex items-center gap-1.5 font-semibold text-destructive">
+                <Phone className="size-3" />
+                Crisis Resources
+              </div>
+              <div className="space-y-0.5 text-muted-foreground">
+                <div className="flex justify-between"><span>988 Lifeline</span><a href="tel:988" className="font-mono font-semibold text-destructive hover:underline">988</a></div>
+                <div className="flex justify-between"><span>Poison Control</span><a href="tel:18002221222" className="font-mono font-semibold text-destructive hover:underline">1-800-222-1222</a></div>
+                <div className="flex justify-between"><span>Emergency</span><a href="tel:911" className="font-mono font-semibold text-destructive hover:underline">911</a></div>
+              </div>
+            </div>
+          )}
+          {desktopCollapsed && (
+            <a href="tel:988" title="Crisis Resources — 988 Lifeline" className="flex justify-center py-1 text-destructive hover:text-destructive/80">
+              <Phone className="size-4" />
+            </a>
+          )}
           <div className="flex justify-center py-1">
             <ThemeToggle />
           </div>

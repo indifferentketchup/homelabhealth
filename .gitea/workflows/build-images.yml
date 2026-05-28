@@ -6,6 +6,10 @@ on:
       - 'v*'
   workflow_dispatch:
 
+env:
+  REGISTRY: ghcr.io
+  OWNER: indifferentketchup
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -29,18 +33,15 @@ jobs:
       - name: Resolve tags
         id: meta
         run: |
-          REG="${{ secrets.GITEA_REGISTRY_HOST }}"
-          OWNER="indifferentketchup"
-          IMG="${REG}/${OWNER}/${{ matrix.name }}"
+          IMG="${REGISTRY}/${OWNER}/${{ matrix.name }}"
           VERSION="${GITHUB_REF_NAME:-latest}"
           echo "image=${IMG}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Log in to registry
+      - name: Log in to GHCR
         run: |
-          echo "${{ secrets.GITEA_REGISTRY_TOKEN }}" | \
-            docker login "${{ secrets.GITEA_REGISTRY_HOST }}" \
-              -u "${{ secrets.GITEA_REGISTRY_USER }}" --password-stdin
+          echo "${{ secrets.GHCR_TOKEN }}" | \
+            docker login ghcr.io -u "${{ secrets.GHCR_USER }}" --password-stdin
 
       - name: Build and push
         run: |
