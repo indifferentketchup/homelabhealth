@@ -16,6 +16,14 @@ live under the `snapshot/` namespace.
 
 ## [Unreleased]
 
+### UX
+- **"Enable GPU acceleration" card** — when no GPU is detected, the System tab
+  now shows a prompt with the one-command host installer
+  (`enable-gpu.sh`), a **Copy** button, an inline **View script** (fetches the
+  exact file the command runs, so users can audit it before piping to `sudo
+  bash`), and a **View on GitHub** link. The install runs on the host — the
+  app's container can't reconfigure the host's Docker.
+
 ---
 
 ## [v1.1.3] — 2026-05-29
