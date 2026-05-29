@@ -18,6 +18,11 @@ note() { echo "→ $*"; }
 [ "$(id -u)" -eq 0 ] || err "run as root (use: sudo bash) — this installs a package and reconfigures Docker."
 
 command -v docker >/dev/null 2>&1 || err "docker not found on PATH."
+
+# WSL exposes nvidia-smi under /usr/lib/wsl/lib, which sudo's secure_path drops
+# from PATH — so without this the check fails as root even though the GPU works.
+[ -d /usr/lib/wsl/lib ] && export PATH="$PATH:/usr/lib/wsl/lib"
+
 command -v nvidia-smi >/dev/null 2>&1 || err "nvidia-smi not found. Install the GPU driver first (on WSL: the NVIDIA driver on Windows)."
 
 note "Host GPU visible:"
