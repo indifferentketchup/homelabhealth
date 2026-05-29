@@ -17,7 +17,7 @@ import { ChatInput } from './ChatInput.jsx'
 import { ContextIndicator } from './ContextIndicator.jsx'
 import { DisclaimerBanner } from './DisclaimerBanner.jsx'
 import { MessageList } from './MessageList.jsx'
-import { ModelSelectorBar } from './ModelSelectorBar.jsx'
+import { WorkspaceTitle } from './WorkspaceTitle.jsx'
 import { StaleStreamBanner } from './StaleStreamBanner.jsx'
 import { StreamStatusBar } from './StreamStatusBar.jsx'
 
@@ -160,6 +160,14 @@ export function ChatView({
 
   const messages = msgPack?.items ?? []
 
+  const { data: durableConfig } = useQuery({
+    queryKey: ['settings', 'durable-streaming'],
+    queryFn: getDurableStreamingSetting,
+    staleTime: 5 * 60_000,
+  })
+  const durableEnabled = durableConfig?.enabled === true
+  const durable = useDurableChat()
+
   // Reconnect to an in-progress durable stream after page refresh
   const resumedRef = useRef(null)
   useEffect(() => {
@@ -200,14 +208,6 @@ export function ChatView({
   const [streamStale, setStreamStale] = useState(false)
 
   const { consumeStream, abort } = useStream()
-
-  const { data: durableConfig } = useQuery({
-    queryKey: ['settings', 'durable-streaming'],
-    queryFn: getDurableStreamingSetting,
-    staleTime: 5 * 60_000,
-  })
-  const durableEnabled = durableConfig?.enabled === true
-  const durable = useDurableChat()
 
   const effectiveStop = useCallback(() => {
     if (durableEnabled && durable.busy) {
@@ -691,9 +691,7 @@ export function ChatView({
   if (!activeChatId) {
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-background">
-        <div className="hidden shrink-0 justify-center border-b border-border py-2 md:flex">
-          <ModelSelectorBar />
-        </div>
+        <WorkspaceTitle />
         <div
           className="flex min-h-0 flex-1 flex-col overflow-y-auto items-center justify-center gap-8 px-4 py-8 pt-[20vh] md:pt-0"
           style={{
@@ -752,9 +750,7 @@ export function ChatView({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
-      <div className="hidden shrink-0 justify-center border-b border-border py-2 md:flex">
-        <ModelSelectorBar />
-      </div>
+      <WorkspaceTitle />
       <div className="mx-auto flex min-h-0 w-full flex-1 flex-col" style={{ maxWidth: chatMaxW, '--bc-chat-anchor-extra': `${anchorExtraPx}px` }}>
         <DisclaimerBanner />
         <div className="bc-chat-messages-mobile min-h-0 flex-1">
