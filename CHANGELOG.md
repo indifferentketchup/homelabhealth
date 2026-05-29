@@ -18,6 +18,33 @@ live under the `snapshot/` namespace.
 
 ---
 
+## [v1.1.2] — 2026-05-29
+
+### Infrastructure
+- **Robust GPU detection in bootstrap** — `detect_gpu()` previously only
+  returned true when the Docker daemon advertised a runtime named `nvidia`.
+  Docker Desktop (common on WSL) exposes GPUs via device requests without that
+  runtime, so a working card (e.g. RTX 5090) went undetected and the stack
+  came up CPU-only. Added a probe fallback that actually launches `nvidia-smi
+  -L` in a GPU container.
+- **hlh_api gets GPU access when present** — bootstrap now passes
+  `device_requests` to `hlh_api` (gated on `gpu=True`), so in-container
+  `nvidia-smi` detection populates the hardware card / tier-picker VRAM
+  recommendation. Previously only `hlh_chat` got the GPU, so the card always
+  showed no GPU.
+
+### Tooling
+- **One-command `install.sh`** — `curl … | bash` wrapper around the orchestra
+  bootstrap so end users don't type the socket mount / `HLH_BOOTSTRAP` flags.
+  TTY flags are gated on `[ -t 0 ] && [ -t 1 ]` so it works both piped and
+  interactive.
+
+### UX
+- **Hardware card CPU-model row** — long CPU model strings no longer float to
+  the far right of the card; the value now stacks under its label.
+
+---
+
 ## [v1.1.1] — 2026-05-29
 
 ### Fixes
