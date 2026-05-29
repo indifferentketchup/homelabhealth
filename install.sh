@@ -24,7 +24,16 @@ if ! docker info >/dev/null 2>&1; then
 fi
 
 echo "→ Starting homelabhealth…"
-exec docker run --rm -it \
+
+# Only request a TTY when we actually have one. Piped execution
+# (curl … | bash) has no terminal on stdin, and `docker run -it` errors
+# with "cannot attach stdin to a TTY-enabled container" in that case.
+TTY_FLAGS=""
+if [ -t 0 ] && [ -t 1 ]; then
+  TTY_FLAGS="-it"
+fi
+
+exec docker run --rm $TTY_FLAGS \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -e HLH_BOOTSTRAP=1 \
   "$IMAGE"
