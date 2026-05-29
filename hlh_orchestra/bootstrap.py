@@ -76,8 +76,40 @@ def fail(msg: str, exit_code: int = 1) -> None:
 
 # ── GPU detection ─────────────────────────────────────────────────────────────
 
+def _gpu_probe_ok(client: docker.DockerClient) -> bool:
+    """Last-resort GPU check: actually launch a probe container with a GPU.
+
+    Docker Desktop (common on WSL) exposes GPUs via device requests WITHOUT
+    registering a runtime named "nvidia", so the Runtimes check misses it.
+    Reuse the api image (pulled regardless) as the probe — the NVIDIA toolkit
+    injects nvidia-smi into any container granted a GPU. nvidia-smi -L exits
+    non-zero (→ ContainerError) when no GPU is actually usable.
+    """
+    image = f"{REGISTRY}/hlh_api:{VERSION}"
+    try:
+        pull_image(client, image)
+        client.containers.run(
+            image,
+            entrypoint=["nvidia-smi"],
+            command=["-L"],
+            device_requests=[docker.types.DeviceRequest(count=-1, capabilities=[["gpu"]])],
+            remove=True,
+            network_mode="none",
+        )
+        return True
+    except Exception as e:  # APIError / ContainerError / ImageNotFound / ...
+        log(f"GPU probe negative ({type(e).__name__})")
+        return False
+
+
 def detect_gpu(client: docker.DockerClient) -> bool:
-    """Return True if the Docker daemon advertises the nvidia runtime."""
+    """Return True if Docker can pass an NVIDIA GPU into containers.
+
+    Fast path: the daemon advertises an "nvidia" runtime (native docker +
+    NVIDIA Container Toolkit). Fallback: actually run a probe container with a
+    GPU device request — covers Docker Desktop / WSL, which exposes GPUs
+    without a named runtime even when `nvidia-smi` works on the host.
+    """
     try:
         info = client.info()
         runtimes = info.get("Runtimes", {})
@@ -85,7 +117,7 @@ def detect_gpu(client: docker.DockerClient) -> bool:
             return True
     except APIError:
         pass
-    return False
+    return _gpu_probe_ok(client)
 
 
 # ── Secrets ──────────────────────────────────────────────────────────────────
@@ -295,8 +327,17 @@ def create_db(client: docker.DockerClient) -> Any:
     )
 
 
-def create_api(client: docker.DockerClient, master_key: str, orch_token: str) -> Any:
+def create_api(
+    client: docker.DockerClient, master_key: str, orch_token: str, gpu: bool = False
+) -> Any:
     image = f"{REGISTRY}/hlh_api:{VERSION}"
+    extra: dict[str, Any] = {}
+    if gpu:
+        # GPU visibility so in-container hardware detection (nvidia-smi) can
+        # report VRAM, which drives the tier picker's GPU-tier recommendation.
+        extra["device_requests"] = [
+            docker.types.DeviceRequest(count=-1, capabilities=[["gpu"]])
+        ]
     return client.containers.create(
         image=image,
         name="hlh_api",
@@ -318,6 +359,7 @@ def create_api(client: docker.DockerClient, master_key: str, orch_token: str) ->
         network=NETWORK_DEFAULT,
         user="1000:1000",
         tmpfs={"/tmp": ""},
+        **extra,
         **COMMON_HARDENING,
     )
 
@@ -495,7 +537,7 @@ def run() -> dict[str, str]:
 
     api = ensure_container(
         client, "hlh_api",
-        lambda: create_api(client, secrets_dict["HLH_MASTER_KEY"], secrets_dict["ORCHESTRA_TOKEN"]),
+        lambda: create_api(client, secrets_dict["HLH_MASTER_KEY"], secrets_dict["ORCHESTRA_TOKEN"], gpu=gpu),
     )
     # hlh_api needs to be on both networks
     attach_to_network(client, "hlh_api", NETWORK_INFERENCE)
