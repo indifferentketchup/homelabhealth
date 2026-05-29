@@ -1,3 +1,4 @@
+# In development, not meant for public use. Will have bugs.
 # homelabhealth
 
 Self-hosted RAG chat app for personal health records. Upload medical documents (PDFs, images, lab reports), ask questions, get answers grounded in your sources via pgvector retrieval. Built-in AI with bundled llama.cpp inference, MedGemma vision for document understanding, and automatic safeguards.
