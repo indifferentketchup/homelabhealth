@@ -5,7 +5,7 @@ import { FileStack, Menu } from 'lucide-react'
 
 import { getModelSettings } from '@/api/inference.js'
 import { getSystemProfile } from '@/api/system.js'
-import { ModelSelectorBar } from '@/components/chat/ModelSelectorBar.jsx'
+import { WorkspaceTitle } from '@/components/chat/WorkspaceTitle.jsx'
 import { WorkspaceQuerySync } from '@/components/WorkspaceQuerySync.jsx'
 import { Sidebar } from '@/components/layout/Sidebar.jsx'
 import { Button } from '@/components/ui/button'
@@ -170,7 +170,7 @@ export default function WorkspaceApp() {
             >
               <Menu className="size-5" />
             </Button>
-            {!isLanding ? <ModelSelectorBar className="min-w-0 flex-1" /> : <div className="min-w-0 flex-1" />}
+            {!isLanding ? <WorkspaceTitle variant="inline" className="min-w-0 flex-1" /> : <div className="min-w-0 flex-1" />}
             {isAuxRoute ? (
               <Button
                 type="button"

@@ -18,6 +18,27 @@ live under the `snapshot/` namespace.
 
 ---
 
+## [v1.1.1] — 2026-05-29
+
+### Fixes
+- **Workspace blank screen (TDZ crash)** — `ChatView.jsx` read `durableEnabled`
+  / `durable` in its durable-stream resume effect ~40 lines before those
+  `const`s were declared. Dependency arrays evaluate during render, so every
+  `ChatView` mount threw `ReferenceError: Cannot access 'durableEnabled' before
+  initialization`, blanking every workspace (no error boundary). Moved the
+  declarations above the effect. Bug introduced in `c16dacb` (v1.0.0).
+
+### UX
+- **Removed orphaned model selector** — the chat header's model dropdown
+  (`ModelSelectorBar`) was a leftover from the multi-provider era and called the
+  now admin-only, `provider_id`-scoped `/api/inference/models`, returning `422`.
+  The chat model is fixed by hardware tier (users can't pick), so the selector
+  is gone; replaced with a read-only `WorkspaceTitle` showing the workspace
+  name. Sends fall back to the workspace's bound model. Removed dead
+  `fetchModels()` wrapper.
+
+---
+
 ## [v1.1.0] — 2026-05-28
 
 ### Infrastructure
