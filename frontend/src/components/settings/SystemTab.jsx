@@ -226,9 +226,9 @@ function HardwareCard({ sysinfo, detectedAt, busy, onRedetect, redetectErr }) {
           <dt className="text-muted-foreground">CPU cores (physical)</dt>
           <dd className="text-foreground">{cpuCores ?? '—'}</dd>
         </div>
-        <div className="col-span-1 flex justify-between gap-2 sm:col-span-2">
+        <div className="col-span-1 flex flex-col gap-1 sm:col-span-2">
           <dt className="text-muted-foreground">CPU model</dt>
-          <dd className="truncate text-foreground" title={cpu}>{cpu}</dd>
+          <dd className="truncate font-mono text-xs text-foreground" title={cpu}>{cpu}</dd>
         </div>
         <div className="flex justify-between gap-2">
           <dt className="text-muted-foreground">RAM</dt>
