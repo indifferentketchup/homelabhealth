@@ -144,8 +144,19 @@ def write_tier_env(tier: str) -> bool:
         if key not in found:
             new_lines.append(f"{key}={val}\n")
 
-    with open(ENV_PATH, "w") as f:
-        f.writelines(new_lines)
+    try:
+        with open(ENV_PATH, "w") as f:
+            f.writelines(new_lines)
+    except OSError as exc:
+        # Expected in bootstrap deployments: hlh_api runs read_only and .env is
+        # not mounted (it's a compose-only file). The tier choice still lands in
+        # the DB; only the compose .env sync is skipped. Never 500 setup for this.
+        logger.warning(
+            "write_tier_env: could not write %s (%s); skipping .env sync "
+            "(normal for bootstrap/read-only deployments)",
+            ENV_PATH, exc,
+        )
+        return False
 
     logger.info(
         "write_tier_env: tier=%s → HLH_CHAT_IMAGE=%s, HLH_INFER_IMAGE=%s, COMPOSE_PROFILES=%s",

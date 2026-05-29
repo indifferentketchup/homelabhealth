@@ -18,6 +18,19 @@ live under the `snapshot/` namespace.
 
 ---
 
+## [v1.1.3] — 2026-05-29
+
+### Fixes
+- **Tier selection 500 on bootstrap installs** — `write_tier_env()` writes
+  `/data/.env`, which only exists (bind-mounted) in the compose deployment. In
+  bootstrap installs `hlh_api` runs `read_only` with no `.env`, so the write
+  raised `OSError` and the first-time tier-picker `PUT /api/system/profile`
+  returned `internal_error` — blocking setup entirely. The `.env` sync is a
+  compose-only concern, so it now logs and skips on `OSError` instead of
+  failing the request.
+
+---
+
 ## [v1.1.2] — 2026-05-29
 
 ### Infrastructure
