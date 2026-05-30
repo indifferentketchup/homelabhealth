@@ -23,7 +23,6 @@ const ROLE_DISPLAY = {
   embed:        { label: 'Search',    desc: 'Converts text into vectors so documents can be found' },
   rerank:       { label: 'Relevance', desc: 'Re-scores search results for accuracy' },
   vision:       { label: 'Vision',    desc: 'Understands medical images for chat' },
-  vision_embed: { label: 'Vision Search', desc: 'Converts medical images into searchable vectors' },
 }
 
 function RoleCell({ role }) {
@@ -59,7 +58,6 @@ const TIERS = [
     embed: 'bge-m3 (1024-dim)',
     rerank: 'bge-reranker-v2-m3',
     vision: '— (not available)',
-    visionSearch: '— (not enough RAM)',
     footprint: '~1.5 GB RAM peak · ~0.9 GB disk · 8K context',
     diskGb: 1,
     detect: '<16 GB RAM, no GPU',
@@ -71,7 +69,6 @@ const TIERS = [
     embed: 'bge-large-en-v1.5 Q8',
     rerank: 'bge-reranker-base (CPU)',
     vision: 'MedGemma 1.5 4B (mmproj)',
-    visionSearch: '— (not enough RAM)',
     footprint: '~4 GB RAM peak · ~2.8 GB disk · 8K context',
     diskGb: 3,
     detect: '≥16 GB RAM, no GPU',
@@ -83,7 +80,6 @@ const TIERS = [
     embed: 'bge-m3 (1024-dim)',
     rerank: 'bge-reranker-v2-m3',
     vision: 'MedGemma 1.5 4B (mmproj)',
-    visionSearch: '— (not enough VRAM)',
     footprint: '~3.5 GB VRAM peak · ~2.8 GB disk · 32K context',
     diskGb: 3,
     detect: '4–5 GB VRAM',
@@ -95,7 +91,6 @@ const TIERS = [
     embed: 'bge-large-en-v1.5 FP16',
     rerank: 'bge-reranker-v2-m3',
     vision: 'MedGemma 1.5 4B (mmproj)',
-    visionSearch: 'MedSigLIP (opt-in, vision profile)',
     footprint: '~6 GB VRAM peak · ~4.5 GB disk · 32K context',
     diskGb: 5,
     detect: '6–11 GB VRAM',
@@ -107,7 +102,6 @@ const TIERS = [
     embed: 'Harrier-0.6B Q8',
     rerank: 'Qwen3-Reranker-0.6B',
     vision: 'MedGemma 27B (mmproj)',
-    visionSearch: 'MedSigLIP (opt-in, vision profile)',
     footprint: '~16 GB VRAM peak · ~16 GB disk · 32K context',
     diskGb: 16,
     detect: '12–23 GB VRAM',
@@ -119,7 +113,6 @@ const TIERS = [
     embed: 'Harrier-0.6B Q8',
     rerank: 'Qwen3-Reranker-0.6B',
     vision: 'MedGemma 27B (mmproj)',
-    visionSearch: 'MedSigLIP (opt-in, vision profile)',
     footprint: '~18 GB VRAM peak · ~18 GB disk · 64K context',
     diskGb: 18,
     detect: '≥24 GB VRAM',
@@ -131,7 +124,6 @@ const TIERS = [
     embed: 'bge-large-en-v1.5 MLX',
     rerank: 'bge-reranker-v2-m3 MLX',
     vision: 'Qwen2.5-VL MLX',
-    visionSearch: '—',
     footprint: '~12–16 GB unified · varies',
     diskGb: 12,
     detect: 'Apple Silicon, ≥16 GB unified',
@@ -143,7 +135,6 @@ const TIERS = [
     embed: '—',
     rerank: '—',
     vision: '—',
-    visionSearch: '—',
     footprint: 'No local model footprint',
     diskGb: 0,
     detect: 'Operator chose external only',
@@ -428,7 +419,6 @@ function TierRadio({ tier, selected, onSelect, isRecommended, disabled }) {
         <div>Embed: <span className="text-foreground">{tier.embed}</span></div>
         <div>Rerank: <span className="text-foreground">{tier.rerank}</span></div>
         <div>Vision: <span className="text-foreground">{tier.vision}</span></div>
-        <div>Vision Search: <span className="text-foreground">{tier.visionSearch}</span></div>
       </div>
     </label>
   )
@@ -488,8 +478,6 @@ function StatusBadge({ status }) {
  * @param {number} attempts - number of poll attempts so far
  * @returns {{ state: 'ready'|'loading'|'error', msg: string }}
  */
-const VISION_SEARCH_TIERS = new Set(['gpu-8gb', 'gpu-16gb', 'gpu-24gb+'])
-
 function friendlyError(raw) {
   if (!raw) return null
   if (/ConnectError|Name or service not known|Connection refused/i.test(raw)) {
@@ -500,10 +488,7 @@ function friendlyError(raw) {
   return null
 }
 
-function syntheticStatus(row, attempts, currentTier) {
-  if (row.role === 'vision_embed' && !VISION_SEARCH_TIERS.has(currentTier)) {
-    return { state: 'unavailable', msg: 'Not available on this tier', rawMsg: '' }
-  }
+function syntheticStatus(row, attempts) {
   const lvs = row.last_verified_status
   if (lvs && lvs.startsWith('ok')) return { state: 'ready', msg: '', rawMsg: '' }
   if (lvs && lvs.startsWith('inactive:')) {
@@ -568,13 +553,11 @@ function ModelsPanel({ currentTier }) {
   const SYNTH_ROLE_META = {
     embed: { model: 'BAAI/bge-m3', license: 'mit', license_url: 'https://huggingface.co/BAAI/bge-m3' },
     rerank: { model: 'BAAI/bge-reranker-v2-m3', license: 'apache-2.0', license_url: 'https://huggingface.co/BAAI/bge-reranker-v2-m3' },
-    vision_embed: { model: 'google/medsiglip-448', license: 'apache-2.0', license_url: 'https://huggingface.co/google/medsiglip-448' },
   }
 
   // Roles that already have a real download row above (chat/embed/rerank/tasks/
   // vision). Since v1.1.4 gave embed/rerank actual download specs, their
-  // synthetic provider rows became duplicates — drop those, keeping only roles
-  // with no download row (vision_embed → the medsiglip sidecar).
+  // synthetic provider rows became duplicates — drop those.
   const downloadedRoles = useMemo(() => new Set(items.map((r) => r.role)), [items])
 
   const syntheticRows = useMemo(
@@ -710,7 +693,7 @@ function ModelsPanel({ currentTier }) {
         license click at the linked HF page.
       </p>
       <p className="text-xs text-muted-foreground">
-        Embed, rerank, and vision embed weights are downloaded automatically by their
+        Embed and rerank weights are downloaded automatically by their
         sidecars on first boot. They appear as{' '}
         <span className="font-mono">loading</span> until the sidecar reports healthy, then{' '}
         <span className="font-mono">ready</span>. No Pull button — the sidecar manages itself.
@@ -861,11 +844,11 @@ function ModelsPanel({ currentTier }) {
 
               {/* Synthetic embed + rerank rows (Phase 2.B) */}
               {syntheticRows.map((row) => {
-                const { state, msg, rawMsg } = syntheticStatus(row, synthAttempts[row.id], currentTier)
+                const { state, msg, rawMsg } = syntheticStatus(row, synthAttempts[row.id])
                 return (
                   <tr
                     key={row.id}
-                    className={cn('border-t border-border align-top', state === 'unavailable' && 'opacity-40')}
+                    className="border-t border-border align-top"
                     data-testid={`system-synth-row-${row.role}`}
                   >
                     <td className="px-3 py-2"><RoleCell role={row.role} /></td>
@@ -874,9 +857,7 @@ function ModelsPanel({ currentTier }) {
                     </td>
                     <td className="px-3 py-2">
                       <StatusBadge status={state} />
-                      {state === 'unavailable' && msg ? (
-                        <div className="mt-1 text-xs text-muted-foreground">{msg}</div>
-                      ) : state === 'inactive' && msg ? (
+                      {state === 'inactive' && msg ? (
                         <div className="mt-1 text-xs text-muted-foreground">{msg}</div>
                       ) : state === 'error' && msg ? (
                         <Tooltip>

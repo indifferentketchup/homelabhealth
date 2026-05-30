@@ -175,14 +175,6 @@ async def resolve_reranker_provider() -> tuple[Provider, str] | None:
     return await _resolve_role_binding("reranker_provider_id", "reranker_model")
 
 
-async def resolve_vision_embed_provider() -> tuple[Provider, str] | None:
-    """Look up the global vision embedding provider + model.
-
-    Returns None if not configured (vision profile not active or sidecar down).
-    """
-    return await _resolve_role_binding("vision_embed_provider_id", "vision_embed_model")
-
-
 def build_headers(provider: Provider, extra: dict | None = None) -> dict[str, str]:
     """OpenAI-compatible headers, plus Authorization if the provider has a key."""
     h: dict[str, str] = {"Content-Type": "application/json"}

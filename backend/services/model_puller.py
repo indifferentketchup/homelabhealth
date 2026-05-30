@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 MODELS_BASE_DIR = Path(os.environ.get("HLH_MODELS_DIR", "/models"))
 
-ALL_ROLES = ("chat", "embed", "rerank", "vision", "medsiglip", "stt", "ocr")
+ALL_ROLES = ("chat", "embed", "rerank", "vision", "vision_base", "stt", "ocr")
 ALL_TIERS = ("cpu-min", "cpu-std", "gpu-4gb", "gpu-8gb", "gpu-16gb", "gpu-24gb+", "apple-mlx", "external")
 
 PULL_CHUNK_BYTES = 5 * 1024 * 1024
@@ -74,6 +74,35 @@ _ROUTER_TIERS = ("cpu-min", "cpu-std", "gpu-4gb", "gpu-8gb", "gpu-16gb", "gpu-24
 
 def _router_role(spec: ModelSpec) -> dict[str, ModelSpec | None]:
     return {tier: (spec if tier in _ROUTER_TIERS else None) for tier in ALL_TIERS}
+
+
+def _vision_role(spec: ModelSpec) -> dict[str, ModelSpec | None]:
+    """Same 4b vision artifact on every bundled-router tier except cpu-min
+    (Qwen has no compatible mmproj) and apple-mlx/external (no bundled router)."""
+    return {
+        tier: (spec if tier in _ROUTER_TIERS and tier != "cpu-min" else None)
+        for tier in ALL_TIERS
+    }
+
+
+# Ingestion vision (always MedGemma-4b, tier-independent — see the "vision" /
+# "vision_base" roles below). Same repo ships both the base GGUF and projector.
+_VISION_BASE_SPEC = ModelSpec(
+    repo="unsloth/medgemma-1.5-4b-it-GGUF",
+    filename="medgemma-1.5-4b-it-Q4_K_M.gguf",
+    quant="Q4_K_M",
+    license=_GEMMA_LICENSE,
+    license_url="https://huggingface.co/google/medgemma-4b-it",
+    revision="main",
+)
+_VISION_MMPROJ_SPEC = ModelSpec(
+    repo="unsloth/medgemma-1.5-4b-it-GGUF",
+    filename="mmproj-F16.gguf",
+    quant="f16",
+    license=_GEMMA_LICENSE,
+    license_url="https://huggingface.co/google/medgemma-4b-it",
+    revision="main",
+)
 
 
 # Embedder (bge-m3, MIT) + reranker (bge-reranker-v2-m3, Apache) from the public
@@ -171,52 +200,12 @@ MODEL_REGISTRY: dict[str, dict[str, ModelSpec | None]] = {
     "tasks":     _router_role(_TASKS_SPEC),   # gemma-3-270m — title generation
     "embed":     _router_role(_EMBED_SPEC),   # bge-m3 — RAG embeddings
     "rerank":    _router_role(_RERANK_SPEC),  # bge-reranker-v2-m3 — RAG rerank
-    "vision": {
-        "cpu-min": None,  # MTP model, mmproj incompatible
-        "cpu-std": ModelSpec(
-            repo="unsloth/medgemma-1.5-4b-it-GGUF",
-            filename="mmproj-F16.gguf",
-            quant="f16",
-            license=_GEMMA_LICENSE,
-            license_url="https://huggingface.co/google/medgemma-4b-it",
-            revision="main",
-        ),
-        "gpu-4gb": ModelSpec(
-            repo="unsloth/medgemma-1.5-4b-it-GGUF",
-            filename="mmproj-F16.gguf",
-            quant="f16",
-            license=_GEMMA_LICENSE,
-            license_url="https://huggingface.co/google/medgemma-4b-it",
-            revision="main",
-        ),
-        "gpu-8gb": ModelSpec(
-            repo="unsloth/medgemma-1.5-4b-it-GGUF",
-            filename="mmproj-F16.gguf",
-            quant="f16",
-            license=_GEMMA_LICENSE,
-            license_url="https://huggingface.co/google/medgemma-4b-it",
-            revision="main",
-        ),
-        "gpu-16gb": ModelSpec(
-            repo="unsloth/medgemma-27b-it-GGUF",
-            filename="mmproj-F16.gguf",
-            quant="f16",
-            license=_GEMMA_LICENSE,
-            license_url="https://huggingface.co/google/medgemma-27b-it",
-            revision="main",
-        ),
-        "gpu-24gb+": ModelSpec(
-            repo="unsloth/medgemma-27b-it-GGUF",
-            filename="mmproj-F16.gguf",
-            quant="f16",
-            license=_GEMMA_LICENSE,
-            license_url="https://huggingface.co/google/medgemma-27b-it",
-            revision="main",
-        ),
-        "apple-mlx": None,
-        "external": None,
-    },
-    "medsiglip": {tier: None for tier in ALL_TIERS},  # Phase 3
+    # Vision is tier-independent: ingestion image/PDF reading always runs on
+    # MedGemma-4b (base + mmproj), regardless of the chat tier, so the small
+    # vision model stays GPU-resident next to the (possibly 27b) chat model
+    # without forcing a VRAM offload. cpu-min (Qwen, no mmproj) gets nothing.
+    "vision":      _vision_role(_VISION_MMPROJ_SPEC),   # MedGemma-4b mmproj (projector)
+    "vision_base": _vision_role(_VISION_BASE_SPEC),     # MedGemma-4b base GGUF
     "stt":       {tier: None for tier in ALL_TIERS},  # Phase 4
     "ocr":       {tier: None for tier in ALL_TIERS},  # Phase 5
 }
