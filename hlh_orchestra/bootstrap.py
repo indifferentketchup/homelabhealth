@@ -445,14 +445,23 @@ def create_search(client: docker.DockerClient) -> Any:
         volumes={
             CONFIG_VOLUME: {"bind": "/etc/searxng_template", "mode": "ro"},
         },
-        # Use entrypoint shim: copy template into /etc/searxng (writable tmpfs)
-        # before SearXNG starts. SearXNG needs settings at /etc/searxng/settings.yml.
-        # We can't bind-mount a single file into tmpfs, so we pre-stage.
-        # Use the image's own /docker-entrypoint.sh by passing nothing.
-        command=None,
+        # Entrypoint shim. SearXNG's image entrypoint creates
+        # /etc/searxng/settings.yml from its own template on boot, but
+        # /etc/searxng is a root-owned tmpfs while the process runs as uid 1000,
+        # so that write fails ("Permission denied") and the container restart-
+        # loops. We make the tmpfs writable (mode=1777) and copy our staged
+        # settings.yml in from the read-only hlh_config template mount before
+        # handing off to the real entrypoint. Replaces the old post-start
+        # `docker exec` injection, which raced SearXNG's startup and 409'd.
+        entrypoint=[
+            "/bin/sh",
+            "-c",
+            "cp /etc/searxng_template/searxng_settings.yml "
+            "/etc/searxng/settings.yml && exec /usr/local/searxng/entrypoint.sh",
+        ],
         network=NETWORK_DEFAULT,
         user="1000:1000",
-        tmpfs={"/tmp": "", "/etc/searxng": ""},
+        tmpfs={"/tmp": "mode=1777", "/etc/searxng": "mode=1777"},
         cap_drop=["ALL"],
         security_opt=["no-new-privileges:true"],
         read_only=True,
@@ -488,6 +497,36 @@ def create_ui(client: docker.DockerClient) -> Any:
     )
 
 
+def create_vision_embed(client: docker.DockerClient) -> Any:
+    """Create (but do not start) the MedSigLIP vision-embedding sidecar.
+
+    Mirrors the compose `hlh_vision_embed` service (infinity-emb, torch engine).
+    Left stopped: hlh_orchestra starts/stops it on demand via /vision/start so
+    the ~5 GB model isn't resident unless vision features are used.
+    """
+    return client.containers.create(
+        image=INFINITY_IMAGE,
+        name="hlh_vision_embed",
+        command=["v2", "--no-model-warmup"],
+        restart_policy={"Name": "no"},
+        environment={
+            "INFINITY_MODEL_ID": MEDSIGLIP_MODEL,
+            "INFINITY_ENGINE": "torch",
+            "INFINITY_HOST": "0.0.0.0",
+            "INFINITY_URL_PREFIX": "/v1",
+        },
+        volumes={
+            "hlh_vision_cache": {"bind": "/app/.cache", "mode": "rw"},
+        },
+        network=NETWORK_DEFAULT,
+        mem_limit="5g",
+        read_only=True,
+        tmpfs={"/tmp": ""},
+        cap_drop=["ALL"],
+        security_opt=["no-new-privileges:true"],
+    )
+
+
 def attach_to_network(client: docker.DockerClient, container_name: str, network_name: str) -> None:
     """Attach a container to an additional network (idempotent)."""
     try:
@@ -498,27 +537,6 @@ def attach_to_network(client: docker.DockerClient, container_name: str, network_
             net.connect(container_name)
     except NotFound:
         pass
-
-
-# ── Searxng config bootstrap ─────────────────────────────────────────────────
-
-def stage_searxng_config(client: docker.DockerClient) -> None:
-    """Copy settings.yml into /etc/searxng inside the hlh_search container.
-
-    Done after creation because we can't bind-mount a file into a tmpfs
-    directory. The image starts with /etc/searxng template files; we drop
-    our settings.yml on top before SearXNG initializes.
-    """
-    # Read the template from inside the orchestra container
-    with open(SEARXNG_YML_TEMPLATE, "r") as f:
-        content = f.read()
-    # Write via docker exec
-    c = client.containers.get("hlh_search")
-    encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
-    c.exec_run(
-        ["sh", "-c", f"echo '{encoded}' | base64 -d > /etc/searxng/settings.yml"],
-        user="root",
-    )
 
 
 # ── Main entry point ─────────────────────────────────────────────────────────
@@ -579,13 +597,18 @@ def run() -> dict[str, str]:
 
     ensure_container(client, "hlh_chat", lambda: create_chat(client, chat_image, gpu))
     ensure_container(client, "hlh_search", lambda: create_search(client))
-    # Stage searxng config after start (can't bind-mount file into tmpfs)
-    try:
-        stage_searxng_config(client)
-    except Exception as e:
-        log(f"warn: searxng config stage failed: {e}")
 
     ensure_container(client, "hlh_ui", lambda: create_ui(client))
+
+    # Vision sidecar (opt-in via HLH_ENABLE_VISION). Created stopped;
+    # hlh_orchestra starts it on demand via /vision/start so the ~5 GB model
+    # isn't resident unless vision features are used. Mirrors the compose
+    # `vision` profile.
+    if os.environ.get("HLH_ENABLE_VISION"):
+        if not container_exists(client, "hlh_vision_embed"):
+            create_vision_embed(client)
+            attach_to_network(client, "hlh_vision_embed", NETWORK_INFERENCE)
+        log("vision_embed ready (stopped; orchestra starts it on demand)")
 
     log(f"done — homelabhealth is running → http://localhost:{PORT_UI}")
     return secrets_dict
