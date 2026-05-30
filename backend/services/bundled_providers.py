@@ -48,11 +48,6 @@ BUNDLED_RERANK_NAME = "HomeLab Health AI · Rerank"
 BUNDLED_RERANK_BASE_URL = "http://hlh_chat:9610"
 BUNDLED_RERANK_MODEL = "bge-reranker"
 
-BUNDLED_VISION_EMBED_NAME = "HomeLab Health AI · Vision Embed"
-BUNDLED_VISION_EMBED_BASE_URL = "http://hlh_vision_embed:7997"
-# TODO: replace with Sam's ungated repo
-MEDSIGLIP_MODEL_ID = os.environ.get("HLH_MEDSIGLIP_MODEL", "indifferentketchup/medsiglip-448-fp16")
-
 
 # Per-tier chat model aliases — must match the [section] names in
 # hlh_chat/models.ini. The router dispatches by this alias.
@@ -105,22 +100,11 @@ async def _upsert_bundled_row(
     return str(row["id"]) if row else None
 
 
-async def _is_vision_sidecar_enabled() -> bool:
-    """Check if the vision sidecar is reachable (profile=vision active)."""
-    import httpx
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(3.0)) as c:
-            r = await c.get(f"{BUNDLED_VISION_EMBED_BASE_URL}/health")
-            return r.status_code == 200
-    except Exception:
-        return False
-
-
 async def ensure_bundled_providers(conn) -> dict[str, str] | None:
-    """Idempotent upsert of bundled rows (chat + embed + rerank + optional vision_embed).
+    """Idempotent upsert of bundled rows (chat + embed + rerank).
 
     No-op unless `system_profile.setup_complete = TRUE` AND tier ≠ 'external'.
-    Returns {'chat': uuid, 'embed': uuid, 'rerank': uuid, 'vision_embed': uuid|None} or None if no-op.
+    Returns {'chat': uuid, 'embed': uuid, 'rerank': uuid} or None if no-op.
     """
     profile = await _read_system_profile(conn)
     if profile is None:
@@ -145,16 +129,11 @@ async def ensure_bundled_providers(conn) -> dict[str, str] | None:
         conn, name=BUNDLED_RERANK_NAME, base_url=BUNDLED_RERANK_BASE_URL, role="rerank"
     )
 
-    vision_embed_id = await _upsert_bundled_row(
-        conn, name=BUNDLED_VISION_EMBED_NAME, base_url=BUNDLED_VISION_EMBED_BASE_URL, role="vision_embed"
-    )
-    logger.info("bundled_providers: seeded vision_embed=%s", vision_embed_id)
-
     logger.info(
         "bundled_providers: ensured chat=%s embed=%s rerank=%s",
         chat_id, embed_id, rerank_id,
     )
-    return {"chat": chat_id, "embed": embed_id, "rerank": rerank_id, "vision_embed": vision_embed_id}
+    return {"chat": chat_id, "embed": embed_id, "rerank": rerank_id}
 
 
 async def apply_bundled_bindings(conn, tier: str) -> None:
@@ -209,26 +188,7 @@ async def apply_bundled_bindings(conn, tier: str) -> None:
         BUNDLED_RERANK_MODEL,
     )
 
-    # 3. Vision embed binding — only if provider row was seeded.
-    if ids.get("vision_embed"):
-        await conn.execute(
-            """
-            INSERT INTO global_settings (key, value) VALUES ('vision_embed_provider_id', $1)
-                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-            """,
-            ids["vision_embed"],
-        )
-        await conn.execute(
-            """
-            INSERT INTO global_settings (key, value) VALUES ('vision_embed_model', $1)
-                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-            """,
-            MEDSIGLIP_MODEL_ID,
-        )
-        logger.info("apply_bundled_bindings: vision_embed bound to provider=%s model=%s",
-                     ids["vision_embed"], MEDSIGLIP_MODEL_ID)
-
-    # 4. Symlink active mmproj + 4b vision base for the current tier so the
+    # 3. Symlink active mmproj + 4b vision base for the current tier so the
     #    on-demand [medgemma-vision] preset can load them.
     link_active_mmproj(tier)
     link_active_vision_base(tier)

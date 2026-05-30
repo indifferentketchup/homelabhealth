@@ -358,9 +358,10 @@ with base64 image_url. Falls back to pdfplumber/Tesseract.
 **New tier: `gpu-4gb`** — MedGemma 4B Q4_K_M with partial GPU offload
 for 4-5 GB VRAM cards. `_GPU_4_MIN_VRAM_GB = 4` in sysinfo.py.
 
-**MedSigLIP: deferred.** Not part of A3. MedGemma's built-in SigLIP
-encoder handles the vision extraction use case. MedSigLIP for standalone
-medical image embeddings is a future enhancement.
+**MedSigLIP: removed.** Never part of A3. MedGemma's built-in SigLIP
+encoder handles the vision extraction use case. The standalone MedSigLIP
+image-embedding sidecar (`hlh_vision_embed`) was prototyped and later
+removed from the product (2026-05-30).
 
 **MTP constraint (locked):** cpu-min runs Qwen3.5-0.8B (MTP variant).
 MTP + mmproj = fatal n_embd mismatch. Vision is None on cpu-min.
@@ -781,8 +782,6 @@ Resolve at the phase where they become blocking.
 
 - **A2 Q:** infinity-emb vs llama.cpp embedding server. Bake-off at
   A2 kickoff.
-- **A3 Q:** MedSigLIP license redistribution terms. If forbidden,
-  manual-download flow.
 - **A4 Q:** STT input transcode browser-side vs `hlh_api`-side.
 - **A5 Q:** dedicated OCR needed at all? End-of-A3 eval decides.
 - **A7 Q:** search egress posture for non-maintainer deployments.

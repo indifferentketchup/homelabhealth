@@ -4,6 +4,12 @@
 **Status:** Design approved, ready to build.
 **Spec author:** Sam (`indifferentketchup`)
 
+> **Note (2026-05-30):** The `hlh_vision_embed` / MedSigLIP image-embedding sidecar
+> and its `vision` compose profile were later removed from the product. References
+> to `hlh_vision_embed` and the `vision` profile below are historical and no longer
+> apply; bootstrap no longer manages a vision-embed container. MedGemma vision
+> (chat/ingestion) is unaffected.
+
 ## Problem
 
 The homelabhealth stack is 7 containers, 2 networks, 7 volumes, with profiles

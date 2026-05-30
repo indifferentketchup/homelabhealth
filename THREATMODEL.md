@@ -34,9 +34,7 @@ operator's LAN or VPN. TLS termination is operator-configured (reverse proxy or 
 The `hlh_inference` network (`internal: true`) connects `hlh_api` to `hlh_chat`; no host
 ports are bound on `hlh_chat`. Docker's `internal: true` prevents the network from routing
 to the host's external interfaces. The `hlh_default` network connects `hlh_api` to
-`hlh_search`, `hlh_db`, `hlh_orchestra`, and `hlh_vision_embed`. `hlh_orchestra` has the
-Docker socket bind-mounted (scoped to `hlh_vision_embed` via hardcoded allowlist) for
-vision container lifecycle control.
+`hlh_search`, `hlh_db`, and `hlh_orchestra`.
 
 ---
 
@@ -52,11 +50,9 @@ access to PHI endpoints. Session cookies are not yet `Secure`-flagged when HTTPS
 
 ### Container hardening
 
-`hlh_chat`, `hlh_vision_embed`, and `hlh_orchestra` run with `read_only: true`,
+`hlh_chat` and `hlh_orchestra` run with `read_only: true`,
 `cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]`. `hlh_chat` has no host ports
-and is isolated on `hlh_inference` (`internal: true`). `hlh_orchestra` has the Docker socket
-bind-mounted but is scoped to vision container operations only via a hardcoded allowlist and
-token auth.
+and is isolated on `hlh_inference` (`internal: true`).
 Image tags are pinned: `ghcr.io/ggml-org/llama.cpp:server-b9282` and
 `searxng/searxng:2026.5.22-c57f772ad`. Hardening is verified by
 `backend/scripts/verify_a1_5_hardening.sh`. Shipped in v0.8.0.

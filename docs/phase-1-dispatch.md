@@ -1,5 +1,7 @@
 #careful
 
+> **Note (2026-05-30):** MedSigLIP (the standalone `medsiglip` / `vision_embed` image-embedding sidecar) was removed from the product. The `medsiglip` role and the `hlh_vision_embed` sidecar no longer exist. References below are historical. MedGemma vision (chat/ingestion) is unaffected.
+
 # HLH Bundled-AI — Phase 1: Chat Sidecar + Model Puller
 
 Branch off `v1.11.0`: `feat/phase-1-chat-sidecar`.

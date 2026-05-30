@@ -47,7 +47,7 @@ docker compose logs --no-color > /tmp/hlh-incident-$(date +%Y%m%d-%H%M%S)-compos
 ```
 
 ```bash
-docker inspect hlh_api hlh_chat hlh_vision_embed hlh_orchestra hlh_search hlh_ui hlh_db \
+docker inspect hlh_api hlh_chat hlh_orchestra hlh_search hlh_ui hlh_db \
   > /tmp/hlh-incident-$(date +%Y%m%d-%H%M%S)-inspect.json
 ```
 

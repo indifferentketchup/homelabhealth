@@ -1,5 +1,7 @@
 #!/bin/sh
-# Entrypoint: in bootstrap mode, run bootstrap then start FastAPI.
-# In normal (compose) mode, skip bootstrap and just run FastAPI.
+# The orchestra is a one-shot bootstrap tool: create/repair the whole stack and
+# exit. The vision-lifecycle FastAPI server was removed in v1.2.11 (MedSigLIP
+# dropped; MedGemma vision is served on demand by the hlh_chat router), so there
+# is no long-running process here. Launched via the install.sh `docker run` one-liner.
 set -e
-exec uvicorn app:app --host 0.0.0.0 --port 9620 --log-level info
+exec python /app/bootstrap.py

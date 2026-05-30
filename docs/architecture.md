@@ -50,13 +50,11 @@ safeguards, column encryption, de-identification on ingest, audit trail.
 | `hlh_chat` | `llama.cpp:server-b9282` | — | `hlh_inference` | Chat completions; optional `--mmproj` vision |
 | `hlh_infer` | `michaelf34/infinity:0.0.77-cpu` | — | both | `/v1/embeddings` + `/v1/rerank` |
 | `hlh_search` | `searxng/searxng:2026.5.22-…` | 9612 | `hlh_default` | Meta-search for web grounding |
-| `hlh_vision_embed` | `michaelf34/infinity:0.0.77-cpu` | — | `hlh_default` | MedSigLIP vision embeddings (opt-in, `vision` profile) |
-| `hlh_orchestra` | `./hlh_orchestra` | — | `hlh_default` | Docker-socket-scoped lifecycle for `hlh_vision_embed`; also the smart-bootstrap entry point |
+| `hlh_orchestra` | `./hlh_orchestra` | — | `hlh_default` | Smart-bootstrap entry point and lifecycle manager |
 
 **Compose profile:** `bundled` (default in `.env.example`) enables `hlh_chat`,
-`hlh_search`. `bundled-gpu` swaps the CUDA llama.cpp image. `vision` adds
-`hlh_vision_embed` + `hlh_orchestra`. Set `COMPOSE_PROFILES=` empty for
-external-only AI.
+`hlh_search`. `bundled-gpu` swaps the CUDA llama.cpp image. Set
+`COMPOSE_PROFILES=` empty for external-only AI.
 
 **Smart bootstrap (alternative to compose):** `docker run -v
 /var/run/docker.sock:/var/run/docker.sock -e HLH_BOOTSTRAP=1
@@ -77,7 +75,6 @@ running as the lifecycle manager. See
 | `hlh_branding` | `/data/branding` | User icons |
 | `hlh_history` | `/data/history` | Chat export history |
 | `hlh_config` | `/data/config` (orchestra) | Bootstrap-generated secrets, `models.ini`, `searxng_settings.yml` |
-| `hlh_vision_cache` | `/app/.cache` (vision_embed) | MedSigLIP model cache |
 
 All services except Postgres/nginx use `read_only: true`, `cap_drop: [ALL]`,
 `no-new-privileges`. See [THREATMODEL.md](../THREATMODEL.md).
