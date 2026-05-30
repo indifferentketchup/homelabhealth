@@ -28,7 +28,9 @@ PORT_UI = os.environ.get("HLH_PORT_UI", "9604")
 PORT_SEARCH = os.environ.get("HLH_PORT_SEARCH", "9612")
 PORT_CHAT = os.environ.get("HLH_CHAT_PORT", "9610")
 CHAT_MEM = os.environ.get("HLH_CHAT_MEM", "7g")
-MODELS_MAX = os.environ.get("HLH_MODELS_MAX", "2")
+# Explicit override via env; otherwise create_chat picks a gpu-aware default so
+# a RAG turn (embed + rerank + chat) doesn't evict the large chat model.
+MODELS_MAX = os.environ.get("HLH_MODELS_MAX")
 
 NETWORK_DEFAULT = "hlh_default"
 NETWORK_INFERENCE = "hlh_inference"
@@ -395,6 +397,10 @@ def create_chat(client: docker.DockerClient, image: str, gpu: bool) -> Any:
         extra["device_requests"] = [
             docker.types.DeviceRequest(count=1, capabilities=[["gpu"]])
         ]
+    # Keep enough models resident that a RAG turn (embed + rerank + chat) doesn't
+    # evict the large chat model and force a multi-GB reload on the next message.
+    # GPU tiers have VRAM headroom for the full bundled set; CPU stays conservative.
+    models_max = MODELS_MAX or ("4" if gpu else "2")
     return client.containers.create(
         image=image,
         name="hlh_chat",
@@ -408,7 +414,7 @@ def create_chat(client: docker.DockerClient, image: str, gpu: bool) -> Any:
             "--models-preset", "/config/models.ini",
             "--host", "0.0.0.0",
             "--port", PORT_CHAT,
-            "--models-max", MODELS_MAX,
+            "--models-max", models_max,
         ],
         network=NETWORK_INFERENCE,
         user="1000:1000",

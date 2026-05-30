@@ -18,6 +18,21 @@ live under the `snapshot/` namespace.
 
 ---
 
+## [v1.2.2] — 2026-05-30
+
+### Performance
+- **Chat felt slow between messages — model thrashing, not slow inference.**
+  Generation was already healthy (~60 tok/s for medgemma-27b on a 5090), but
+  bootstrap hardcoded `--models-max 2` while a single RAG turn loads three
+  models in sequence (embed → rerank → chat). With only 2 slots the 16.5 GB
+  chat model got evicted and **reloaded from disk on the next message**, adding
+  multi-second time-to-first-token. Now gpu-aware: `--models-max 4` on GPU
+  (CPU stays 2; `HLH_MODELS_MAX` still overrides), and `sleep-idle-seconds`
+  raised 300 → 1800 so warm models don't unload mid-session. GPU tiers have the
+  VRAM headroom for the full bundled set (~19 GB of 32).
+
+---
+
 ## [v1.2.1] — 2026-05-30
 
 ### Fixes
