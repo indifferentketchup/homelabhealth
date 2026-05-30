@@ -19,6 +19,10 @@ logger = logging.getLogger(__name__)
 
 VISION_URL = "http://hlh_chat:9610/v1/chat/completions"
 VISION_TIMEOUT = 300.0
+# Router preset (models.ini) for on-demand MedGemma-4b vision. MUST be sent as
+# the request "model" or the llama-server router 400s the call (it has no default
+# model in --models-preset mode). Loaded/evicted on demand by the router.
+VISION_MODEL = "medgemma-vision"
 
 TEXT_EXTRACTION_PROMPT = (
     "Extract all visible text from this image exactly as shown. "
@@ -57,11 +61,14 @@ DOCUMENT_EXTRACTION_PROMPT = (
 
 
 def is_vision_available() -> bool:
-    """Check if the active mmproj symlink exists on the shared models volume."""
+    """True only when the on-demand MedGemma-4b vision preset can load — both the
+    4b base and its mmproj must be present (the symlinks resolve to real files).
+    Gates every vision call, so on a box without the vision model pulled the
+    [medgemma-vision] preset is never requested and can't break chat."""
     from pathlib import Path
     import os
-    models_base = Path(os.environ.get("HLH_MODELS_DIR", "/models"))
-    return (models_base / "vision" / "active-mmproj.gguf").exists()
+    vision = Path(os.environ.get("HLH_MODELS_DIR", "/models")) / "vision"
+    return (vision / "active-medgemma-4b.gguf").exists() and (vision / "active-mmproj.gguf").exists()
 
 
 async def _call_vision(image_bytes: bytes, prompt: str, mime_type: str = "image/png") -> str | None:
@@ -70,6 +77,7 @@ async def _call_vision(image_bytes: bytes, prompt: str, mime_type: str = "image/
     data_url = f"data:{mime_type};base64,{b64}"
 
     payload = {
+        "model": VISION_MODEL,
         "messages": [
             {
                 "role": "user",
