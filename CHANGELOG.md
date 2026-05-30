@@ -18,6 +18,20 @@ live under the `snapshot/` namespace.
 
 ---
 
+## [v1.2.7] — 2026-05-30
+
+### Fixes
+- **Durable-streaming response duplication.** At stream-end, when the assistant
+  row flipped to `status='complete'`, the next poll wrote the complete row into
+  the React Query cache and React re-rendered *before* the cleanup effect
+  cleared `streamText` — so for one frame the real DB row (no longer excluded by
+  the `status==='streaming'` filter) and the synthetic `__stream__` tail both
+  rendered, showing the answer twice. `ChatView.jsx` now filters the durable
+  assistant row by **id** (`durable.streamingMessageId`), not just status,
+  keeping it suppressed until the effect clears the id.
+
+---
+
 ## [v1.2.6] — 2026-05-30
 
 ### AI

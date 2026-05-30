@@ -244,7 +244,12 @@ export function ChatView({
   const showOptimistic =
     Boolean(pendingSend && optimisticUser) && !serverHasPendingUserBubble
   const baseMessages = busy
-    ? messages.filter((m) => !(m.role === 'assistant' && m.status === 'streaming'))
+    ? messages.filter((m) => {
+        if (m.role !== 'assistant') return true
+        if (m.status === 'streaming') return false
+        if (durableEnabled && durable.streamingMessageId && m.id === durable.streamingMessageId) return false
+        return true
+      })
     : messages
   const displayMessages = showOptimistic ? [...baseMessages, optimisticUser] : baseMessages
 
