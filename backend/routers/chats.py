@@ -189,17 +189,25 @@ async def _assembled_system_prompt(
                 "SELECT source_id FROM chat_source_selections WHERE chat_id = $1::uuid",
                 cid,
             )
-            source_ids = [str(r["source_id"]) for r in sel]
-            if not source_ids:
-                workspace_sources = await conn.fetch(
-                    "SELECT id FROM sources WHERE workspace_id = $1::uuid AND embedding_status = 'complete'",
-                    uuid.UUID(str(workspace_id)),
-                )
-                source_ids = [str(r["id"]) for r in workspace_sources]
+            # Attached sources ("send to chat") are prioritized, but RAG always
+            # searches every embedded source in the workspace so the model can
+            # read anything the user references — not just what's attached.
+            priority_ids = [str(r["source_id"]) for r in sel]
+            workspace_sources = await conn.fetch(
+                "SELECT id FROM sources WHERE workspace_id = $1::uuid AND embedding_status = 'complete'",
+                uuid.UUID(str(workspace_id)),
+            )
+            source_ids = [str(r["id"]) for r in workspace_sources]
+            # Defensive union: keep attached sources searchable even if they fall
+            # outside the workspace 'complete' set for any reason.
+            for pid in priority_ids:
+                if pid not in source_ids:
+                    source_ids.append(pid)
             if source_ids:
                 rag_block, rag_n = await retrieve_context(
                     str(user_query_for_rag).strip(),
                     source_ids,
+                    priority_source_ids=priority_ids,
                 )
                 if rag_block:
                     parts.append(rag_block)
