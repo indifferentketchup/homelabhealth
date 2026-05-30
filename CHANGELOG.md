@@ -18,6 +18,20 @@ live under the `snapshot/` namespace.
 
 ---
 
+## [v1.1.6] — 2026-05-30
+
+### Fixes
+- **API crash-loop on boot (regression from v1.1.4)** — v1.1.4 added the
+  `tasks` role to `MODEL_REGISTRY`, but `bundled_models.role`'s CHECK
+  constraint didn't allow it. `seed_registry` then raised
+  `CheckViolationError` on every startup → lifespan aborted → `hlh_api`
+  crash-looped → nothing worked, including login. Added `tasks` to the CHECK
+  (inline for fresh DBs) plus an idempotent drop+re-add `ALTER` for existing
+  DBs (mirrors the `providers_role_check` migration). Affected v1.1.4 and
+  v1.1.5; this is the hotfix.
+
+---
+
 ## [v1.1.5] — 2026-05-30
 
 ### AI
