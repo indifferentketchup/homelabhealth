@@ -371,6 +371,7 @@ def create_api(
             "SEARXNG_URL": "http://hlh_search:8080",
             "HLH_MASTER_KEY": master_key,
             "ORCHESTRA_TOKEN": orch_token,
+            "HLH_VERSION": VERSION,  # surfaced in the startup banner
         },
         ports={"8000/tcp": int(PORT_API)},
         volumes={

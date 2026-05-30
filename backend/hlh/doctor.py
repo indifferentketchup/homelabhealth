@@ -437,6 +437,56 @@ async def _check_image_tier_match() -> dict[str, Any]:
         return {"name": "image_tier_match", "status": WARN, "detail": f"{type(e).__name__}: {e}"}
 
 
+def _check_models_writable() -> dict[str, Any]:
+    """The uid-1000 API must be able to write flat /models/<file> downloads.
+
+    Docker only chowns a fresh empty named volume; a populated hlh_models root
+    can be root-owned, which makes embed/rerank/tasks/chat pulls EACCES.
+    """
+    models_dir = pathlib.Path(os.environ.get("HLH_MODELS_DIR", "/models"))
+    probe = models_dir / ".doctor-write-probe"
+    try:
+        probe.write_text("ok")
+        probe.unlink()
+        return {"name": "models_volume_writable", "status": OK, "detail": f"{models_dir} writable"}
+    except OSError as e:
+        return {
+            "name": "models_volume_writable",
+            "status": ERROR,
+            "detail": (
+                f"{models_dir} not writable by uid-1000 ({type(e).__name__}) — model pulls will "
+                "fail; fix: docker run --rm -v hlh_models:/models alpine chown -R 1000:1000 /models"
+            ),
+        }
+
+
+async def _check_model_pulls() -> dict[str, Any]:
+    """Surface failed / stuck / pending bundled-model downloads."""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch("SELECT role, status FROM bundled_models")
+    except Exception as e:  # noqa: BLE001
+        return {"name": "model_pulls", "status": ERROR, "detail": f"{type(e).__name__}: {e}"}
+
+    by = {}
+    for r in rows:
+        by.setdefault(r["status"], []).append(r["role"])
+    failed = sorted(set(by.get("failed", [])))
+    pulling = sorted(set(by.get("pulling", [])))
+    ready = len(by.get("ready", []))
+    pending = len(by.get("pending", []))
+    if failed:
+        return {"name": "model_pulls", "status": ERROR,
+                "detail": f"failed: {', '.join(failed)} — retry in Settings → System → Models"}
+    if pulling:
+        return {"name": "model_pulls", "status": WARN, "detail": f"downloading: {', '.join(pulling)}"}
+    if pending and ready == 0:
+        return {"name": "model_pulls", "status": WARN,
+                "detail": f"{pending} model(s) not yet pulled — open Settings → System → Models"}
+    return {"name": "model_pulls", "status": OK, "detail": f"{ready} ready, {pending} pending"}
+
+
 async def run_checks() -> list[dict[str, Any]]:
     """Run all health checks. Returns ordered list."""
     checks = [
@@ -449,6 +499,8 @@ async def run_checks() -> list[dict[str, Any]]:
         await _check_safeguard_version(),
         _check_disk_free("disk_free_data", "/data"),
         _check_disk_free("disk_free_models", "/models"),
+        _check_models_writable(),
+        await _check_model_pulls(),
         _check_provider_key(),
         {**_check_luks_status(), "advanced": True},
         {**_check_backrest_repo(), "advanced": True},
