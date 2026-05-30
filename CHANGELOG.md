@@ -16,6 +16,26 @@ live under the `snapshot/` namespace.
 
 ## [Unreleased]
 
+---
+
+## [v1.1.4] — 2026-05-30
+
+### AI
+- **Bundled embedder / reranker / tasks models now download** — `embed`
+  (bge-m3), `rerank` (bge-reranker-v2-m3), and `tasks` (gemma-3-270m) were
+  `None` placeholders (`# Phase 2`) in `model_puller.MODEL_REGISTRY`, so
+  `seed_registry` never created rows, nothing was pullable, and the bundled
+  router had no weights — `/v1/embeddings` returned 500 and RAG/search could
+  not work. Added pull specs (public gpustack / unsloth GGUF mirrors;
+  filenames match `models.ini`) for all six router tiers, plus a flat
+  `/models/<file>` dest-path for these tier-independent roles so they land
+  exactly where `models.ini` points. The Models tab now lists Embed / Relevance
+  / Tasks rows you can pull.
+  - **Known remaining gap:** GPU tiers' chat model (medgemma-27b) downloads to
+    `/models/chat/<tier>/` but `models.ini` only wires the cpu-std path and
+    pins `n-gpu-layers=0`. GPU chat needs a tier-aware `models.ini` (separate
+    change). Embed/rerank/tasks above are tier-independent and unaffected.
+
 ### UX
 - **"Enable GPU acceleration" card** — when no GPU is detected, the System tab
   now shows a prompt with the one-command host installer

@@ -65,6 +65,45 @@ class ModelSpec:
 
 _GEMMA_LICENSE = "gemma"
 
+# Router-served roles (embed / rerank / tasks) are tier-independent: one GGUF
+# serves every bundled router tier, landing at a flat /models/<file> path that
+# models.ini already references (see _FLAT_DEST_ROLES). External/BYO and
+# apple-mlx tiers don't use the bundled router, so they stay None.
+_ROUTER_TIERS = ("cpu-min", "cpu-std", "gpu-4gb", "gpu-8gb", "gpu-16gb", "gpu-24gb+")
+
+
+def _router_role(spec: ModelSpec) -> dict[str, ModelSpec | None]:
+    return {tier: (spec if tier in _ROUTER_TIERS else None) for tier in ALL_TIERS}
+
+
+# Embedder (bge-m3, MIT) + reranker (bge-reranker-v2-m3, Apache) from the public
+# gpustack GGUF mirrors; tasks model is gemma-3-270m (lightweight title gen).
+# Filenames match models.ini's [bge-m3] / [bge-reranker] / [gemma-tasks] paths.
+_EMBED_SPEC = ModelSpec(
+    repo="gpustack/bge-m3-GGUF",
+    filename="bge-m3-Q8_0.gguf",
+    quant="Q8_0",
+    license="mit",
+    license_url="https://huggingface.co/gpustack/bge-m3-GGUF",
+    revision="main",
+)
+_RERANK_SPEC = ModelSpec(
+    repo="gpustack/bge-reranker-v2-m3-GGUF",
+    filename="bge-reranker-v2-m3-Q8_0.gguf",
+    quant="Q8_0",
+    license="apache-2.0",
+    license_url="https://huggingface.co/gpustack/bge-reranker-v2-m3-GGUF",
+    revision="main",
+)
+_TASKS_SPEC = ModelSpec(
+    repo="unsloth/gemma-3-270m-it-GGUF",
+    filename="gemma-3-270m-it-UD-Q8_K_XL.gguf",
+    quant="UD-Q8_K_XL",
+    license=_GEMMA_LICENSE,
+    license_url="https://huggingface.co/unsloth/gemma-3-270m-it-GGUF",
+    revision="main",
+)
+
 # Phase 1 supplies chat specs only; all other roles get None placeholders so
 # the schema is exercised but no pulls happen. Subsequent phases extend each
 # role's tier map.
@@ -129,8 +168,9 @@ MODEL_REGISTRY: dict[str, dict[str, ModelSpec | None]] = {
         "apple-mlx": None,  # Phase 6
         "external": None,
     },
-    "embed":     {tier: None for tier in ALL_TIERS},  # Phase 2
-    "rerank":    {tier: None for tier in ALL_TIERS},  # Phase 2
+    "tasks":     _router_role(_TASKS_SPEC),   # gemma-3-270m — title generation
+    "embed":     _router_role(_EMBED_SPEC),   # bge-m3 — RAG embeddings
+    "rerank":    _router_role(_RERANK_SPEC),  # bge-reranker-v2-m3 — RAG rerank
     "vision": {
         "cpu-min": None,  # MTP model, mmproj incompatible
         "cpu-std": ModelSpec(
@@ -280,8 +320,16 @@ async def _hf_headers(pool_or_conn) -> dict[str, str]:
     return {}
 
 
+# These roles serve a single tier-independent GGUF from a flat /models/<file>
+# path — exactly what models.ini references for bge-m3 / bge-reranker /
+# gemma-tasks. Chat and vision stay under /models/<role>/<tier>/.
+_FLAT_DEST_ROLES = {"embed", "rerank", "tasks"}
+
+
 def _dest_path(role: str, tier: str, filename: str) -> Path:
     """Where the file lands on disk."""
+    if role in _FLAT_DEST_ROLES:
+        return MODELS_BASE_DIR / filename
     return MODELS_BASE_DIR / role / tier / filename
 
 
