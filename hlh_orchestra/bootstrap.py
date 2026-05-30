@@ -11,6 +11,7 @@ import base64
 import logging
 import os
 import secrets
+import socket
 import sys
 import time
 from typing import Any
@@ -539,6 +540,30 @@ def attach_to_network(client: docker.DockerClient, container_name: str, network_
         pass
 
 
+def attach_self_to_network(client: docker.DockerClient) -> None:
+    """Attach the orchestra's OWN container to hlh_default as `hlh_orchestra`.
+
+    When launched standalone via the install.sh `docker run` one-liner, the
+    orchestra gets a random name on the default bridge, so hlh_api's call to
+    http://hlh_orchestra:9620 can't resolve and vision lifecycle is unreachable.
+    We connect ourselves to hlh_default with the `hlh_orchestra` network alias.
+    No-op under compose, which already names + networks the service (and doesn't
+    set HLH_BOOTSTRAP, so run() — and this — never runs there).
+    """
+    self_id = socket.gethostname()  # Docker sets the hostname to the short container id
+    try:
+        net = client.networks.get(NETWORK_DEFAULT)
+        net.reload()
+        if any(c.id.startswith(self_id) for c in net.containers):
+            return  # already attached (restart path)
+        net.connect(self_id, aliases=["hlh_orchestra"])
+        log("orchestra attached to hlh_default as 'hlh_orchestra'")
+    except NotFound:
+        log("warn: hlh_default not found; orchestra not attached (vision unreachable)")
+    except APIError as e:
+        log(f"warn: orchestra self-attach failed: {e}")
+
+
 # ── Main entry point ─────────────────────────────────────────────────────────
 
 def run() -> dict[str, str]:
@@ -609,6 +634,10 @@ def run() -> dict[str, str]:
             create_vision_embed(client)
             attach_to_network(client, "hlh_vision_embed", NETWORK_INFERENCE)
         log("vision_embed ready (stopped; orchestra starts it on demand)")
+
+    # Make ourselves reachable as http://hlh_orchestra:9620 for hlh_api's
+    # vision-lifecycle calls (no-op under compose).
+    attach_self_to_network(client)
 
     log(f"done — homelabhealth is running → http://localhost:{PORT_UI}")
     return secrets_dict
