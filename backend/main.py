@@ -36,7 +36,6 @@ from routers.notes import router as notes_router
 from routers.sources import router as sources_router
 from routers.audit import router as audit_router
 from routers.auth import router as auth_router
-from routers.vision_embed import router as vision_embed_router
 from routers.demo import router as demo_router
 
 import logging
@@ -81,35 +80,6 @@ def _cors_origins() -> list[str]:
         if u not in raw:
             raw.append(u)
     return raw
-
-
-VISION_IDLE_TIMEOUT_MS = 30 * 60 * 1000
-
-
-async def _vision_idle_evictor() -> None:
-    """Stop vision container after 30min idle."""
-    import time as _time
-    while True:
-        await asyncio.sleep(60)
-        try:
-            from services.vision_lifecycle import vision_last_used_ms, stop_vision, vision_status
-            pool = await get_pool()
-            async with pool.acquire() as conn:
-                last = await vision_last_used_ms(conn)
-            if last == 0:
-                continue
-            idle_ms = _time.time() * 1000 - last
-            if idle_ms < VISION_IDLE_TIMEOUT_MS:
-                continue
-            status_data = await vision_status()
-            if status_data.get("status") != "running":
-                continue
-            logger.info("vision idle %.1fmin, stopping", idle_ms / 60000)
-            await stop_vision()
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            pass
 
 
 async def _streaming_sweeper() -> None:
@@ -171,18 +141,12 @@ async def lifespan(_app: FastAPI):
         logger.exception("startup traceback")
         raise
     sweeper_task = asyncio.create_task(_streaming_sweeper())
-    evictor_task = asyncio.create_task(_vision_idle_evictor())
     try:
         yield
     finally:
         sweeper_task.cancel()
-        evictor_task.cancel()
         try:
             await sweeper_task
-        except asyncio.CancelledError:
-            pass
-        try:
-            await evictor_task
         except asyncio.CancelledError:
             pass
         await close_pool()
@@ -340,7 +304,6 @@ api.include_router(notes_router, tags=["notes"])
 api.include_router(sources_router, tags=["sources"])
 api.include_router(history_router, prefix="/history", tags=["history"])
 api.include_router(audit_router, prefix="/audit", tags=["audit"])
-api.include_router(vision_embed_router, prefix="/vision", tags=["vision"])
 api.include_router(demo_router, prefix="/demo", tags=["demo"])
 
 

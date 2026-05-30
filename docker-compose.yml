@@ -1,21 +1,6 @@
 # All-in-one convenience (same Docker network). For split deploy: docker-compose.core.yml + docker-compose.ui.yml
 name: homelabhealth
 
-x-infinity-base: &infinity-base
-  image: ${HLH_INFER_IMAGE:-michaelf34/infinity:0.0.77-cpu}
-  command: ["v2", "--no-model-warmup"]
-  restart: unless-stopped
-  read_only: true
-  tmpfs:
-    - /tmp
-  cap_drop:
-    - ALL
-  security_opt:
-    - no-new-privileges:true
-  networks:
-    - hlh_default
-    - hlh_inference
-
 x-hlh-chat-base: &hlh-chat-base
   container_name: hlh_chat
   restart: unless-stopped
@@ -159,62 +144,13 @@ services:
               count: 1
               capabilities: [gpu]
 
-  # Phase A3: vision_embed sidecar (infinity-emb MedSigLIP). Internal-only.
-  # embed + rerank now served by hlh_chat router (orchestrator phase 1).
-
-  hlh_vision_embed:
-    <<: *infinity-base
-    container_name: hlh_vision_embed
-    restart: "no"
-    profiles: [vision]
-    env_file:
-      - .env
-    environment:
-      INFINITY_MODEL_ID: ${HLH_MEDSIGLIP_MODEL:-indifferentketchup/medsiglip-448-fp16}
-      INFINITY_ENGINE: "torch"
-      INFINITY_HOST: "0.0.0.0"
-      INFINITY_URL_PREFIX: "/v1"
-    volumes:
-      - hlh_vision_cache:/app/.cache
-    mem_limit: 5g
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:7997/health || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 15m
-
-  # Phase 4: orchestra — minimal Docker container manager for vision lifecycle.
-  # Scoped to hlh_vision_embed only (hardcoded allowlist in app.py).
-  # Docker socket bind-mounted HERE only — hlh_api never touches it.
-  hlh_orchestra:
-    image: ${HLH_REGISTRY:-ghcr.io/indifferentketchup}/hlh_orchestra:${HLH_VERSION:-latest}
-    build:
-      context: ./hlh_orchestra
-      dockerfile: Dockerfile
-    container_name: hlh_orchestra
-    restart: unless-stopped
-    profiles: [vision]
-    environment:
-      ORCHESTRA_TOKEN: ${ORCHESTRA_TOKEN}
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    networks:
-      - hlh_default
-    read_only: true
-    tmpfs:
-      - /tmp
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
-    mem_limit: 256m
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9620/health', timeout=2)"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
+  # The hlh_orchestra image is a one-shot bootstrap tool, NOT a compose service:
+  # it's run via the install.sh `docker run -e HLH_BOOTSTRAP=1 …` one-liner to
+  # bring this whole stack up from nothing. Build it with:
+  #   docker build -t ghcr.io/indifferentketchup/hlh_orchestra:<tag> ./hlh_orchestra
+  # (MedSigLIP / the hlh_vision_embed sidecar were removed in v1.2.11; MedGemma
+  # vision is now served on demand by the hlh_chat router — see [medgemma-vision]
+  # in hlh_chat/models.ini.)
 
   # Phase 2: bundled SearXNG for web search. Internal-only on hlh_default.
   # JSON format is enabled via searxng/settings.yml (default config has it off,
@@ -309,4 +245,3 @@ volumes:
   hlh_branding:
   hlh_history:
   hlh_models:
-  hlh_vision_cache:

@@ -9,7 +9,6 @@ const MODEL_DISPLAY = {
   'gemma-tasks':  { label: 'Tasks',      desc: 'Handles background jobs like summarization' },
   'bge-m3':       { label: 'Search',     desc: 'Finds relevant documents for your question' },
   'bge-reranker': { label: 'Relevance',  desc: 'Re-scores search results for accuracy' },
-  'medsiglip':    { label: 'Vision',     desc: 'Reads and understands medical images' },
 }
 
 function modelLabel(id) {
@@ -22,7 +21,6 @@ function modelDesc(id) {
 
 export default function ModelStateSidebar({ className }) {
   const [state, setState] = useState(null)
-  const [stopping, setStopping] = useState(false)
 
   const fetchState = useCallback(async () => {
     try {
@@ -42,20 +40,6 @@ export default function ModelStateSidebar({ className }) {
     const id = setInterval(poll, 3000)
     return () => { stopped = true; clearInterval(id) }
   }, [fetchState])
-
-  async function handleForceStop() {
-    if (!window.confirm('Stop vision container? It will restart on the next image request.')) return
-    setStopping(true)
-    try {
-      const r = await fetch('/api/inference/vision/stop', { method: 'POST' })
-      if (!r.ok) throw new Error(`HTTP ${r.status}`)
-      await fetchState()
-    } catch (e) {
-      console.error('force stop failed', e)
-    } finally {
-      setStopping(false)
-    }
-  }
 
   if (!state) return null
 
@@ -103,17 +87,6 @@ export default function ModelStateSidebar({ className }) {
               <TooltipContent side="top"><p className="font-sans text-xs">{modelDesc(m.id)}</p><p className="font-mono text-[10px] text-muted-foreground mt-0.5">{m.id}</p></TooltipContent>
             </Tooltip>
             <span className="text-[10px] text-muted-foreground">{(m.ram_mib / 1024).toFixed(1)}G</span>
-            {m.id === 'medsiglip' && (
-              <button
-                type="button"
-                onClick={handleForceStop}
-                disabled={stopping}
-                className="ml-1 rounded border border-border px-1 text-[10px] leading-snug text-muted-foreground hover:border-destructive hover:text-destructive disabled:opacity-50"
-                title="Stop vision to free memory"
-              >
-                {stopping ? '...' : '✕'}
-              </button>
-            )}
           </li>
         ))}
         {sleeping.map((m) => (

@@ -22,6 +22,10 @@ logger = logging.getLogger(__name__)
 
 MODELS_BASE = Path(os.environ.get("HLH_MODELS_DIR", "/models"))
 ACTIVE_MMPROJ = MODELS_BASE / "vision" / "active-mmproj.gguf"
+# MedGemma-4b base GGUF the on-demand [medgemma-vision] preset loads with the
+# mmproj for ingestion image/PDF reading. Pulled tier-independently (role
+# 'vision_base') so it's present even when the chat tier runs the 27b model.
+ACTIVE_VISION_BASE = MODELS_BASE / "vision" / "active-medgemma-4b.gguf"
 
 # Per-alias symlinks pointing at the chat GGUF the active tier downloaded.
 # models.ini's [medgemma] and [qwen-chat] sections point at these, so a single
@@ -43,11 +47,6 @@ BUNDLED_EMBED_MODEL = "bge-m3"
 BUNDLED_RERANK_NAME = "HomeLab Health AI · Rerank"
 BUNDLED_RERANK_BASE_URL = "http://hlh_chat:9610"
 BUNDLED_RERANK_MODEL = "bge-reranker"
-
-BUNDLED_VISION_EMBED_NAME = "HomeLab Health AI · Vision Embed"
-BUNDLED_VISION_EMBED_BASE_URL = "http://hlh_vision_embed:7997"
-# TODO: replace with Sam's ungated repo
-MEDSIGLIP_MODEL_ID = os.environ.get("HLH_MEDSIGLIP_MODEL", "indifferentketchup/medsiglip-448-fp16")
 
 
 # Per-tier chat model aliases — must match the [section] names in
@@ -101,22 +100,11 @@ async def _upsert_bundled_row(
     return str(row["id"]) if row else None
 
 
-async def _is_vision_sidecar_enabled() -> bool:
-    """Check if the vision sidecar is reachable (profile=vision active)."""
-    import httpx
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(3.0)) as c:
-            r = await c.get(f"{BUNDLED_VISION_EMBED_BASE_URL}/health")
-            return r.status_code == 200
-    except Exception:
-        return False
-
-
 async def ensure_bundled_providers(conn) -> dict[str, str] | None:
-    """Idempotent upsert of bundled rows (chat + embed + rerank + optional vision_embed).
+    """Idempotent upsert of bundled rows (chat + embed + rerank).
 
     No-op unless `system_profile.setup_complete = TRUE` AND tier ≠ 'external'.
-    Returns {'chat': uuid, 'embed': uuid, 'rerank': uuid, 'vision_embed': uuid|None} or None if no-op.
+    Returns {'chat': uuid, 'embed': uuid, 'rerank': uuid} or None if no-op.
     """
     profile = await _read_system_profile(conn)
     if profile is None:
@@ -141,16 +129,11 @@ async def ensure_bundled_providers(conn) -> dict[str, str] | None:
         conn, name=BUNDLED_RERANK_NAME, base_url=BUNDLED_RERANK_BASE_URL, role="rerank"
     )
 
-    vision_embed_id = await _upsert_bundled_row(
-        conn, name=BUNDLED_VISION_EMBED_NAME, base_url=BUNDLED_VISION_EMBED_BASE_URL, role="vision_embed"
-    )
-    logger.info("bundled_providers: seeded vision_embed=%s", vision_embed_id)
-
     logger.info(
         "bundled_providers: ensured chat=%s embed=%s rerank=%s",
         chat_id, embed_id, rerank_id,
     )
-    return {"chat": chat_id, "embed": embed_id, "rerank": rerank_id, "vision_embed": vision_embed_id}
+    return {"chat": chat_id, "embed": embed_id, "rerank": rerank_id}
 
 
 async def apply_bundled_bindings(conn, tier: str) -> None:
@@ -164,6 +147,7 @@ async def apply_bundled_bindings(conn, tier: str) -> None:
     if tier in ("external", "apple-mlx"):
         logger.info("apply_bundled_bindings: tier=%s; no-op (Apple MLX bundling is Phase 6)", tier)
         link_active_mmproj(tier)
+        link_active_vision_base(tier)
         link_active_chat(tier)
         return
 
@@ -204,27 +188,10 @@ async def apply_bundled_bindings(conn, tier: str) -> None:
         BUNDLED_RERANK_MODEL,
     )
 
-    # 3. Vision embed binding — only if provider row was seeded.
-    if ids.get("vision_embed"):
-        await conn.execute(
-            """
-            INSERT INTO global_settings (key, value) VALUES ('vision_embed_provider_id', $1)
-                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-            """,
-            ids["vision_embed"],
-        )
-        await conn.execute(
-            """
-            INSERT INTO global_settings (key, value) VALUES ('vision_embed_model', $1)
-                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-            """,
-            MEDSIGLIP_MODEL_ID,
-        )
-        logger.info("apply_bundled_bindings: vision_embed bound to provider=%s model=%s",
-                     ids["vision_embed"], MEDSIGLIP_MODEL_ID)
-
-    # 4. Symlink active mmproj for the current tier so hlh_chat picks it up.
+    # 3. Symlink active mmproj + 4b vision base for the current tier so the
+    #    on-demand [medgemma-vision] preset can load them.
     link_active_mmproj(tier)
+    link_active_vision_base(tier)
     link_active_chat(tier)
 
     # 4. Workspace chat binding. Per spec §4 step 3, BOTH UPDATEs are required:
@@ -286,6 +253,41 @@ def link_active_mmproj(tier: str) -> None:
         logger.info("link_active_mmproj: tier=%s → %s", tier, rel_target)
     except OSError as exc:
         logger.error("link_active_mmproj: tier=%s failed: %s", tier, exc)
+
+
+def link_active_vision_base(tier: str) -> None:
+    """Symlink active-medgemma-4b.gguf at the tier's pulled MedGemma-4b base GGUF.
+
+    The on-demand [medgemma-vision] preset in models.ini points at this stable
+    symlink (paired with active-mmproj.gguf). Tier-independent: every router tier
+    that supports vision pulls the same 4b base under /models/vision_base/<tier>/.
+    Best-effort, mirroring link_active_mmproj — clears the link if not yet pulled
+    so the preset is simply unavailable rather than pointing at a missing file.
+    """
+    from services.model_puller import MODEL_REGISTRY
+    try:
+        spec = MODEL_REGISTRY.get("vision_base", {}).get(tier)
+        if spec is None:
+            if ACTIVE_VISION_BASE.is_symlink() or ACTIVE_VISION_BASE.exists():
+                ACTIVE_VISION_BASE.unlink()
+                logger.info("link_active_vision_base: tier=%s → cleared (no spec)", tier)
+            return
+        target = MODELS_BASE / "vision_base" / tier / spec.filename
+        if not target.exists():
+            if ACTIVE_VISION_BASE.is_symlink() or ACTIVE_VISION_BASE.exists():
+                ACTIVE_VISION_BASE.unlink()
+            logger.info("link_active_vision_base: tier=%s → cleared (not yet pulled)", tier)
+            return
+        ACTIVE_VISION_BASE.parent.mkdir(parents=True, exist_ok=True)
+        rel_target = Path("..") / "vision_base" / tier / spec.filename
+        tmp = ACTIVE_VISION_BASE.parent / (ACTIVE_VISION_BASE.name + ".tmp")
+        if tmp.is_symlink() or tmp.exists():
+            tmp.unlink()
+        os.symlink(rel_target, tmp)
+        os.rename(tmp, ACTIVE_VISION_BASE)
+        logger.info("link_active_vision_base: tier=%s → %s", tier, rel_target)
+    except OSError as exc:
+        logger.error("link_active_vision_base: tier=%s failed: %s", tier, exc)
 
 
 def migrate_legacy_chat_paths() -> None:

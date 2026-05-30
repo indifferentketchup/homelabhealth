@@ -18,7 +18,7 @@ within 14 days. Fix or workaround within 30 days for high-severity issues.
 
 - The `main` branch of this repository.
 - The latest tagged release.
-- The bundled sidecars as configured by the default `docker-compose.yml`: `hlh_api`, `hlh_chat`, `hlh_vision_embed`, `hlh_orchestra`, `hlh_search`, `hlh_ui`, `hlh_db`.
+- The bundled sidecars as configured by the default `docker-compose.yml`: `hlh_api`, `hlh_chat`, `hlh_orchestra`, `hlh_search`, `hlh_ui`, `hlh_db`.
 
 ## Out of scope
 

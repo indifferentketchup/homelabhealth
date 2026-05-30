@@ -18,6 +18,38 @@ live under the `snapshot/` namespace.
 
 ---
 
+## [v1.2.11] — 2026-05-30
+
+Spec: `docs/superpowers/specs/2026-05-30-remove-medsiglip-medgemma-4b-vision-design.md`
+
+### AI
+- **MedGemma vision actually reads attached images/PDFs now.** Two bugs meant
+  ingestion vision silently fell back to junk OCR text: `vision.py` sent no
+  `model` field (the llama-server router 400s without one) and `models.ini` had
+  no vision preset with an mmproj. Added a `[medgemma-vision]` router preset
+  (loaded on demand, evicted when idle) and made `vision.py` request it.
+- **Ingestion vision is pinned to MedGemma-4b, tier-independent.** The 4b model
+  (+ its mmproj) stays GPU-resident next to the chat model — even a 27b chat
+  tier — instead of forcing a VRAM offload. New `vision_base` role pulls the 4b
+  base GGUF on every vision-capable tier; `link_active_vision_base` /
+  `link_active_mmproj` aim the preset's symlinks. `is_vision_available()` gates
+  on both, so the preset is never requested (can't break chat) until pulled.
+
+### Removed
+- **MedSigLIP / the `hlh_vision_embed` sidecar is gone.** It only powered the
+  unused `/api/vision/{embed,search,classify}` image-vector endpoints — never
+  the ingest or chat path — for a ~5 GB sidecar's worth of cost. Removed the
+  backend services/router/lifecycle, the `vision_embed` provider seeding +
+  resolution, the doctor check, the `medsiglip` model-registry role, the
+  `hlh_vision_embed` compose service + `vision` profile + `hlh_vision_cache`
+  volume, and the frontend "Vision Search" UI. (The `vision_embed` /
+  `medsiglip` role values stay in the schema CHECKs — harmless, no migration.)
+- **`hlh_orchestra` is now bootstrap-only.** With vision lifecycle gone its only
+  job is the `install.sh` `docker run` bootstrap; dropped the long-running
+  FastAPI server, the `/vision/*` endpoints, `app.py`, and its compose service.
+
+---
+
 ## [v1.2.10] — 2026-05-30
 
 ### Fixes

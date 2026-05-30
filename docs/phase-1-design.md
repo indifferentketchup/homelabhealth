@@ -2,6 +2,8 @@
 
 > **Note (2026-05-22):** The Phase 1 design's deferral of embed/rerank bundling has been superseded by [`2026-05-22-bundled-system-takes-everything-design.md`](superpowers/specs/2026-05-22-bundled-system-takes-everything-design.md). The `bundled-chat` provider has been renamed `HomeLab Health AI · Chat` (UUID preserved), and two sibling rows now exist for embed + rerank.
 
+> **Note (2026-05-30):** MedSigLIP (the standalone `medsiglip` / `vision_embed` image-embedding sidecar referenced below) was removed from the product. The `medsiglip` role and the `hlh_vision_embed` sidecar no longer exist. MedGemma vision (chat/ingestion) is unaffected.
+
 # HLH Bundled-AI — Phase 1 Design
 
 Chat sidecar + model puller. Auto-seed bundled chat provider on tier confirm.
