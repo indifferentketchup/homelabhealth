@@ -225,6 +225,30 @@ def ensure_volume(client: docker.DockerClient, name: str) -> None:
         client.volumes.create(name)
 
 
+def ensure_models_ownership(client: docker.DockerClient) -> None:
+    """Make the hlh_models volume writable by the uid-1000 containers.
+
+    Docker only chowns a *fresh empty* named volume to the first mounting
+    user; once anything has populated it (a root helper, a prior run), the
+    root stays root-owned and the read_only uid-1000 hlh_api can't create
+    flat /models/<file> downloads (embed/rerank/tasks/chat land there) —
+    they fail with EACCES. A throwaway root container fixes ownership
+    idempotently; recursive so re-running the installer self-heals an
+    already-broken volume. chown is metadata-only, so it's fast even with
+    multi-GB GGUFs present.
+    """
+    try:
+        client.containers.run(
+            "alpine:3.20",
+            command=["chown", "-R", "1000:1000", "/models"],
+            volumes={"hlh_models": {"bind": "/models", "mode": "rw"}},
+            remove=True,
+        )
+        log("models volume ownership ensured (1000:1000)")
+    except APIError as exc:
+        log(f"WARN: could not chown hlh_models volume: {exc}")
+
+
 # ── Image pulls ──────────────────────────────────────────────────────────────
 
 def pull_image(client: docker.DockerClient, image: str) -> None:
@@ -527,6 +551,9 @@ def run() -> dict[str, str]:
     pull_image(client, SEARCH_IMAGE)
     pull_image(client, f"{REGISTRY}/hlh_ui:{VERSION}")
     pull_image(client, INFINITY_IMAGE)
+
+    # /models must be writable by the uid-1000 containers (alpine is pulled above).
+    ensure_models_ownership(client)
 
     secrets_dict = ensure_secrets(client)
     write_templates(client)

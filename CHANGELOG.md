@@ -18,6 +18,21 @@ live under the `snapshot/` namespace.
 
 ---
 
+## [v1.1.7] — 2026-05-30
+
+### Fixes
+- **Flat-path model pulls failed with EACCES on the models volume** — embed /
+  rerank / tasks (and, post-v1.1.5, chat) download to flat `/models/<file>`
+  paths, but Docker only chowns a *fresh empty* named volume to the mounting
+  uid; once `hlh_models` was populated, its root stayed root-owned and the
+  read_only uid-1000 `hlh_api` got `PermissionError: [Errno 13]` writing
+  `*.gguf.partial`. (Chat/vision subdirs worked because they were already
+  1000-owned.) Bootstrap now runs `ensure_models_ownership()` — a throwaway
+  root container that `chown -R 1000:1000 /models` — after volume creation,
+  so re-running the installer self-heals existing volumes too.
+
+---
+
 ## [v1.1.6] — 2026-05-30
 
 ### Fixes
