@@ -185,9 +185,22 @@ async def retrieve_memory_facts(query: str, conn: Any) -> list[str]:
         return []
 
 
-async def retrieve_context(query: str, source_ids: list[str]) -> tuple[str, int]:
+async def retrieve_context(
+    query: str,
+    source_ids: list[str],
+    priority_source_ids: list[str] | None = None,
+) -> tuple[str, int]:
+    """Retrieve and rerank chunks across ``source_ids``.
+
+    ``priority_source_ids`` are sources the user explicitly attached to the
+    chat ("send to chat"). They are still drawn from the same pool, but their
+    chunks are ordered first in the injected context and bypass the rerank-min
+    gate so an explicitly attached document is always read.
+    """
     if not query.strip() or not source_ids:
         return "", 0
+
+    priority_set = {str(s) for s in (priority_source_ids or [])}
 
     settings = await _load_rag_settings()
     sim_threshold = float(settings["rag_similarity_threshold"])
@@ -206,7 +219,7 @@ async def retrieve_context(query: str, source_ids: list[str]) -> tuple[str, int]
         async with pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT sc.text, s.name AS source_name
+                SELECT sc.id, sc.text, sc.source_id, s.name AS source_name
                 FROM source_chunks sc
                 JOIN sources s ON s.id = sc.source_id
                 WHERE sc.source_id = ANY($4::uuid[])
@@ -220,21 +233,50 @@ async def retrieve_context(query: str, source_ids: list[str]) -> tuple[str, int]
                 sim_threshold,
                 [uuid.UUID(sid) for sid in source_ids],
             )
+            # Attached sources are retrieved separately so their chunks can't be
+            # crowded out of the global top-K by the rest of the workspace.
+            priority_rows = []
+            if priority_set:
+                priority_rows = await conn.fetch(
+                    """
+                    SELECT sc.id, sc.text, sc.source_id, s.name AS source_name
+                    FROM source_chunks sc
+                    JOIN sources s ON s.id = sc.source_id
+                    WHERE sc.source_id = ANY($3::uuid[])
+                      AND sc.embedding IS NOT NULL
+                    ORDER BY sc.embedding <=> $2::vector
+                    LIMIT $1
+                    """,
+                    TOP_K_RETRIEVE,
+                    q_vec,
+                    [uuid.UUID(sid) for sid in priority_set],
+                )
     except Exception as e:
         logger.warning("RAG vector query failed: %s", e)
         return "", 0
 
     logger.info("RAG threshold=%.2f chunks_passed=%d", sim_threshold, len(rows))
 
-    if not rows:
+    # Merge global + priority rows, deduped by chunk id (priority kept either way).
+    merged_rows = list(rows)
+    seen_chunks = {row["id"] for row in rows}
+    for row in priority_rows:
+        if row["id"] not in seen_chunks:
+            seen_chunks.add(row["id"])
+            merged_rows.append(row)
+
+    if not merged_rows:
         return "", 0
 
     passages: list[dict[str, Any]] = []
-    for i, row in enumerate(rows):
+    passage_source: dict[str, str] = {}
+    for i, row in enumerate(merged_rows):
         name = row["source_name"] or "source"
+        pid = str(i)
+        passage_source[pid] = str(row["source_id"])
         passages.append(
             {
-                "id": str(i),
+                "id": pid,
                 "text": f"[SOURCE: {name}]\n{row['text']}",
             }
         )
@@ -253,19 +295,31 @@ async def retrieve_context(query: str, source_ids: list[str]) -> tuple[str, int]
             reranked = passages  # already in similarity order
     logger.info("RAG rerank backend=%s passages=%d", rerank_backend, len(passages))
 
-    top_texts: list[str] = []
+    priority_texts: list[str] = []
+    other_texts: list[str] = []
     dropped_low_score = 0
-    for p in reranked[:TOP_AFTER_RERANK]:
+    for p in reranked:
+        t = p.get("text")
+        if not (t and str(t).strip()):
+            continue
+        # Explicitly attached sources are always read, in rerank order, and skip
+        # the rerank-min gate. Everything else must clear the gate.
+        if passage_source.get(str(p.get("id"))) in priority_set:
+            priority_texts.append(str(t))
+            continue
         score = p.get("score")
         if isinstance(score, (int, float)) and float(score) < rerank_min:
             dropped_low_score += 1
             continue
-        t = p.get("text")
-        if t and str(t).strip():
-            top_texts.append(str(t))
+        other_texts.append(str(t))
+
+    # Priority (attached) chunks first; backfill with the rest up to the cap.
+    top_texts = (priority_texts + other_texts)[:TOP_AFTER_RERANK]
 
     if dropped_low_score:
         logger.info("RAG dropped %d chunks below rerank_min=%.2f", dropped_low_score, rerank_min)
+    if priority_texts:
+        logger.info("RAG priority(attached) chunks=%d", len(priority_texts))
 
     if not top_texts:
         logger.info("RAG no chunks survived rerank gate; returning empty context")
