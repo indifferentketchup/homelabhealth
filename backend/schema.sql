@@ -454,7 +454,7 @@ ALTER TABLE system_profile ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ;
 -- ────────────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS bundled_models (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    role            TEXT NOT NULL CHECK (role IN ('chat', 'embed', 'rerank', 'vision', 'medsiglip', 'stt', 'ocr')),
+    role            TEXT NOT NULL CHECK (role IN ('chat', 'embed', 'rerank', 'tasks', 'vision', 'medsiglip', 'stt', 'ocr')),
     tier            TEXT NOT NULL,
     model_id        TEXT NOT NULL,
     quant           TEXT,
@@ -474,6 +474,14 @@ CREATE TABLE IF NOT EXISTS bundled_models (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (role, tier, model_id, quant)
 );
+
+-- v1.1.4 added the 'tasks' role (gemma-3-270m title model). Existing DBs were
+-- created before it; update the role CHECK idempotently (drop+re-add), matching
+-- the providers_role_check pattern above. Without this, seed_registry's tasks
+-- insert hits a CheckViolationError and the API crash-loops on boot.
+ALTER TABLE bundled_models DROP CONSTRAINT IF EXISTS bundled_models_role_check;
+ALTER TABLE bundled_models ADD CONSTRAINT bundled_models_role_check
+    CHECK (role IN ('chat', 'embed', 'rerank', 'tasks', 'vision', 'medsiglip', 'stt', 'ocr'));
 
 CREATE INDEX IF NOT EXISTS bundled_models_role_tier_idx ON bundled_models (role, tier);
 CREATE INDEX IF NOT EXISTS bundled_models_status_idx ON bundled_models (status);
