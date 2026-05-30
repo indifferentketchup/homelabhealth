@@ -18,7 +18,7 @@ import { useLayoutStore } from '@/store/layoutStore.js'
 import { NotesPanel } from './NotesPanel.jsx'
 import { SourcesPanel } from './SourcesPanel.jsx'
 
-const { ChevronDown, ChevronLeft, ChevronRight, PanelRight, Cpu } = LucideIcons
+const { ChevronDown, ChevronLeft, ChevronRight, PanelRight } = LucideIcons
 
 function LandingLucide({ name, className, style }) {
   const C =
@@ -345,17 +345,8 @@ export function WorkspaceChat() {
   const [filesPanelExpanded, setFilesPanelExpanded] = useState(true)
   const filesRailCollapsed = !filesPanelExpanded
   const [notesOpen, setNotesOpen] = useState(false)
-  // Model-load tracker: hidden by default; toggle preference persists locally.
-  const [showTracker, setShowTracker] = useState(() => {
-    try { return localStorage.getItem('hlh:model-tracker') === '1' } catch { return false }
-  })
-  const toggleTracker = () => {
-    setShowTracker((v) => {
-      const next = !v
-      try { localStorage.setItem('hlh:model-tracker', next ? '1' : '0') } catch { /* ignore */ }
-      return next
-    })
-  }
+  // Model-load tracker is always visible — no toggle. (Previously hidden behind
+  // a per-browser localStorage flag, which made it inconsistent across devices.)
   const [rightPanelWidth, setRightPanelWidth] = useState(320)
   const resizingRef = useRef(false)
 
@@ -402,19 +393,6 @@ export function WorkspaceChat() {
         style={!filesRailCollapsed ? { width: rightPanelWidth } : undefined}
       >
         <div className="flex shrink-0 items-center justify-end gap-2 border-b border-sidebar-border p-2">
-          {!filesRailCollapsed ? (
-            <Button
-              type="button"
-              variant={showTracker ? 'secondary' : 'outline'}
-              size="icon"
-              className="h-9 w-9 shrink-0 border-sidebar-border text-foreground hover:bg-sidebar-accent"
-              onClick={toggleTracker}
-              aria-pressed={showTracker}
-              title={showTracker ? 'Hide model tracker' : 'Show model tracker'}
-            >
-              <Cpu className="size-4" />
-            </Button>
-          ) : null}
           <Button
             type="button"
             variant="outline"
@@ -428,11 +406,9 @@ export function WorkspaceChat() {
         </div>
         {!filesRailCollapsed ? (
           <>
-            {showTracker ? (
-              <div className="shrink-0 border-b border-sidebar-border p-2">
-                <ModelStateSidebar />
-              </div>
-            ) : null}
+            <div className="shrink-0 border-b border-sidebar-border p-2">
+              <ModelStateSidebar />
+            </div>
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               <SourcesPanel chatId={activeChatId} workspaceId={workspaceId} />
             </div>
