@@ -53,18 +53,6 @@ import logging as _logging
 _inference_logger = _logging.getLogger(__name__)
 
 
-@router.post("/vision/stop")
-async def force_stop_vision(_: dict[str, Any] = Depends(require_admin)):
-    try:
-        from services.vision_lifecycle import stop_vision
-        await stop_vision()
-        _state_cache["data"] = None
-        return {"status": "stopped"}
-    except Exception as e:
-        _inference_logger.exception("force stop vision failed")
-        raise HTTPException(status_code=502, detail=str(e)) from e
-
-
 def _sse(data: str) -> bytes:
     return f"data: {data}\n\n".encode("utf-8")
 

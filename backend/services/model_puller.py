@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 MODELS_BASE_DIR = Path(os.environ.get("HLH_MODELS_DIR", "/models"))
 
-ALL_ROLES = ("chat", "embed", "rerank", "vision", "vision_base", "medsiglip", "stt", "ocr")
+ALL_ROLES = ("chat", "embed", "rerank", "vision", "vision_base", "stt", "ocr")
 ALL_TIERS = ("cpu-min", "cpu-std", "gpu-4gb", "gpu-8gb", "gpu-16gb", "gpu-24gb+", "apple-mlx", "external")
 
 PULL_CHUNK_BYTES = 5 * 1024 * 1024
@@ -206,7 +206,6 @@ MODEL_REGISTRY: dict[str, dict[str, ModelSpec | None]] = {
     # without forcing a VRAM offload. cpu-min (Qwen, no mmproj) gets nothing.
     "vision":      _vision_role(_VISION_MMPROJ_SPEC),   # MedGemma-4b mmproj (projector)
     "vision_base": _vision_role(_VISION_BASE_SPEC),     # MedGemma-4b base GGUF
-    "medsiglip": {tier: None for tier in ALL_TIERS},  # Phase 3
     "stt":       {tier: None for tier in ALL_TIERS},  # Phase 4
     "ocr":       {tier: None for tier in ALL_TIERS},  # Phase 5
 }

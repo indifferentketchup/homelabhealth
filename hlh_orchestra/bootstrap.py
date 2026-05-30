@@ -11,7 +11,6 @@ import base64
 import logging
 import os
 import secrets
-import socket
 import sys
 import time
 from typing import Any
@@ -38,7 +37,7 @@ NETWORK_INFERENCE = "hlh_inference"
 
 VOLUMES = [
     "hlh_db_data", "hlh_keys", "hlh_uploads", "hlh_branding",
-    "hlh_history", "hlh_models", "hlh_config", "hlh_vision_cache",
+    "hlh_history", "hlh_models", "hlh_config",
 ]
 
 CONFIG_VOLUME = "hlh_config"
@@ -51,8 +50,6 @@ CHAT_IMAGE_GPU = os.environ.get("HLH_CHAT_IMAGE_GPU", "ghcr.io/ggml-org/llama.cp
 
 DB_IMAGE = "pgvector/pgvector:pg16"
 SEARCH_IMAGE = "searxng/searxng:2026.5.22-c57f772ad"
-INFINITY_IMAGE = os.environ.get("HLH_INFER_IMAGE", "michaelf34/infinity:0.0.77-cpu")
-MEDSIGLIP_MODEL = os.environ.get("HLH_MEDSIGLIP_MODEL", "indifferentketchup/medsiglip-448-fp16")
 
 # Bind-mounted config templates live inside the orchestra image; on first run
 # we copy them into hlh_config volume so other containers can read them.
@@ -498,36 +495,6 @@ def create_ui(client: docker.DockerClient) -> Any:
     )
 
 
-def create_vision_embed(client: docker.DockerClient) -> Any:
-    """Create (but do not start) the MedSigLIP vision-embedding sidecar.
-
-    Mirrors the compose `hlh_vision_embed` service (infinity-emb, torch engine).
-    Left stopped: hlh_orchestra starts/stops it on demand via /vision/start so
-    the ~5 GB model isn't resident unless vision features are used.
-    """
-    return client.containers.create(
-        image=INFINITY_IMAGE,
-        name="hlh_vision_embed",
-        command=["v2", "--no-model-warmup"],
-        restart_policy={"Name": "no"},
-        environment={
-            "INFINITY_MODEL_ID": MEDSIGLIP_MODEL,
-            "INFINITY_ENGINE": "torch",
-            "INFINITY_HOST": "0.0.0.0",
-            "INFINITY_URL_PREFIX": "/v1",
-        },
-        volumes={
-            "hlh_vision_cache": {"bind": "/app/.cache", "mode": "rw"},
-        },
-        network=NETWORK_DEFAULT,
-        mem_limit="5g",
-        read_only=True,
-        tmpfs={"/tmp": ""},
-        cap_drop=["ALL"],
-        security_opt=["no-new-privileges:true"],
-    )
-
-
 def attach_to_network(client: docker.DockerClient, container_name: str, network_name: str) -> None:
     """Attach a container to an additional network (idempotent)."""
     try:
@@ -538,30 +505,6 @@ def attach_to_network(client: docker.DockerClient, container_name: str, network_
             net.connect(container_name)
     except NotFound:
         pass
-
-
-def attach_self_to_network(client: docker.DockerClient) -> None:
-    """Attach the orchestra's OWN container to hlh_default as `hlh_orchestra`.
-
-    When launched standalone via the install.sh `docker run` one-liner, the
-    orchestra gets a random name on the default bridge, so hlh_api's call to
-    http://hlh_orchestra:9620 can't resolve and vision lifecycle is unreachable.
-    We connect ourselves to hlh_default with the `hlh_orchestra` network alias.
-    No-op under compose, which already names + networks the service (and doesn't
-    set HLH_BOOTSTRAP, so run() — and this — never runs there).
-    """
-    self_id = socket.gethostname()  # Docker sets the hostname to the short container id
-    try:
-        net = client.networks.get(NETWORK_DEFAULT)
-        net.reload()
-        if any(c.id.startswith(self_id) for c in net.containers):
-            return  # already attached (restart path)
-        net.connect(self_id, aliases=["hlh_orchestra"])
-        log("orchestra attached to hlh_default as 'hlh_orchestra'")
-    except NotFound:
-        log("warn: hlh_default not found; orchestra not attached (vision unreachable)")
-    except APIError as e:
-        log(f"warn: orchestra self-attach failed: {e}")
 
 
 # ── Main entry point ─────────────────────────────────────────────────────────
@@ -600,7 +543,6 @@ def run() -> dict[str, str]:
     pull_image(client, chat_image)
     pull_image(client, SEARCH_IMAGE)
     pull_image(client, f"{REGISTRY}/hlh_ui:{VERSION}")
-    pull_image(client, INFINITY_IMAGE)
 
     # /models must be writable by the uid-1000 containers (alpine is pulled above).
     ensure_models_ownership(client)
@@ -624,20 +566,6 @@ def run() -> dict[str, str]:
     ensure_container(client, "hlh_search", lambda: create_search(client))
 
     ensure_container(client, "hlh_ui", lambda: create_ui(client))
-
-    # Vision sidecar (opt-in via HLH_ENABLE_VISION). Created stopped;
-    # hlh_orchestra starts it on demand via /vision/start so the ~5 GB model
-    # isn't resident unless vision features are used. Mirrors the compose
-    # `vision` profile.
-    if os.environ.get("HLH_ENABLE_VISION"):
-        if not container_exists(client, "hlh_vision_embed"):
-            create_vision_embed(client)
-            attach_to_network(client, "hlh_vision_embed", NETWORK_INFERENCE)
-        log("vision_embed ready (stopped; orchestra starts it on demand)")
-
-    # Make ourselves reachable as http://hlh_orchestra:9620 for hlh_api's
-    # vision-lifecycle calls (no-op under compose).
-    attach_self_to_network(client)
 
     log(f"done — homelabhealth is running → http://localhost:{PORT_UI}")
     return secrets_dict

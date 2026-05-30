@@ -389,25 +389,6 @@ async def _check_vision_available() -> dict[str, Any]:
         return {"name": "vision_available", "status": ERROR, "detail": f"{type(e).__name__}: {e}"}
 
 
-async def _check_vision_embed_sidecar() -> dict[str, Any] | None:
-    """Probe hlh_vision_embed. Returns None (skip) if no vision_embed provider row exists."""
-    try:
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT id FROM providers WHERE role = 'vision_embed' AND is_bundled = true"
-            )
-        if row is None:
-            return None
-        result = await _check_sidecar("hlh_vision_embed", "http://hlh_vision_embed:7997/health")
-        if result["status"] == ERROR:
-            result["status"] = WARN
-            result["detail"] = f"provider row exists but sidecar unreachable — {result['detail']}"
-        return result
-    except Exception as e:
-        return {"name": "hlh_vision_embed_reachable", "status": WARN, "detail": f"{type(e).__name__}: {e}"}
-
-
 async def _check_image_tier_match() -> dict[str, Any]:
     """Check that HLH_CHAT_IMAGE matches the expected image for the current tier."""
     try:
@@ -511,9 +492,6 @@ async def run_checks() -> list[dict[str, Any]]:
         _check_column_encryption(),
         await _check_image_tier_match(),
     ]
-    vision_check = await _check_vision_embed_sidecar()
-    if vision_check is not None:
-        checks.insert(7, vision_check)
     return checks
 
 
