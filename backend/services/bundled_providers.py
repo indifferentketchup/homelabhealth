@@ -23,6 +23,14 @@ logger = logging.getLogger(__name__)
 MODELS_BASE = Path(os.environ.get("HLH_MODELS_DIR", "/models"))
 ACTIVE_MMPROJ = MODELS_BASE / "vision" / "active-mmproj.gguf"
 
+# Per-alias symlinks pointing at the chat GGUF the active tier downloaded.
+# models.ini's [medgemma] and [qwen-chat] sections point at these, so a single
+# static models.ini works across every tier — apply_bundled_bindings re-aims
+# the link when the operator picks a tier. Mirrors the link_active_mmproj
+# pattern; same best-effort error handling.
+ACTIVE_MEDGEMMA = MODELS_BASE / "active-medgemma.gguf"
+ACTIVE_QWEN = MODELS_BASE / "active-qwen.gguf"
+
 BUNDLE_GROUP = "homelab-health-ai"
 
 BUNDLED_CHAT_NAME = "HomeLab Health AI · Chat"
@@ -156,6 +164,7 @@ async def apply_bundled_bindings(conn, tier: str) -> None:
     if tier in ("external", "apple-mlx"):
         logger.info("apply_bundled_bindings: tier=%s; no-op (Apple MLX bundling is Phase 6)", tier)
         link_active_mmproj(tier)
+        link_active_chat(tier)
         return
 
     ids = await ensure_bundled_providers(conn)
@@ -216,6 +225,7 @@ async def apply_bundled_bindings(conn, tier: str) -> None:
 
     # 4. Symlink active mmproj for the current tier so hlh_chat picks it up.
     link_active_mmproj(tier)
+    link_active_chat(tier)
 
     # 4. Workspace chat binding. Per spec §4 step 3, BOTH UPDATEs are required:
     # the IN (...) form doesn't subsume the IS NULL case (IN with NULL is NULL,
@@ -276,3 +286,79 @@ def link_active_mmproj(tier: str) -> None:
         logger.info("link_active_mmproj: tier=%s → %s", tier, rel_target)
     except OSError as exc:
         logger.error("link_active_mmproj: tier=%s failed: %s", tier, exc)
+
+
+def migrate_legacy_chat_paths() -> None:
+    """One-time: move chat GGUFs from /models/chat/<tier>/<file> → /models/<file>.
+
+    v1.1.4 and earlier downloaded chat models to a per-tier subdir; v1.1.5
+    switched to flat paths so a single static models.ini serves every tier.
+    If the flat target exists already, we drop the legacy copy. Best-effort;
+    a partial migration is harmless — the puller will re-fetch any missing
+    file on next pull.
+    """
+    legacy_root = MODELS_BASE / "chat"
+    if not legacy_root.is_dir():
+        return
+    try:
+        for tier_dir in legacy_root.iterdir():
+            if not tier_dir.is_dir():
+                continue
+            for src in tier_dir.iterdir():
+                if not src.is_file() or src.suffix != ".gguf":
+                    continue
+                dst = MODELS_BASE / src.name
+                try:
+                    if dst.exists():
+                        src.unlink()
+                        logger.info("migrate_legacy_chat_paths: dropped duplicate %s", src)
+                    else:
+                        src.rename(dst)
+                        logger.info("migrate_legacy_chat_paths: moved %s → %s", src, dst)
+                except OSError as exc:
+                    logger.warning("migrate_legacy_chat_paths: %s → %s failed: %s", src, dst, exc)
+    except OSError as exc:
+        logger.warning("migrate_legacy_chat_paths: walk failed: %s", exc)
+
+
+def link_active_chat(tier: str) -> None:
+    """Symlink active-medgemma.gguf / active-qwen.gguf at the tier's downloaded chat GGUF.
+
+    models.ini's [medgemma] and [qwen-chat] sections point at these symlinks,
+    so a single static config serves every tier. Best-effort: logs and
+    continues on filesystem errors; hlh_chat will simply fail to load that
+    alias if the symlink is missing (the operator sees the chat error).
+
+    The puller writes chat GGUFs at the flat /models/<filename> path (see
+    _FLAT_DEST_ROLES in model_puller); this function picks the file matching
+    the active tier and aims the right alias's symlink at it.
+    """
+    from services.model_puller import MODEL_REGISTRY
+
+    alias = TIER_CHAT_MODELS.get(tier)
+    if alias is None:
+        logger.info("link_active_chat: tier=%s → no bundled chat (external/apple-mlx)", tier)
+        return
+    spec = MODEL_REGISTRY.get("chat", {}).get(tier)
+    if spec is None:
+        logger.info("link_active_chat: tier=%s → no chat spec; skipping", tier)
+        return
+    link = ACTIVE_MEDGEMMA if alias == "medgemma" else ACTIVE_QWEN
+
+    try:
+        target = MODELS_BASE / spec.filename
+        if not target.exists():
+            if link.is_symlink() or link.exists():
+                link.unlink()
+            logger.info("link_active_chat: tier=%s alias=%s → cleared (chat not yet pulled)", tier, alias)
+            return
+        link.parent.mkdir(parents=True, exist_ok=True)
+        rel_target = Path(spec.filename)  # same dir; symlink target is just the filename
+        tmp = link.parent / (link.name + ".tmp")
+        if tmp.is_symlink() or tmp.exists():
+            tmp.unlink()
+        os.symlink(rel_target, tmp)
+        os.rename(tmp, link)
+        logger.info("link_active_chat: tier=%s alias=%s → %s", tier, alias, rel_target)
+    except OSError as exc:
+        logger.error("link_active_chat: tier=%s alias=%s failed: %s", tier, alias, exc)
