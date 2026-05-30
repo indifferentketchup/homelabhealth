@@ -2,18 +2,7 @@
 
 Canonical record of releases for **homelabhealth**. Most recent on top.
 
-**Convention:** new work accrues under `## [Unreleased]
-
----
-
-## [v1.2.5] — 2026-05-30
-
-### UX
-- **Model tracker is now opt-in.** The inference model-load tracker in the
-  workspace right rail is hidden by default; a CPU-icon toggle in the rail
-  header shows/hides it, and the preference persists (localStorage). It also
-  stops blanking now that the DB pool is pre-warmed (v1.2.4).
-`. When a tag is
+**Convention:** new work accrues under `## [Unreleased]`. When a tag is
 cut, rename `[Unreleased]` to `## [<tag>] — YYYY-MM-DD` and start a
 fresh empty `[Unreleased]` section. Group entries by track (AI /
 Safeguards / Security / UX / Tooling / Docs) when there are >5 items.
