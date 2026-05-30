@@ -321,9 +321,14 @@ async def _hf_headers(pool_or_conn) -> dict[str, str]:
 
 
 # These roles serve a single tier-independent GGUF from a flat /models/<file>
-# path — exactly what models.ini references for bge-m3 / bge-reranker /
-# gemma-tasks. Chat and vision stay under /models/<role>/<tier>/.
-_FLAT_DEST_ROLES = {"embed", "rerank", "tasks"}
+# path — exactly what models.ini references for [medgemma] / [qwen-chat] /
+# [bge-m3] / [bge-reranker] / [gemma-tasks]. The puller writes here so the
+# router's static models.ini works for every tier without rewrites: each tier
+# downloads a different file, but always lands at /models/<file>, and only the
+# alias the active tier uses (TIER_CHAT_MODELS in bundled_providers) actually
+# gets loaded by the router on demand. Vision/mmproj stays under
+# /models/vision/<tier>/ because link_active_mmproj symlinks the active one.
+_FLAT_DEST_ROLES = {"chat", "embed", "rerank", "tasks"}
 
 
 def _dest_path(role: str, tier: str, filename: str) -> Path:
@@ -514,6 +519,9 @@ async def pull_model(pool_or_conn, model_uuid: str) -> dict[str, Any]:
                 if role == "vision":
                     from services.bundled_providers import link_active_mmproj
                     link_active_mmproj(tier)
+                elif role == "chat":
+                    from services.bundled_providers import link_active_chat
+                    link_active_chat(tier)
                 return dict(await _read_row(pool_or_conn, model_uuid))
 
             except _Cancelled:

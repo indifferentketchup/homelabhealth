@@ -147,6 +147,8 @@ async def lifespan(_app: FastAPI):
     await ensure_super_admin()
     # Phase 1: seed bundled_models from MODEL_REGISTRY. Idempotent — safe on every boot.
     pool = await get_pool()
+    # v1.1.4→v1.1.5 chat-path flattening: best-effort, harmless if no legacy files.
+    bundled_providers.migrate_legacy_chat_paths()
     async with pool.acquire() as conn:
         seeded = await model_puller.seed_registry(conn)
         profile_row = await conn.fetchrow("SELECT tier FROM system_profile WHERE id = 1")

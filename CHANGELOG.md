@@ -18,6 +18,29 @@ live under the `snapshot/` namespace.
 
 ---
 
+## [v1.1.5] — 2026-05-30
+
+### AI
+- **Tier-aware chat model loading (GPU tiers now work end-to-end)** —
+  `models.ini` previously pinned `[medgemma]` to the cpu-std 4B GGUF with
+  `n-gpu-layers=0`, so GPU tiers (16/24 GB) downloaded the 27B model but the
+  bundled router still loaded the wrong file on CPU. Two changes:
+  - Chat GGUFs now live at flat `/models/<filename>.gguf` paths
+    (`_FLAT_DEST_ROLES` += `chat`).
+  - New `bundled_providers.link_active_chat(tier)` symlinks
+    `/models/active-medgemma.gguf` (or `active-qwen.gguf` on `cpu-min`) at
+    the tier's downloaded GGUF, mirroring `link_active_mmproj`. Runs from
+    `apply_bundled_bindings` (tier save) and from the puller's success
+    handler (chat-pull finish). `models.ini` now points the chat aliases at
+    the symlinks, so one static config serves every tier.
+  - `n-gpu-layers = auto` everywhere — CPU build no-ops it, CUDA build
+    offloads as many layers as fit in VRAM.
+  - Best-effort `migrate_legacy_chat_paths()` runs at boot to move any
+    `/models/chat/<tier>/<file>.gguf` from v1.1.4 to the new flat path
+    (drops duplicates, never re-downloads).
+
+---
+
 ## [v1.1.4] — 2026-05-30
 
 ### AI
