@@ -18,6 +18,21 @@ live under the `snapshot/` namespace.
 
 ---
 
+## [v1.2.4] — 2026-05-30
+
+### Fixes
+- **Undersized DB pool → cascading failures under model-load spikes.** The
+  asyncpg pool used `min_size=1`, so concurrent UI polls (`inference/state`,
+  `models`, `profile`, `settings/layout`) plus a chat send forced new
+  connections to be opened on demand. When that coincided with a 16.5 GB
+  model load saturating the host, the connect timed out — surfacing as
+  `internal_error` on send, the model/vision checker blanking, and even the
+  font-size flickering (layout poll failing → CSS default, then re-applying the
+  saved size). Pre-warm the pool: `min_size=4`, `max_size=20`,
+  `command_timeout=120`, so connections already exist before the spike.
+
+---
+
 ## [v1.2.3] — 2026-05-30
 
 ### UX
