@@ -18,6 +18,37 @@ live under the `snapshot/` namespace.
 
 ---
 
+## [v1.2.9] — 2026-05-30
+
+### Fixes
+- **SearXNG no longer crash-loops under the bootstrap deploy path.**
+  `bootstrap.py:create_search` started SearXNG with an empty, root-owned
+  `tmpfs /etc/searxng` while the process runs as uid 1000, so SearXNG's
+  entrypoint couldn't create `settings.yml` ("Permission denied") and the
+  container restart-looped (observed 1144 restarts on one host). The old
+  `stage_searxng_config` injected the file via `docker exec` *after* start,
+  which always lost the race and failed with `409 (container restarting)`.
+  Replaced with an entrypoint shim that copies the staged template into a
+  writable (`mode=1777`) tmpfs before handing off to the real entrypoint;
+  removed the post-start injection. (The `docker compose` path was already
+  correct — it bind-mounts `settings.yml` directly.)
+
+### AI
+- **Vision sidecar can now be created by the bootstrap path.** `/vision/start`
+  in `hlh_orchestra` only ever `.start()`s an existing `hlh_vision_embed`
+  container; the bootstrap never created one, so vision was permanently
+  unavailable on bootstrap deploys. Added `create_vision_embed` (mirrors the
+  compose `vision` profile), created stopped and started on demand by the
+  orchestra. Opt-in via `HLH_ENABLE_VISION=1`.
+
+### UX
+- **Model-load tracker is always visible.** It was hidden by default behind a
+  per-browser `localStorage` toggle, which made it inconsistent across devices.
+  Removed the toggle; `ModelStateSidebar` now always renders in the workspace
+  rail. (`WorkspaceView.jsx`)
+
+---
+
 ## [v1.2.8] — 2026-05-30
 
 ### Fixes
