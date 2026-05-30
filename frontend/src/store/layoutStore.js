@@ -4,10 +4,10 @@ import { apiFetch } from '@/api/index.js'
 
 const DEFAULTS = {
   sidebarWidth: 260,
-  chatMaxWidth: 1200,
-  fontSize: 21,
+  chatMaxWidth: 900,
+  fontSize: 18,
   fsNav: 20,
-  fsChat: 21,
+  fsChat: 18,
   fsInput: 20,
   fsHeading: 24,
   fsCode: 19,

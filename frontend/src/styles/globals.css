@@ -17,15 +17,15 @@ input, textarea, select {
 :root {
   --font-body: 'Rajdhani', sans-serif;
   --font-mono: 'Fira Code', monospace;
-  --font-size-base: 21px;
+  --font-size-base: 18px;
   --fs-nav: 20px;
-  --fs-chat: 21px;
+  --fs-chat: 18px;
   --fs-input: 20px;
   --fs-heading: 24px;
   --fs-code: 19px;
   --sidebar-width: 260px;
-  --chat-max-w: 1200px;
-  --chat-max-width: 1200px;
+  --chat-max-w: 900px;
+  --chat-max-width: 900px;
   --sources-panel-width: 22rem;
   font-size: var(--font-size-base);
 

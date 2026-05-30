@@ -18,6 +18,18 @@ live under the `snapshot/` namespace.
 
 ---
 
+## [v1.2.3] — 2026-05-30
+
+### UX
+- **Default text size 21→18px, default chat width 1200→900px.** Updated in all
+  three places that define the layout defaults (backend `_DEFAULT_UI_LAYOUT`,
+  frontend store `DEFAULTS`, and the `globals.css` `:root` tokens). Affects the
+  base font and chat-message text (`fontSize`/`fsChat`) and the chat column
+  width; nav/heading/code sizes unchanged. Operators who already saved a custom
+  layout keep theirs (server value overrides the default).
+
+---
+
 ## [v1.2.2] — 2026-05-30
 
 ### Performance
