@@ -43,6 +43,9 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+from services.startup_report import install_access_log_filter, log_startup_banner
+install_access_log_filter()  # drop 2s-poll access-log spam; quiet httpx INFO
+
 load_dotenv()
 
 
@@ -137,25 +140,36 @@ async def _streaming_sweeper() -> None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    ensure_keys()       # first: ensure encryption keys are in os.environ
-    from services.key_manager import ensure_orchestra_token
-    ensure_orchestra_token()
-    install_redactor()
-    _warn_deprecated_env_vars()
-    await init_pool()
-    await apply_schema()
-    await ensure_super_admin()
-    # Phase 1: seed bundled_models from MODEL_REGISTRY. Idempotent — safe on every boot.
-    pool = await get_pool()
-    # v1.1.4→v1.1.5 chat-path flattening: best-effort, harmless if no legacy files.
-    bundled_providers.migrate_legacy_chat_paths()
-    async with pool.acquire() as conn:
-        seeded = await model_puller.seed_registry(conn)
-        orphaned = await model_puller.reset_orphaned_pulls(conn)
-        profile_row = await conn.fetchrow("SELECT tier FROM system_profile WHERE id = 1")
-        if profile_row is not None:
-            await bundled_providers.apply_bundled_bindings(conn, profile_row["tier"] or "external")
-    logger.info("model_puller: seeded %d bundled_models rows, reset %d orphaned pull(s)", seeded, orphaned)
+    try:
+        ensure_keys()       # first: ensure encryption keys are in os.environ
+        from services.key_manager import ensure_orchestra_token
+        ensure_orchestra_token()
+        install_redactor()
+        _warn_deprecated_env_vars()
+        await init_pool()
+        await apply_schema()
+        await ensure_super_admin()
+        # Phase 1: seed bundled_models from MODEL_REGISTRY. Idempotent — safe on every boot.
+        pool = await get_pool()
+        # v1.1.4→v1.1.5 chat-path flattening: best-effort, harmless if no legacy files.
+        bundled_providers.migrate_legacy_chat_paths()
+        async with pool.acquire() as conn:
+            seeded = await model_puller.seed_registry(conn)
+            orphaned = await model_puller.reset_orphaned_pulls(conn)
+            profile_row = await conn.fetchrow("SELECT tier FROM system_profile WHERE id = 1")
+            if profile_row is not None:
+                await bundled_providers.apply_bundled_bindings(conn, profile_row["tier"] or "external")
+            await log_startup_banner(conn, seeded=seeded, orphaned=orphaned)
+    except Exception as exc:
+        # Loud, unmissable failure summary so the root cause isn't buried in
+        # the restart-loop noise that follows (uvicorn re-execs on exit).
+        logger.critical("=" * 64)
+        logger.critical("STARTUP FAILED — the API cannot start.")
+        logger.critical("  cause: %s: %s", type(exc).__name__, exc)
+        logger.critical("  full traceback below; fix this, then the container will recover.")
+        logger.critical("=" * 64)
+        logger.exception("startup traceback")
+        raise
     sweeper_task = asyncio.create_task(_streaming_sweeper())
     evictor_task = asyncio.create_task(_vision_idle_evictor())
     try:

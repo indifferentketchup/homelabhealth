@@ -18,6 +18,31 @@ live under the `snapshot/` namespace.
 
 ---
 
+## [v1.2.0] — 2026-05-30
+
+### Observability
+- **Access-log noise filter** — the UI polls a handful of endpoints every ~2s,
+  burying real errors under `GET /api/models 200 OK` floods. `startup_report`
+  now drops *successful* polls of those endpoints from the uvicorn access log
+  (non-2xx always passes through) and quiets httpx's per-request INFO chatter
+  (the vision/status poll). `docker logs hlh_api` is readable again.
+- **Startup banner** — one greppable block at boot: version, tier, chat model,
+  detected GPU, on-disk GGUF count/size, the active-chat symlink target, and
+  bundled_models status counts (+ seeded/orphaned). "Is this healthy?" at a
+  glance. `HLH_VERSION` is now passed to `hlh_api` (compose + bootstrap).
+- **Loud startup-failure summary** — if lifespan throws (e.g. the v1.1.4
+  CheckViolationError), a `STARTUP FAILED — cause: …` block is logged at
+  CRITICAL before the traceback, so the root cause isn't buried in the
+  restart-loop spam.
+- **Doctor model-layer checks** — `python -m hlh.doctor` / `/api/system/doctor`
+  now also check: `/models` volume writable by uid-1000 (the EACCES gotcha,
+  with the chown fix in the detail), and failed/stuck/pending model pulls.
+- **`hlh-status.sh`** — one host command (curl|bash) summarizing per-container
+  state + health, the API startup banner, and recent error lines across the
+  whole stack.
+
+---
+
 ## [v1.1.8] — 2026-05-30
 
 ### Fixes
