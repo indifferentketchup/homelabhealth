@@ -18,6 +18,20 @@ live under the `snapshot/` namespace.
 
 ---
 
+## [v1.2.10] — 2026-05-30
+
+### Fixes
+- **Vision reachable under the bootstrap deploy path.** v1.2.9 created
+  `hlh_vision_embed` but, when the orchestra is launched via the `install.sh`
+  `docker run` one-liner, it gets a random name on the default bridge — so
+  `hlh_api`'s call to `http://hlh_orchestra:9620` (and the vision lifecycle)
+  couldn't resolve. `bootstrap.run()` now self-attaches the orchestra container
+  to `hlh_default` with the `hlh_orchestra` network alias. No-op under compose
+  (which already names + networks the service). Completes the vision fix for
+  pull-from-GHCR + bootstrap deployments.
+
+---
+
 ## [v1.2.9] — 2026-05-30
 
 ### Fixes
