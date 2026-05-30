@@ -571,10 +571,18 @@ function ModelsPanel({ currentTier }) {
     vision_embed: { model: 'google/medsiglip-448', license: 'apache-2.0', license_url: 'https://huggingface.co/google/medsiglip-448' },
   }
 
+  // Roles that already have a real download row above (chat/embed/rerank/tasks/
+  // vision). Since v1.1.4 gave embed/rerank actual download specs, their
+  // synthetic provider rows became duplicates — drop those, keeping only roles
+  // with no download row (vision_embed → the medsiglip sidecar).
+  const downloadedRoles = useMemo(() => new Set(items.map((r) => r.role)), [items])
+
   const syntheticRows = useMemo(
     () =>
       providers
-        .filter((p) => p.is_bundled && SYNTH_ROLE_META[p.role])
+        .filter(
+          (p) => p.is_bundled && SYNTH_ROLE_META[p.role] && !downloadedRoles.has(p.role),
+        )
         .map((p) => ({
           id: p.id,
           role: p.role,
@@ -583,7 +591,7 @@ function ModelsPanel({ currentTier }) {
           license: SYNTH_ROLE_META[p.role].license,
           license_url: SYNTH_ROLE_META[p.role].license_url,
         })),
-    [providers],
+    [providers, downloadedRoles],
   )
 
   // ── Polling for synthetic rows in "loading" state ────────────────────────
