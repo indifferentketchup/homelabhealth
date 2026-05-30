@@ -454,7 +454,7 @@ ALTER TABLE system_profile ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ;
 -- ────────────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS bundled_models (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    role            TEXT NOT NULL CHECK (role IN ('chat', 'embed', 'rerank', 'tasks', 'vision', 'medsiglip', 'stt', 'ocr')),
+    role            TEXT NOT NULL CHECK (role IN ('chat', 'embed', 'rerank', 'tasks', 'vision', 'vision_base', 'medsiglip', 'stt', 'ocr')),
     tier            TEXT NOT NULL,
     model_id        TEXT NOT NULL,
     quant           TEXT,
@@ -479,9 +479,12 @@ CREATE TABLE IF NOT EXISTS bundled_models (
 -- created before it; update the role CHECK idempotently (drop+re-add), matching
 -- the providers_role_check pattern above. Without this, seed_registry's tasks
 -- insert hits a CheckViolationError and the API crash-loops on boot.
+-- v1.2.11 added 'vision_base' (the MedGemma-4b GGUF the on-demand
+-- [medgemma-vision] preset loads alongside the 4b mmproj for ingestion image
+-- reading — pulled tier-independently so it never displaces the 27b chat model).
 ALTER TABLE bundled_models DROP CONSTRAINT IF EXISTS bundled_models_role_check;
 ALTER TABLE bundled_models ADD CONSTRAINT bundled_models_role_check
-    CHECK (role IN ('chat', 'embed', 'rerank', 'tasks', 'vision', 'medsiglip', 'stt', 'ocr'));
+    CHECK (role IN ('chat', 'embed', 'rerank', 'tasks', 'vision', 'vision_base', 'medsiglip', 'stt', 'ocr'));
 
 CREATE INDEX IF NOT EXISTS bundled_models_role_tier_idx ON bundled_models (role, tier);
 CREATE INDEX IF NOT EXISTS bundled_models_status_idx ON bundled_models (status);
