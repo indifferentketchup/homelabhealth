@@ -18,6 +18,18 @@ live under the `snapshot/` namespace.
 
 ---
 
+## [v1.2.1] — 2026-05-30
+
+### Fixes
+- **Duplicate Search / Relevance rows in the Models panel** — v1.1.4 gave
+  embed/rerank real download rows, but the older "sidecar-managed" synthetic
+  provider rows for those roles stuck around, so each appeared twice. The
+  synthetic rows now drop any role that already has a download row, leaving
+  only `vision_embed` (medsiglip — a real separate sidecar with no download
+  row). One row per model.
+
+---
+
 ## [v1.2.0] — 2026-05-30
 
 ### Observability
