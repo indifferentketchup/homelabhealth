@@ -18,6 +18,22 @@ live under the `snapshot/` namespace.
 
 ---
 
+## [v1.2.6] — 2026-05-30
+
+### AI
+- **Safeguard prompt rewritten (b0 → b1): interpret + context, and stop the
+  model narrating it.** The old safeguard was a 127-line checklist that (a)
+  forbade interpreting results — "just restate the value and range" — so the
+  assistant was useless ("22 mg/dL, within range" with no meaning), and (b) a
+  reasoning model (medgemma) worked through every rule step-by-step *each turn*,
+  generating long internal "Plan: 1…13" reasoning that was slow and leaked into
+  responses (the `<THINKING>` dumps + multi-minute waits). Rewrote it as concise,
+  permissive guidance: interpret results like a knowledgeable friend
+  (in/out of range, what it means, context), keep the real limits (no definitive
+  diagnosis, no prescribing, crisis + urgency handling), and explicitly tell the
+  model to answer directly without narrating its reasoning or restating rules.
+  Operator-chosen policy level: "interpret + context."
+
 ## [v1.2.5] — 2026-05-30
 
 ### UX
