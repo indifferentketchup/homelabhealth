@@ -18,6 +18,21 @@ live under the `snapshot/` namespace.
 
 ---
 
+## [v1.2.8] — 2026-05-30
+
+### Fixes
+- **RAG now searches the whole workspace, not just attached sources.** Previously,
+  once any file was "sent to chat" (`chat_source_selections`), retrieval switched
+  to an *exclusive* filter — only attached sources were searchable, so asking the
+  model to read any other workspace file returned "I can't see it." Retrieval now
+  always searches every embedded source in the workspace; attached sources are
+  *prioritized* (ordered first in the injected context and bypass the rerank-min
+  gate) rather than being the sole pool. Attached sources are also fetched in a
+  separate top-K query so their chunks can't be crowded out of the global top-40.
+  (`services/rag.py` `retrieve_context` gains `priority_source_ids`; `routers/chats.py`.)
+
+---
+
 ## [v1.2.7] — 2026-05-30
 
 ### Fixes
