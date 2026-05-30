@@ -18,6 +18,19 @@ live under the `snapshot/` namespace.
 
 ---
 
+## [v1.1.8] — 2026-05-30
+
+### Fixes
+- **Interrupted model pulls wedged forever in 'pulling'** — pull tasks are
+  process-local asyncio tasks; a restart/crash mid-download orphaned the row
+  (status stuck at `pulling`, no live task), and the UI then couldn't recover
+  it: `pull_one` returns 409 "already pulling" and cancel is a no-op. After the
+  crash-loop churn this stranded the chat/vision rows. Added
+  `reset_orphaned_pulls()` at boot — flips any `pulling` row back to `pending`
+  so it's retryable.
+
+---
+
 ## [v1.1.7] — 2026-05-30
 
 ### Fixes

@@ -286,6 +286,25 @@ async def seed_registry(conn) -> int:
     return count
 
 
+async def reset_orphaned_pulls(conn) -> int:
+    """Reset rows wedged in 'pulling' back to 'pending'. Returns rows touched.
+
+    Pull tasks are process-local asyncio tasks tracked only via _PULL_LOCK; a
+    restart or crash orphans any in-flight 'pulling' row — the task is gone but
+    the status sticks, and the UI then can't re-pull it (pull_one returns 409
+    "already pulling", and cancel is a no-op with no live task). Run at boot so
+    interrupted pulls become retryable instead of wedged forever.
+    """
+    result = await conn.execute(
+        "UPDATE bundled_models SET status = 'pending', pulled_bytes = 0, "
+        "error_message = NULL WHERE status = 'pulling'"
+    )
+    try:
+        return int(str(result).split()[-1])  # asyncpg returns 'UPDATE <n>'
+    except (ValueError, IndexError):
+        return 0
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Pull mechanics.
 # ──────────────────────────────────────────────────────────────────────────────
