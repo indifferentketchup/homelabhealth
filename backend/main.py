@@ -151,10 +151,11 @@ async def lifespan(_app: FastAPI):
     bundled_providers.migrate_legacy_chat_paths()
     async with pool.acquire() as conn:
         seeded = await model_puller.seed_registry(conn)
+        orphaned = await model_puller.reset_orphaned_pulls(conn)
         profile_row = await conn.fetchrow("SELECT tier FROM system_profile WHERE id = 1")
         if profile_row is not None:
             await bundled_providers.apply_bundled_bindings(conn, profile_row["tier"] or "external")
-    logger.info("model_puller: seeded %d bundled_models rows", seeded)
+    logger.info("model_puller: seeded %d bundled_models rows, reset %d orphaned pull(s)", seeded, orphaned)
     sweeper_task = asyncio.create_task(_streaming_sweeper())
     evictor_task = asyncio.create_task(_vision_idle_evictor())
     try:
