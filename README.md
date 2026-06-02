@@ -16,16 +16,28 @@ Roadmap: [docs/roadmap.md](docs/roadmap.md). Architecture: [docs/architecture.md
 ```bash
 docker run --rm -it \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  -e HLH_BOOTSTRAP=1 \
   ghcr.io/indifferentketchup/hlh_orchestra:latest
 # Open http://localhost:9604
 ```
 
 The orchestra container creates networks and volumes, generates encryption
-keys, pulls every other image, and starts the stack in dependency order.
-Auto-detects GPU. Stays running as the lifecycle manager — `Ctrl-C` stops it
-(other containers keep running independently). Re-run the same command to
-pick up where you left off.
+keys, pulls every other image, and starts the stack in dependency order
+(auto-detecting GPU), then **exits** — it's a one-shot bootstrapper, not a
+long-running service. The stack keeps running on its own (`restart:
+unless-stopped`) and comes back after a reboot. Re-run the same command any
+time to repair or restart.
+
+**Convenience commands.** Install the two launchers so you don't have to
+remember the `docker run` line:
+
+```bash
+sudo curl -fsSL -o /usr/local/bin/hlhstart  https://raw.githubusercontent.com/indifferentketchup/homelabhealth/main/hlhstart
+sudo curl -fsSL -o /usr/local/bin/hlhupdate https://raw.githubusercontent.com/indifferentketchup/homelabhealth/main/hlhupdate
+sudo chmod +x /usr/local/bin/hlhstart /usr/local/bin/hlhupdate
+```
+
+- `hlhstart` — start (or restart) the stack.
+- `hlhupdate` — pull the latest images and recreate the stack (keeps your data + secrets).
 
 **Option B: Compose (clone + edit config)**
 

@@ -16,6 +16,18 @@ live under the `snapshot/` namespace.
 
 ## [Unreleased]
 
+### Tooling
+- **`hlhstart` / `hlhupdate` launchers.** Thin host-side wrappers around the
+  bootstrap `docker run` so starting/updating the stack is one word instead of a
+  long command. `hlhstart` = start/restart (idempotent); `hlhupdate` = pull
+  latest images + recreate (keeps `hlh_db` + the secrets/data volumes). Install
+  via the curl lines in the README quickstart.
+- **Dropped the vestigial `-e HLH_BOOTSTRAP=1` flag** from `install.sh` and the
+  README. Since v1.2.11 the orchestra is bootstrap-only, so its entrypoint always
+  bootstraps — the env var is no longer read anywhere. Also corrected the
+  quickstart prose (the orchestra now exits after bootstrap; it is not a
+  long-running lifecycle manager).
+
 ---
 
 ## [v1.2.11] — 2026-05-30

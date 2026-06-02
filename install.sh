@@ -35,5 +35,4 @@ fi
 
 exec docker run --rm $TTY_FLAGS \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  -e HLH_BOOTSTRAP=1 \
   "$IMAGE"

@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+#
+# hlhupdate — update homelabhealth to the latest images and recreate the stack.
+#
+# Pulls the latest bootstrap image, removes the app containers so they get
+# rebuilt from the new images (the bootstrap is idempotent and SKIPS containers
+# that already exist, so they must be removed to pick up a new image or config),
+# then re-bootstraps. Your data and secrets are preserved: hlh_db is left
+# running and the hlh_config / hlh_db_data volumes are never touched.
+#
+# Run where Docker lives (inside WSL on Windows hosts).
+#
+set -euo pipefail
+
+IMAGE="${HLH_ORCHESTRA_IMAGE:-ghcr.io/indifferentketchup/hlh_orchestra:latest}"
+
+echo "→ Pulling latest bootstrap image…"
+docker pull "$IMAGE"
+
+echo "→ Removing app containers so they're recreated from the new images (hlh_db kept)…"
+docker rm -f hlh_api hlh_ui hlh_chat hlh_search >/dev/null 2>&1 || true
+
+echo "→ Bootstrapping (pulls the remaining images, recreates the stack)…"
+TTY_FLAGS=""
+if [ -t 0 ] && [ -t 1 ]; then
+  TTY_FLAGS="-it"
+fi
+exec docker run --rm $TTY_FLAGS \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  "$IMAGE"
