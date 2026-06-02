@@ -23,6 +23,31 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
+# Install the hlhstart / hlhupdate convenience commands so the operator has
+# them after a one-shot install. Best-effort: needs a writable /usr/local/bin
+# or passwordless sudo; skipped (with a hint) otherwise — never blocks the install.
+RAW="${HLH_RAW_BASE:-https://raw.githubusercontent.com/indifferentketchup/homelabhealth/main}"
+BIN_DIR="/usr/local/bin"
+
+_install_cmd() {  # $1 = command name
+  local name="$1" tmp="/tmp/$1.$$"
+  curl -fsSL "$RAW/$name" -o "$tmp" 2>/dev/null || return 1
+  if [ -w "$BIN_DIR" ]; then
+    mv "$tmp" "$BIN_DIR/$name" && chmod +x "$BIN_DIR/$name" && return 0
+  elif sudo -n true 2>/dev/null; then
+    sudo mv "$tmp" "$BIN_DIR/$name" && sudo chmod +x "$BIN_DIR/$name" && return 0
+  fi
+  rm -f "$tmp"
+  return 1
+}
+
+if _install_cmd hlhstart && _install_cmd hlhupdate; then
+  echo "→ Installed 'hlhstart' and 'hlhupdate' to $BIN_DIR"
+else
+  echo "→ (Skipped installing hlhstart/hlhupdate — need a writable $BIN_DIR or sudo."
+  echo "   Add them later with the curl lines in the README.)"
+fi
+
 echo "→ Starting homelabhealth…"
 
 # Only request a TTY when we actually have one. Piped execution

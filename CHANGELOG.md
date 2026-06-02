@@ -20,8 +20,11 @@ live under the `snapshot/` namespace.
 - **`hlhstart` / `hlhupdate` launchers.** Thin host-side wrappers around the
   bootstrap `docker run` so starting/updating the stack is one word instead of a
   long command. `hlhstart` = start/restart (idempotent); `hlhupdate` = pull
-  latest images + recreate (keeps `hlh_db` + the secrets/data volumes). Install
-  via the curl lines in the README quickstart.
+  latest images + recreate (keeps `hlh_db` + the secrets/data volumes).
+- **`install.sh` now installs the launchers.** The `curl … install.sh | bash`
+  one-shot installer (the de-facto "hlhinstall") drops `hlhstart`/`hlhupdate`
+  into `/usr/local/bin` (best-effort: writable dir or passwordless sudo; skipped
+  with a hint otherwise) before bootstrapping. README quickstart leads with it.
 - **Dropped the vestigial `-e HLH_BOOTSTRAP=1` flag** from `install.sh` and the
   README. Since v1.2.11 the orchestra is bootstrap-only, so its entrypoint always
   bootstraps — the env var is no longer read anywhere. Also corrected the

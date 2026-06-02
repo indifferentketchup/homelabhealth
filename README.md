@@ -11,33 +11,37 @@ Roadmap: [docs/roadmap.md](docs/roadmap.md). Architecture: [docs/architecture.md
 
 ## Quickstart
 
-**Option A: One command (smart bootstrap)**
+**Option A: One command (smart bootstrap — recommended)**
 
 ```bash
-docker run --rm -it \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  ghcr.io/indifferentketchup/hlh_orchestra:latest
+curl -fsSL https://raw.githubusercontent.com/indifferentketchup/homelabhealth/main/install.sh | bash
 # Open http://localhost:9604
 ```
 
-The orchestra container creates networks and volumes, generates encryption
-keys, pulls every other image, and starts the stack in dependency order
-(auto-detecting GPU), then **exits** — it's a one-shot bootstrapper, not a
-long-running service. The stack keeps running on its own (`restart:
-unless-stopped`) and comes back after a reboot. Re-run the same command any
-time to repair or restart.
+This installer brings the whole stack up — creates networks/volumes/secrets,
+generates encryption keys, pulls every image, and starts everything in
+dependency order (auto-detecting GPU) — **and** installs the `hlhstart` /
+`hlhupdate` commands so you can start/update later without the long command. The
+orchestra bootstraps once and exits; the stack keeps running on its own
+(`restart: unless-stopped`) and comes back after a reboot.
 
-**Convenience commands.** Install the two launchers so you don't have to
-remember the `docker run` line:
+Afterwards:
+- `hlhstart` — start (or restart) the stack.
+- `hlhupdate` — pull the latest images and recreate the stack (keeps your data + secrets).
+
+<details><summary>Prefer the raw command / install the launchers by hand</summary>
 
 ```bash
+# Start the stack without the installer:
+docker run --rm -it -v /var/run/docker.sock:/var/run/docker.sock \
+  ghcr.io/indifferentketchup/hlh_orchestra:latest
+
+# Install the launchers manually:
 sudo curl -fsSL -o /usr/local/bin/hlhstart  https://raw.githubusercontent.com/indifferentketchup/homelabhealth/main/hlhstart
 sudo curl -fsSL -o /usr/local/bin/hlhupdate https://raw.githubusercontent.com/indifferentketchup/homelabhealth/main/hlhupdate
 sudo chmod +x /usr/local/bin/hlhstart /usr/local/bin/hlhupdate
 ```
-
-- `hlhstart` — start (or restart) the stack.
-- `hlhupdate` — pull the latest images and recreate the stack (keeps your data + secrets).
+</details>
 
 **Option B: Compose (clone + edit config)**
 
