@@ -1,7 +1,7 @@
 """Unified inventory of loaded inference models from the llama-server router.
 
-Every bundled model (chat, tasks, embed, rerank, and the on-demand
-medgemma-vision preset) is served by the router and reported via /v1/models.
+Every bundled model (chat — which also reads images via its mmproj — plus tasks,
+embed, and rerank) is served by the router and reported via /v1/models.
 """
 
 from __future__ import annotations
@@ -27,7 +27,6 @@ TIER_RAM_BUDGET_MIB: dict[str, int] = {
 
 MODEL_RAM_MIB: dict[str, int] = {
     "medgemma": 4800,
-    "medgemma-vision": 3500,  # MedGemma-4b + mmproj, loaded on demand for ingestion
     "qwen-chat": 1900,
     "gemma-tasks": 450,
     "bge-m3": 700,

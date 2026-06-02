@@ -18,6 +18,29 @@ live under the `snapshot/` namespace.
 
 ---
 
+## [v1.2.13] — 2026-06-02
+
+### Fixes
+- **Vision now reuses the chat model instead of loading a redundant 4b.** v1.2.11
+  spun up a separate MedGemma-4b (`vision_base` role + `[medgemma-vision]` preset)
+  for ingestion — but MedGemma's chat model is *itself* multimodal, so on a 27b
+  tier that meant a second model competing for VRAM (and a confusing extra model
+  to pull). Now the `[medgemma]` chat preset loads its matching mmproj and the
+  **same instance does chat + image-reading** (`vision.py` requests
+  `model="medgemma"`). The projector matches the chat model per tier (4b mmproj on
+  4b tiers, 27b on 27b) — i.e. on gpu-16gb/24gb+ it uses the 27b mmproj you
+  already pull, no extra download, no second model in VRAM.
+- **`seed_registry` prunes orphaned `bundled_models` rows.** Retired specs (the
+  short-lived 4b `vision_base`, and the 4b mmproj briefly mapped to the 27b tiers)
+  lingered as stale "pending"/"ready" rows in Settings → System. Boot now deletes
+  any row the registry no longer defines, so the model list reflects reality.
+
+### Removed
+- The `vision_base` role, `[medgemma-vision]` preset, `link_active_vision_base`,
+  and the always-4b ingestion-vision plumbing from v1.2.11.
+
+---
+
 ## [v1.2.12] — 2026-06-02
 
 ### Fixes

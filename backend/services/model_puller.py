@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 MODELS_BASE_DIR = Path(os.environ.get("HLH_MODELS_DIR", "/models"))
 
-ALL_ROLES = ("chat", "embed", "rerank", "vision", "vision_base", "stt", "ocr")
+ALL_ROLES = ("chat", "embed", "rerank", "vision", "stt", "ocr")
 ALL_TIERS = ("cpu-min", "cpu-std", "gpu-4gb", "gpu-8gb", "gpu-16gb", "gpu-24gb+", "apple-mlx", "external")
 
 PULL_CHUNK_BYTES = 5 * 1024 * 1024
@@ -76,31 +76,25 @@ def _router_role(spec: ModelSpec) -> dict[str, ModelSpec | None]:
     return {tier: (spec if tier in _ROUTER_TIERS else None) for tier in ALL_TIERS}
 
 
-def _vision_role(spec: ModelSpec) -> dict[str, ModelSpec | None]:
-    """Same 4b vision artifact on every bundled-router tier except cpu-min
-    (Qwen has no compatible mmproj) and apple-mlx/external (no bundled router)."""
-    return {
-        tier: (spec if tier in _ROUTER_TIERS and tier != "cpu-min" else None)
-        for tier in ALL_TIERS
-    }
-
-
-# Ingestion vision (always MedGemma-4b, tier-independent — see the "vision" /
-# "vision_base" roles below). Same repo ships both the base GGUF and projector.
-_VISION_BASE_SPEC = ModelSpec(
-    repo="unsloth/medgemma-1.5-4b-it-GGUF",
-    filename="medgemma-1.5-4b-it-Q4_K_M.gguf",
-    quant="Q4_K_M",
-    license=_GEMMA_LICENSE,
-    license_url="https://huggingface.co/google/medgemma-4b-it",
-    revision="main",
-)
-_VISION_MMPROJ_SPEC = ModelSpec(
+# Vision projector (mmproj). MedGemma's chat model IS multimodal, so the SAME
+# instance serves chat + image-reading once its mmproj is loaded (models.ini's
+# [medgemma] preset loads it via the active-mmproj symlink) — no separate vision
+# model, no second VRAM load. The projector must MATCH the tier's chat model:
+# 4b mmproj for the 4b chat tiers, 27b mmproj for the 27b tiers.
+_VISION_MMPROJ_4B = ModelSpec(
     repo="unsloth/medgemma-1.5-4b-it-GGUF",
     filename="mmproj-F16.gguf",
     quant="f16",
     license=_GEMMA_LICENSE,
     license_url="https://huggingface.co/google/medgemma-4b-it",
+    revision="main",
+)
+_VISION_MMPROJ_27B = ModelSpec(
+    repo="unsloth/medgemma-27b-it-GGUF",
+    filename="mmproj-F16.gguf",
+    quant="f16",
+    license=_GEMMA_LICENSE,
+    license_url="https://huggingface.co/google/medgemma-27b-it",
     revision="main",
 )
 
@@ -200,12 +194,19 @@ MODEL_REGISTRY: dict[str, dict[str, ModelSpec | None]] = {
     "tasks":     _router_role(_TASKS_SPEC),   # gemma-3-270m — title generation
     "embed":     _router_role(_EMBED_SPEC),   # bge-m3 — RAG embeddings
     "rerank":    _router_role(_RERANK_SPEC),  # bge-reranker-v2-m3 — RAG rerank
-    # Vision is tier-independent: ingestion image/PDF reading always runs on
-    # MedGemma-4b (base + mmproj), regardless of the chat tier, so the small
-    # vision model stays GPU-resident next to the (possibly 27b) chat model
-    # without forcing a VRAM offload. cpu-min (Qwen, no mmproj) gets nothing.
-    "vision":      _vision_role(_VISION_MMPROJ_SPEC),   # MedGemma-4b mmproj (projector)
-    "vision_base": _vision_role(_VISION_BASE_SPEC),     # MedGemma-4b base GGUF
+    # Vision projector for the tier's chat model (so that model does vision too).
+    # mmproj must match the chat model size: 4b tiers → 4b mmproj, 27b tiers →
+    # 27b mmproj. cpu-min (Qwen, not multimodal) and apple-mlx/external get none.
+    "vision": {
+        "cpu-min":   None,
+        "cpu-std":   _VISION_MMPROJ_4B,
+        "gpu-4gb":   _VISION_MMPROJ_4B,
+        "gpu-8gb":   _VISION_MMPROJ_4B,
+        "gpu-16gb":  _VISION_MMPROJ_27B,
+        "gpu-24gb+": _VISION_MMPROJ_27B,
+        "apple-mlx": None,
+        "external":  None,
+    },
     "stt":       {tier: None for tier in ALL_TIERS},  # Phase 4
     "ocr":       {tier: None for tier in ALL_TIERS},  # Phase 5
 }
@@ -272,6 +273,28 @@ async def seed_registry(conn) -> int:
                 spec.revision,
             )
             count += 1
+
+    # Prune rows the registry no longer defines (e.g. a role/tier whose model
+    # changed). Without this, a retired spec lingers as a stale "ready"/"pending"
+    # row in Settings — e.g. the short-lived 4b `vision_base` role and the 4b
+    # mmproj that was briefly mapped to the 27b tiers. Matches on
+    # (role, tier, model_id); the on-disk file (if any) is left as harmless
+    # orphan data.
+    valid = {
+        (role, tier, spec.model_id)
+        for role, by_tier in MODEL_REGISTRY.items()
+        for tier, spec in by_tier.items()
+        if spec is not None
+    }
+    existing = await conn.fetch("SELECT id, role, tier, model_id FROM bundled_models")
+    stale = [
+        r["id"] for r in existing
+        if (r["role"], r["tier"], r["model_id"]) not in valid
+    ]
+    if stale:
+        await conn.execute("DELETE FROM bundled_models WHERE id = ANY($1::uuid[])", stale)
+        logger.info("seed_registry: pruned %d orphaned bundled_models rows", len(stale))
+
     return count
 
 

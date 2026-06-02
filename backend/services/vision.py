@@ -19,10 +19,11 @@ logger = logging.getLogger(__name__)
 
 VISION_URL = "http://hlh_chat:9610/v1/chat/completions"
 VISION_TIMEOUT = 300.0
-# Router preset (models.ini) for on-demand MedGemma-4b vision. MUST be sent as
-# the request "model" or the llama-server router 400s the call (it has no default
-# model in --models-preset mode). Loaded/evicted on demand by the router.
-VISION_MODEL = "medgemma-vision"
+# The chat model preset (models.ini) — MedGemma is multimodal, so the same
+# instance that serves chat also reads images once its mmproj is loaded. MUST be
+# sent as the request "model" or the llama-server router 400s the call. Using the
+# chat model (vs a separate vision preset) avoids a second model in VRAM.
+VISION_MODEL = "medgemma"
 
 TEXT_EXTRACTION_PROMPT = (
     "Extract all visible text from this image exactly as shown. "
@@ -61,14 +62,13 @@ DOCUMENT_EXTRACTION_PROMPT = (
 
 
 def is_vision_available() -> bool:
-    """True only when the on-demand MedGemma-4b vision preset can load — both the
-    4b base and its mmproj must be present (the symlinks resolve to real files).
-    Gates every vision call, so on a box without the vision model pulled the
-    [medgemma-vision] preset is never requested and can't break chat."""
+    """True when the active mmproj is present — the chat model loads it and can
+    then read images. Gates every vision call so we don't ask the model to read
+    an image when its projector isn't loaded."""
     from pathlib import Path
     import os
-    vision = Path(os.environ.get("HLH_MODELS_DIR", "/models")) / "vision"
-    return (vision / "active-medgemma-4b.gguf").exists() and (vision / "active-mmproj.gguf").exists()
+    models_base = Path(os.environ.get("HLH_MODELS_DIR", "/models"))
+    return (models_base / "vision" / "active-mmproj.gguf").exists()
 
 
 async def _call_vision(image_bytes: bytes, prompt: str, mime_type: str = "image/png") -> str | None:
