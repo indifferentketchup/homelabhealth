@@ -252,13 +252,15 @@ def ensure_models_ownership(client: docker.DockerClient) -> None:
 # ── Image pulls ──────────────────────────────────────────────────────────────
 
 def pull_image(client: docker.DockerClient, image: str) -> None:
-    """Pull image if not already present locally."""
-    try:
-        client.images.get(image)
-        return  # already present
-    except ImageNotFound:
-        pass
+    """Always pull so floating tags (our :latest images) actually refresh.
 
+    The old behaviour was skip-if-present, which meant `:latest` was pulled once
+    and then NEVER updated — so re-running the bootstrap (e.g. via hlhupdate)
+    recreated containers from a stale local image and silently shipped old code.
+    We now always pull; pinned tags are a cheap no-op (cached layers), floating
+    tags refresh. If the registry is unreachable but a local copy exists, fall
+    back to it instead of failing (lets offline restarts still work).
+    """
     log(f"pulling {image}...")
     last_err = None
     for attempt in range(3):
@@ -269,6 +271,14 @@ def pull_image(client: docker.DockerClient, image: str) -> None:
             last_err = e
             log(f"  pull attempt {attempt + 1}/3 failed: {e}")
             time.sleep(2 ** attempt)
+
+    # Pull failed — use a local copy if we have one, otherwise give up.
+    try:
+        client.images.get(image)
+        log(f"  registry unreachable; using local {image} ({last_err})")
+        return
+    except ImageNotFound:
+        pass
     fail(f"failed to pull {image} after 3 attempts: {last_err}")
 
 

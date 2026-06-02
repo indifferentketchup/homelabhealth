@@ -16,6 +16,21 @@ live under the `snapshot/` namespace.
 
 ## [Unreleased]
 
+---
+
+## [v1.2.12] — 2026-06-02
+
+### Fixes
+- **Bootstrap now actually refreshes `:latest` images (critical update bug).**
+  `pull_image` was skip-if-present: it pulled an image once and then *never*
+  again, so re-running the bootstrap (incl. via `hlhupdate`) recreated
+  containers from the **stale local `:latest`** and silently kept shipping old
+  code. Effect: recent releases (v1.2.8 RAG fix, v1.2.9 monitor, v1.2.11
+  vision/MedSigLIP removal) never reached already-deployed boxes — e.g.
+  `hlh_ui` stayed on the old build and still showed the removed "Vision Search"
+  UI. Now always pulls (pinned tags are a cached no-op; floating tags refresh),
+  with a local-image fallback if the registry is unreachable.
+
 ### Tooling
 - **`hlhstart` / `hlhupdate` launchers.** Thin host-side wrappers around the
   bootstrap `docker run` so starting/updating the stack is one word instead of a
