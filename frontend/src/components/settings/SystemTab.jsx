@@ -98,12 +98,12 @@ const TIERS = [
   {
     id: 'gpu-16gb',
     label: 'GPU — 16 GB class',
-    chat: 'MedGemma 27B Q4_K_M',
+    chat: 'MedGemma 1.5 4B Q8_0',
     embed: 'Harrier-0.6B Q8',
     rerank: 'Qwen3-Reranker-0.6B',
-    vision: 'MedGemma 27B (mmproj)',
-    footprint: '~16 GB VRAM peak · ~16 GB disk · 32K context',
-    diskGb: 16,
+    vision: 'MedGemma 1.5 4B (mmproj)',
+    footprint: '~9 GB VRAM peak · ~6 GB disk · 32K context',
+    diskGb: 6,
     detect: '12–23 GB VRAM',
   },
   {

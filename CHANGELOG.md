@@ -18,6 +18,16 @@ live under the `snapshot/` namespace.
 
 ---
 
+## [v1.2.14] — 2026-06-02
+
+### AI
+- **gpu-16gb now runs MedGemma-1.5-4B (Q8_0), not the 27B.** Only the gpu-24gb+
+  tier gets the 27B now. Keeps the chat model + its mmproj comfortably resident
+  on a 16 GB card (the 27B + projector was tight). Updated the chat + vision
+  registry specs, the tier card in Settings, and the models.ini tier notes.
+
+---
+
 ## [v1.2.13] — 2026-06-02
 
 ### Fixes

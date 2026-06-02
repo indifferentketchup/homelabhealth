@@ -172,12 +172,14 @@ MODEL_REGISTRY: dict[str, dict[str, ModelSpec | None]] = {
             license_url="https://huggingface.co/google/medgemma-4b-it",
             revision="main",
         ),
+        # gpu-16gb runs the 4b (Q8_0) — the 27b is reserved for gpu-24gb+ only,
+        # so a 16 GB card keeps the chat model + its mmproj comfortably resident.
         "gpu-16gb": ModelSpec(
-            repo="unsloth/medgemma-27b-it-GGUF",
-            filename="medgemma-27b-it-Q4_K_M.gguf",
-            quant="Q4_K_M",
+            repo="unsloth/medgemma-1.5-4b-it-GGUF",
+            filename="medgemma-1.5-4b-it-Q8_0.gguf",
+            quant="Q8_0",
             license=_GEMMA_LICENSE,
-            license_url="https://huggingface.co/google/medgemma-27b-it",
+            license_url="https://huggingface.co/google/medgemma-4b-it",
             revision="main",
         ),
         "gpu-24gb+": ModelSpec(
@@ -202,7 +204,7 @@ MODEL_REGISTRY: dict[str, dict[str, ModelSpec | None]] = {
         "cpu-std":   _VISION_MMPROJ_4B,
         "gpu-4gb":   _VISION_MMPROJ_4B,
         "gpu-8gb":   _VISION_MMPROJ_4B,
-        "gpu-16gb":  _VISION_MMPROJ_27B,
+        "gpu-16gb":  _VISION_MMPROJ_4B,
         "gpu-24gb+": _VISION_MMPROJ_27B,
         "apple-mlx": None,
         "external":  None,
