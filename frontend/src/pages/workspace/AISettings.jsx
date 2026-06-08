@@ -6,6 +6,7 @@ import { embedAllMemories, extractMemory, getMemory, putMemory } from '@/api/mem
 import { createMemoryEntry, deleteMemoryEntry, listMemoryEntries } from '@/api/memoryEntries.js'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
 
 export default function AISettings() {
   const queryClient = useQueryClient()
@@ -25,7 +26,10 @@ export default function AISettings() {
 
   const saveMem = useMutation({
     mutationFn: () => putMemory(memDraft),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['memory'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['memory'] })
+      toast.success('Saved')
+    },
   })
 
   const extractMem = useMutation({
@@ -69,7 +73,10 @@ export default function AISettings() {
 
   const saveGlobalInstr = useMutation({
     mutationFn: () => putCustomInstructions(gInstrDraft),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['custom-instructions'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['custom-instructions'] })
+      toast.success('Saved')
+    },
   })
 
   const addEntry = useMutation({

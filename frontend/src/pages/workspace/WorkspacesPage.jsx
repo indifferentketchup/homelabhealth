@@ -193,6 +193,7 @@ export default function WorkspacesPage() {
                 {deleteId === d.id ? (
                   <div className="flex flex-col gap-2 text-sm">
                     <p className="text-muted-foreground">Delete this workspace?</p>
+                    <p className="text-xs text-destructive/80">This will permanently delete all sources, chats, and memory in this workspace.</p>
                     <div className="flex flex-wrap gap-2">
                       <Button type="button" size="sm" variant="outline" onClick={() => setDeleteId(null)}>
                         Cancel

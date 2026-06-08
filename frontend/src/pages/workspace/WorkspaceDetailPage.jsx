@@ -21,6 +21,7 @@ import {
   uploadWorkspaceIcon,
 } from '@/api/workspaces.js'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { cn } from '@/lib/utils'
 
 function EmbeddableSwitch({ embeddable, disabled, onToggle }) {
@@ -69,6 +70,8 @@ export default function WorkspaceDetailPage() {
   const [pinnedFlag, setPinnedFlag] = useState(false)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [clearing, setClearing] = useState(false)
+  const [pendingFileDelete, setPendingFileDelete] = useState(null)
+  const [pendingMemoryDelete, setPendingMemoryDelete] = useState(null)
   const invalidateWorkspace = () => {
     queryClient.invalidateQueries({ queryKey: ['workspaces'] })
   }
@@ -514,7 +517,7 @@ export default function WorkspaceDetailPage() {
                           type="button"
                           size="sm"
                           variant="destructive"
-                          onClick={() => delFileMut.mutate(f.id)}
+                          onClick={() => setPendingFileDelete(f.id)}
                           disabled={delFileMut.isPending}
                         >
                           Delete
@@ -564,7 +567,7 @@ export default function WorkspaceDetailPage() {
                         size="sm"
                         variant="outline"
                         className="shrink-0 self-end sm:self-start"
-                        onClick={() => delMemoryMut.mutate(entry.id)}
+                        onClick={() => setPendingMemoryDelete(entry.id)}
                         disabled={delMemoryMut.isPending}
                       >
                         Delete
@@ -643,42 +646,42 @@ export default function WorkspaceDetailPage() {
         )}
       </div>
 
-      {showClearConfirm ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-lg">
-            <h3 className="mb-2 text-lg font-semibold text-foreground">Clear Embeddings?</h3>
-            <p className="mb-4 text-sm text-muted-foreground">
-              This will delete all chunks and embeddings for this workspace. Sources will need to be re-synced. Continue?
-            </p>
-            <div className="flex flex-wrap justify-end gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setShowClearConfirm(false)
-                  setClearing(false)
-                }}
-                disabled={clearing || clearEmbeddingsMut.isPending}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="destructive"
-                onClick={() => {
-                  setClearing(true)
-                  clearEmbeddingsMut.mutate()
-                }}
-                disabled={clearing || clearEmbeddingsMut.isPending}
-              >
-                {clearing || clearEmbeddingsMut.isPending ? 'Clearing…' : 'Clear'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <ConfirmDialog
+        open={showClearConfirm}
+        onOpenChange={setShowClearConfirm}
+        title="Clear Embeddings?"
+        description="This will delete all chunks and embeddings for this workspace. Sources will need to be re-synced."
+        confirmLabel="Clear Embeddings"
+        onConfirm={() => {
+          setShowClearConfirm(false)
+          setClearing(true)
+          clearEmbeddingsMut.mutate()
+        }}
+      />
+
+      <ConfirmDialog
+        open={Boolean(pendingFileDelete)}
+        onOpenChange={(open) => { if (!open) setPendingFileDelete(null) }}
+        title="Delete this context file?"
+        description="This file will be permanently removed from the workspace."
+        confirmLabel="Delete"
+        onConfirm={() => {
+          delFileMut.mutate(pendingFileDelete)
+          setPendingFileDelete(null)
+        }}
+      />
+
+      <ConfirmDialog
+        open={Boolean(pendingMemoryDelete)}
+        onOpenChange={(open) => { if (!open) setPendingMemoryDelete(null) }}
+        title="Delete this memory entry?"
+        description="This entry will be permanently removed."
+        confirmLabel="Delete"
+        onConfirm={() => {
+          delMemoryMut.mutate(pendingMemoryDelete)
+          setPendingMemoryDelete(null)
+        }}
+      />
     </div>
   )
 }

@@ -87,9 +87,6 @@ export const useAppStore = create((set, get) => ({
     }
   },
 
-  chats: [],
-  setChats: (chats) => set({ chats: Array.isArray(chats) ? chats : [] }),
-
   activeChatId: null,
   setActiveChatId: (id) => set({ activeChatId: id }),
 

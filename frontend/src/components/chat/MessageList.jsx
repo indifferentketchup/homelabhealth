@@ -15,6 +15,7 @@ function CompactedGroup({ messages, summary, chatId, onSaveMessageAsNote, onEdit
         <button
           type="button"
           onClick={() => setExpanded(!expanded)}
+          aria-expanded={expanded}
           className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs text-muted-foreground hover:bg-muted/50 transition-colors"
         >
           <span className="text-[10px]">{expanded ? '▾' : '▸'}</span>

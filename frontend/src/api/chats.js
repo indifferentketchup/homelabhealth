@@ -37,6 +37,16 @@ export function patchRecentChatsListCache(queryClient, chatId, title) {
   })
 }
 
+/** Drop a chat from every cached recent list (optimistic delete). */
+export function removeChatFromRecentListCache(queryClient, chatId) {
+  const id = String(chatId)
+  queryClient.setQueriesData({ queryKey: ['chats', 'recent'] }, (old) => {
+    if (!old?.items) return old
+    const items = old.items.filter((c) => String(c.id) !== id)
+    return items.length === old.items.length ? old : { ...old, items }
+  })
+}
+
 export function toggleWebSearch(chatId, enabled) {
   return apiFetch(`/api/chats/${chatId}/web-search`, { method: 'PATCH', json: { enabled } })
 }

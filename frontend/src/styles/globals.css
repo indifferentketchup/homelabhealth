@@ -15,8 +15,9 @@ input, textarea, select {
  */
 
 :root {
-  --font-body: 'Rajdhani', sans-serif;
-  --font-mono: 'Fira Code', monospace;
+  /* Bundled UI fonts (loaded via @fontsource imports in src/index.css). */
+  --font-body: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
   --font-size-base: 18px;
   --fs-nav: 20px;
   --fs-chat: 18px;
@@ -27,10 +28,18 @@ input, textarea, select {
   --chat-max-w: 900px;
   --chat-max-width: 900px;
   --sources-panel-width: 22rem;
+  /* Corner-radius scale (consumed by Tailwind borderRadius + components). */
+  --radius: 0.625rem;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
   font-size: var(--font-size-base);
 
   /* Light palette (soft healthcare cream) */
-  --accent: #6E8C70;
+  /* sage deepened #6E8C70 -> #566D57 for WCAG AA (light mode only): white-on-primary
+     button 3.72->5.64; text-primary on bg-primary/10 citation badge 3.08->4.56; hue
+     preserved (proportional darken). Cascades to --primary/--ring/--sidebar-primary. */
+  --accent: #566D57;
   --accent-workspace: #6E8C70;
   --accent-bright: #5A7A5C;
   --accent-dim: #DCE6DD;
@@ -41,8 +50,10 @@ input, textarea, select {
   --bg-card: #FFFFFF;
   --bg-hover: #F5DCE3;
   --text: #2A3548;
-  --text-dim: #6B7589;
-  --text-muted: #6B7589;
+  /* darkened #6B7589 -> #60697B for WCAG AA on cream surfaces (light mode only):
+     muted-foreground on --bg-panel/sidebar 3.97->4.73, --bg 4.26->5.08, card 4.63->5.52. */
+  --text-dim: #60697B;
+  --text-muted: #60697B; /* twin of --text-dim; kept in lockstep */
   --border: #E5DAD0;
   --border-bright: #D6C5B8;
   --glow: 0 0 20px rgba(110, 140, 112, 0.15);
@@ -63,11 +74,15 @@ input, textarea, select {
   --primary: var(--accent);
   --primary-foreground: #FFFFFF;
   --secondary: var(--accent-3);
-  --secondary-foreground: #FFFFFF;
+  /* dark navy (= --text) on dusty rose: white was 2.62:1 (fail). Navy is 4.70:1 (WCAG AA).
+     Flipping the text dark keeps the dusty-rose hue #D48BA0 intact rather than darkening it. */
+  --secondary-foreground: #2A3548;
   --muted: var(--bg-panel);
   --muted-foreground: var(--text-dim);
   --accent-foreground: #FFFFFF;
-  --destructive: #B85450;
+  /* deepened #B85450 -> #A24A46 for WCAG AA (light mode only): text-destructive on
+     bg-destructive/10 badge 3.86->4.67; inline error text on cream page 4.37->5.36. */
+  --destructive: #A24A46;
   --destructive-foreground: #FFFFFF;
   --input: var(--border-bright);
   --ring: var(--accent);
@@ -272,6 +287,17 @@ main {
     );
   }
   .bc-chat-anchor {
-    background: hsl(var(--background));
+    /* Opaque page background so chat messages don't show through behind the
+       fixed input. (Was `hsl(var(--background))` — invalid, since --background
+       holds a hex color, not HSL channels — which rendered transparent.) */
+    background: var(--background);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

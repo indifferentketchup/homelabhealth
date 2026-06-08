@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# hlhrestart — delegate to `hlh restart` (unified CLI).
+exec "$(dirname "$0")/hlh" restart "$@"

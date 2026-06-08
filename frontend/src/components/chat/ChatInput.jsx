@@ -6,6 +6,7 @@ import { toggleWebSearch } from '@/api/chats.js'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/store/index.js'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
 
 // Read a File into a text-attachment shape, rejecting images outright and
 // stripping any embedded null bytes (PG's TEXT type rejects 0x00, which
@@ -60,19 +61,12 @@ export function ChatInput({
   const plusMenuRef = useRef(null)
   const [menuPos, setMenuPos] = useState({ bottom: 0, left: 0 })
   const [plusOpen, setPlusOpen] = useState(false)
-  const [toastMsg, setToastMsg] = useState(null)
 
   const [attachedFiles, setAttachedFiles] = useState([])
   const [isDragOver, setIsDragOver] = useState(false)
 
   const webSearchEnabled = useAppStore((s) => s.webSearchEnabled)
   const setWebSearchEnabled = useAppStore((s) => s.setWebSearchEnabled)
-
-  useEffect(() => {
-    if (!toastMsg) return
-    const t = window.setTimeout(() => setToastMsg(null), 2200)
-    return () => window.clearTimeout(t)
-  }, [toastMsg])
 
   useEffect(() => {
     const el = taRef.current
@@ -238,14 +232,6 @@ export function ChatInput({
 
   return (
     <>
-      {toastMsg && (
-        <div
-          role="status"
-          className="fixed bottom-20 left-1/2 z-[200] max-w-sm -translate-x-1/2 rounded-md border border-border bg-popover px-4 py-2 text-center text-sm text-popover-foreground shadow-md"
-        >
-          {toastMsg}
-        </div>
-      )}
       <div
         className="relative mx-auto w-full max-h-[40dvh] min-h-0 flex-shrink-0 flex flex-col overflow-hidden rounded-2xl border border-border bg-card px-4 pt-3 transition-colors focus-within:border-ring/60 focus-within:ring-2 focus-within:ring-ring/30"
         style={{
@@ -269,8 +255,7 @@ export function ChatInput({
           for (const file of files) {
             const item = await loadFileAsTextAttachment(file)
             if (item.error) {
-              setToastMsg(item.error)
-              window.setTimeout(() => setToastMsg(null), 3000)
+              toast.error(item.error)
               continue
             }
             setAttachedFiles((prev) => {
@@ -305,6 +290,7 @@ export function ChatInput({
             value={value}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={onKeyDownTa}
+            aria-label="Message"
             placeholder="Message…"
             disabled={disabled}
             rows={1}
@@ -497,8 +483,7 @@ export function ChatInput({
           e.target.value = ''
           const item = await loadFileAsTextAttachment(file)
           if (item.error) {
-            setToastMsg(item.error)
-            window.setTimeout(() => setToastMsg(null), 3000)
+            toast.error(item.error)
             return
           }
           setAttachedFiles((prev) => {

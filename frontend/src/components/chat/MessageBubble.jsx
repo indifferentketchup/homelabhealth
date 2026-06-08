@@ -164,6 +164,7 @@ function GuardFlagsBadge({ flags }) {
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
         className="inline-flex items-center gap-1 rounded-full bg-yellow-100 px-2 py-0.5 text-xs text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
       >
         <AlertTriangle className="size-3" />
@@ -471,8 +472,8 @@ export function MessageBubble({
         {isUser && canEditUser && !editing ? (
           <div
             className={cn(
-              'mt-1 flex justify-end opacity-0 transition-opacity',
-              hover && 'opacity-100',
+              'mt-1 flex justify-end sm:opacity-0 transition-opacity',
+              hover && 'sm:opacity-100',
             )}
           >
             <TooltipProvider>
@@ -482,6 +483,7 @@ export function MessageBubble({
                     type="button"
                     variant="ghost"
                     size="icon-xs"
+                    className="size-11"
                     onClick={startEdit}
                     aria-label="Edit and resend"
                   >
@@ -496,8 +498,8 @@ export function MessageBubble({
         {!isUser && !isPendingTyping && (
           <div
             className={cn(
-              'mt-1 flex flex-col gap-1 opacity-0 transition-opacity',
-              (hover || streaming) && 'opacity-100',
+              'mt-1 flex flex-col gap-1 sm:opacity-0 transition-opacity',
+              (hover || streaming) && 'sm:opacity-100',
             )}
           >
             <div className="flex flex-wrap items-center gap-1">
@@ -508,6 +510,7 @@ export function MessageBubble({
                       type="button"
                       variant="ghost"
                       size="icon-xs"
+                      className="size-11"
                       onClick={copyText}
                       aria-label={copied ? 'Copied' : 'Copy'}
                     >
@@ -527,6 +530,7 @@ export function MessageBubble({
                         type="button"
                         variant="ghost"
                         size="icon-xs"
+                        className="size-11"
                         onClick={() => forkMut.mutate()}
                         disabled={forkMut.isPending}
                         aria-label="Fork chat at this message"
@@ -548,6 +552,7 @@ export function MessageBubble({
                         type="button"
                         variant="ghost"
                         size="icon-xs"
+                        className="size-11"
                         onClick={() => onSaveMessageAsNote?.(message.content)}
                         aria-label="Save as note"
                       >
@@ -564,6 +569,7 @@ export function MessageBubble({
                         type="button"
                         variant="ghost"
                         size="icon-xs"
+                        className="size-11"
                         onClick={() => onRegenerate?.(message)}
                         aria-label="Regenerate response"
                       >

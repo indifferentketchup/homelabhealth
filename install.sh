@@ -23,9 +23,9 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
-# Install the hlhstart / hlhupdate convenience commands so the operator has
-# them after a one-shot install. Best-effort: needs a writable /usr/local/bin
-# or passwordless sudo; skipped (with a hint) otherwise — never blocks the install.
+# Install the hlh convenience commands so the operator has them after a
+# one-shot install. Best-effort: needs a writable /usr/local/bin or
+# passwordless sudo; skipped (with a hint) otherwise — never blocks the install.
 RAW="${HLH_RAW_BASE:-https://raw.githubusercontent.com/indifferentketchup/homelabhealth/main}"
 BIN_DIR="/usr/local/bin"
 
@@ -41,10 +41,17 @@ _install_cmd() {  # $1 = command name
   return 1
 }
 
-if _install_cmd hlhstart && _install_cmd hlhupdate; then
-  echo "→ Installed 'hlhstart' and 'hlhupdate' to $BIN_DIR"
+_installed=0
+for _cmd in hlh hlhstart hlhstop hlhrestart hlhupdate; do
+  if _install_cmd "$_cmd"; then
+    _installed=$((_installed + 1))
+  fi
+done
+
+if [ "$_installed" -gt 0 ]; then
+  echo "→ Installed $_installed command(s) to $BIN_DIR (hlh start|stop|restart|update)"
 else
-  echo "→ (Skipped installing hlhstart/hlhupdate — need a writable $BIN_DIR or sudo."
+  echo "→ (Skipped installing hlh commands — need a writable $BIN_DIR or sudo."
   echo "   Add them later with the curl lines in the README.)"
 fi
 

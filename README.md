@@ -20,14 +20,16 @@ curl -fsSL https://raw.githubusercontent.com/indifferentketchup/homelabhealth/ma
 
 This installer brings the whole stack up — creates networks/volumes/secrets,
 generates encryption keys, pulls every image, and starts everything in
-dependency order (auto-detecting GPU) — **and** installs the `hlhstart` /
-`hlhupdate` commands so you can start/update later without the long command. The
-orchestra bootstraps once and exits; the stack keeps running on its own
+dependency order (auto-detecting GPU) — **and** installs the `hlh` command so
+you can manage the stack later without the long command. The orchestra
+bootstraps once and exits; the stack keeps running on its own
 (`restart: unless-stopped`) and comes back after a reboot.
 
 Afterwards:
-- `hlhstart` — start (or restart) the stack.
-- `hlhupdate` — pull the latest images and recreate the stack (keeps your data + secrets).
+- `hlh start` — start (or restart) the stack.
+- `hlh stop` — stop the stack (keeps volumes + `hlh_db` intact).
+- `hlh restart` — full restart: stop then re-bootstrap.
+- `hlh update` — pull the latest images and recreate the stack (keeps your data + secrets).
 
 <details><summary>Prefer the raw command / install the launchers by hand</summary>
 
@@ -37,9 +39,10 @@ docker run --rm -it -v /var/run/docker.sock:/var/run/docker.sock \
   ghcr.io/indifferentketchup/hlh_orchestra:latest
 
 # Install the launchers manually:
-sudo curl -fsSL -o /usr/local/bin/hlhstart  https://raw.githubusercontent.com/indifferentketchup/homelabhealth/main/hlhstart
-sudo curl -fsSL -o /usr/local/bin/hlhupdate https://raw.githubusercontent.com/indifferentketchup/homelabhealth/main/hlhupdate
-sudo chmod +x /usr/local/bin/hlhstart /usr/local/bin/hlhupdate
+for cmd in hlh hlhstart hlhstop hlhrestart hlhupdate; do
+  sudo curl -fsSL -o "/usr/local/bin/$cmd" "https://raw.githubusercontent.com/indifferentketchup/homelabhealth/main/$cmd"
+done
+sudo chmod +x /usr/local/bin/hlh /usr/local/bin/hlh{start,stop,restart,update}
 ```
 </details>
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
 
 import { deleteNonWorkspaceChats } from '@/api/chats.js'
 import { getContextBarSetting, putContextBarSetting } from '@/api/settings.js'
@@ -164,14 +165,18 @@ export default function SettingsPage({ onClose }) {
   }, [onClose, handleClose])
 
   const [globalDraft, setGlobalDraft] = useState(() => layoutDraftToApiPayload({ ...useLayoutStore.getState() }))
+  const [typographySaving, setTypographySaving] = useState(false)
+  const [layoutSaving, setLayoutSaving] = useState(false)
 
   useEffect(() => {
-    void useLayoutStore
-      .getState()
-      .loadLayout()
-      .then(() => {
-        setGlobalDraft(layoutDraftToApiPayload({ ...useLayoutStore.getState() }))
-      })
+    // Subscribe to the store so that when WorkspaceApp's loadLayout completes,
+    // globalDraft gets the API-fresh values — without firing a redundant second
+    // GET /api/settings/layout request (double loadLayout dedup).
+    const unsub = useLayoutStore.subscribe(() => {
+      setGlobalDraft(layoutDraftToApiPayload({ ...useLayoutStore.getState() }))
+      unsub()
+    })
+    return unsub
   }, [])
 
   const applyLiveGlobal = useCallback((draft) => {
@@ -203,24 +208,36 @@ export default function SettingsPage({ onClose }) {
   }
 
   async function saveTypography() {
-    const base = clampTypographyFs(globalDraft.fontSize)
-    await saveGlobalToApi({
-      fontSize: base,
-      fsNav: clampTypographyFs(globalDraft.fsNav),
-      fsChat: clampTypographyFs(globalDraft.fsChat),
-      fsInput: clampTypographyFs(globalDraft.fsInput),
-      fsHeading: clampTypographyFs(globalDraft.fsHeading),
-      fsCode: clampTypographyFs(globalDraft.fsCode),
-    })
-    setGlobalDraft(layoutDraftToApiPayload({ ...useLayoutStore.getState() }))
+    setTypographySaving(true)
+    try {
+      const base = clampTypographyFs(globalDraft.fontSize)
+      await saveGlobalToApi({
+        fontSize: base,
+        fsNav: clampTypographyFs(globalDraft.fsNav),
+        fsChat: clampTypographyFs(globalDraft.fsChat),
+        fsInput: clampTypographyFs(globalDraft.fsInput),
+        fsHeading: clampTypographyFs(globalDraft.fsHeading),
+        fsCode: clampTypographyFs(globalDraft.fsCode),
+      })
+      setGlobalDraft(layoutDraftToApiPayload({ ...useLayoutStore.getState() }))
+      toast.success('Typography saved')
+    } finally {
+      setTypographySaving(false)
+    }
   }
 
   async function saveLayoutPrefs() {
-    await saveGlobalToApi({
-      sidebarWidth: Number(globalDraft.sidebarWidth) || 260,
-      chatMaxWidth: Number(globalDraft.chatMaxWidth) || 1200,
-    })
-    setGlobalDraft(layoutDraftToApiPayload({ ...useLayoutStore.getState() }))
+    setLayoutSaving(true)
+    try {
+      await saveGlobalToApi({
+        sidebarWidth: Number(globalDraft.sidebarWidth) || 260,
+        chatMaxWidth: Number(globalDraft.chatMaxWidth) || 1200,
+      })
+      setGlobalDraft(layoutDraftToApiPayload({ ...useLayoutStore.getState() }))
+      toast.success('Layout saved')
+    } finally {
+      setLayoutSaving(false)
+    }
   }
 
   const fontSizeBase = clampTypographyFs(globalDraft.fontSize ?? 15)
@@ -274,9 +291,11 @@ export default function SettingsPage({ onClose }) {
             {settingsTabs.map((t) => (
               <button
                 key={t.id}
+                id={`tab-${t.id}`}
                 type="button"
                 role="tab"
                 aria-selected={tab === t.id}
+                aria-controls={`panel-${t.id}`}
                 onClick={() => setTab(t.id)}
                 className={cn(
                   'shrink-0 px-4 py-3 text-sm whitespace-nowrap transition-colors',
@@ -291,7 +310,12 @@ export default function SettingsPage({ onClose }) {
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6">
+        <div
+          id={`panel-${tab}`}
+          role="tabpanel"
+          aria-labelledby={`tab-${tab}`}
+          className="min-h-0 flex-1 overflow-y-auto px-4 py-6"
+        >
           {tab === 'typography' && (
             <section className="mx-auto w-full max-w-2xl space-y-6">
               <h2 className="fs-heading font-semibold uppercase tracking-wide text-muted-foreground">Typography (global)</h2>
@@ -311,8 +335,8 @@ export default function SettingsPage({ onClose }) {
                 <FontSizeRow label="Code blocks" value={globalDraft.fsCode} onChange={(n) => updateGlobalDraft({ fsCode: n })} />
               </div>
 
-              <Button type="button" size="sm" onClick={() => void saveTypography()}>
-                Save typography
+              <Button type="button" size="sm" onClick={() => void saveTypography()} disabled={typographySaving}>
+                {typographySaving ? 'Saving…' : 'Save typography'}
               </Button>
             </section>
           )}
@@ -345,8 +369,8 @@ export default function SettingsPage({ onClose }) {
                   className="w-full"
                 />
               </label>
-              <Button type="button" size="sm" onClick={() => void saveLayoutPrefs()}>
-                Save layout
+              <Button type="button" size="sm" onClick={() => void saveLayoutPrefs()} disabled={layoutSaving}>
+                {layoutSaving ? 'Saving…' : 'Save layout'}
               </Button>
 
               <ContextBarToggle />

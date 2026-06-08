@@ -5,6 +5,7 @@ import { FileStack, Upload } from 'lucide-react'
 import { listWorkspaces } from '@/api/workspaces.js'
 import { deleteSource, listSources, uploadSource } from '@/api/sources.js'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useLongPress } from '@/hooks/useLongPress.js'
 import { cn } from '@/lib/utils'
@@ -117,7 +118,7 @@ function SourceRow({
           type="button"
           variant="outline"
           size="sm"
-          className="h-8 w-full shrink-0 text-xs sm:h-6 sm:w-auto sm:px-1.5"
+          className="h-11 w-full shrink-0 text-xs sm:h-9 sm:w-auto sm:px-2"
           title="Attach to chat"
           disabled={!ready}
           onClick={() => sendSourceToChat(src)}
@@ -129,7 +130,7 @@ function SourceRow({
   )
 }
 
-export function SourcesPanel({ chatId, workspaceId }) {
+export function SourcesPanel({ workspaceId }) {
   const queryClient = useQueryClient()
   const fileRef = useRef(null)
 
@@ -143,6 +144,7 @@ export function SourcesPanel({ chatId, workspaceId }) {
   const [viewLoading, setViewLoading] = useState(false)
   const [ctx, setCtx] = useState(null)
   const ctxRef = useRef(null)
+  const [pendingDelete, setPendingDelete] = useState(null)
 
   const { data: workspacesPack } = useQuery({
     queryKey: ['workspaces', 'list'],
@@ -189,9 +191,15 @@ export function SourcesPanel({ chatId, workspaceId }) {
     setEditName(src.name)
   }
 
-  async function confirmDelete(src) {
+  function requestDelete(src) {
     setCtx(null)
-    if (!window.confirm(`Remove source "${src.name}"?`)) return
+    setPendingDelete(src)
+  }
+
+  async function executeDelete() {
+    if (!pendingDelete) return
+    const src = pendingDelete
+    setPendingDelete(null)
     try {
       await deleteSource(src.id)
       await queryClient.invalidateQueries({ queryKey: ['sources', effectiveWorkspaceId] })
@@ -352,12 +360,21 @@ export function SourcesPanel({ chatId, workspaceId }) {
             type="button"
             role="menuitem"
             className="fs-nav flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-left text-destructive outline-none hover:bg-destructive/10"
-            onClick={() => confirmDelete(ctx.source)}
+            onClick={() => requestDelete(ctx.source)}
           >
             Delete
           </button>
         </div>
       )}
+
+      <ConfirmDialog
+        open={Boolean(pendingDelete)}
+        onOpenChange={(open) => { if (!open) setPendingDelete(null) }}
+        title={`Delete "${pendingDelete?.name}"?`}
+        description="This source will be permanently removed."
+        confirmLabel="Delete"
+        onConfirm={() => void executeDelete()}
+      />
 
       {viewingSource && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setViewingSource(null)}>

@@ -14,7 +14,37 @@ live under the `snapshot/` namespace.
 
 ---
 
-## [Unreleased]
+## [v1.2.15] — 2026-06-08
+
+### UX
+- **Tailwind opacity modifiers fixed.** The `bg-primary/10`, `ring-ring/50`,
+  etc. utilities now work via `color-mix` instead of silently emitting no CSS.
+  Tailwind's `alpha()` helper mapped all shadcn-style color tokens through
+  `color-mix(in srgb, var(--x) calc(<alpha> * 100%), transparent)`.
+- **Geist Variable + JetBrains Mono Variable fonts** bundled via
+  `@fontsource-variable`. Set as the default `sans`/`heading`/`mono` font
+  stack in `tailwind.config.js`.
+- **Stream orchestrator hook.** Extracted the streaming state machine into
+  `useStreamOrchestrator.js`, decoupling it from ChatView. Stripped ~700 lines
+  from `ChatView.jsx`.
+- **Wire-contract error messages** for missing providers, missing embedding
+  model, and dimension mismatch now render as clickable links to the relevant
+  settings page.
+- **Sidebar redesigned**, login/setup pages polished, new `confirm-dialog` and
+  `sonner` UI components, workspace pages consolidated. Removed `useDurableChat`
+  and old `useStream` dependency from ChatView.
+
+### Tooling
+- **Unified `hlh` CLI.** The individual `hlhstart`/`hlhupdate` scripts are
+  replaced by a single `hlh` binary with subcommands:
+  `hlh start`, `hlh stop`, `hlh restart`, `hlh update`, `hlh help`.
+  The legacy names remain as wrappers delegating to the unified CLI, so
+  muscle memory still works.
+- **New `hlh stop` and `hlh restart` commands.** Stop tears down app
+  containers (`hlh_api`, `hlh_ui`, `hlh_chat`, `hlh_search`, `hlh_orchestra`)
+  while preserving `hlh_db` + all volumes.
+- **`install.sh`** installs all five commands (`hlh`, `hlhstart`, `hlhstop`,
+  `hlhrestart`, `hlhupdate`). README updated to document the new commands.
 
 ---
 

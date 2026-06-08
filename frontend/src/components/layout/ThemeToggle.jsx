@@ -17,7 +17,9 @@ export default function ThemeToggle() {
       role="radiogroup"
       aria-label="Theme"
     >
-      {OPTIONS.map(({ value, label, Icon }) => {
+      {OPTIONS.map((opt) => {
+        const { value, label } = opt
+        const Icon = opt.Icon
         const active = theme === value
         return (
           <button
@@ -29,7 +31,7 @@ export default function ThemeToggle() {
             title={label}
             onClick={() => setTheme(value)}
             className={cn(
-              'inline-flex h-7 w-7 items-center justify-center rounded-full transition-colors',
+              'inline-flex h-11 w-11 items-center justify-center rounded-full transition-colors',
               active
                 ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:text-foreground',

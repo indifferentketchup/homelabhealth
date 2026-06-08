@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import {
@@ -15,7 +15,13 @@ import {
   User,
 } from 'lucide-react'
 
-import { deleteChat, listChats, patchChat, patchRecentChatsListCache } from '@/api/chats.js'
+import {
+  deleteChat,
+  listChats,
+  patchChat,
+  patchRecentChatsListCache,
+  removeChatFromRecentListCache,
+} from '@/api/chats.js'
 import { listWorkspaces } from '@/api/workspaces.js'
 import { Button } from '@/components/ui/button'
 import {
@@ -39,8 +45,16 @@ import ThemeToggle from '@/components/layout/ThemeToggle'
 // Subcomponents for long-press parity on touch devices
 // ---------------------------------------------------------------------------
 
-/** Single recent-chat row — extracts useLongPress out of .map() */
-function ChatRow({ chat, activeChatId, onSelect, onContextMenu, collapsed }) {
+/**
+ * Single recent-chat row — extracts useLongPress out of .map().
+ *
+ * Memoized so a title patch (or any sidebar re-render) only re-renders the rows
+ * whose props actually changed. The recent-chats Query (single source of truth)
+ * preserves object identity for unchanged rows when patched, so the default
+ * shallow comparison skips them; the `onSelect`/`onContextMenu` handlers are
+ * stabilized with useCallback in the parent so they don't defeat the memo.
+ */
+const ChatRow = memo(function ChatRow({ chat, activeChatId, onSelect, onContextMenu, collapsed }) {
   const lp = useLongPress((e) => onContextMenu(e, chat))
   const isActive = chat.id === activeChatId
   return (
@@ -53,7 +67,7 @@ function ChatRow({ chat, activeChatId, onSelect, onContextMenu, collapsed }) {
           : 'h-auto min-h-9 w-full justify-start gap-2 py-2 text-left font-normal'
       }
       style={{ WebkitTouchCallout: 'none' }}
-      onClick={() => onSelect(chat.id)}
+      onClick={() => onSelect(chat)}
       onContextMenu={(e) => onContextMenu(e, chat)}
       onTouchStart={lp.onTouchStart}
       onTouchMove={lp.onTouchMove}
@@ -68,7 +82,7 @@ function ChatRow({ chat, activeChatId, onSelect, onContextMenu, collapsed }) {
       )}
     </Button>
   )
-}
+})
 
 // ---------------------------------------------------------------------------
 // localStorage helpers for section open/closed
@@ -136,12 +150,35 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
     }
   }, [ctx, closeCtx])
 
+  useEffect(() => {
+    if (!ctx) return
+    const items = ctxMenuRef.current?.querySelectorAll('[role="menuitem"]')
+    if (items && items.length > 0) items[0].focus()
+  }, [ctx])
+
+  function onCtxMenuKeyDown(e) {
+    const items = Array.from(ctxMenuRef.current?.querySelectorAll('[role="menuitem"]') ?? [])
+    if (!items.length) return
+    const idx = items.indexOf(document.activeElement)
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      items[(idx + 1) % items.length].focus()
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      items[(idx - 1 + items.length) % items.length].focus()
+    } else if (e.key === 'Home') {
+      e.preventDefault()
+      items[0].focus()
+    } else if (e.key === 'End') {
+      e.preventDefault()
+      items[items.length - 1].focus()
+    }
+  }
+
   const currentUser = useAppStore((s) => s.currentUser)
 
   const sidebarOpen = useAppStore((s) => s.sidebarOpen)
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen)
-  const chats = useAppStore((s) => s.chats)
-  const setChats = useAppStore((s) => s.setChats)
   const activeChatId = useAppStore((s) => s.activeChatId)
   const setActiveChatId = useAppStore((s) => s.setActiveChatId)
   const hydrateFromChat = useAppStore((s) => s.hydrateFromChat)
@@ -158,6 +195,9 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
       }),
     staleTime: 15_000,
   })
+
+  // The recent-chats Query is the single source of truth for the displayed list.
+  const chats = data?.items ?? []
 
   const { data: workspacesListPack, isError: workspacesListError } = useQuery({
     queryKey: ['workspaces', 'pinned-sidebar'],
@@ -197,10 +237,6 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
     })
   }
 
-  useEffect(() => {
-    if (data?.items) setChats(data.items)
-  }, [data, setChats])
-
   const desktopCollapsed = !isMobile && !sidebarOpen
 
   function workspaceChatPath() {
@@ -223,28 +259,29 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
 
   const brandTitle = APP_TITLE
 
-  function selectChat(id) {
-    setActiveChatId(id)
-    const row = chats.find((c) => c.id === id)
-    if (row) hydrateFromChat(row)
-    navigate(workspaceChatPath())
-    if (isMobile) onMobileOpenChange(false)
-  }
+  // Stable identity (no `chats` dependency — the row passes its own chat object) so
+  // memoized ChatRows aren't re-rendered on every sidebar update.
+  const selectChat = useCallback(
+    (chat) => {
+      setActiveChatId(chat.id)
+      if (chat) hydrateFromChat(chat)
+      navigate(activeWorkspaceId ? workspacePath(activeWorkspaceId) : PATH_HOME)
+      if (isMobile) onMobileOpenChange(false)
+    },
+    [setActiveChatId, hydrateFromChat, navigate, activeWorkspaceId, isMobile, onMobileOpenChange],
+  )
 
-  function onChatContextMenu(e, chat) {
+  const onChatContextMenu = useCallback((e, chat) => {
     e.preventDefault()
     e.stopPropagation()
     setCtx({ x: e.clientX, y: e.clientY, chat })
-  }
+  }, [])
 
   async function commitRename(chatId) {
     const title = editTitle.trim() || 'Untitled chat'
     setEditingId(null)
     try {
       await patchChat(chatId, { title })
-      const prev = useAppStore.getState().chats
-      const sid = String(chatId)
-      setChats(prev.map((c) => (String(c.id) === sid ? { ...c, title } : c)))
       patchRecentChatsListCache(queryClient, chatId, title)
       await queryClient.invalidateQueries({ queryKey: ['chats'] })
     } catch {
@@ -256,9 +293,6 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
     const t = title.trim() || 'Untitled chat'
     try {
       await patchChat(chatId, { title: t })
-      const prev = useAppStore.getState().chats
-      const sid = String(chatId)
-      setChats(prev.map((c) => (String(c.id) === sid ? { ...c, title: t } : c)))
       patchRecentChatsListCache(queryClient, chatId, t)
       await queryClient.invalidateQueries({ queryKey: ['chats'] })
     } catch {
@@ -277,7 +311,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
     setDeleting(true)
     try {
       await deleteChat(chat.id)
-      setChats(chats.filter((c) => c.id !== chat.id))
+      removeChatFromRecentListCache(queryClient, chat.id)
       await queryClient.invalidateQueries({ queryKey: ['chats'] })
       if (activeChatId === chat.id) {
         setActiveChatId(null)
@@ -451,6 +485,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
                       >
                         <Link
                           to={workspacePath(d.id)}
+                          aria-current={String(d.id) === String(activeWorkspaceId) ? 'page' : undefined}
                           onClick={() => {
                             if (isMobile) onMobileOpenChange(false)
                           }}
@@ -534,6 +569,8 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
                     key={d.id}
                     to={workspacePath(d.id)}
                     title={d.name}
+                    aria-label={d.name}
+                    aria-current={String(d.id) === String(activeWorkspaceId) ? 'page' : undefined}
                     onClick={() => {
                       if (isMobile) onMobileOpenChange(false)
                     }}
@@ -690,6 +727,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
           }}
           onClick={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
+          onKeyDown={onCtxMenuKeyDown}
         >
           <button
             type="button"

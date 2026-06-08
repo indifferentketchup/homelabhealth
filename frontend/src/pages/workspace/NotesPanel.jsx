@@ -4,12 +4,14 @@ import { Trash2 } from 'lucide-react'
 
 import { createNote, deleteNote, listNotes, updateNote } from '@/api/notes.js'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 
 export function NotesPanel({ workspaceId }) {
   const queryClient = useQueryClient()
   const [selectedId, setSelectedId] = useState(null)
+  const [pendingDeleteId, setPendingDeleteId] = useState(null)
   const [localTitle, setLocalTitle] = useState('')
   const [localContent, setLocalContent] = useState('')
   const skipDebounceRef = useRef(false)
@@ -109,7 +111,7 @@ export function NotesPanel({ workspaceId }) {
         <div className="flex flex-col gap-0.5 p-2 pb-2">
           <div className="flex items-center justify-between px-2 py-1">
             <span className="fs-nav text-sm text-muted-foreground">{notes.length} note{notes.length !== 1 ? 's' : ''}</span>
-            <Button type="button" className="h-6 px-2 text-xs" variant="secondary" size="sm" disabled={!workspaceId || createMut.isPending} onClick={() => createMut.mutate()}>+ New</Button>
+            <Button type="button" className="h-9 px-2 text-xs" variant="secondary" size="sm" disabled={!workspaceId || createMut.isPending} onClick={() => createMut.mutate()}>+ New</Button>
           </div>
           {!workspaceId ? (
             <p className="fs-nav px-1 text-muted-foreground">Open a workspace to see notes.</p>
@@ -142,9 +144,9 @@ export function NotesPanel({ workspaceId }) {
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                    className="size-11 shrink-0 text-muted-foreground hover:text-destructive"
                     title="Delete note"
-                    onClick={() => deleteMut.mutate(n.id)}
+                    onClick={() => setPendingDeleteId(n.id)}
                   >
                     <Trash2 className="size-4" />
                   </Button>
@@ -154,6 +156,18 @@ export function NotesPanel({ workspaceId }) {
           )}
         </div>
       </ScrollArea>
+
+      <ConfirmDialog
+        open={Boolean(pendingDeleteId)}
+        onOpenChange={(open) => { if (!open) setPendingDeleteId(null) }}
+        title="Delete this note?"
+        description="This note will be permanently removed."
+        confirmLabel="Delete"
+        onConfirm={() => {
+          deleteMut.mutate(pendingDeleteId)
+          setPendingDeleteId(null)
+        }}
+      />
 
       <div className="flex min-h-0 flex-[2] flex-col gap-2 overflow-hidden border-t border-sidebar-border p-2">
         {!selectedId || !workspaceId ? (

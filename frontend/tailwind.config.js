@@ -1,66 +1,100 @@
 import tailwindcssAnimate from 'tailwindcss-animate'
 
+/**
+ * Theme color tokens are CSS custom properties holding full color values
+ * (hex), defined in the single source of truth: src/styles/globals.css
+ * (:root + .dark). Tailwind cannot inject an alpha channel into a bare
+ * `var(--x)`, so opacity-modified utilities (`bg-primary/10`, `ring-ring/50`,
+ * `border-accent/30`, …) silently emitted NO CSS at all.
+ *
+ * `alpha()` returns a color function so that:
+ *   • resting utilities stay byte-identical to before — `var(--x)` — preserving
+ *     today's effective appearance exactly, and
+ *   • opacity-modified utilities resolve to a real color via `color-mix`
+ *     (a technique already used throughout the app's CSS/JSX).
+ *
+ * We use `color-mix` rather than the shadcn `rgb(var(--x) / <alpha-value>)`
+ * pattern because the tokens hold full hex colors, not space-separated channel
+ * triplets, and many raw CSS/JSX consumers read these vars directly as full
+ * colors (e.g. `color-mix(in srgb, var(--accent) 45%, transparent)`). Switching
+ * to channels would break every such consumer; this keeps them all working.
+ */
+function alpha(varName) {
+  return ({ opacityValue }) => {
+    if (opacityValue === undefined || String(opacityValue).startsWith('var(')) {
+      return `var(${varName})`
+    }
+    return `color-mix(in srgb, var(${varName}) calc(${opacityValue} * 100%), transparent)`
+  }
+}
+
 /** @type {import('tailwindcss').Config} */
 export default {
   darkMode: ['class'],
   content: ['./index.html', './src/**/*.{js,jsx}'],
   theme: {
     extend: {
+      fontFamily: {
+        // Bundled via @fontsource-variable imports in src/index.css.
+        sans: ['Geist Variable', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        heading: ['Geist Variable', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        mono: ['JetBrains Mono Variable', 'ui-monospace', 'monospace'],
+      },
       colors: {
-        border: 'var(--border)',
-        input: 'var(--input)',
-        ring: 'var(--ring)',
-        background: 'var(--background)',
-        foreground: 'var(--foreground)',
+        border: alpha('--border'),
+        input: alpha('--input'),
+        ring: alpha('--ring'),
+        background: alpha('--background'),
+        foreground: alpha('--foreground'),
         primary: {
-          DEFAULT: 'var(--primary)',
-          foreground: 'var(--primary-foreground)',
+          DEFAULT: alpha('--primary'),
+          foreground: alpha('--primary-foreground'),
         },
         secondary: {
-          DEFAULT: 'var(--secondary)',
-          foreground: 'var(--secondary-foreground)',
+          DEFAULT: alpha('--secondary'),
+          foreground: alpha('--secondary-foreground'),
         },
         destructive: {
-          DEFAULT: 'var(--destructive)',
-          foreground: 'var(--destructive-foreground)',
+          DEFAULT: alpha('--destructive'),
+          foreground: alpha('--destructive-foreground'),
         },
         muted: {
-          DEFAULT: 'var(--muted)',
-          foreground: 'var(--muted-foreground)',
+          DEFAULT: alpha('--muted'),
+          foreground: alpha('--muted-foreground'),
         },
         accent: {
-          DEFAULT: 'var(--accent)',
-          foreground: 'var(--accent-foreground)',
+          DEFAULT: alpha('--accent'),
+          foreground: alpha('--accent-foreground'),
         },
-        'accent-hover': 'var(--accent-hover)',
-        'accent-soft': 'var(--accent-soft)',
-        'secondary-hover': 'var(--secondary-hover)',
-        'secondary-soft': 'var(--secondary-soft)',
-        tertiary: 'var(--tertiary)',
+        'accent-hover': alpha('--accent-hover'),
+        'accent-soft': alpha('--accent-soft'),
+        'secondary-hover': alpha('--secondary-hover'),
+        'secondary-soft': alpha('--secondary-soft'),
+        tertiary: alpha('--tertiary'),
         popover: {
-          DEFAULT: 'var(--popover)',
-          foreground: 'var(--popover-foreground)',
+          DEFAULT: alpha('--popover'),
+          foreground: alpha('--popover-foreground'),
         },
         card: {
-          DEFAULT: 'var(--card)',
-          foreground: 'var(--card-foreground)',
+          DEFAULT: alpha('--card'),
+          foreground: alpha('--card-foreground'),
         },
         sidebar: {
-          DEFAULT: 'var(--sidebar)',
-          foreground: 'var(--sidebar-foreground)',
-          primary: 'var(--sidebar-primary)',
-          'primary-foreground': 'var(--sidebar-primary-foreground)',
-          accent: 'var(--sidebar-accent)',
-          'accent-foreground': 'var(--sidebar-accent-foreground)',
-          border: 'var(--sidebar-border)',
-          ring: 'var(--sidebar-ring)',
+          DEFAULT: alpha('--sidebar'),
+          foreground: alpha('--sidebar-foreground'),
+          primary: alpha('--sidebar-primary'),
+          'primary-foreground': alpha('--sidebar-primary-foreground'),
+          accent: alpha('--sidebar-accent'),
+          'accent-foreground': alpha('--sidebar-accent-foreground'),
+          border: alpha('--sidebar-border'),
+          ring: alpha('--sidebar-ring'),
         },
         chart: {
-          1: 'var(--chart-1)',
-          2: 'var(--chart-2)',
-          3: 'var(--chart-3)',
-          4: 'var(--chart-4)',
-          5: 'var(--chart-5)',
+          1: alpha('--chart-1'),
+          2: alpha('--chart-2'),
+          3: alpha('--chart-3'),
+          4: alpha('--chart-4'),
+          5: alpha('--chart-5'),
         },
       },
       borderRadius: {

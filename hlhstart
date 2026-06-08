@@ -1,21 +1,3 @@
 #!/usr/bin/env bash
-#
-# hlhstart — start (or restart) the homelabhealth stack.
-#
-# Idempotent: the first run creates the networks/volumes/secrets and starts
-# everything; later runs take the bootstrap "restart path" and bring the
-# existing stack back up. Run where Docker lives (inside WSL on Windows hosts).
-#
-set -euo pipefail
-
-IMAGE="${HLH_ORCHESTRA_IMAGE:-ghcr.io/indifferentketchup/hlh_orchestra:latest}"
-
-TTY_FLAGS=""
-if [ -t 0 ] && [ -t 1 ]; then
-  TTY_FLAGS="-it"
-fi
-
-echo "→ Starting homelabhealth…"
-exec docker run --rm $TTY_FLAGS \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  "$IMAGE"
+# hlhstart — delegate to `hlh start` (unified CLI).
+exec "$(dirname "$0")/hlh" start "$@"

@@ -9,6 +9,7 @@ import { deleteSource, listSources, uploadSource } from '@/api/sources.js'
 import { ChatView } from '@/components/chat/ChatView.jsx'
 import ModelStateSidebar from '@/components/chat/ModelStateSidebar.jsx'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { APP_GLYPH, APP_TAGLINE, APP_TITLE } from '@/config/identity.js'
 import { workspacePath } from '@/routes/paths.js'
 import { cn } from '@/lib/utils.js'
@@ -201,7 +202,7 @@ export function WorkspaceLanding() {
                           type="button"
                           size="sm"
                           variant="outline"
-                          className="h-7 px-3 text-xs"
+                          className="h-11 px-3 text-xs"
                           onClick={() => setDeleteId(null)}
                         >
                           Cancel
@@ -210,7 +211,7 @@ export function WorkspaceLanding() {
                           type="button"
                           size="sm"
                           variant="destructive"
-                          className="h-7 px-3 text-xs"
+                          className="h-11 px-3 text-xs"
                           onClick={() => delMut.mutate(d.id)}
                           disabled={delMut.isPending}
                         >
@@ -242,7 +243,7 @@ export function WorkspaceLanding() {
                             type="button"
                             size="sm"
                             variant="secondary"
-                            className="h-7 px-3 text-xs"
+                            className="h-11 px-3 text-xs"
                             onClick={() => navigate(`/workspaces/${d.id}`)}
                           >
                             Edit
@@ -251,7 +252,7 @@ export function WorkspaceLanding() {
                             type="button"
                             size="sm"
                             variant="destructive"
-                            className="h-7 px-3 text-xs"
+                            className="h-11 px-3 text-xs"
                             onClick={() => setDeleteId(d.id)}
                           >
                             Delete
@@ -437,6 +438,7 @@ export function WorkspaceSourcesPage() {
   const fileRef = useRef(null)
   const [uploading, setUploading] = useState(false)
   const [status, setStatus] = useState('')
+  const [pendingDelete, setPendingDelete] = useState(null)
 
   const { data: sources = [], isLoading } = useQuery({
     queryKey: ['sources', workspaceId],
@@ -483,8 +485,10 @@ export function WorkspaceSourcesPage() {
     }
   }
 
-  async function onDeleteSource(id, name) {
-    if (!window.confirm(`Remove source "${name}"?`)) return
+  async function executeSourceDelete() {
+    if (!pendingDelete) return
+    const { id } = pendingDelete
+    setPendingDelete(null)
     try {
       await deleteSource(id)
       await queryClient.invalidateQueries({ queryKey: ['sources', workspaceId] })
@@ -561,7 +565,7 @@ export function WorkspaceSourcesPage() {
                     variant="outline"
                     size="sm"
                     className="shrink-0 text-destructive hover:bg-destructive/10"
-                    onClick={() => onDeleteSource(s.id, s.name || s.filename)}
+                    onClick={() => setPendingDelete({ id: s.id, name: s.name || s.filename })}
                   >
                     Delete
                   </Button>
@@ -571,6 +575,14 @@ export function WorkspaceSourcesPage() {
           })}
         </ul>
       </div>
+      <ConfirmDialog
+        open={Boolean(pendingDelete)}
+        onOpenChange={(open) => { if (!open) setPendingDelete(null) }}
+        title={`Delete "${pendingDelete?.name}"?`}
+        description="This source will be permanently removed."
+        confirmLabel="Delete"
+        onConfirm={() => void executeSourceDelete()}
+      />
     </div>
   )
 }

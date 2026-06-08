@@ -49,7 +49,14 @@ function AuthGuard({ children }) {
     check()
   }, [])
 
-  if (state === 'loading') return null
+  if (state === 'loading') return (
+    <div className="flex min-h-screen items-center justify-center bg-background">
+      <div className="space-y-1 text-center">
+        <p className="text-xl font-semibold text-foreground">HomeLab Health</p>
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      </div>
+    </div>
+  )
   if (state === 'setup') return <Navigate to="/setup" replace />
   if (state === 'login') return <Navigate to="/login" replace />
   return children

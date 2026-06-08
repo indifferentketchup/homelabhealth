@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# hlhstop — delegate to `hlh stop` (unified CLI).
+exec "$(dirname "$0")/hlh" stop "$@"

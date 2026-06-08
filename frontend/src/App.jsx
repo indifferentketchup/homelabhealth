@@ -2,12 +2,14 @@ import { useEffect } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter } from 'react-router-dom'
 import { AppRoutes } from '@/components/AppRoutes.jsx'
-import { useLayoutStore } from '@/store/layoutStore.js'
 import { useAppStore } from '@/store/index.js'
+import { Toaster } from '@/components/ui/sonner.jsx'
 
 function LayoutBootstrap() {
   useEffect(() => {
-    void useLayoutStore.getState().loadLayout()
+    // Layout is loaded + applied to the DOM once, by WorkspaceApp.jsx
+    // (loadLayout().then(applyWorkspaceLayoutToDom)). Calling it here too
+    // double-fetched GET /api/settings/layout on every boot.
     void useAppStore.getState().bootstrapAuth()
   }, [])
 
@@ -62,6 +64,7 @@ export default function App() {
       <BrowserRouter>
         <LayoutBootstrap />
         <AppRoutes />
+        <Toaster />
       </BrowserRouter>
     </QueryClientProvider>
   )
