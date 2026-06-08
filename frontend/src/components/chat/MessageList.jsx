@@ -42,8 +42,8 @@ function CompactedGroup({ messages, summary, chatId, onSaveMessageAsNote, onEdit
 
       {/* Summary bubble */}
       {summary && (
-        <div className="mx-auto my-3 max-w-2xl rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200">
-          <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-blue-500">
+        <div className="mx-auto my-3 max-w-2xl rounded-lg border border-accent-2/30 bg-accent-2/10 p-3 text-sm text-accent-2 dark:border-accent-2/40 dark:bg-accent-2/10 dark:text-accent-2">
+          <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-accent-2/80">
             Conversation summary
           </div>
           <div className="italic">{summary}</div>
@@ -166,7 +166,7 @@ export function MessageList({
           streamingRagContext.count > 0
         const isLast = i === all.length - 1
         return (
-          <div className={`flex flex-col gap-1 px-4 min-w-0 max-w-full overflow-x-hidden ${isLast ? 'pb-1' : 'pb-4'}`}>
+          <div className={`animate-message-in flex flex-col gap-1 px-4 min-w-0 max-w-full overflow-x-hidden ${isLast ? 'pb-1' : 'pb-4'}`}>
             {rowSources?.length ? (
               <div className="flex w-full min-w-0 gap-2 flex-row">
                 <div className="mt-0.5 size-8 shrink-0" aria-hidden />

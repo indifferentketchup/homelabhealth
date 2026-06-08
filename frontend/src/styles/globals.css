@@ -19,7 +19,7 @@ input, textarea, select {
   --font-body: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
   --font-size-base: 18px;
-  --fs-nav: 20px;
+  --fs-nav: 15px;
   --fs-chat: 18px;
   --fs-input: 20px;
   --fs-heading: 24px;
@@ -45,7 +45,7 @@ input, textarea, select {
   --accent-dim: #DCE6DD;
   --accent-2: #2C4A6B;
   --accent-3: #D48BA0;
-  --bg: #F8F5F0;
+  --bg: #F7F6F3;
   --bg-panel: #F4ECE6;
   --bg-card: #FFFFFF;
   --bg-hover: #F5DCE3;
@@ -101,6 +101,20 @@ input, textarea, select {
   --sidebar-accent-foreground: var(--text);
   --sidebar-border: var(--border);
   --sidebar-ring: var(--accent);
+
+  /* Custom easing curves (consumed by components via var(--ease-out), Tailwind's ease-[var(--ease-out)]) */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+
+  /* z-index scale — document all stacking contexts here; never use inline z-[9999] */
+  --z-dropdown: 10;
+  --z-sticky: 20;
+  --z-fixed: 30;
+  --z-modal-backdrop: 40;
+  --z-modal: 50;
+  --z-menu: 50;
+  --z-toast: 60;
+  --z-tooltip: 70;
 }
 
 .dark {
@@ -294,10 +308,23 @@ main {
   }
 }
 
+/* Entry animation for chat messages and streaming indicators */
+@keyframes message-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-message-in {
+  animation: message-in 200ms var(--ease-out);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+  .animate-message-in {
+    animation: none;
   }
 }

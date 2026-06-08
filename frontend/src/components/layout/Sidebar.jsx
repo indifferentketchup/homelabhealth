@@ -471,7 +471,8 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
                     aria-hidden
                   />
                 </button>
-                <div className={cn(!pinnedOpen && 'h-0 overflow-hidden')}>
+                <div className={cn('grid transition-[grid-template-rows] duration-200 ease-out', pinnedOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
+                  <div className="overflow-hidden min-h-0">
                   {workspacesListError || pinnedWorkspaces.length === 0 ? (
                     <span className="fs-nav block px-2 text-muted-foreground">No pinned workspaces</span>
                   ) : (
@@ -505,6 +506,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
                     ))
                   )}
                 </div>
+                </div>
 
                 <div className="mx-0 my-1 border-t border-sidebar-border" />
               </>
@@ -526,7 +528,8 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
                     aria-hidden
                   />
                 </button>
-                <div className={cn(!recentOpen && 'h-0 overflow-hidden')}>
+                <div className={cn('grid transition-[grid-template-rows] duration-200 ease-out', recentOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
+                  <div className="overflow-hidden min-h-0">
                   {chats.map((c) => (
                     <div key={c.id} className="w-full">
                       {editingId === c.id ? (
@@ -558,6 +561,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
                       )}
                     </div>
                   ))}
+                </div>
                 </div>
               </>
             )}

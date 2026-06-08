@@ -291,7 +291,7 @@ export function ChatInput({
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={onKeyDownTa}
             aria-label="Message"
-            placeholder="Message…"
+            placeholder="Ask about your health records…"
             disabled={disabled}
             rows={1}
             className="fs-input max-h-[calc(40dvh-2.75rem)] min-h-12 w-full resize-none overflow-y-auto border-0 bg-transparent text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
@@ -415,7 +415,7 @@ export function ChatInput({
         createPortal(
           <div
             ref={plusMenuRef}
-            className="fixed z-[9999] w-64 min-w-[16rem] rounded-lg border border-border bg-popover p-2 text-popover-foreground shadow-xl outline-none"
+            className="fixed z-[50] w-64 min-w-[16rem] rounded-lg border border-border bg-popover p-2 text-popover-foreground shadow-xl outline-none"
             style={{
               bottom: menuPos.bottom,
               left: menuPos.left,

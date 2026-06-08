@@ -385,7 +385,7 @@ export function MessageBubble({
             'w-full min-w-0',
             isUser
               ? 'rounded-2xl border-0 bg-secondary/60 px-4 py-2.5 text-foreground'
-              : 'border-l-2 border-accent/30 py-1 pl-3 text-foreground',
+              : 'rounded-xl bg-muted/30 border-l-2 border-accent/30 py-2.5 pl-3 pr-4 text-foreground',
           )}
         >
           {!isUser && (
@@ -454,9 +454,9 @@ export function MessageBubble({
             </div>
           )}
           {!isUser && !isPendingTyping && (
-            <p className="mt-2 border-t border-border/50 pt-1.5 text-xs text-muted-foreground/70">
-              Not medical advice
-            </p>
+<p className="mt-2 border-t border-border/50 pt-1.5 text-xs text-muted-foreground">
+                Not medical advice
+              </p>
           )}
           {!isUser && !isPendingTyping && message.guard_flags && (
             <GuardFlagsBadge flags={message.guard_flags} />
