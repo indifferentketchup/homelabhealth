@@ -205,6 +205,22 @@ export function ChatView({
           <div className="flex w-full flex-col items-center gap-4" style={{ maxWidth: chatMaxW }}>
             <AssistantGlyph kind="header" />
             <h1 className="fs-heading text-center font-semibold tracking-tight text-foreground">Assistant</h1>
+            <div className="flex flex-wrap justify-center gap-2">
+              {[
+                'Summarize my lab results',
+                'What medications might interact?',
+                'Explain this diagnosis in plain language',
+              ].map((text) => (
+                <button
+                  key={text}
+                  type="button"
+                  onClick={() => orch.send(text)}
+                  className="rounded-full border border-border bg-card px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-accent hover:text-accent"
+                >
+                  {text}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="bc-chat-anchor w-full px-4">
             {busy && orch.phase ? (

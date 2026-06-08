@@ -55,12 +55,12 @@ export function StreamStatusBar({ phase, startedAt, pipelineEvents = [], classNa
   const elapsed = now - startedAt
 
   return (
-    <div
-      className={cn(
-        'mb-2 flex flex-col gap-1 rounded-md border border-border bg-background px-3 py-2 text-sm text-muted-foreground shadow-sm',
-        className,
-      )}
-      role="status"
+      <div
+        className={cn(
+          'animate-message-in mb-2 flex flex-col gap-1 rounded-md border border-border bg-background px-3 py-2 text-sm text-muted-foreground shadow-sm',
+          className,
+        )}
+        role="status"
       aria-live="polite"
       data-testid="stream-status-bar"
     >
