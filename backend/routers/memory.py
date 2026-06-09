@@ -16,11 +16,15 @@ from pydantic import BaseModel, Field
 from deps import get_principal, require_admin
 from db import get_pool
 from services.audit import AuditEventHandle, audit_event
+from services.memory.engine import get_engine
 from services.provider_client import build_headers, resolve_provider_for_workspace
 from services.reasoning_strip import strip_thinking_text
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# Track whether we've migrated mode_memory content to the new engine
+_memory_migrated = False
 
 
 class MemoryPut(BaseModel):
@@ -50,6 +54,15 @@ async def get_memory(
         async with audit.targeting("memory", None):
             pass
         return {"content": "", "updated_at": None}
+
+    global _memory_migrated
+    if not _memory_migrated:
+        content = row["content"] or ""
+        if content.strip():
+            engine = get_engine()
+            await engine.migrate_from_mode_memory(content)
+        _memory_migrated = True
+
     async with audit.targeting("memory", None):
         pass
     return {
@@ -75,10 +88,17 @@ async def put_memory(
             """,
             body.content or "",
         )
+
+    # Sync to the new memory engine
+    content = row["content"] or ""
+    if content.strip():
+        engine = get_engine()
+        await engine.manage(content, action="create", metadata={"source": "api_put"})
+
     async with audit.targeting("memory", None):
         pass
     return {
-        "content": row["content"] or "",
+        "content": content,
         "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
     }
 
@@ -189,12 +209,46 @@ async def extract_memory(
             updated,
         )
 
+    # Sync to the new memory engine
+    if updated.strip():
+        engine = get_engine()
+        await engine.manage(
+            updated, action="create", metadata={"source": "extraction"}
+        )
+
     async with audit.targeting("memory", None):
         pass
     return {
         "content": row["content"] or "",
         "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
     }
+
+
+class MemorySearchQuery(BaseModel):
+    q: str = Field(..., min_length=1)
+    limit: int = Field(default=10, ge=1, le=50)
+
+
+@router.post("/search")
+async def search_memory(
+    body: MemorySearchQuery,
+    _: dict = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
+):
+    """Hybrid search across all memory tiers using vector + keyword fusion."""
+    engine = get_engine()
+    results = await engine.search(body.q, limit=body.limit)
+    async with audit.targeting("memory", None):
+        pass
+    return [
+        {
+            "path": r.path,
+            "score": r.score,
+            "snippet": r.snippet,
+            "source": r.source,
+        }
+        for r in results
+    ]
 
 
 def _memory_entry_row(r: Any) -> dict[str, Any]:
@@ -294,6 +348,18 @@ async def create_memory_entry(
             body.content.strip(),
             src,
         )
+
+    # Best-effort dual-write to MemoryEngine
+    try:
+        engine = get_engine()
+        await engine.manage(
+            body.content.strip(),
+            action="create",
+            metadata={"source": src, "scope": "shared"},
+        )
+    except Exception as exc:
+        logger.debug("MemoryEngine dual-write skipped: %s", exc)
+
     async with audit.targeting("memory", row["id"]):
         pass
     return _memory_entry_row(row)

@@ -3,6 +3,9 @@
 B0 baseline. System-prompt-only layer, defeatable by a determined user.
 B1 (output scanner sidecar) and B3 (audit-logged refusals) land later as
 second/third layers.
+B2 switches from flat string prepend to the safeguards_engine, which runs
+multi-batch guideline matching + relational resolution behind the same
+``prepend_safeguard()`` interface.
 
 The prompt text is the wire contract. Any wording change MUST bump
 SAFEGUARD_VERSION. Every assistant message records which version was
@@ -10,7 +13,14 @@ active at send time (see backend/routers/chats.py).
 """
 from __future__ import annotations
 
-SAFEGUARD_VERSION: str = "b1-2026-05-30"
+import logging
+
+from .hooks import HookContext, register
+from .safeguards_engine import GuidelineMatch, get_engine
+
+logger = logging.getLogger(__name__)
+
+SAFEGUARD_VERSION: str = "b2-2026-06-09"
 
 SAFEGUARD_SYSTEM_PROMPT: str = """\
 You are the assistant inside HomeLabHealth, a self-hosted app where a person
@@ -62,16 +72,80 @@ Anything below may be workspace instructions and excerpts from the user's own
 records — use them to help. The limits above still hold."""
 
 
+_CRITICALITY_LABELS = {
+    "critical": "[CRITICAL] ",
+    "high": "[HIGH] ",
+    "medium": "",
+    "low": "[INFO] ",
+}
+
+
+def _build_engine_safeguard(matches: list[GuidelineMatch]) -> str:
+    """Build a contextual safeguard block from engine match results.
+    Falls back to SAFEGUARD_SYSTEM_PROMPT when no matches warrant override."""
+    if not matches:
+        return SAFEGUARD_SYSTEM_PROMPT
+
+    for m in matches:
+        g = m.guideline
+        if g.criticality.value == "critical" and "self_harm" in g.tags:
+            return SAFEGUARD_SYSTEM_PROMPT
+
+    directives: list[str] = []
+    for m in matches:
+        g = m.guideline
+        label = _CRITICALITY_LABELS.get(g.criticality.value, "")
+        if g.content.action:
+            directives.append(f"{label}• {g.content.action}")
+
+    if not directives:
+        return SAFEGUARD_SYSTEM_PROMPT
+
+    lines = [
+        "## Safeguards (contextual)",
+        *directives,
+        "",
+        SAFEGUARD_SYSTEM_PROMPT,
+    ]
+    return "\n".join(lines)
+
+
 def prepend_safeguard(assembled: str) -> str:
     """Prepend the locked safeguard to an assembled system prompt.
 
+    If the safeguards_engine has cached evaluation results for the current
+    request, uses the engine to produce contextual output.  Otherwise falls
+    back to the full SAFEGUARD_SYSTEM_PROMPT.
+
     Returns the safeguard alone when assembled is empty/whitespace;
-    otherwise SAFEGUARD_SYSTEM_PROMPT + "\\n\\n" + assembled.
+    otherwise safeguard + "\\n\\n" + assembled.
+
+    Note: callers do NOT need to change — the engine is wired automatically
+    via the ``on_user_prompt`` hook registered at module import time.
     """
+    engine = get_engine()
+    cached = engine.get_cached_result()
+
+    if cached is not None:
+        safeguard = _build_engine_safeguard(cached)
+    else:
+        safeguard = SAFEGUARD_SYSTEM_PROMPT
+
     if not assembled or not assembled.strip():
-        return SAFEGUARD_SYSTEM_PROMPT
-    return f"{SAFEGUARD_SYSTEM_PROMPT}\n\n{assembled}"
+        return safeguard
+    return f"{safeguard}\n\n{assembled}"
 
 
 def current_version() -> str:
     return SAFEGUARD_VERSION
+
+
+async def _on_user_prompt_callback(prompt: str, ctx: HookContext | None = None) -> None:
+    try:
+        get_engine().evaluate(prompt)
+    except Exception:
+        logger.exception("safeguards_engine evaluation failed in on_user_prompt hook")
+        get_engine().clear_cache()
+
+
+register("on_user_prompt", _on_user_prompt_callback)
