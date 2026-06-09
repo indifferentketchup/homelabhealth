@@ -318,6 +318,30 @@ async def run_inference_job(
         output_scan = scan_output(assistant_text)
         guard_flags_json = output_scan.to_json() if output_scan.flags else None
 
+        # Post-completion approval gate check:
+        # If an explicit tool call or pipeline component requested approval
+        # (e.g. output-guard flags that need human review), wait for the
+        # user's decision before finalizing.
+        from services.approval_gate import get_gate as _get_approval_gate
+        _approval = _get_approval_gate()
+        if _approval.is_pending(str(chat_id)):
+            logger.info(
+                "inference_job: approval gate pending chat_id=%s — waiting for user decision",
+                str(chat_id),
+            )
+            _approval_result = await _approval.wait_for_result(str(chat_id))
+            if _approval_result.action.value == "reject":
+                logger.info(
+                    "inference_job: approval rejected chat_id=%s — discarding output",
+                    str(chat_id),
+                )
+                await _mark_cancelled(pool, assistant_id, content=assistant_text[:500])
+                return
+            logger.info(
+                "inference_job: approval accepted chat_id=%s — finalizing output",
+                str(chat_id),
+            )
+
         # Final DB write: encrypted content, status=complete, token counts, guard flags
         encrypted_final = encrypt_column(assistant_text, str(assistant_id))
         async with pool.acquire() as conn:

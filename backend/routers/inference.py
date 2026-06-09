@@ -26,6 +26,7 @@ from services.provider_client import (
     resolve_provider_for_workspace,
 )
 from services.reasoning_strip import ThinkingStreamFilter
+from services.conductor import run_analysis
 from services.supervisor_worker import (
     is_complex_query,
     run_supervisor_worker,
@@ -253,6 +254,47 @@ async def chat_proxy(
 class DecomposeBody(BaseModel):
     query: str = Field(..., min_length=1, description="Complex query to decompose")
     workspace_id: uuid.UUID = Field(..., description="Workspace whose provider routes this")
+
+
+class AnalyzeBody(BaseModel):
+    query: str = Field(..., min_length=1, description="Health query to analyze from multiple perspectives")
+    workspace_id: uuid.UUID = Field(..., description="Workspace whose provider routes this")
+    angles: list[str] | None = Field(
+        default=None,
+        description="Analysis angles to include. Defaults to all: clinical, safety, data-integrity, patient-facing",
+    )
+
+
+@router.post("/analyze")
+async def multi_perspective_analysis(
+    body: AnalyzeBody,
+    _owner: dict = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
+):
+    """Run multi-perspective health analysis via wave-scheduled parallel angles.
+
+    Accepts a query and workspace_id, then:
+    1. Spawns analysis from each requested angle in parallel (wave 0).
+    2. Folds angle outputs into a merged summary (wave 1).
+    3. Synthesizes a unified assessment (wave 2).
+    4. Adversarially validates conclusions (wave 3).
+
+    Returns a structured report with per-angle findings, synthesis,
+    validation verdict, contradictions, and citations.
+    """
+    provider, model = await resolve_provider_for_workspace(body.workspace_id)
+
+    report = await run_analysis(
+        query=body.query,
+        provider=provider,
+        model=model,
+        angle_ids=body.angles,
+    )
+
+    async with audit.targeting("inference", None):
+        pass
+
+    return report
 
 
 @router.post("/decompose")

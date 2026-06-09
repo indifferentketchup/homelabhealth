@@ -37,6 +37,7 @@ from routers.sources import router as sources_router
 from routers.audit import router as audit_router
 from routers.auth import router as auth_router
 from routers.demo import router as demo_router
+from routers.analytics import router as analytics_router
 
 import logging
 logging.basicConfig(level=logging.INFO)
@@ -304,6 +305,7 @@ api.include_router(notes_router, tags=["notes"])
 api.include_router(sources_router, tags=["sources"])
 api.include_router(history_router, prefix="/history", tags=["history"])
 api.include_router(audit_router, prefix="/audit", tags=["audit"])
+api.include_router(analytics_router, prefix="/analytics", tags=["analytics"])
 api.include_router(demo_router, prefix="/demo", tags=["demo"])
 
 

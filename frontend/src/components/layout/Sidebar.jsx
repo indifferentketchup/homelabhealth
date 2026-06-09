@@ -13,6 +13,7 @@ import {
   Phone,
   Settings,
   User,
+  ChartColumnIncreasing,
 } from 'lucide-react'
 
 import {
@@ -682,6 +683,16 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
                 className="w-full border-sidebar-border bg-card px-0 text-foreground hover:bg-sidebar-accent"
                 asChild
               >
+                <Link to="/analytics" onClick={() => isMobile && onMobileOpenChange(false)} title="Usage Analytics" aria-label="Analytics">
+                  <ChartColumnIncreasing className="size-4" />
+                </Link>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full border-sidebar-border bg-card px-0 text-foreground hover:bg-sidebar-accent"
+                asChild
+              >
                 <Link to="/settings" onClick={() => isMobile && onMobileOpenChange(false)} title="Settings" aria-label="Settings">
                   <Settings className="size-4" />
                 </Link>
@@ -699,6 +710,19 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
                   <span className="fs-nav flex items-center justify-center gap-2">
                     <Brain className="size-4 shrink-0" />
                     AI
+                  </span>
+                </Link>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="min-w-0 flex-1 border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent"
+                asChild
+              >
+                <Link to="/analytics" onClick={() => isMobile && onMobileOpenChange(false)} title="Usage Analytics" aria-label="Analytics">
+                  <span className="fs-nav flex items-center justify-center gap-2">
+                    <ChartColumnIncreasing className="size-4 shrink-0" />
+                    Analytics
                   </span>
                 </Link>
               </Button>

@@ -1,3 +1,4 @@
+import * as React from "react"
 import { cva } from "class-variance-authority";
 
 import { cn } from "@/lib/utils"
@@ -32,6 +33,21 @@ function Alert({
   );
 }
 
+function AlertTitle({
+  className,
+  ...props
+}) {
+  return (
+    <div
+      data-slot="alert-title"
+      className={cn(
+        "font-medium group-has-[>svg]/alert:col-start-2 [&_a]:underline [&_a]:underline-offset-3 [&_a]:hover:text-foreground",
+        className
+      )}
+      {...props} />
+  );
+}
+
 function AlertDescription({
   className,
   ...props
@@ -47,4 +63,16 @@ function AlertDescription({
   );
 }
 
-export { Alert, AlertDescription }
+function AlertAction({
+  className,
+  ...props
+}) {
+  return (
+    <div
+      data-slot="alert-action"
+      className={cn("absolute top-2 right-2", className)}
+      {...props} />
+  );
+}
+
+export { Alert, AlertTitle, AlertDescription, AlertAction }

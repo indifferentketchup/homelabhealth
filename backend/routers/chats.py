@@ -446,6 +446,17 @@ class SourceSelectionBody(BaseModel):
     source_ids: list[uuid.UUID] = Field(default_factory=list)
 
 
+class ApprovalResponseBody(BaseModel):
+    action: str = Field(
+        ..., pattern=r"^(accept|reject|edit)$",
+        description="User's decision: accept, reject, or edit",
+    )
+    edited_content: str | None = Field(
+        default=None,
+        description="Revised user message (required when action=edit)",
+    )
+
+
 def _chat_row(r: asyncpg.Record) -> dict[str, Any]:
     return {
         "id": str(r["id"]),
@@ -1218,6 +1229,41 @@ async def append_message(
     set_hook_context(hook_ctx)
     await fire_on_user_prompt(user_message_text)
 
+    # --- Approval gate: check if safeguard engine requires human approval ---
+    from services.approval_gate import (
+        ApprovalAction as _ApprovalAction,
+        get_gate,
+        should_request_approval,
+    )
+    from services.safeguards_engine import get_engine as _get_safeguard_engine
+
+    _safeguard_engine = _get_safeguard_engine()
+    _safeguard_matches = _safeguard_engine.get_cached_result()
+    if _safeguard_matches:
+        _needs_approval, _approval_reason = should_request_approval(_safeguard_matches)
+        if _needs_approval:
+            _gate = get_gate()
+            _req = _gate.request_approval(
+                str(chat_id),
+                reason=_approval_reason,
+                prompt=_approval_reason,
+            )
+            if await _durable_streaming_enabled():
+                return JSONResponse(
+                    status_code=202,
+                    content={
+                        "user_message_id": str(user_msg_id),
+                        "status": "approval_pending",
+                        "approval": {
+                            "reason": _req.reason,
+                            "prompt": _req.prompt,
+                            "options": _req.options,
+                            "timeout_s": _req.timeout_s,
+                        },
+                    },
+                )
+            # For non-durable (SSE): gen() handles the approval event inline
+
     # --- Durable streaming path (Phase A) ---
     if await _durable_streaming_enabled():
         # 409 if another streaming assistant exists
@@ -1414,6 +1460,12 @@ async def append_message(
             raw = r["content"] or ""
             api_messages.append({"role": role, "content": decrypt_column(raw, str(r["id"])) if raw else raw})
 
+        # Mark last user message for approval-gate edit replacement
+        for _i in range(len(api_messages) - 1, -1, -1):
+            if api_messages[_i]["role"] == "user":
+                api_messages[_i]["is_last_user"] = True
+                break
+
         # De-identify user messages before sending to external providers.
         # Bundled providers (is_bundled=True) run on-box — no redaction needed.
         # System and assistant messages are not redacted (safeguard preamble +
@@ -1488,6 +1540,41 @@ async def append_message(
                 return
         else:
             yield _sse(json.dumps({"type": "phase", "phase": "generating"}))
+
+            # Approval gate: if a pending request exists (from the check above
+            # or from an explicit request_approval call), yield an SSE event
+            # and wait for the user's decision.
+            _approval_gate = get_gate()
+            if _approval_gate.is_pending(str(chat_id)):
+                _pending_req = _approval_gate.get_pending(str(chat_id))
+                if _pending_req:
+                    yield _sse(json.dumps(_pending_req.to_sse_event()))
+                _approval_result = await _approval_gate.wait_for_result(
+                    str(chat_id),
+                )
+                if _approval_result.action == _ApprovalAction.REJECT:
+                    yield _sse(json.dumps({
+                        "error": "Inference was rejected by user.",
+                    }))
+                    yield _sse("[DONE]")
+                    return
+                if _approval_result.action == _ApprovalAction.EDIT:
+                    # Re-emit phase because we're retrying with edited content
+                    yield _sse(json.dumps({
+                        "type": "phase", "phase": "editing",
+                    }))
+                    # Rebuild messages with edited user content
+                    api_messages = [
+                        (
+                            {"role": m["role"], "content": _approval_result.edited_content}
+                            if m["role"] == "user" and m.get("is_last_user", False)
+                            else m
+                        )
+                        for m in api_messages
+                    ]
+                    yield _sse(json.dumps({
+                        "type": "phase", "phase": "generating",
+                    }))
 
             # Hook: pre_tool_execution
             _hook_start = time.monotonic()
@@ -1730,6 +1817,40 @@ async def stop_chat_inference(
     )
     await fire_on_stop("user_cancelled", ctx=stop_ctx)
     return {"ok": True}
+
+
+@router.post("/{chat_id}/approval-response")
+async def submit_approval_response(
+    chat_id: uuid.UUID,
+    body: ApprovalResponseBody,
+    principal: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
+):
+    """Submit the user's decision for a pending approval gate request.
+
+    Accept, reject, or edit the pending action.  On ``edit`` the caller must
+    provide ``edited_content`` (the revised user message).  The inference
+    pipeline (if waiting) will resume or stop accordingly.
+
+    Returns 404 if no request is pending for this chat.
+    """
+    from services.approval_gate import ApprovalAction, get_gate
+
+    action = ApprovalAction(body.action)
+    gate = get_gate()
+
+    submitted = gate.submit_response(
+        str(chat_id),
+        action,
+        edited_content=body.edited_content,
+    )
+    if not submitted:
+        raise HTTPException(status_code=404, detail="No pending approval for this chat")
+
+    async with audit.targeting("chat", str(chat_id)):
+        pass
+
+    return {"ok": True, "action": body.action}
 
 
 @router.post("/{chat_id}/messages/{message_id}/discard-stale")

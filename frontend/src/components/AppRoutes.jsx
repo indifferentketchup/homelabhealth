@@ -11,6 +11,7 @@ import WorkspaceApp, { SettingsRoute } from '@/pages/workspace/WorkspaceApp.jsx'
 import WorkspacesPage from '@/pages/workspace/WorkspacesPage.jsx'
 import WorkspaceDetailPage from '@/pages/workspace/WorkspaceDetailPage.jsx'
 import AISettings from '@/pages/workspace/AISettings.jsx'
+import AnalyticsPage from '@/pages/workspace/AnalyticsPage.jsx'
 import ProfilePage from '@/pages/workspace/ProfilePage.jsx'
 import RequireSetup from '@/components/RequireSetup.jsx'
 import LoginPage from '@/pages/LoginPage.jsx'
@@ -85,6 +86,7 @@ export function AppRoutes() {
                 </Route>
                 <Route element={<WorkspaceAuxShell />}>
                   <Route path="ai" element={<AISettings />} />
+                  <Route path="analytics" element={<AnalyticsPage />} />
                   <Route path="settings" element={<SettingsRoute />} />
                   <Route path="profile" element={<ProfilePage />} />
                 </Route>
