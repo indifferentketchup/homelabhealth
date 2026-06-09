@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/index.js'
 import { useShallow } from 'zustand/react/shallow'
 
+import { Sources, SourcesContent, Source, SourcesTrigger } from '@/components/ui/sources'
 import { AssistantGlyph } from './AssistantGlyph.jsx'
 
 function CodeBlockShell({ language, rawText, children }) {
@@ -451,6 +452,22 @@ export function MessageBubble({
                   <span>streaming</span>
                 </div>
               ) : null}
+            </div>
+          )}
+          {!isUser && !isPendingTyping && message.sources_used && Array.isArray(message.sources_used) && message.sources_used.length > 0 && (
+            <div className="mt-3 border-t border-border/50 pt-3">
+              <Sources defaultOpen={false}>
+                <SourcesTrigger count={message.sources_used.length} />
+                <SourcesContent>
+                  {message.sources_used.map((src, i) => (
+                    <Source
+                      key={src.id || i}
+                      href={src.original_url}
+                      title={src.name || src.title || `Source ${i + 1}`}
+                    />
+                  ))}
+                </SourcesContent>
+              </Sources>
             </div>
           )}
           {!isUser && !isPendingTyping && (

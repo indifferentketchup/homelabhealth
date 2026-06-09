@@ -114,7 +114,8 @@ async def list_models(
             )
             r.raise_for_status()
     except httpx.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"Inference backend unreachable: {e}") from e
+        _inference_logger.warning("Inference backend unreachable: %s", e)
+        raise HTTPException(status_code=502, detail="Inference backend unreachable") from e
     async with audit.targeting("inference", None):
         pass
     return r.json()

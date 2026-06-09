@@ -256,3 +256,77 @@ async def audit_event(request: Request) -> AsyncIterator[AuditEventHandle]:
     except Exception as e:
         import logging
         logging.getLogger("audit").error("audit insert failed: %s: %s", type(e).__name__, e)
+
+
+# ─── Hook registration ─────────────────────────────────────────────────
+# Register audit callbacks on hook lifecycle events so that tool execution
+# and stop events are captured in the audit log automatically.
+
+import json as _json
+
+from services.hooks import register as _register_hook
+
+
+async def _audit_on_tool_execution(
+    tool_name: str,
+    tool_input: dict,
+    tool_output: Any,
+    ctx: "HookContext",
+    duration_ms: float,
+) -> None:
+    """Post-tool-execution callback: write an audit record for the
+    tool invocation."""
+    if not ctx or not ctx.request_id:
+        return
+    _pool = await get_pool()
+    payload = _json.dumps({
+        "tool": tool_name,
+        "duration_ms": duration_ms,
+        "input_keys": list(tool_input.keys()),
+    })
+    rec = AuditRecord(
+        request_id=uuid.UUID(ctx.request_id) if ctx.request_id else uuid.uuid4(),
+        actor=ctx.user_id or "system",
+        action=f"tool.{tool_name}",
+        target_type="chat",
+        target_id=ctx.chat_id,
+        status_code=200,
+        payload_hash=hashlib.sha256(payload.encode("utf-8")).digest(),
+    )
+    async with _pool.acquire() as _conn:
+        try:
+            await insert_audit_event(_conn, rec)
+        except Exception:
+            import logging as _logging
+            _logging.getLogger("audit").exception("hook audit post_tool_execution failed")
+
+
+async def _audit_on_stop(
+    reason: str,
+    ctx: "HookContext",
+) -> None:
+    """On-stop callback: record the stop event in the audit log."""
+    if not ctx or not ctx.chat_id:
+        return
+    _pool = await get_pool()
+    payload = _json.dumps({"reason": reason})
+    rec = AuditRecord(
+        request_id=uuid.uuid4(),
+        actor=ctx.user_id or "system",
+        action="chat.stop",
+        target_type="chat",
+        target_id=ctx.chat_id,
+        status_code=200,
+        payload_hash=hashlib.sha256(payload.encode("utf-8")).digest(),
+    )
+    async with _pool.acquire() as _conn:
+        try:
+            await insert_audit_event(_conn, rec)
+        except Exception:
+            import logging as _logging
+            _logging.getLogger("audit").exception("hook audit on_stop failed")
+
+
+# Register the callbacks at module import time.
+_register_hook("post_tool_execution", _audit_on_tool_execution)
+_register_hook("on_stop", _audit_on_stop)

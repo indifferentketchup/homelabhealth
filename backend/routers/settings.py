@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from typing import Any
 
@@ -17,6 +18,7 @@ from services.embeddings import EMBEDDING_DIM
 from services.provider_client import build_headers, resolve_provider
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 _UI_LAYOUT_KEY = "ui_layout"
 
@@ -269,8 +271,9 @@ async def _probe_embedding_dim(provider_id: uuid.UUID, model: str) -> int:
             r.raise_for_status()
             data = r.json()
     except httpx.HTTPError as e:
+        logger.warning("embedding probe failed: %s", e)
         raise HTTPException(
-            status_code=502, detail=f"embedding probe failed: {type(e).__name__}: {e}"
+            status_code=502, detail="embedding probe failed"
         ) from e
 
     if not isinstance(data, dict):

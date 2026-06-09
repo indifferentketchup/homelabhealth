@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import os
 import pathlib
+import time
 import uuid
 
 import json
@@ -35,6 +36,16 @@ from services.rag import (
 )
 from services.crypto import encrypt_column, decrypt_column
 from services.reasoning_strip import ThinkingStreamFilter, strip_thinking_text
+from services.hooks import (
+    HookContext,
+    HookResult,
+    fire_on_stop,
+    fire_on_user_prompt,
+    fire_post_tool_execution,
+    fire_pre_tool_execution,
+    set_hook_context,
+    reset_hook_context,
+)
 from services.safeguards import current_version, prepend_safeguard
 from services.searx import searx_search_sources
 from services.chat_jobs import job_registry
@@ -1195,6 +1206,17 @@ async def append_message(
             },
         )
 
+    # --- Hook lifecycle: on_user_prompt ---
+    hook_ctx = HookContext(
+        chat_id=str(chat_id),
+        message_id=str(user_msg_id),
+        user_id=str(principal.get("user_id", "")),
+        workspace_id=str(chat["workspace_id"]) if chat["workspace_id"] else None,
+        request_id=getattr(getattr(request, 'state', None), 'request_id', None),
+    )
+    set_hook_context(hook_ctx)
+    await fire_on_user_prompt(user_message_text)
+
     # --- Durable streaming path (Phase A) ---
     if await _durable_streaming_enabled():
         # 409 if another streaming assistant exists
@@ -1443,6 +1465,18 @@ async def append_message(
                 yield _sse(json.dumps({"type": "phase", "phase": "ready", "model": effective_model}))
 
         yield _sse(json.dumps({"type": "phase", "phase": "generating"}))
+
+        # Hook: pre_tool_execution
+        _hook_start = time.monotonic()
+        hook_input = {"model": effective_model, "messages": api_messages}
+        hook_result = await fire_pre_tool_execution("inference", hook_input)
+        if hook_result.blocked:
+            yield _sse(json.dumps({
+                "error": f"Tool execution blocked by hook: {hook_result.reason or 'blocked'}",
+            }))
+            yield _sse("[DONE]")
+            return
+
         stream = _stream_inference(
             provider,
             effective_model,
@@ -1551,6 +1585,15 @@ async def append_message(
                 except Exception:
                     logger.warning("audit insert failed for output guard flags", exc_info=True)
 
+        # Hook: post_tool_execution
+        _hook_duration_ms = (time.monotonic() - _hook_start) * 1000
+        await fire_post_tool_execution(
+            "inference",
+            {"model": effective_model},
+            {"text": assistant_text, "guard_flags": guard_flags_json, "assistant_id": str(assist_id)},
+            duration_ms=_hook_duration_ms,
+        )
+
         # Auto-compaction: summarize older messages when context usage is high.
         # Best-effort — failures log and continue, never block the chat.
         try:
@@ -1657,6 +1700,12 @@ async def stop_chat_inference(
             )
     async with audit.targeting("chat", chat_id):
         pass
+    # Fire on_stop hook
+    stop_ctx = HookContext(
+        chat_id=str(chat_id),
+        user_id=str(principal.get("user_id", "")),
+    )
+    await fire_on_stop("user_cancelled", ctx=stop_ctx)
     return {"ok": True}
 
 
