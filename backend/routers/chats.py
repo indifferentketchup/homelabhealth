@@ -35,6 +35,7 @@ from services.rag import (
     retrieve_memory_facts,
 )
 from services.crypto import encrypt_column, decrypt_column
+from services.supervisor_worker import is_complex_query, run_supervisor_worker
 from services.reasoning_strip import ThinkingStreamFilter, strip_thinking_text
 from services.hooks import (
     HookContext,
@@ -1464,60 +1465,82 @@ async def append_message(
                         pass
                 yield _sse(json.dumps({"type": "phase", "phase": "ready", "model": effective_model}))
 
-        yield _sse(json.dumps({"type": "phase", "phase": "generating"}))
+        # Complexity heuristic: route complex queries through supervisor-worker
+        # decomposition for parallel sub-answer synthesis.
+        if is_complex_query(user_message_text):
+            yield _sse(json.dumps({"type": "phase", "phase": "decomposing"}))
+            try:
+                sw_result = await run_supervisor_worker(
+                    user_message_text, provider, effective_model,
+                    source_context=assembled,
+                )
+                full = [sw_result.merged]
+                assistant_text = sw_result.merged
+                if sw_result.contradictions:
+                    yield _sse(json.dumps({
+                        "type": "contradictions",
+                        "contradictions": sw_result.contradictions,
+                    }))
+            except Exception as exc:
+                logger.error("supervisor_worker failed: %s", exc)
+                yield _sse(json.dumps({"error": f"Analysis failed: {exc}"}))
+                yield _sse("[DONE]")
+                return
+        else:
+            yield _sse(json.dumps({"type": "phase", "phase": "generating"}))
 
-        # Hook: pre_tool_execution
-        _hook_start = time.monotonic()
-        hook_input = {"model": effective_model, "messages": api_messages}
-        hook_result = await fire_pre_tool_execution("inference", hook_input)
-        if hook_result.blocked:
-            yield _sse(json.dumps({
-                "error": f"Tool execution blocked by hook: {hook_result.reason or 'blocked'}",
-            }))
-            yield _sse("[DONE]")
-            return
+            # Hook: pre_tool_execution
+            _hook_start = time.monotonic()
+            hook_input = {"model": effective_model, "messages": api_messages}
+            hook_result = await fire_pre_tool_execution("inference", hook_input)
+            if hook_result.blocked:
+                yield _sse(json.dumps({
+                    "error": f"Tool execution blocked by hook: {hook_result.reason or 'blocked'}",
+                }))
+                yield _sse("[DONE]")
+                return
 
-        stream = _stream_inference(
-            provider,
-            effective_model,
-            api_messages,
-        )
-        try:
-            async for chunk in stream:
-                try:
-                    line = chunk.decode("utf-8")
-                except Exception:
-                    yield chunk
-                    continue
-                payload_end = ""
-                if line.startswith("data: "):
-                    payload_end = line[6:].strip()
-                defer_done = payload_end == "[DONE]"
-                if not defer_done:
-                    yield chunk
-                if not line.startswith("data: "):
-                    continue
-                if defer_done:
-                    continue
-                try:
-                    obj = json.loads(payload_end)
-                except json.JSONDecodeError:
-                    continue
-                if obj.get("error"):
-                    had_error = True
-                if obj.get("content"):
-                    full.append(obj["content"])
-                usage = obj.get("usage")
-                if usage:
-                    prompt_tokens_val = usage.get("prompt_tokens")
-                    completion_tokens_val = usage.get("completion_tokens")
-        except Exception as e:
-            yield _sse(json.dumps({"error": str(e)}))
-            had_error = True
+            stream = _stream_inference(
+                provider,
+                effective_model,
+                api_messages,
+            )
+            try:
+                async for chunk in stream:
+                    try:
+                        line = chunk.decode("utf-8")
+                    except Exception:
+                        yield chunk
+                        continue
+                    payload_end = ""
+                    if line.startswith("data: "):
+                        payload_end = line[6:].strip()
+                    defer_done = payload_end == "[DONE]"
+                    if not defer_done:
+                        yield chunk
+                    if not line.startswith("data: "):
+                        continue
+                    if defer_done:
+                        continue
+                    try:
+                        obj = json.loads(payload_end)
+                    except json.JSONDecodeError:
+                        continue
+                    if obj.get("error"):
+                        had_error = True
+                    if obj.get("content"):
+                        full.append(obj["content"])
+                    usage = obj.get("usage")
+                    if usage:
+                        prompt_tokens_val = usage.get("prompt_tokens")
+                        completion_tokens_val = usage.get("completion_tokens")
+            except Exception as e:
+                yield _sse(json.dumps({"error": str(e)}))
+                had_error = True
 
-        if had_error:
-            yield _sse("[DONE]")
-            return
+            if had_error:
+                yield _sse("[DONE]")
+                return
 
         assistant_text = strip_thinking_text("".join(full).strip())
         if not assistant_text:

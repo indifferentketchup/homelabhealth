@@ -26,6 +26,10 @@ from services.provider_client import (
     resolve_provider_for_workspace,
 )
 from services.reasoning_strip import ThinkingStreamFilter
+from services.supervisor_worker import (
+    is_complex_query,
+    run_supervisor_worker,
+)
 
 router = APIRouter()
 
@@ -244,3 +248,52 @@ async def chat_proxy(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+class DecomposeBody(BaseModel):
+    query: str = Field(..., min_length=1, description="Complex query to decompose")
+    workspace_id: uuid.UUID = Field(..., description="Workspace whose provider routes this")
+
+
+@router.post("/decompose")
+async def debug_decompose(
+    body: DecomposeBody,
+    _owner: dict = Depends(require_admin),
+    audit: AuditEventHandle = Depends(audit_event),
+):
+    """Debug endpoint: run the full supervisor-worker pipeline and return results.
+
+    Accepts a query and workspace_id, then:
+    1. Checks complexity heuristic (returns early if below threshold).
+    2. Decomposes the query into sub-questions (supervisor).
+    3. Answers each sub-question in parallel (workers).
+    4. Synthesizes results with contradiction detection.
+
+    Returns the full decomposition, worker answers, merged text, and any
+    contradictions found.
+    """
+    provider, model = await resolve_provider_for_workspace(body.workspace_id)
+
+    complexity = is_complex_query(body.query)
+
+    result = await run_supervisor_worker(body.query, provider, model)
+
+    async with audit.targeting("inference", None):
+        pass
+
+    return {
+        "complexity_triggered": complexity,
+        "original_query": body.query,
+        "sub_questions": result.decomposed,
+        "merged": result.merged,
+        "contradictions": result.contradictions,
+        "workers": [
+            {
+                "sub_question": w.sub_question,
+                "answer": w.answer,
+                "timed_out": w.timed_out,
+                "error": w.error,
+            }
+            for w in result.worker_answers
+        ],
+    }

@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
+import re
 import time
 import uuid
+from collections import Counter
 from typing import Any
 
 import httpx
@@ -14,6 +17,131 @@ from db import get_pool
 from services.embeddings import EmbeddingError, embed_query, format_vector
 
 logger = logging.getLogger(__name__)
+
+# --------------------------------------------------------------------------- #
+# Pure-Python BM25 (Okapi) — no external dependencies
+# --------------------------------------------------------------------------- #
+
+_WORD_RE = re.compile(r"\w+")
+
+# How many candidate chunks BM25 selects before the vector search.
+# With ~40k chunks and TOP_K_RETRIEVE=40, 10x = 400 candidates → 100x reduction.
+_BM25_CANDIDATE_MULTIPLIER = 10
+_BM25_K1 = 1.5
+_BM25_B = 0.75
+
+
+def _bm25_tokenize(text: str) -> list[str]:
+    """Lowercase word-only tokens, minimum 2 chars."""
+    return [t.lower() for t in _WORD_RE.findall(text) if len(t) >= 2]
+
+
+def _bm25_score(
+    query_tokens: list[str],
+    doc_tokens: list[str],
+    *,
+    avgdl: float,
+    num_docs: int,
+    doc_freq: Counter[str],
+) -> float:
+    """Okapi BM25 score for a single document against the query."""
+    if not query_tokens or not doc_tokens:
+        return 0.0
+
+    dl = len(doc_tokens)
+    if dl == 0:
+        return 0.0
+
+    tf_counter = Counter(doc_tokens)
+    score = 0.0
+    k1 = _BM25_K1
+    b = _BM25_B
+    N = num_docs
+
+    for term in set(query_tokens):
+        tf = tf_counter.get(term, 0)
+        if tf == 0:
+            continue
+        n = doc_freq.get(term, 0)
+        # Smooth IDF (same as Okapi BM25 default)
+        idf = math.log(1.0 + (N - n + 0.5) / (n + 0.5))
+        if idf <= 0:
+            continue
+        numerator = tf * (k1 + 1.0)
+        denominator = tf + k1 * (1.0 - b + b * (dl / avgdl))
+        score += idf * numerator / denominator
+
+    return score
+
+
+async def _bm25_prefilter(
+    query: str,
+    source_ids: list[str],
+    top_k: int,
+) -> list[uuid.UUID] | None:
+    """Fetch chunks for *source_ids*, score with BM25, return top-*top_k* IDs.
+
+    Returns ``None`` on any failure so callers fall through gracefully to the
+    full vector scan (current behaviour).
+    """
+    if not query.strip() or not source_ids:
+        return None
+
+    query_tokens = _bm25_tokenize(query)
+    if not query_tokens:
+        return None
+
+    pool = await get_pool()
+    try:
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT sc.id, sc.text
+                FROM source_chunks sc
+                WHERE sc.source_id = ANY($1::uuid[])
+                  AND sc.embedding IS NOT NULL
+                """,
+                [uuid.UUID(sid) for sid in source_ids],
+            )
+    except Exception as e:
+        logger.warning("BM25 pre-filter fetch failed, falling back: %s", e)
+        return None
+
+    if not rows:
+        return None
+
+    total_candidates = len(rows)
+    texts: list[str] = [r["text"] for r in rows]
+
+    tokenized: list[list[str]] = [_bm25_tokenize(t) for t in texts]
+
+    doc_freq: Counter[str] = Counter()
+    for tokens in tokenized:
+        doc_freq.update(set(tokens))
+
+    avgdl = sum(len(t) for t in tokenized) / max(len(tokenized), 1)
+    N = len(tokenized)
+
+    scored: list[tuple[float, uuid.UUID]] = []
+    for i, tokens in enumerate(tokenized):
+        score = _bm25_score(query_tokens, tokens, avgdl=avgdl, num_docs=N, doc_freq=doc_freq)
+        if score > 0:
+            scored.append((score, rows[i]["id"]))
+
+    if not scored:
+        logger.info("BM25 pre-filter: no non-zero scores out of %d candidates", total_candidates)
+        return None
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    top_ids = [sid for _score, sid in scored[:top_k]]
+
+    logger.info(
+        "BM25 pre-filter: %d → %d candidates (%.1f%% retained)",
+        total_candidates,
+        len(top_ids),
+        100.0 * len(top_ids) / total_candidates if total_candidates else 0,
+    )
+    return top_ids
 
 # Reranker URL + model come from the active reranker provider in global_settings;
 # RERANKER_URL / RERANKER_MODEL env vars were removed in the 2026-05-21 providers cutover.
@@ -25,6 +153,7 @@ _DEFAULTS: dict[str, float | int | bool] = {
     "rag_similarity_threshold": float(os.environ.get("RAG_SIMILARITY_THRESHOLD", "0.35")),
     "memory_similarity_threshold": float(os.environ.get("MEMORY_SIMILARITY_THRESHOLD", "0.45")),
     "rag_rerank_score_min": float(os.environ.get("RAG_RERANK_SCORE_MIN", "0.05")),
+    "rag_bm25_enabled": True,
 }
 
 MEMORY_TOP_K = 3
@@ -206,6 +335,14 @@ async def retrieve_context(
     sim_threshold = float(settings["rag_similarity_threshold"])
     rerank_min = float(settings["rag_rerank_score_min"])
 
+    # BM25 keyword pre-filter — narrows the candidate pool before the expensive
+    # vector search. When enabled and non-empty, only chunks that pass BM25
+    # scoring participate in the pgvector cosine distance query.
+    bm25_ids: list[uuid.UUID] | None = None
+    if bool(settings.get("rag_bm25_enabled", True)):
+        bm25_top_k = TOP_K_RETRIEVE * _BM25_CANDIDATE_MULTIPLIER
+        bm25_ids = await _bm25_prefilter(query, source_ids, bm25_top_k)
+
     try:
         q_emb = await embed_query(query)
     except EmbeddingError as e:
@@ -217,40 +354,78 @@ async def retrieve_context(
     pool = await get_pool()
     try:
         async with pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT sc.id, sc.text, sc.source_id, s.name AS source_name
-                FROM source_chunks sc
-                JOIN sources s ON s.id = sc.source_id
-                WHERE sc.source_id = ANY($4::uuid[])
-                  AND sc.embedding IS NOT NULL
-                  AND (1 - (sc.embedding <=> $2::vector)) >= $3
-                ORDER BY sc.embedding <=> $2::vector
-                LIMIT $1
-                """,
-                TOP_K_RETRIEVE,
-                q_vec,
-                sim_threshold,
-                [uuid.UUID(sid) for sid in source_ids],
-            )
-            # Attached sources are retrieved separately so their chunks can't be
-            # crowded out of the global top-K by the rest of the workspace.
-            priority_rows = []
-            if priority_set:
-                priority_rows = await conn.fetch(
+            if bm25_ids:
+                rows = await conn.fetch(
                     """
                     SELECT sc.id, sc.text, sc.source_id, s.name AS source_name
                     FROM source_chunks sc
                     JOIN sources s ON s.id = sc.source_id
-                    WHERE sc.source_id = ANY($3::uuid[])
+                    WHERE sc.source_id = ANY($4::uuid[])
                       AND sc.embedding IS NOT NULL
+                      AND (1 - (sc.embedding <=> $2::vector)) >= $3
+                      AND sc.id = ANY($5::uuid[])
                     ORDER BY sc.embedding <=> $2::vector
                     LIMIT $1
                     """,
                     TOP_K_RETRIEVE,
                     q_vec,
-                    [uuid.UUID(sid) for sid in priority_set],
+                    sim_threshold,
+                    [uuid.UUID(sid) for sid in source_ids],
+                    bm25_ids,
                 )
+            else:
+                rows = await conn.fetch(
+                    """
+                    SELECT sc.id, sc.text, sc.source_id, s.name AS source_name
+                    FROM source_chunks sc
+                    JOIN sources s ON s.id = sc.source_id
+                    WHERE sc.source_id = ANY($4::uuid[])
+                      AND sc.embedding IS NOT NULL
+                      AND (1 - (sc.embedding <=> $2::vector)) >= $3
+                    ORDER BY sc.embedding <=> $2::vector
+                    LIMIT $1
+                    """,
+                    TOP_K_RETRIEVE,
+                    q_vec,
+                    sim_threshold,
+                    [uuid.UUID(sid) for sid in source_ids],
+                )
+            # Attached sources are retrieved separately so their chunks can't be
+            # crowded out of the global top-K by the rest of the workspace.
+            priority_rows = []
+            if priority_set:
+                if bm25_ids:
+                    priority_rows = await conn.fetch(
+                        """
+                        SELECT sc.id, sc.text, sc.source_id, s.name AS source_name
+                        FROM source_chunks sc
+                        JOIN sources s ON s.id = sc.source_id
+                        WHERE sc.source_id = ANY($3::uuid[])
+                          AND sc.embedding IS NOT NULL
+                          AND sc.id = ANY($4::uuid[])
+                        ORDER BY sc.embedding <=> $2::vector
+                        LIMIT $1
+                        """,
+                        TOP_K_RETRIEVE,
+                        q_vec,
+                        [uuid.UUID(sid) for sid in priority_set],
+                        bm25_ids,
+                    )
+                else:
+                    priority_rows = await conn.fetch(
+                        """
+                        SELECT sc.id, sc.text, sc.source_id, s.name AS source_name
+                        FROM source_chunks sc
+                        JOIN sources s ON s.id = sc.source_id
+                        WHERE sc.source_id = ANY($3::uuid[])
+                          AND sc.embedding IS NOT NULL
+                        ORDER BY sc.embedding <=> $2::vector
+                        LIMIT $1
+                        """,
+                        TOP_K_RETRIEVE,
+                        q_vec,
+                        [uuid.UUID(sid) for sid in priority_set],
+                    )
     except Exception as e:
         logger.warning("RAG vector query failed: %s", e)
         return "", 0

@@ -24,6 +24,7 @@ x-hlh-chat-base: &hlh-chat-base
   read_only: true
   tmpfs:
     - /tmp
+    - /tmp/llama-slots
   cap_drop:
     - ALL
   security_opt:

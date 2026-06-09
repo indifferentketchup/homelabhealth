@@ -197,84 +197,109 @@ async def run_inference_job(
             str(chat_id), effective_model,
         )
 
-        stream = _stream_inference(provider, effective_model, api_messages)
-        flush_timer_start = asyncio.get_event_loop().time()
+        # 4a. Complexity heuristic: route complex queries through
+        # supervisor-worker decomposition for parallel sub-answer synthesis.
+        from services.supervisor_worker import is_complex_query, run_supervisor_worker
 
-        try:
-            async for chunk in stream:
-                if registration.cancel_event.is_set():
-                    break
-
-                try:
-                    line = chunk.decode("utf-8")
-                except Exception:
-                    continue
-
-                if not line.startswith("data: "):
-                    continue
-
-                payload = line[6:].strip()
-                if payload == "[DONE]":
-                    break
-
-                try:
-                    obj = json.loads(payload)
-                except json.JSONDecodeError:
-                    continue
-
-                if obj.get("error"):
-                    had_error = True
-                    error_detail = str(obj["error"])
-                    break
-
-                content_piece = obj.get("content")
-                if content_piece:
-                    full_raw.append(content_piece)
-                    for visible in filt.feed(content_piece):
-                        accumulated += visible
-
-                usage = obj.get("usage")
-                if usage:
-                    prompt_tokens_val = usage.get("prompt_tokens")
-                    completion_tokens_val = usage.get("completion_tokens")
-
-                now = asyncio.get_event_loop().time()
-                if now - flush_timer_start >= _FLUSH_INTERVAL_S and len(accumulated) > accumulated_at_last_flush:
-                    accumulated_at_last_flush = len(accumulated)
-                    last_flush_task = asyncio.create_task(
-                        _do_flush(accumulated, last_flush_task)
-                    )
-                    flush_timer_start = now
-
-            for tail in filt.flush():
-                accumulated += tail
-
-        except Exception as exc:
-            had_error = True
-            error_detail = f"Inference stream error: {type(exc).__name__}: {exc}"
-            logger.error("inference_job: stream error chat_id=%s: %s", chat_id, exc)
-
-        # Final flush of accumulated content
-        if len(accumulated) > accumulated_at_last_flush:
-            last_flush_task = asyncio.create_task(
-                _do_flush(accumulated, last_flush_task)
-            )
-        if last_flush_task is not None:
+        if is_complex_query(user_message_text):
             try:
-                await last_flush_task
-            except Exception:
-                pass
+                sw_result = await run_supervisor_worker(
+                    user_message_text, provider, effective_model,
+                    source_context=assembled,
+                )
+                accumulated = sw_result.merged
+                full_raw = [accumulated]
+                logger.info(
+                    "inference_job: supervisor_worker chat_id=%s sub_questions=%d contradictions=%d",
+                    str(chat_id), len(sw_result.decomposed), len(sw_result.contradictions),
+                )
+            except Exception as exc:
+                logger.error("inference_job: supervisor_worker failed chat_id=%s: %s", chat_id, exc)
+                await _mark_failed(
+                    pool, assistant_id,
+                    f"Complex analysis failed: {type(exc).__name__}: {exc}",
+                )
+                return
+        else:
+            # 4b. Normal inference: stream with periodic DB flushes
+            stream = _stream_inference(provider, effective_model, api_messages)
+            flush_timer_start = asyncio.get_event_loop().time()
 
-        # Handle cancellation
-        if registration.cancel_event.is_set():
-            partial = accumulated.strip()
-            await _mark_cancelled(pool, assistant_id, content=partial if partial else None)
-            return
+            try:
+                async for chunk in stream:
+                    if registration.cancel_event.is_set():
+                        break
 
-        # Handle error
-        if had_error:
-            await _mark_failed(pool, assistant_id, error_detail)
-            return
+                    try:
+                        line = chunk.decode("utf-8")
+                    except Exception:
+                        continue
+
+                    if not line.startswith("data: "):
+                        continue
+
+                    payload = line[6:].strip()
+                    if payload == "[DONE]":
+                        break
+
+                    try:
+                        obj = json.loads(payload)
+                    except json.JSONDecodeError:
+                        continue
+
+                    if obj.get("error"):
+                        had_error = True
+                        error_detail = str(obj["error"])
+                        break
+
+                    content_piece = obj.get("content")
+                    if content_piece:
+                        full_raw.append(content_piece)
+                        for visible in filt.feed(content_piece):
+                            accumulated += visible
+
+                    usage = obj.get("usage")
+                    if usage:
+                        prompt_tokens_val = usage.get("prompt_tokens")
+                        completion_tokens_val = usage.get("completion_tokens")
+
+                    now = asyncio.get_event_loop().time()
+                    if now - flush_timer_start >= _FLUSH_INTERVAL_S and len(accumulated) > accumulated_at_last_flush:
+                        accumulated_at_last_flush = len(accumulated)
+                        last_flush_task = asyncio.create_task(
+                            _do_flush(accumulated, last_flush_task)
+                        )
+                        flush_timer_start = now
+
+                for tail in filt.flush():
+                    accumulated += tail
+
+            except Exception as exc:
+                had_error = True
+                error_detail = f"Inference stream error: {type(exc).__name__}: {exc}"
+                logger.error("inference_job: stream error chat_id=%s: %s", chat_id, exc)
+
+            # Final flush of accumulated content
+            if len(accumulated) > accumulated_at_last_flush:
+                last_flush_task = asyncio.create_task(
+                    _do_flush(accumulated, last_flush_task)
+                )
+            if last_flush_task is not None:
+                try:
+                    await last_flush_task
+                except Exception:
+                    pass
+
+            # Handle cancellation
+            if registration.cancel_event.is_set():
+                partial = accumulated.strip()
+                await _mark_cancelled(pool, assistant_id, content=partial if partial else None)
+                return
+
+            # Handle error
+            if had_error:
+                await _mark_failed(pool, assistant_id, error_detail)
+                return
 
         # 5. Finalize successful completion
         from services.reasoning_strip import strip_thinking_text
