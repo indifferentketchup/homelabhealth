@@ -52,6 +52,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@nick-vi/type-inject-mcp": "^1.1.2",
     "@types/react": "^18.3.23",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^6.0.1",
