@@ -42,3 +42,5 @@ export const deleteContextFile = (id) =>
 
 export const patchContextFile = (id, body) =>
   apiFetch(`/api/workspace-context-files/${id}`, { method: 'PATCH', json: body })
+
+export const loadDemo = () => apiFetch('/api/demo/load', { method: 'POST' })

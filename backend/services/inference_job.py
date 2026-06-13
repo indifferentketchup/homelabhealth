@@ -26,6 +26,9 @@ logger = logging.getLogger(__name__)
 
 _FLUSH_INTERVAL_S = 0.5
 
+# Strong references to fire-and-forget background tasks (prevents GC before completion).
+_background_tasks: set[asyncio.Task] = set()
+
 
 async def run_inference_job(
     registration: InferenceRegistration,
@@ -174,8 +177,11 @@ async def run_inference_job(
 
         last_flush_task: asyncio.Task | None = None
         accumulated_at_last_flush = 0
+        _flush_fail_count = 0
+        _MAX_FLUSH_FAILURES = 3
 
         async def _do_flush(content_snapshot: str, prev_task: asyncio.Task | None) -> None:
+            nonlocal _flush_fail_count
             if prev_task is not None:
                 try:
                     await prev_task
@@ -189,8 +195,15 @@ async def run_inference_job(
                         assistant_id,
                         encrypted,
                     )
+                _flush_fail_count = 0
             except Exception as exc:
-                logger.warning("inference_job: flush failed assistant_id=%s: %s", assistant_id, exc)
+                _flush_fail_count += 1
+                logger.warning(
+                    "inference_job: flush failed (%d/%d) assistant_id=%s: %s",
+                    _flush_fail_count, _MAX_FLUSH_FAILURES, assistant_id, exc,
+                )
+                if _flush_fail_count >= _MAX_FLUSH_FAILURES:
+                    raise
 
         logger.info(
             "inference_job: starting inference chat_id=%s model=%s",
@@ -288,7 +301,7 @@ async def run_inference_job(
                 try:
                     await last_flush_task
                 except Exception:
-                    pass
+                    raise
 
             # Handle cancellation
             if registration.cancel_event.is_set():
@@ -461,6 +474,28 @@ async def run_inference_job(
             await summarize_and_compress(str(chat_id), pool)
         except Exception as exc:
             logger.error("inference_job: pruning failed: %s", exc)
+
+        # 10. Background memory extraction (gated by global_settings key)
+        try:
+            async with pool.acquire() as _mem_conn:
+                _mem_setting = await _mem_conn.fetchval(
+                    "SELECT value FROM global_settings WHERE key = 'memory_auto_extract_enabled'"
+                )
+            if _mem_setting == "true":
+                from services.memory_hooks import run_background_extraction
+                _t = asyncio.create_task(
+                    run_background_extraction(
+                        user_message_text,
+                        assistant_text,
+                        provider,
+                        effective_model,
+                    ),
+                    name=f"mem_extract_{assistant_id}",
+                )
+                _background_tasks.add(_t)
+                _t.add_done_callback(_background_tasks.discard)
+        except Exception as exc:
+            logger.warning("inference_job: memory extraction skipped: %s", exc)
 
         logger.info(
             "inference_job: complete chat_id=%s assistant_id=%s tokens=%s",

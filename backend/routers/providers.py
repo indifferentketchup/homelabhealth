@@ -362,7 +362,7 @@ async def _resolve_embed_model_via_conn() -> str:
         val = await conn.fetchval(
             "SELECT value FROM global_settings WHERE key = 'embedding_model'"
         )
-    return val or "BAAI/bge-m3"
+    return val or "Qwen/Qwen3-Embedding-0.6B"
 
 
 async def _resolve_rerank_model_via_conn() -> str:
@@ -371,7 +371,7 @@ async def _resolve_rerank_model_via_conn() -> str:
         val = await conn.fetchval(
             "SELECT value FROM global_settings WHERE key = 'reranker_model'"
         )
-    return val or "BAAI/bge-reranker-v2-m3"
+    return val or "Qwen/Qwen3-Reranker-0.6B"
 
 
 def _interpret_embed_response(r: Any) -> tuple[bool, str]:

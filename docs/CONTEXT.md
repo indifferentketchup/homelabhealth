@@ -1,10 +1,11 @@
 # Agent context — start here
 
-One-page bootstrap for coding sessions. Updated at phase boundaries.
+One-page bootstrap for coding sessions. Keep this aligned with the live branch,
+not just the latest tag.
 
-**Release:** `v0.26.0` (2026-05-25)  
-**Ship-to-friend gate:** clear (A4 STT deferred 2026-05-25)  
-**Active work:** friend onboarding; v1.0.0 prep (LICENSE, README final pass, THREATMODEL review)
+**Latest tagged release:** `v1.2.16` (2026-06-08)  
+**Main branch state:** 2026-06-12 behavioral fixes, dead code cleanup, and memory wiring landed on `main` after `fork-lift-wave-1`; not tagged yet  
+**Active work:** stack smoke test (`docker compose build --no-cache hlh_api`), `single-patient-demo` admin-CTA hiding + end-to-end verification
 
 ---
 
@@ -12,12 +13,12 @@ One-page bootstrap for coding sessions. Updated at phase boundaries.
 
 | Read when… | File |
 |------------|------|
-| Every session | [AGENTS.md](../AGENTS.md) (hard rules) |
-| System structure | [architecture.md](architecture.md) — containers, flows, data model |
-| Planning a phase | [roadmap.md](roadmap.md) — dependency graph + ship-to-friend gate |
-| Designing a feature | `docs/superpowers/specs/YYYY-MM-DD-<phase>-design.md` |
-| Implementing step-by-step | `docs/superpowers/plans/` (local plans; specs are committed) |
-| Shipping a release | [CHANGELOG.md](../CHANGELOG.md) — `[Unreleased]` → tag |
+| Every session | [CLAUDE.md](../CLAUDE.md) |
+| System structure | [architecture.md](architecture.md) |
+| Release state / history | [CHANGELOG.md](../CHANGELOG.md) |
+| Long-range shipped roadmap | [roadmap.md](roadmap.md) |
+| Active batch work | `openspec/changes/<slug>/` |
+| Archived completed batches | `openspec/archived/<slug>/` |
 
 ---
 
@@ -26,56 +27,51 @@ One-page bootstrap for coding sessions. Updated at phase boundaries.
 | Area | Files |
 |------|-------|
 | App entry | `backend/main.py`, `frontend/src/components/AppRoutes.jsx` |
-| Auth | `backend/deps.py`, `backend/services/auth.py`, `backend/routers/auth.py` |
-| Chat + SSE | `backend/routers/chats.py` — **do not touch** `frontend/src/hooks/useStream.js` |
-| RAG | `backend/services/rag.py`, `embeddings.py`, `chunking.py` |
-| Sources / ingest | `backend/routers/sources.py`, `services/vision.py` |
-| Providers | `backend/services/provider_client.py`, `bundled_providers.py` |
-| Safeguards | `backend/services/safeguards.py`, `guard.py` |
-| Crypto / de-id | `backend/services/crypto.py`, `deid.py` |
+| Auth | `backend/deps.py`, `backend/services/auth.py`, `backend/routers/auth.py`, `backend/routers/profile.py` |
+| Chat orchestration | `backend/routers/chats.py`, `backend/services/inference_job.py`, `backend/services/approval_gate.py`, `backend/services/conductor.py` |
+| Frontend streaming | `frontend/src/hooks/useStreamOrchestrator.js`, `frontend/src/hooks/useDurableChat.js`, `frontend/src/hooks/useStream.js` |
+| RAG | `backend/services/rag.py`, `backend/services/embeddings.py`, `backend/services/chunking.py` |
+| Sources / ingest | `backend/routers/sources.py`, `backend/services/vision.py`, `backend/routers/demo.py` |
+| Memory | `backend/services/memory/`, `backend/services/memory_tools.py`, `backend/routers/memory.py` |
+| Providers / models | `backend/services/provider_client.py`, `backend/services/bundled_providers.py`, `backend/services/model_puller.py`, `backend/routers/models.py` |
+| Eval / analytics | `backend/routers/eval.py`, `backend/routers/analytics.py`, `frontend/src/pages/workspace/AnalyticsPage.jsx` |
+| Safeguards | `backend/services/safeguards.py`, `backend/services/safeguards_engine.py`, `backend/services/guard.py` |
 | Schema | `backend/schema.sql` |
-| Doctor | `backend/hlh/doctor.py` |
-| Settings UI | `frontend/src/components/settings/SystemTab.jsx` |
 
 ---
 
-## RAG pipeline (short)
+## Current architecture in one line
 
-ingest → chunk → embed (1024-dim, bge-m3) → pgvector → retrieve → rerank → inject into system prompt.
-
-Tuning thresholds live in `global_settings` with env fallbacks — read `rag.py` before changing retrieval.
+`hlh_ui` → `hlh_api` → PostgreSQL + bundled `hlh_chat` router for chat/embed/rerank/vision, plus bundled `hlh_search` for web search.
 
 ---
 
 ## Verify (no pytest)
 
 ```bash
-python -m py_compile $(find backend -name '*.py')
+python3 -m py_compile $(find backend -name '*.py')
 cd frontend && npm run build
 docker compose build --no-cache hlh_api && docker compose up -d hlh_api
 docker exec hlh_api python -m hlh.doctor
-backend/scripts/verify_providers_crud.sh   # example
+backend/scripts/verify_providers_crud.sh
 ```
 
-Existing harness: 22 scripts under `backend/scripts/verify_*.{sh,py}`. Add one per new endpoint or UI surface.
+Current harness: 26 scripts under `backend/scripts/verify_*.{sh,py}`. Add one
+per new endpoint or major UI surface.
 
 ---
 
-## Docker quirks (common agent mistakes)
+## Docker quirks
 
-- **`docker compose build --no-cache hlh_api`** after Python edits — BuildKit can cache stale `COPY . .`.
-- **`docker cp` fails** into `read_only: true` containers (`hlh_api`, `hlh_chat`, `hlh_infer`).
-- **`hlh_api` has no curl** — use Python + httpx inside the container.
-- **Vite `VITE_*`** — baked at build time; requires `docker compose up --build -d` after changes.
+- `docker compose build --no-cache hlh_api` after Python edits. BuildKit can cache stale `COPY . .`.
+- `docker cp` fails into `read_only: true` containers such as `hlh_api` and `hlh_chat`.
+- `hlh_api` has no `curl`. Use Python + `httpx` inside the container.
+- `VITE_*` values are baked at build time. Frontend changes need `docker compose up --build -d`.
 
 ---
 
-## Phase status (2026-05-25)
+## Current focus
 
-```
-A — Built-in AI:   A0–A3, A7 shipped │ A4 STT deferred │ A6 MLX deferred
-B — Safeguards:    B0–B3 shipped      │ B4 deferred
-C — Security:      C0–C7 shipped      │ C8, C9 deferred
-```
-
-Next public milestone: **v1.0.0** — see roadmap "Public-release-readiness".
+- **Behavioral fixes + cleanup** (2026-06-12): approval gate (A1), source-selection position (A2), provider bypass removal (A3), BM25 partitioning (A4), flush failure surfacing (A6), model_puller races (C4/C9), chat-switch resume (C7), dead code (S4/S8/S10), memory hook wiring -- all implemented; stack smoke test still needed.
+- **`single-patient-demo`**: demo data + atomic loader + Try Demo button all done. Remaining: non-admin CTA hiding (Task 4) and end-to-end stack verification (Tasks 6-7).
+- **A9 (hook context reset)** is explicitly deferred: the `try/finally reset_hook_context` wrapper around the 730-line `post_messages` handler is too risky to add without a dedicated smoke test pass.

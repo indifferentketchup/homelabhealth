@@ -99,23 +99,28 @@ _VISION_MMPROJ_27B = ModelSpec(
 )
 
 
-# Embedder (bge-m3, MIT) + reranker (bge-reranker-v2-m3, Apache) from the public
-# gpustack GGUF mirrors; tasks model is gemma-3-270m (lightweight title gen).
-# Filenames match models.ini's [bge-m3] / [bge-reranker] / [gemma-tasks] paths.
+# Embedder (Qwen3-Embedding-0.6B, Apache) from Qwen's official GGUF repo +
+# reranker (Qwen3-Reranker-0.6B, Apache) from ggml-org's llama.cpp-ready
+# conversion; tasks model is gemma-3-270m (lightweight title gen).
+# Filenames match models.ini's [qwen3-embed] / [qwen3-reranker] / [gemma-tasks]
+# paths. Replaced bge-m3 / bge-reranker-v2-m3 on 2026-06-12 — Qwen3-Embedding
+# is also 1024-dim, so the schema's vector(1024) contract holds, but vectors
+# from the two models are NOT comparable: POST /api/sources/reingest-all after
+# switching an existing deployment.
 _EMBED_SPEC = ModelSpec(
-    repo="gpustack/bge-m3-GGUF",
-    filename="bge-m3-Q8_0.gguf",
+    repo="Qwen/Qwen3-Embedding-0.6B-GGUF",
+    filename="Qwen3-Embedding-0.6B-Q8_0.gguf",
     quant="Q8_0",
-    license="mit",
-    license_url="https://huggingface.co/gpustack/bge-m3-GGUF",
+    license="apache-2.0",
+    license_url="https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF",
     revision="main",
 )
 _RERANK_SPEC = ModelSpec(
-    repo="gpustack/bge-reranker-v2-m3-GGUF",
-    filename="bge-reranker-v2-m3-Q8_0.gguf",
+    repo="ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF",
+    filename="qwen3-reranker-0.6b-q8_0.gguf",
     quant="Q8_0",
     license="apache-2.0",
-    license_url="https://huggingface.co/gpustack/bge-reranker-v2-m3-GGUF",
+    license_url="https://huggingface.co/ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF",
     revision="main",
 )
 _TASKS_SPEC = ModelSpec(
@@ -194,8 +199,8 @@ MODEL_REGISTRY: dict[str, dict[str, ModelSpec | None]] = {
         "external": None,
     },
     "tasks":     _router_role(_TASKS_SPEC),   # gemma-3-270m — title generation
-    "embed":     _router_role(_EMBED_SPEC),   # bge-m3 — RAG embeddings
-    "rerank":    _router_role(_RERANK_SPEC),  # bge-reranker-v2-m3 — RAG rerank
+    "embed":     _router_role(_EMBED_SPEC),   # Qwen3-Embedding-0.6B — RAG embeddings
+    "rerank":    _router_role(_RERANK_SPEC),  # Qwen3-Reranker-0.6B — RAG rerank
     # Vision projector for the tier's chat model (so that model does vision too).
     # mmproj must match the chat model size: 4b tiers → 4b mmproj, 27b tiers →
     # 27b mmproj. cpu-min (Qwen, not multimodal) and apple-mlx/external get none.
@@ -355,7 +360,7 @@ async def _hf_headers(pool_or_conn) -> dict[str, str]:
 
 # These roles serve a single tier-independent GGUF from a flat /models/<file>
 # path — exactly what models.ini references for [medgemma] / [qwen-chat] /
-# [bge-m3] / [bge-reranker] / [gemma-tasks]. The puller writes here so the
+# [qwen3-embed] / [qwen3-reranker] / [gemma-tasks]. The puller writes here so the
 # router's static models.ini works for every tier without rewrites: each tier
 # downloads a different file, but always lands at /models/<file>, and only the
 # alias the active tier uses (TIER_CHAT_MODELS in bundled_providers) actually
@@ -480,10 +485,14 @@ async def pull_model(pool_or_conn, model_uuid: str) -> dict[str, Any]:
     revision = row["revision"]
 
     cancel_event = asyncio.Event()
-    _CANCEL_EVENTS[str(model_uuid)] = cancel_event
 
     try:
         async with _PULL_LOCK:
+            _CANCEL_EVENTS[str(model_uuid)] = cancel_event
+            current_row = await _read_row(pool_or_conn, model_uuid)
+            if current_row and current_row["status"] == "ready":
+                logger.info("model_puller: model %s already ready, skipping re-pull", model_uuid)
+                return dict(current_row)
             await _mark_pulling(pool_or_conn, model_uuid)
 
             dest = _dest_path(role, tier, filename)

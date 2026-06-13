@@ -14,12 +14,12 @@ import httpx
 
 from db import get_pool
 from services.crypto import decrypt_column
+from services.provider_client import build_headers, resolve_bundled_chat_provider
 
 logger = logging.getLogger(__name__)
 
 COMPACTION_THRESHOLD = 0.85
 TAIL_TURNS = 4  # keep newest N user+assistant turn pairs
-CHAT_URL = "http://hlh_chat:9610/v1/chat/completions"
 SUMMARY_TIMEOUT = 60.0
 
 SUMMARY_SYSTEM_PROMPT = (
@@ -94,12 +94,19 @@ async def _run_compaction(chat_id: uuid.UUID) -> bool:
 
 
 async def _generate_summary(conversation_text: str, existing_summary: str | None) -> str | None:
+    binding = await resolve_bundled_chat_provider()
+    if binding is None:
+        logger.info("compaction: no bundled chat provider available; skipping summary")
+        return None
+    provider, model = binding
+
     prompt_parts = []
     if existing_summary:
         prompt_parts.append(f"Previous conversation summary:\n{existing_summary}\n")
     prompt_parts.append(f"Conversation to summarize:\n{conversation_text}")
 
     payload = {
+        "model": model,
         "messages": [
             {"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
             {"role": "user", "content": "\n".join(prompt_parts)},
@@ -109,7 +116,11 @@ async def _generate_summary(conversation_text: str, existing_summary: str | None
     }
     try:
         async with httpx.AsyncClient(timeout=SUMMARY_TIMEOUT) as client:
-            resp = await client.post(CHAT_URL, json=payload)
+            resp = await client.post(
+                f"{provider.base_url}/v1/chat/completions",
+                json=payload,
+                headers=build_headers(provider),
+            )
             resp.raise_for_status()
             data = resp.json()
             return data["choices"][0]["message"]["content"].strip()

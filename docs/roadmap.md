@@ -7,7 +7,7 @@ Phase numbering renumbers slightly so AI / Security / Safeguards each get
 their own track but interleave on a single dependency graph.
 
 Owner: Sam
-Last updated: 2026-05-28 (`v1.1.0` — smart orchestra bootstrap)
+Last updated: 2026-06-12 (`v1.2.16` tagged; behavioral fixes + dead code cleanup + memory wiring on `main`, untagged)
 
 -----
 
@@ -33,6 +33,7 @@ Three tracks. Phases interleave by dependency, not by track.
 
 ```
 Shipped releases (most recent → oldest):
+  v1.2.16   UI animation, typography, iconography, medical-UX polish (2026-06-08)
   v1.1.0    smart orchestra bootstrap + demo data overhaul (2026-05-28)
   v1.0.0    public release (2026-05-28)
   v0.26.0   architecture.md + agent docs + stale doc sync (2026-05-25)
@@ -91,10 +92,16 @@ Phase track in summary:
 **Ship-ready gate** = every security + safeguard phase shipped + tagged,
 built-in auth working, key auto-generation working, setup wizard tested.
 
-**Latest release:** `v1.1.0` (2026-05-28). See `CHANGELOG.md` for the per-tag rundown.
+**Latest tagged release:** `v1.2.16` (2026-06-08). See `CHANGELOG.md` for the per-tag rundown.
 
-**Active work:** none. All roadmap phases shipped. v1.0.0 tagged 2026-05-28;
-v1.1.0 added smart bootstrap (single `docker run`) and demo data overhaul.
+**Active work on `main`:**
+- 2026-06-12 behavioral fixes landed (A1 approval gate, A2 source-selection, A3 provider bypass, A4 BM25, A6 flush, C4/C9 model_puller, C7 chat-switch, S4/S8/S10 dead code, memory hook wiring). Not tagged.
+- `single-patient-demo` active: Try Demo button + atomic loader done; non-admin CTA hiding and end-to-end stack verification remain.
+- Stack smoke test (`docker compose build --no-cache hlh_api`) not yet run against the current working tree.
+
+Historical sections below describe how phases shipped at the time. Some older
+sections reference `hlh_infer` and other superseded deploy details. For the
+live system shape, use [docs/architecture.md](./architecture.md).
 
 -----
 

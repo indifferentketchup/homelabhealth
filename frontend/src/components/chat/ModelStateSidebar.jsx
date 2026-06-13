@@ -7,8 +7,8 @@ const MODEL_DISPLAY = {
   'medgemma':     { label: 'Chat',       desc: 'Answers your questions using health context' },
   'qwen-chat':    { label: 'Chat (lite)', desc: 'Smaller chat model for low-RAM systems' },
   'gemma-tasks':  { label: 'Tasks',      desc: 'Handles background jobs like summarization' },
-  'bge-m3':       { label: 'Search',     desc: 'Finds relevant documents for your question' },
-  'bge-reranker': { label: 'Relevance',  desc: 'Re-scores search results for accuracy' },
+  'qwen3-embed':    { label: 'Search',     desc: 'Finds relevant documents for your question' },
+  'qwen3-reranker': { label: 'Relevance',  desc: 'Re-scores search results for accuracy' },
 }
 
 function modelLabel(id) {

@@ -122,6 +122,25 @@ async def lifespan(_app: FastAPI):
         await ensure_super_admin()
         # Phase 1: seed bundled_models from MODEL_REGISTRY. Idempotent — safe on every boot.
         pool = await get_pool()
+        # Sweep stale streaming rows left behind by a prior process crash/OOM.
+        # 10-minute threshold is conservative vs the running sweeper's 5 minutes.
+        async with pool.acquire() as sweep_conn:
+            swept = await sweep_conn.fetch(
+                """
+                UPDATE messages
+                SET status = 'failed',
+                    finished_at = NOW(),
+                    error_message = 'process restart: inference interrupted'
+                WHERE status = 'streaming'
+                  AND COALESCE(started_at, created_at) < NOW() - INTERVAL '10 minutes'
+                RETURNING chat_id
+                """,
+            )
+            if swept:
+                logger.info(
+                    "lifespan: cleared %d stale streaming rows from prior process run",
+                    len(swept),
+                )
         # v1.1.4→v1.1.5 chat-path flattening: best-effort, harmless if no legacy files.
         bundled_providers.migrate_legacy_chat_paths()
         async with pool.acquire() as conn:
@@ -131,6 +150,8 @@ async def lifespan(_app: FastAPI):
             if profile_row is not None:
                 await bundled_providers.apply_bundled_bindings(conn, profile_row["tier"] or "external")
             await log_startup_banner(conn, seeded=seeded, orphaned=orphaned)
+        from services.memory_hooks import register_memory_hooks
+        register_memory_hooks()
     except Exception as exc:
         # Loud, unmissable failure summary so the root cause isn't buried in
         # the restart-loop noise that follows (uvicorn re-execs on exit).
@@ -260,7 +281,7 @@ app.add_middleware(_RequestIDMiddleware)
 _origins = _cors_origins()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_origins if _origins else ["*"],
+    allow_origins=_origins or ["http://localhost:9604"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

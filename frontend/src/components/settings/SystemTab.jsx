@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import {
@@ -55,67 +55,108 @@ const TIERS = [
     id: 'cpu-min',
     label: 'CPU — minimal',
     chat: 'Qwen3.5 0.8B Q8_0',
-    embed: 'bge-m3 (1024-dim)',
-    rerank: 'bge-reranker-v2-m3',
+    embed: 'Qwen3-Embedding-0.6B (1024-dim)',
+    rerank: 'Qwen3-Reranker-0.6B',
     vision: '— (not available)',
     footprint: '~1.5 GB RAM peak · ~0.9 GB disk · 8K context',
     diskGb: 1,
     detect: '<16 GB RAM, no GPU',
+    isCpu() { return true },
+    rationale(sysinfo) {
+      const ram = Number(sysinfo?.ram_total_gb) || 0
+      const apple = !!sysinfo?.apple_silicon
+      return apple
+        ? `Apple Silicon, ${ram} GB unified (below 16 GB threshold) → cpu-min`
+        : `${ram} GB RAM, no GPU → cpu-min`
+    },
   },
   {
     id: 'cpu-std',
     label: 'CPU — standard',
     chat: 'MedGemma 1.5 4B Q4_K_M',
-    embed: 'bge-large-en-v1.5 Q8',
-    rerank: 'bge-reranker-base (CPU)',
+    embed: 'Qwen3-Embedding-0.6B (1024-dim)',
+    rerank: 'Qwen3-Reranker-0.6B',
     vision: 'MedGemma 1.5 4B (mmproj)',
     footprint: '~4 GB RAM peak · ~2.8 GB disk · 8K context',
     diskGb: 3,
     detect: '≥16 GB RAM, no GPU',
+    isCpu() { return true },
+    rationale(sysinfo) {
+      const ram = Number(sysinfo?.ram_total_gb) || 0
+      return `${ram} GB RAM, no usable GPU → cpu-std`
+    },
   },
   {
     id: 'gpu-4gb',
     label: 'GPU — 4 GB class',
     chat: 'MedGemma 1.5 4B Q4_K_M',
-    embed: 'bge-m3 (1024-dim)',
-    rerank: 'bge-reranker-v2-m3',
+    embed: 'Qwen3-Embedding-0.6B (1024-dim)',
+    rerank: 'Qwen3-Reranker-0.6B',
     vision: 'MedGemma 1.5 4B (mmproj)',
     footprint: '~3.5 GB VRAM peak · ~2.8 GB disk · 32K context',
     diskGb: 3,
     detect: '4–5 GB VRAM',
+    isCpu() { return false },
+    rationale(sysinfo) {
+      const gpus = Array.isArray(sysinfo?.gpus) ? sysinfo.gpus : []
+      const maxVramMb = Math.max(0, ...gpus.map((g) => Number(g?.memory_total_mb) || 0))
+      const maxVramGb = Math.floor(maxVramMb / 1024)
+      return `${maxVramGb} GB VRAM detected → gpu-4gb (partial offload)`
+    },
   },
   {
     id: 'gpu-8gb',
     label: 'GPU — 8 GB class',
     chat: 'MedGemma 1.5 4B Q8_0',
-    embed: 'bge-large-en-v1.5 FP16',
-    rerank: 'bge-reranker-v2-m3',
+    embed: 'Qwen3-Embedding-0.6B (1024-dim)',
+    rerank: 'Qwen3-Reranker-0.6B',
     vision: 'MedGemma 1.5 4B (mmproj)',
     footprint: '~6 GB VRAM peak · ~4.5 GB disk · 32K context',
     diskGb: 5,
     detect: '6–11 GB VRAM',
+    isCpu() { return false },
+    rationale(sysinfo) {
+      const gpus = Array.isArray(sysinfo?.gpus) ? sysinfo.gpus : []
+      const maxVramMb = Math.max(0, ...gpus.map((g) => Number(g?.memory_total_mb) || 0))
+      const maxVramGb = Math.floor(maxVramMb / 1024)
+      return `${maxVramGb} GB VRAM detected → gpu-8gb`
+    },
   },
   {
     id: 'gpu-16gb',
     label: 'GPU — 16 GB class',
     chat: 'MedGemma 1.5 4B Q8_0',
-    embed: 'Harrier-0.6B Q8',
+    embed: 'Qwen3-Embedding-0.6B (1024-dim)',
     rerank: 'Qwen3-Reranker-0.6B',
     vision: 'MedGemma 1.5 4B (mmproj)',
     footprint: '~9 GB VRAM peak · ~6 GB disk · 32K context',
     diskGb: 6,
     detect: '12–23 GB VRAM',
+    isCpu() { return false },
+    rationale(sysinfo) {
+      const gpus = Array.isArray(sysinfo?.gpus) ? sysinfo.gpus : []
+      const maxVramMb = Math.max(0, ...gpus.map((g) => Number(g?.memory_total_mb) || 0))
+      const maxVramGb = Math.floor(maxVramMb / 1024)
+      return `${maxVramGb} GB VRAM detected → gpu-16gb`
+    },
   },
   {
     id: 'gpu-24gb+',
     label: 'GPU — 24 GB+',
     chat: 'MedGemma 27B Q4_K_M',
-    embed: 'Harrier-0.6B Q8',
+    embed: 'Qwen3-Embedding-0.6B (1024-dim)',
     rerank: 'Qwen3-Reranker-0.6B',
     vision: 'MedGemma 27B (mmproj)',
     footprint: '~18 GB VRAM peak · ~18 GB disk · 64K context',
     diskGb: 18,
     detect: '≥24 GB VRAM',
+    isCpu() { return false },
+    rationale(sysinfo) {
+      const gpus = Array.isArray(sysinfo?.gpus) ? sysinfo.gpus : []
+      const maxVramMb = Math.max(0, ...gpus.map((g) => Number(g?.memory_total_mb) || 0))
+      const maxVramGb = Math.floor(maxVramMb / 1024)
+      return `${maxVramGb} GB VRAM detected → gpu-24gb+`
+    },
   },
   {
     id: 'apple-mlx',
@@ -127,6 +168,11 @@ const TIERS = [
     footprint: '~12–16 GB unified · varies',
     diskGb: 12,
     detect: 'Apple Silicon, ≥16 GB unified',
+    isCpu() { return false },
+    rationale(sysinfo) {
+      const ram = Number(sysinfo?.ram_total_gb) || 0
+      return `Apple Silicon, ${ram} GB unified memory → apple-mlx`
+    },
   },
   {
     id: 'external',
@@ -138,6 +184,8 @@ const TIERS = [
     footprint: 'No local model footprint',
     diskGb: 0,
     detect: 'Operator chose external only',
+    isCpu() { return false },
+    rationale() { return 'External providers only' },
   },
 ]
 
@@ -158,32 +206,8 @@ function rationaleFor(sysinfo, recommended) {
   if (!sysinfo || typeof sysinfo !== 'object') {
     return 'no hardware detected yet — click Re-detect'
   }
-  const gpus = Array.isArray(sysinfo.gpus) ? sysinfo.gpus : []
-  const maxVramMb = gpus.length
-    ? Math.max(0, ...gpus.map((g) => Number(g?.memory_total_mb) || 0))
-    : 0
-  const maxVramGb = Math.floor(maxVramMb / 1024)
-  const ram = Number(sysinfo.ram_total_gb) || 0
-  const apple = !!sysinfo.apple_silicon
-  switch (recommended) {
-    case 'gpu-24gb+':
-      return `${maxVramGb} GB VRAM detected → gpu-24gb+`
-    case 'gpu-16gb':
-      return `${maxVramGb} GB VRAM detected → gpu-16gb`
-    case 'gpu-8gb':
-      return `${maxVramGb} GB VRAM detected → gpu-8gb`
-    case 'gpu-4gb':
-      return `${maxVramGb} GB VRAM detected → gpu-4gb (partial offload)`
-    case 'apple-mlx':
-      return `Apple Silicon, ${ram} GB unified memory → apple-mlx`
-    case 'cpu-std':
-      return `${ram} GB RAM, no usable GPU → cpu-std`
-    case 'cpu-min':
-    default:
-      return apple
-        ? `Apple Silicon, ${ram} GB unified (below 16 GB threshold) → cpu-min`
-        : `${ram} GB RAM, no GPU → cpu-min`
-  }
+  const tier = TIERS.find((t) => t.id === recommended)
+  return tier ? tier.rationale(sysinfo) : `${recommended} selected`
 }
 
 
@@ -515,6 +539,11 @@ function ModelsPanel({ currentTier }) {
 
   // ── Synthetic row polling state ──────────────────────────────────────────
   const [synthAttempts, setSynthAttempts] = useState({}) // { provider_id: attempt_count }
+  const synthAttemptsRef = useRef({})
+
+  useEffect(() => {
+    synthAttemptsRef.current = synthAttempts
+  }, [synthAttempts])
 
   const refresh = useCallback(async () => {
     try {
@@ -551,8 +580,8 @@ function ModelsPanel({ currentTier }) {
   const providers = providersData?.items ?? []
 
   const SYNTH_ROLE_META = {
-    embed: { model: 'BAAI/bge-m3', license: 'mit', license_url: 'https://huggingface.co/BAAI/bge-m3' },
-    rerank: { model: 'BAAI/bge-reranker-v2-m3', license: 'apache-2.0', license_url: 'https://huggingface.co/BAAI/bge-reranker-v2-m3' },
+    embed: { model: 'Qwen/Qwen3-Embedding-0.6B', license: 'apache-2.0', license_url: 'https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF' },
+    rerank: { model: 'Qwen/Qwen3-Reranker-0.6B', license: 'apache-2.0', license_url: 'https://huggingface.co/ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF' },
   }
 
   // Roles that already have a real download row above (chat/embed/rerank/tasks/
@@ -586,7 +615,7 @@ function ModelsPanel({ currentTier }) {
 
     const interval = window.setInterval(async () => {
       for (const row of loadingRows) {
-        const attempts = synthAttempts[row.id] || 0
+        const attempts = synthAttemptsRef.current[row.id] || 0
         if (attempts >= MAX_SYNTH_ATTEMPTS) continue
         try {
           await testProvider(row.id)
@@ -1166,8 +1195,8 @@ export default function SystemTab() {
         const maxVramMb = Math.max(0, ...gpus.map(g => Number(g?.memory_total_mb) || 0))
         const hasGpu = gpus.length > 0 && maxVramMb > 0
         const recommended = profile.recommended_tier
-        const isCpuTier = recommended === 'cpu-min' || recommended === 'cpu-std'
-        return hasGpu && isCpuTier ? (
+        const tierMeta = TIERS.find((t) => t.id === recommended)
+        return hasGpu && tierMeta?.isCpu() ? (
           <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-4">
             <p className="text-sm text-blue-700 dark:text-blue-400">
               A GPU was detected but has less than 4 GB VRAM, which isn&apos;t enough for GPU-accelerated

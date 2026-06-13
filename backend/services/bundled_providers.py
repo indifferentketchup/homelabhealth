@@ -38,11 +38,11 @@ BUNDLED_CHAT_BASE_URL = "http://hlh_chat:9610"
 
 BUNDLED_EMBED_NAME = "HomeLab Health AI · Embed"
 BUNDLED_EMBED_BASE_URL = "http://hlh_chat:9610"
-BUNDLED_EMBED_MODEL = "bge-m3"
+BUNDLED_EMBED_MODEL = "qwen3-embed"
 
 BUNDLED_RERANK_NAME = "HomeLab Health AI · Rerank"
 BUNDLED_RERANK_BASE_URL = "http://hlh_chat:9610"
-BUNDLED_RERANK_MODEL = "bge-reranker"
+BUNDLED_RERANK_MODEL = "qwen3-reranker"
 
 
 # Per-tier chat model aliases — must match the [section] names in

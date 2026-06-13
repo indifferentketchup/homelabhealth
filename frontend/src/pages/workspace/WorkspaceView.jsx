@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Outlet, useNavigate, useParams } from 'react-router-dom'
-import { Layers, Pin } from 'lucide-react'
+import { Layers, Pin, Stethoscope, Loader2 } from 'lucide-react'
 import * as LucideIcons from 'lucide-react'
 
-import { createWorkspace, deleteWorkspace, listWorkspaces, pinWorkspace } from '@/api/workspaces.js'
+import { createWorkspace, deleteWorkspace, listWorkspaces, loadDemo, pinWorkspace } from '@/api/workspaces.js'
 import { deleteSource, listSources, uploadSource } from '@/api/sources.js'
 import { ChatView } from '@/components/chat/ChatView.jsx'
 import ModelStateSidebar from '@/components/chat/ModelStateSidebar.jsx'
@@ -70,6 +70,10 @@ export function WorkspaceLanding() {
   const [newDesc, setNewDesc] = useState('')
   const [newEmoji, setNewEmoji] = useState('🎛️')
   const [deleteId, setDeleteId] = useState(null)
+  const [demoErr, setDemoErr] = useState(null)
+
+  const currentUser = useAppStore((s) => s.currentUser)
+  const isAdmin = currentUser?.role === 'owner' || currentUser?.role === 'super_admin'
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['workspaces', 'landing'],
@@ -116,6 +120,19 @@ export function WorkspaceLanding() {
     },
   })
 
+  const demoMut = useMutation({
+    mutationFn: () => loadDemo(),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['workspaces'] })
+      if (data?.workspace_id) {
+        navigate(workspacePath(data.workspace_id))
+      }
+    },
+    onError: (e) => {
+      setDemoErr(e instanceof Error ? e.message : 'Failed to load demo')
+    },
+  })
+
   return (
     <div ref={layoutRef} className="workspace-landing flex min-h-0 flex-1 flex-col overflow-auto">
       <div className="workspace-landing__shell">
@@ -155,11 +172,61 @@ export function WorkspaceLanding() {
           {isLoading && <p className="text-sm text-muted-foreground">Loading workspaces…</p>}
           {isError && <p className="text-sm text-destructive">Could not load workspaces.</p>}
           {!isLoading && !isError && items.length === 0 && (
-            <div className="flex flex-col items-center gap-3 py-12 text-center">
+            <div className="flex flex-col items-center gap-4 py-12 text-center">
               <div className="flex size-12 items-center justify-center rounded-full border border-border bg-muted text-muted-foreground">
                 <Layers className="size-6" aria-hidden />
               </div>
               <p className="text-sm text-muted-foreground">No workspaces yet — create one to get started.</p>
+              {isAdmin && (
+                <div className="flex flex-col items-center gap-3 rounded-lg border border-border bg-card p-6">
+                  <div className="flex size-10 items-center justify-center rounded-full bg-accent/10 text-accent">
+                    <Stethoscope className="size-5" aria-hidden />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Try a demo</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">Load sample health records to see HomeLab Health in action.</p>
+                  </div>
+                  {demoErr && (
+                    <p className="text-xs text-destructive">{demoErr}</p>
+                  )}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    disabled={demoMut.isPending}
+                    onClick={() => { setDemoErr(null); demoMut.mutate() }}
+                  >
+                    {demoMut.isPending ? (
+                      <span className="flex items-center gap-2">
+                        <Loader2 className="size-3.5 animate-spin" />
+                        Loading demo data…
+                      </span>
+                    ) : (
+                      'Try Demo'
+                    )}
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+          {!isLoading && !isError && items.length > 0 && isAdmin && (
+            <div className="mt-4 flex items-center justify-center">
+              <button
+                type="button"
+                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-accent transition-colors"
+                disabled={demoMut.isPending}
+                onClick={() => { setDemoErr(null); demoMut.mutate() }}
+              >
+                {demoMut.isPending ? (
+                  <Loader2 className="size-3 animate-spin" />
+                ) : (
+                  <Stethoscope className="size-3" />
+                )}
+                {demoMut.isPending ? 'Loading demo…' : 'New here? Try a demo workspace →'}
+              </button>
+              {demoErr && (
+                <p className="ml-3 text-xs text-destructive">{demoErr}</p>
+              )}
             </div>
           )}
           <div className="workspace-landing__cards">

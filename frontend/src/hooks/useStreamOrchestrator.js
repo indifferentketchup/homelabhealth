@@ -87,6 +87,14 @@ export function useStreamOrchestrator({
 
   // Reconnect to an in-progress durable stream after page refresh
   const resumedRef = useRef(null)
+
+  // Reset resume state when switching chats so the new chat can reconnect.
+  // Stops any in-progress stream from the previous chat before switching.
+  useEffect(() => {
+    resumedRef.current = null
+    if (durable.busy) durable.stop() // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeChatId]) // intentionally omits durable to avoid infinite loop
+
   useEffect(() => {
     if (!durableEnabled || durable.busy || !activeChatId || !messages.length) return
     if (resumedRef.current === activeChatId) return
@@ -145,6 +153,8 @@ export function useStreamOrchestrator({
   const inputRef = useRef(null)
   /** Last outgoing user message content — used to power the Retry button on stream errors. */
   const lastUserMessageRef = useRef(null)
+  /** Chat ID resolved when the durable send path starts — used for cleanup even if user switches chats mid-stream. */
+  const durableInitChatRef = useRef(null)
 
   const busy = pendingSend
 
@@ -266,8 +276,9 @@ export function useStreamOrchestrator({
         setStreamPhase('thinking')
       }
     } else if (pendingSend && durable.streamingStatus === null) {
-      const cid = activeChatId
+      const cid = durableInitChatRef.current || activeChatId
       if (cid) {
+        durableInitChatRef.current = null
         listMessages(cid).then((data) => {
           if (data) queryClient.setQueryData(['messages', cid], data)
           flushSync(() => {
@@ -287,6 +298,150 @@ export function useStreamOrchestrator({
     if (durable.sendError && !sendError) setSendError(friendlyStreamError(durable.sendError))
   }, [durableEnabled, durable.busy, durable.streamingContent, durable.stale, durable.sendError, durable.streamingStatus, streamPhase])
 
+  // --- Extracted send helpers (Task 15) ---
+
+  function beginStream(content) {
+    setPendingSend(true)
+    beginStreamUi()
+    setStreamText('')
+    setOptimisticUser({ id: '__optimistic_user__', role: 'user', content })
+  }
+
+  async function createChatIfNeeded() {
+    const { activeWorkspaceId } = useAppStore.getState()
+    const workspaceForCreate =
+      normalizeWorkspaceUuid(activeWorkspaceId) || resolvedWorkspaceId || undefined
+    const modelForCreate = selectedModel || undefined
+    const newChat = await createChat({
+      ...(modelForCreate ? { model: modelForCreate } : {}),
+      ...(workspaceForCreate ? { workspace_id: workspaceForCreate } : {}),
+      ...(webSearchEnabled ? { web_search_enabled: true } : {}),
+    })
+    if (newChat?.id == null) throw new Error('Create chat returned no id')
+    queryClient.setQueryData(['messages', newChat.id], { items: [] })
+    setActiveChatId(newChat.id)
+    hydrateFromChat(newChat)
+    queryClient.invalidateQueries({ queryKey: ['chats'] })
+    return newChat.id
+  }
+
+  function handleStreamError(e, content) {
+    console.error(e)
+    setSendError(friendlyStreamError(e instanceof Error ? e.message : String(e)))
+    setOptimisticUser(null)
+    setPendingSend(false)
+    setStreamText('')
+    clearStreamUi()
+    setDraft(content)
+  }
+
+  // --- Extracted runStream callback builders (Task 16) ---
+
+  function makeOnToken() {
+    return (t) => {
+      setStreamPhase('generating')
+      setStreamText((x) => {
+        const next = x + t
+        touchStreamActivity(next.length)
+        return next
+      })
+    }
+  }
+
+  function makeOnSearchSources() {
+    return (sources) => {
+      setStreamPhase('search')
+      touchStreamActivity(0)
+      const idx = streamAssistantIndexRef.current
+      setSourcesByMessageIndex((prev) => ({ ...prev, [idx]: sources }))
+    }
+  }
+
+  function makeOnRagContext() {
+    return (info) => {
+      setStreamPhase('rag')
+      touchStreamActivity(0)
+      setStreamingRag(info)
+    }
+  }
+
+  function makeOnPhase() {
+    return (raw, meta = {}) => {
+      const mapped = mapStreamPhase(raw)
+      setStreamPhase(mapped)
+      setPipelineEvents((prev) => [...prev, {
+        phase: mapped,
+        model: meta.model,
+        estimate_ms: meta.estimate_ms,
+      }])
+      touchStreamActivity(0)
+    }
+  }
+
+  function makeOnTitleUpdate(chatId) {
+    return (title) => {
+      patchRecentChatsListCache(queryClient, chatId, title)
+      queryClient.setQueryData(['chat', chatId], (old) => (old ? { ...old, title } : old))
+      queryClient.invalidateQueries({ queryKey: ['chats'] })
+    }
+  }
+
+  function makeOnDone(chatId) {
+    return async () => {
+      streamingChatRef.current = null
+      let nextData = null
+      try {
+        nextData = await listMessages(chatId)
+      } catch (e) {
+        console.error('onDone listMessages failed', e)
+      }
+      flushSync(() => {
+        if (nextData) queryClient.setQueryData(['messages', chatId], nextData)
+        setOptimisticUser(null)
+        setPendingSend(false)
+        setStreamingRag(null)
+        setStreamText('')
+        setSendError(null)
+        clearStreamUi()
+      })
+      if (!nextData) {
+        queryClient.invalidateQueries({ queryKey: ['messages', chatId] })
+      }
+      queryClient.invalidateQueries({ queryKey: ['chats'] })
+      queryClient.invalidateQueries({ queryKey: ['chat', chatId] })
+    }
+  }
+
+  function makeOnError(chatId) {
+    return async (err) => {
+      streamingChatRef.current = null
+      flushSync(() => {
+        setOptimisticUser(null)
+        setPendingSend(false)
+        setStreamText('')
+        setStreamingRag(null)
+        clearStreamUi()
+        if (err?.name !== 'AbortError') {
+          const raw = err instanceof Error ? err.message : String(err)
+          try {
+            const parsed = JSON.parse(raw)
+            if (parsed.error === 'input_blocked') {
+              const category = parsed.guard_flags?.[0]?.category || 'safety policy'
+              const reason = categoryToReason(category)
+              setSendError(`⚠ This message was blocked because ${reason}. You can rephrase as an educational question.`)
+              setDraft(lastUserMessageRef.current || '')
+            } else {
+              setSendError(friendlyStreamError(raw))
+            }
+          } catch {
+            setSendError(friendlyStreamError(raw))
+          }
+        }
+      })
+      queryClient.invalidateQueries({ queryKey: ['messages', chatId] })
+    }
+  }
+
   async function runStream(chatId, content, assistantMessageIndex, sourceIds = null, { retryLast = false } = {}) {
     streamingChatRef.current = chatId
     streamAssistantIndexRef.current = assistantMessageIndex
@@ -300,98 +455,13 @@ export function useStreamOrchestrator({
         ...(model ? { model } : {}),
         ...(sourceIds ? { attached_source_ids: sourceIds } : {}),
       },
-      onToken: (t) => {
-        setStreamPhase('generating')
-        setStreamText((x) => {
-          const next = x + t
-          touchStreamActivity(next.length)
-          return next
-        })
-      },
-      onSearchSources: (sources) => {
-        setStreamPhase('search')
-        touchStreamActivity(0)
-        const idx = streamAssistantIndexRef.current
-        setSourcesByMessageIndex((prev) => ({ ...prev, [idx]: sources }))
-      },
-      onRagContext: (info) => {
-        setStreamPhase('rag')
-        touchStreamActivity(0)
-        setStreamingRag(info)
-      },
-      onPhase: (raw, meta = {}) => {
-        const mapped = mapStreamPhase(raw)
-        setStreamPhase(mapped)
-        setPipelineEvents((prev) => [...prev, {
-          phase: mapped,
-          model: meta.model,
-          estimate_ms: meta.estimate_ms,
-        }])
-        touchStreamActivity(0)
-      },
-      onTitleUpdate: (title) => {
-        // Recent-chats Query is the single source of truth. setQueriesData inside
-        // patchRecentChatsListCache patches every workspace-scoped ['chats','recent',ws]
-        // list holding this chat, so the sidebar title updates regardless of which
-        // workspace is active when the title lands.
-        patchRecentChatsListCache(queryClient, chatId, title)
-        queryClient.setQueryData(['chat', chatId], (old) => (old ? { ...old, title } : old))
-        queryClient.invalidateQueries({ queryKey: ['chats'] })
-      },
-      onDone: async () => {
-        streamingChatRef.current = null
-        // Fetch new messages as a value so we can commit the data write and the stream
-        // teardown in one render. Going via refetchQueries leaves a frame where the new
-        // messages are already in RQ's store but pendingSend/streamText/optimisticUser
-        // haven't cleared yet — that frame is the double-render.
-        let nextData = null
-        try {
-          nextData = await listMessages(chatId)
-        } catch (e) {
-          console.error('onDone listMessages failed', e)
-        }
-        flushSync(() => {
-          if (nextData) queryClient.setQueryData(['messages', chatId], nextData)
-          setOptimisticUser(null)
-          setPendingSend(false)
-          setStreamingRag(null)
-          setStreamText('')
-          setSendError(null)
-          clearStreamUi()
-        })
-        if (!nextData) {
-          queryClient.invalidateQueries({ queryKey: ['messages', chatId] })
-        }
-        queryClient.invalidateQueries({ queryKey: ['chats'] })
-        queryClient.invalidateQueries({ queryKey: ['chat', chatId] })
-      },
-      onError: async (err) => {
-        streamingChatRef.current = null
-        flushSync(() => {
-          setOptimisticUser(null)
-          setPendingSend(false)
-          setStreamText('')
-          setStreamingRag(null)
-          clearStreamUi()
-          if (err?.name !== 'AbortError') {
-            const raw = err instanceof Error ? err.message : String(err)
-            try {
-              const parsed = JSON.parse(raw)
-              if (parsed.error === 'input_blocked') {
-                const category = parsed.guard_flags?.[0]?.category || 'safety policy'
-                const reason = categoryToReason(category)
-                setSendError(`⚠ This message was blocked because ${reason}. You can rephrase as an educational question.`)
-                setDraft(lastUserMessageRef.current || '')
-              } else {
-                setSendError(friendlyStreamError(raw))
-              }
-            } catch {
-              setSendError(friendlyStreamError(raw))
-            }
-          }
-        })
-        queryClient.invalidateQueries({ queryKey: ['messages', chatId] })
-      },
+      onToken: makeOnToken(),
+      onSearchSources: makeOnSearchSources(),
+      onRagContext: makeOnRagContext(),
+      onPhase: makeOnPhase(),
+      onTitleUpdate: makeOnTitleUpdate(chatId),
+      onDone: makeOnDone(chatId),
+      onError: makeOnError(chatId),
     })
   }
 
@@ -411,41 +481,20 @@ export function useStreamOrchestrator({
 
     // --- Durable streaming path ---
     if (durableEnabled) {
-      setPendingSend(true)
-      beginStreamUi()
-      setStreamText('')
-      setOptimisticUser({ id: '__optimistic_user__', role: 'user', content })
+      beginStream(content)
 
       let targetChatId = activeChatId
       if (!targetChatId) {
         try {
-          const { activeWorkspaceId } = useAppStore.getState()
-          const workspaceForCreate =
-            normalizeWorkspaceUuid(activeWorkspaceId) || resolvedWorkspaceId || undefined
-          const modelForCreate = selectedModel || undefined
-          const newChat = await createChat({
-            ...(modelForCreate ? { model: modelForCreate } : {}),
-            ...(workspaceForCreate ? { workspace_id: workspaceForCreate } : {}),
-            ...(webSearchEnabled ? { web_search_enabled: true } : {}),
-          })
-          if (newChat?.id == null) throw new Error('Create chat returned no id')
-          queryClient.setQueryData(['messages', newChat.id], { items: [] })
-          setActiveChatId(newChat.id)
-          hydrateFromChat(newChat)
-          queryClient.invalidateQueries({ queryKey: ['chats'] })
-          targetChatId = newChat.id
+          targetChatId = await createChatIfNeeded()
         } catch (e) {
-          console.error(e)
-          setSendError(friendlyStreamError(e instanceof Error ? e.message : String(e)))
-          setOptimisticUser(null)
-          setPendingSend(false)
-          setStreamText('')
-          clearStreamUi()
-          setDraft(content)
+          handleStreamError(e, content)
           setActiveChatId(null)
           return
         }
       }
+
+      durableInitChatRef.current = targetChatId
 
       try {
         await durable.sendMessage(targetChatId, content, {
@@ -453,49 +502,20 @@ export function useStreamOrchestrator({
           attachedSourceIds: sourceIds,
         })
       } catch (e) {
-        console.error(e)
-        setSendError(friendlyStreamError(e instanceof Error ? e.message : String(e)))
-        setOptimisticUser(null)
-        setPendingSend(false)
-        setStreamText('')
-        clearStreamUi()
-        setDraft(content)
+        handleStreamError(e, content)
       }
       return
     }
 
+    // --- SSE streaming path ---
     if (!activeChatId) {
-      setPendingSend(true)
-      beginStreamUi()
-      setStreamText('')
-      setOptimisticUser({ id: '__optimistic_user__', role: 'user', content })
+      beginStream(content)
       try {
-        const { activeWorkspaceId } = useAppStore.getState()
-        const workspaceForCreate =
-          normalizeWorkspaceUuid(activeWorkspaceId) || resolvedWorkspaceId || undefined
-        const modelForCreate = selectedModel || undefined
-        const newChat = await createChat({
-          ...(modelForCreate ? { model: modelForCreate } : {}),
-          ...(workspaceForCreate ? { workspace_id: workspaceForCreate } : {}),
-          ...(webSearchEnabled ? { web_search_enabled: true } : {}),
-        })
-        if (newChat?.id == null) {
-          throw new Error('Create chat returned no id')
-        }
-        queryClient.setQueryData(['messages', newChat.id], { items: [] })
-        setActiveChatId(newChat.id)
-        streamingChatRef.current = newChat.id
-        hydrateFromChat(newChat)
-        queryClient.invalidateQueries({ queryKey: ['chats'] })
-        await runStream(newChat.id, content, messages.length + 1, sourceIds)
+        const chatId = await createChatIfNeeded()
+        streamingChatRef.current = chatId
+        await runStream(chatId, content, messages.length + 1, sourceIds)
       } catch (e) {
-        console.error(e)
-        setSendError(friendlyStreamError(e instanceof Error ? e.message : String(e)))
-        setOptimisticUser(null)
-        setPendingSend(false)
-        setStreamText('')
-        clearStreamUi()
-        setDraft(content)
+        handleStreamError(e, content)
         setActiveChatId(null)
         streamingChatRef.current = null
         await queryClient.invalidateQueries({ queryKey: ['chats'] })
@@ -503,11 +523,12 @@ export function useStreamOrchestrator({
       return
     }
 
-    setPendingSend(true)
-    beginStreamUi()
-    setStreamText('')
-    setOptimisticUser({ id: '__optimistic_user__', role: 'user', content })
-    await runStream(activeChatId, content, messages.length + 1, sourceIds)
+    beginStream(content)
+    try {
+      await runStream(activeChatId, content, messages.length + 1, sourceIds)
+    } catch (e) {
+      handleStreamError(e, content)
+    }
   }
 
   // Edit + regenerate both fork the current chat at a chosen message — fork creates a new chat
@@ -533,6 +554,7 @@ export function useStreamOrchestrator({
       setPendingSend(false)
       setOptimisticUser(null)
       setStreamText('')
+      clearStreamUi()
     }
   }
 
@@ -564,7 +586,16 @@ export function useStreamOrchestrator({
     const lastMsg = messages[messages.length - 1]
     const skipOptimistic = lastMsg?.role === 'user' && sameUserBubbleContent(lastMsg.content, last)
     setOptimisticUser(skipOptimistic ? null : { id: '__optimistic_user__', role: 'user', content: last })
-    void runStream(activeChatId, last, messages.length, null, { retryLast: true })
+    try {
+      void runStream(activeChatId, last, messages.length, null, { retryLast: true })
+    } catch (e) {
+      console.error(e)
+      setPendingSend(false)
+      setStreamText('')
+      setOptimisticUser(null)
+      clearStreamUi()
+      setSendError(friendlyStreamError(e instanceof Error ? e.message : String(e)))
+    }
   }
 
   function dismissStaleStream() {

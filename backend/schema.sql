@@ -600,11 +600,9 @@ ALTER TABLE chats ADD COLUMN IF NOT EXISTS ctx_max INTEGER;
 -- content is nullable so we can insert an empty row before inference starts.
 -- ────────────────────────────────────────────────────────────────────────────
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'complete';
-DO $$ BEGIN
-  ALTER TABLE messages ADD CONSTRAINT messages_status_check
-    CHECK (status IN ('streaming', 'complete', 'failed', 'cancelled'));
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
+ALTER TABLE messages DROP CONSTRAINT IF EXISTS messages_status_check;
+ALTER TABLE messages ADD CONSTRAINT messages_status_check
+  CHECK (status IN ('streaming', 'complete', 'failed', 'cancelled', 'approval_pending'));
 
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS finished_at TIMESTAMPTZ;
@@ -616,42 +614,34 @@ CREATE INDEX IF NOT EXISTS messages_chat_status_streaming_idx
   ON messages (chat_id, status)
   WHERE status = 'streaming';
 
--- ────────────────────────────────────────────────────────────────────────────
--- Phase A3: MedSigLIP vision embeddings (2026-05-27).
--- image_chunks stores per-image embeddings from MedSigLIP (1152-dim).
--- Separate from source_chunks (text, 1024-dim bge-m3).
--- ────────────────────────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS image_chunks (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    source_id       UUID REFERENCES sources(id) ON DELETE CASCADE,
-    embedding       vector(1152),
-    page_number     INT,
-    image_path      TEXT,
-    description     TEXT,
-    metadata        JSONB DEFAULT '{}',
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
-);
+CREATE INDEX IF NOT EXISTS messages_chat_status_pending_idx
+  ON messages (chat_id, status)
+  WHERE status IN ('streaming', 'approval_pending');
 
-CREATE INDEX IF NOT EXISTS idx_image_chunks_embedding
-    ON image_chunks USING hnsw (embedding vector_cosine_ops);
-
-CREATE INDEX IF NOT EXISTS idx_image_chunks_source_id
-    ON image_chunks (source_id);
+-- MedSigLIP vision embeddings removed v1.2.11 (2026-06-12).
+DROP INDEX IF EXISTS idx_image_chunks_embedding;
+DROP INDEX IF EXISTS idx_image_chunks_source_id;
+DROP TABLE IF EXISTS image_chunks;
 
 -- ────────────────────────────────────────────────────────────────────────────
 -- Orchestrator Phase 2: pipeline status time estimates (rolling averages).
 -- ────────────────────────────────────────────────────────────────────────────
+-- bge-m3 / bge-reranker replaced by Qwen3 0.6B models 2026-06-12; drop their
+-- stale per-alias load estimates from existing DBs.
+DELETE FROM global_settings
+    WHERE key IN ('estimate_ms_load_bge-m3', 'estimate_ms_load_bge-reranker');
+
 INSERT INTO global_settings (key, value) VALUES
     ('estimate_ms_load_medgemma',     '12000'),
     ('estimate_ms_load_qwen-chat',    '4000'),
     ('estimate_ms_load_gemma-tasks',  '1500'),
-    ('estimate_ms_load_bge-m3',       '8000'),
-    ('estimate_ms_load_bge-reranker', '5000'),
+    ('estimate_ms_load_qwen3-embed',  '8000'),
+    ('estimate_ms_load_qwen3-reranker', '5000'),
     ('estimate_ms_embed_query',       '500'),
     ('estimate_ms_rerank',            '300'),
     ('estimate_ms_rag_search',        '1500'),
     ('estimate_ms_chat_first_token',  '2000'),
     ('estimate_ms_unload',            '500'),
-    ('enforce_ram_budget',            'true')
+    ('enforce_ram_budget',            'true'),
+    ('memory_auto_extract_enabled',   'false')
 ON CONFLICT (key) DO NOTHING;

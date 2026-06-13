@@ -1,16 +1,19 @@
 """Authentication endpoints."""
+import os
+
 from fastapi import APIRouter, Request, Response, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from db import get_pool
 from services.auth import (
-    verify_password, create_session, validate_session,
-    delete_session, create_user, needs_setup, set_password,
+    create_session, create_user, delete_session,
+    needs_setup, set_password, validate_session, verify_password,
 )
 
 router = APIRouter()
 
 SESSION_COOKIE = "hlh_session"
 COOKIE_MAX_AGE = 60 * 60 * 24  # 24 hours (matches SESSION_LIFETIME_HOURS default)
+_SECURE_COOKIES = os.environ.get("HLH_SECURE_COOKIES", "false").lower() == "true"
 
 
 class LoginRequest(BaseModel):
@@ -20,7 +23,7 @@ class LoginRequest(BaseModel):
 
 class SetupRequest(BaseModel):
     username: str
-    password: str
+    password: str = Field(..., min_length=12)
 
 
 @router.post("/login")
@@ -39,7 +42,7 @@ async def login(body: LoginRequest, response: Response):
         SESSION_COOKIE,
         token,
         httponly=True,
-        secure=False,     # TODO: set True when HTTPS is enforced
+        secure=_SECURE_COOKIES,
         samesite="lax",
         max_age=COOKIE_MAX_AGE,
         path="/",
@@ -84,18 +87,20 @@ async def setup(body: SetupRequest):
     """First-time account creation. Only works if no user has a password."""
     pool = await get_pool()
     async with pool.acquire() as conn:
-        if not await needs_setup(conn):
-            raise HTTPException(status_code=409, detail="setup_already_complete")
-        # Check if the seeded user exists (from schema's INSERT into users)
-        existing = await conn.fetchrow("SELECT id FROM users LIMIT 1")
-        if existing:
-            # Update existing seeded user with password
-            await set_password(conn, existing["id"], body.password)
-            await conn.execute(
-                "UPDATE users SET username = $1 WHERE id = $2::uuid",
-                body.username, existing["id"],
+        async with conn.transaction():
+            # FOR UPDATE serializes concurrent setup requests — prevents TOCTOU race
+            # where two simultaneous POSTs both pass the password_hash IS NULL check.
+            row = await conn.fetchrow(
+                "SELECT id, password_hash FROM users LIMIT 1 FOR UPDATE"
             )
-            return {"ok": True, "username": body.username}
-        # No seeded user — create fresh
-        user = await create_user(conn, body.username, body.password)
-        return {"ok": True, "username": user["username"]}
+            if row and row["password_hash"] is not None:
+                raise HTTPException(status_code=409, detail="setup_already_complete")
+            if row:
+                await set_password(conn, row["id"], body.password)
+                await conn.execute(
+                    "UPDATE users SET username = $1 WHERE id = $2::uuid",
+                    body.username, row["id"],
+                )
+                return {"ok": True, "username": body.username}
+            user = await create_user(conn, body.username, body.password)
+            return {"ok": True, "username": user["username"]}

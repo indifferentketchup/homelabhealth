@@ -288,7 +288,10 @@ async def upload_workspace_icon(
 
 
 @router.get("/{workspace_id}/icon-asset")
-async def serve_workspace_icon(workspace_id: uuid.UUID):
+async def serve_workspace_icon(
+    workspace_id: uuid.UUID,
+    _: dict[str, Any] = Depends(get_principal),
+):
     BRANDING_WORKSPACE_ICONS.mkdir(parents=True, exist_ok=True)
     matches = list(BRANDING_WORKSPACE_ICONS.glob(f"{workspace_id}.*"))
     if not matches:

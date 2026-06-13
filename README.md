@@ -5,7 +5,9 @@ Self-hosted RAG chat app for personal health records. Upload medical documents (
 
 One `docker compose up` to run. Built-in username/password auth. Encryption keys auto-generate on first launch. No reverse proxy required.
 
-**Current release:** `v1.0.0` (2026-05-28). See [CHANGELOG.md](CHANGELOG.md) for the full history.
+**Current tagged release:** `v1.2.16` (2026-06-08). `main` also contains unreleased
+2026-06-09 `fork-lift-wave-1` work. See [CHANGELOG.md](CHANGELOG.md) for the full
+history.
 
 Roadmap: [docs/roadmap.md](docs/roadmap.md). Architecture: [docs/architecture.md](docs/architecture.md). Session bootstrap: [docs/CONTEXT.md](docs/CONTEXT.md).
 
@@ -68,7 +70,10 @@ The frontend build needs ~1.5 GB RAM. Use Option A or B on low-memory hosts.
 
 First launch walks you through setup: create your account, pick a hardware tier, and the system pulls the right models automatically.
 
-**First boot:** the chat router (`hlh_chat`) loads model weights on demand. Embedding (bge-m3) and reranking (bge-reranker-v2-m3) GGUFs are included in the models volume. Expect the first chat message to take 30-60 seconds while the model loads. After first load, models stay cached.
+**First boot:** `hlh_chat` loads bundled model weights on demand and serves chat,
+embedding, rerank, and vision through router presets. Expect the first chat
+message to take 30-60 seconds while the active model loads. After first load,
+models stay cached.
 
 **Doctor check:** `docker exec hlh_api python -m hlh.doctor` — shows DB, schema, sidecars, disk, encryption, vision, and more. Also at Settings → System → Pre-flight in the UI.
 
@@ -80,7 +85,7 @@ See [docs/architecture.md](docs/architecture.md) for container topology, request
 |---------|---------|
 | **Bundled AI** | llama.cpp chat sidecar with MedGemma (4B or 27B by tier). No external API needed. |
 | **Vision** | MedGemma multimodal — PDFs via page rendering + text extraction; standalone images get two-pass extraction (visible text + clinical interpretation). Falls back to pdfplumber/Tesseract. |
-| **RAG** | Upload documents → chunk → embed (1024-dim, bge-m3) → pgvector → retrieve → rerank → inject into prompt. |
+| **RAG** | Upload documents → chunk → embed (1024-dim, Qwen3-Embedding-0.6B) → pgvector → retrieve → rerank → inject into prompt. |
 | **Auto-compaction** | Long conversations auto-summarize at 85% context usage. Older messages collapsed in UI, summary preserved for model. |
 | **Safeguards** | Tiered refusal system prompt, I/O guard scanner (PII, medical advice, crisis, prompt injection), audit-logged refusals. |
 | **Security** | Column encryption (AES-256-GCM), de-identification pipeline, container hardening, hash-chained audit log. |
@@ -97,7 +102,7 @@ The setup wizard detects your hardware and recommends a tier:
 | cpu-std | ≥16 GB RAM, no GPU | MedGemma 4B Q4 | 8K | MedGemma 4B |
 | gpu-4gb | 4-5 GB VRAM | MedGemma 4B Q4 + offload | 32K | MedGemma 4B |
 | gpu-8gb | 6-11 GB VRAM | MedGemma 4B Q8 | 32K | MedGemma 4B |
-| gpu-16gb | 12-23 GB VRAM | MedGemma 27B Q4 | 32K | MedGemma 27B |
+| gpu-16gb | 12-23 GB VRAM | MedGemma-1.5-4B Q8_0 | 32K | MedGemma 4B |
 | gpu-24gb+ | ≥24 GB VRAM | MedGemma 27B Q4 | 64K | MedGemma 27B |
 | external | Manual | Bring your own | Varies | Varies |
 
@@ -111,8 +116,8 @@ Tiers are set at first launch and can be changed in Settings → System.
 | Database | PostgreSQL 16 + pgvector (1024-dim vectors) |
 | Frontend | React 18, Vite, Tailwind, shadcn/ui, Zustand, TanStack Query |
 | Inference | llama.cpp (bundled) or any OpenAI-compatible endpoint |
-| Embeddings | infinity-emb (bundled) with bge-m3, or any OpenAI-compatible `/embeddings` |
-| Rerank | bge-reranker-v2-m3 (bundled) with flashrank CPU fallback |
+| Embeddings | llama.cpp router on `hlh_chat` with bundled Qwen3-Embedding-0.6B GGUF, or any OpenAI-compatible `/embeddings` |
+| Rerank | llama.cpp router on `hlh_chat` with bundled Qwen3-Reranker-0.6B GGUF, or flashrank CPU fallback |
 | Vision | MedGemma multimodal (mmproj), pdf2image + Poppler |
 | OCR fallback | pdfplumber (PDF tables), Tesseract (images) |
 | Search | SearXNG meta-search (bundled) |
@@ -149,7 +154,7 @@ homelabhealth is a single-user homelab tool for personal medical records, MIT-li
 
 See [`SECURITY.md`](SECURITY.md), [`THREATMODEL.md`](THREATMODEL.md), [`docs/safe-harbor.md`](docs/safe-harbor.md), [`docs/breach-response.md`](docs/breach-response.md).
 
-Last reviewed: 2026-05-28.
+Last reviewed: 2026-06-12.
 
 ## License
 

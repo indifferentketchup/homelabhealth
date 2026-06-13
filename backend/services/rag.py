@@ -338,10 +338,13 @@ async def retrieve_context(
     # BM25 keyword pre-filter — narrows the candidate pool before the expensive
     # vector search. When enabled and non-empty, only chunks that pass BM25
     # scoring participate in the pgvector cosine distance query.
+    # Priority (attached) sources are excluded from BM25 filtering so that
+    # explicitly attached documents are always eligible for retrieval.
+    non_priority_ids = [sid for sid in source_ids if sid not in priority_set]
     bm25_ids: list[uuid.UUID] | None = None
-    if bool(settings.get("rag_bm25_enabled", True)):
+    if bool(settings.get("rag_bm25_enabled", True)) and non_priority_ids:
         bm25_top_k = TOP_K_RETRIEVE * _BM25_CANDIDATE_MULTIPLIER
-        bm25_ids = await _bm25_prefilter(query, source_ids, bm25_top_k)
+        bm25_ids = await _bm25_prefilter(query, non_priority_ids, bm25_top_k)
 
     try:
         q_emb = await embed_query(query)
@@ -349,11 +352,16 @@ async def retrieve_context(
         logger.warning("RAG query embed failed: %s", e)
         return "", 0
 
+    if q_emb is None:
+        logger.warning("RAG embed_query returned None; skipping retrieval")
+        return "", 0
+
     q_vec = format_vector(q_emb)
 
     pool = await get_pool()
     try:
         async with pool.acquire() as conn:
+            pool_ids = [uuid.UUID(sid) for sid in non_priority_ids]
             if bm25_ids:
                 rows = await conn.fetch(
                     """
@@ -370,7 +378,7 @@ async def retrieve_context(
                     TOP_K_RETRIEVE,
                     q_vec,
                     sim_threshold,
-                    [uuid.UUID(sid) for sid in source_ids],
+                    pool_ids,
                     bm25_ids,
                 )
             else:
@@ -388,44 +396,26 @@ async def retrieve_context(
                     TOP_K_RETRIEVE,
                     q_vec,
                     sim_threshold,
-                    [uuid.UUID(sid) for sid in source_ids],
+                    pool_ids,
                 )
-            # Attached sources are retrieved separately so their chunks can't be
-            # crowded out of the global top-K by the rest of the workspace.
+            # Attached (priority) sources are always retrieved without BM25 gating
+            # so that explicitly attached documents can never be crowded out.
             priority_rows = []
             if priority_set:
-                if bm25_ids:
-                    priority_rows = await conn.fetch(
-                        """
-                        SELECT sc.id, sc.text, sc.source_id, s.name AS source_name
-                        FROM source_chunks sc
-                        JOIN sources s ON s.id = sc.source_id
-                        WHERE sc.source_id = ANY($3::uuid[])
-                          AND sc.embedding IS NOT NULL
-                          AND sc.id = ANY($4::uuid[])
-                        ORDER BY sc.embedding <=> $2::vector
-                        LIMIT $1
-                        """,
-                        TOP_K_RETRIEVE,
-                        q_vec,
-                        [uuid.UUID(sid) for sid in priority_set],
-                        bm25_ids,
-                    )
-                else:
-                    priority_rows = await conn.fetch(
-                        """
-                        SELECT sc.id, sc.text, sc.source_id, s.name AS source_name
-                        FROM source_chunks sc
-                        JOIN sources s ON s.id = sc.source_id
-                        WHERE sc.source_id = ANY($3::uuid[])
-                          AND sc.embedding IS NOT NULL
-                        ORDER BY sc.embedding <=> $2::vector
-                        LIMIT $1
-                        """,
-                        TOP_K_RETRIEVE,
-                        q_vec,
-                        [uuid.UUID(sid) for sid in priority_set],
-                    )
+                priority_rows = await conn.fetch(
+                    """
+                    SELECT sc.id, sc.text, sc.source_id, s.name AS source_name
+                    FROM source_chunks sc
+                    JOIN sources s ON s.id = sc.source_id
+                    WHERE sc.source_id = ANY($3::uuid[])
+                      AND sc.embedding IS NOT NULL
+                    ORDER BY sc.embedding <=> $2::vector
+                    LIMIT $1
+                    """,
+                    TOP_K_RETRIEVE,
+                    q_vec,
+                    [uuid.UUID(sid) for sid in priority_set],
+                )
     except Exception as e:
         logger.warning("RAG vector query failed: %s", e)
         return "", 0

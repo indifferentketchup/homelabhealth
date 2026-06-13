@@ -15,9 +15,10 @@ from io import BytesIO
 
 import httpx
 
+from services.provider_client import build_headers, resolve_bundled_chat_provider
+
 logger = logging.getLogger(__name__)
 
-VISION_URL = "http://hlh_chat:9610/v1/chat/completions"
 VISION_TIMEOUT = 300.0
 # The chat model preset (models.ini) — MedGemma is multimodal, so the same
 # instance that serves chat also reads images once its mmproj is loaded. MUST be
@@ -72,7 +73,13 @@ def is_vision_available() -> bool:
 
 
 async def _call_vision(image_bytes: bytes, prompt: str, mime_type: str = "image/png") -> str | None:
-    """Send an image + prompt to hlh_chat. Returns response text or None."""
+    """Send an image + prompt to the bundled chat model. Returns response text or None."""
+    binding = await resolve_bundled_chat_provider()
+    if binding is None:
+        logger.info("vision: no bundled chat provider available; skipping vision extraction")
+        return None
+    provider, _ = binding  # model is always medgemma for vision; ignore the alias
+
     b64 = base64.b64encode(image_bytes).decode("ascii")
     data_url = f"data:{mime_type};base64,{b64}"
 
@@ -93,7 +100,11 @@ async def _call_vision(image_bytes: bytes, prompt: str, mime_type: str = "image/
 
     try:
         async with httpx.AsyncClient(timeout=VISION_TIMEOUT) as client:
-            resp = await client.post(VISION_URL, json=payload)
+            resp = await client.post(
+                f"{provider.base_url}/v1/chat/completions",
+                json=payload,
+                headers=build_headers(provider),
+            )
             resp.raise_for_status()
             data = resp.json()
             content = data["choices"][0]["message"]["content"]

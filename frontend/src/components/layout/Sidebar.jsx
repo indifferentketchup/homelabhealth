@@ -47,6 +47,39 @@ import ThemeToggle from '@/components/layout/ThemeToggle'
 // ---------------------------------------------------------------------------
 
 /**
+ * SidebarLink -- reusable nav link that adapts to collapsed/expanded sidebar.
+ * Handles the "All workspaces", "Sources", and "Profile" link patterns.
+ */
+const SidebarLink = memo(function SidebarLink({ icon: Icon, label, to, collapsed, onClick, ariaLabel, variant = 'ghost' }) {
+  return (
+    <Button
+      type="button"
+      variant={variant}
+      className={cn(
+        'fs-nav h-9 w-full justify-start font-normal',
+        collapsed && 'justify-center px-0',
+      )}
+      asChild
+    >
+      <Link
+        to={to}
+        onClick={onClick}
+        aria-label={ariaLabel}
+      >
+        {!collapsed ? (
+          <span className="fs-nav flex items-center gap-2">
+            <Icon className="size-4 shrink-0 opacity-70" />
+            {label}
+          </span>
+        ) : (
+          <Icon className="size-4" aria-hidden />
+        )}
+      </Link>
+    </Button>
+  )
+})
+
+/**
  * Single recent-chat row — extracts useLongPress out of .map().
  *
  * Memoized so a title patch (or any sidebar re-render) only re-renders the rows
@@ -278,19 +311,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
     setCtx({ x: e.clientX, y: e.clientY, chat })
   }, [])
 
-  async function commitRename(chatId) {
-    const title = editTitle.trim() || 'Untitled chat'
-    setEditingId(null)
-    try {
-      await patchChat(chatId, { title })
-      patchRecentChatsListCache(queryClient, chatId, title)
-      await queryClient.invalidateQueries({ queryKey: ['chats'] })
-    } catch {
-      await queryClient.invalidateQueries({ queryKey: ['chats'] })
-    }
-  }
-
-  async function commitRenameFromPrompt(chatId, title) {
+  async function renameChat(chatId, title) {
     const t = title.trim() || 'Untitled chat'
     try {
       await patchChat(chatId, { title: t })
@@ -299,6 +320,16 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
     } catch {
       await queryClient.invalidateQueries({ queryKey: ['chats'] })
     }
+  }
+
+  async function commitRename(chatId) {
+    const title = editTitle.trim() || 'Untitled chat'
+    setEditingId(null)
+    await renameChat(chatId, title)
+  }
+
+  async function commitRenameFromPrompt(chatId, title) {
+    await renameChat(chatId, title)
   }
 
   function requestDeleteChat(chat) {
@@ -400,55 +431,23 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
         <div className="mx-2 border-t border-sidebar-border" />
 
         <div className="flex flex-col gap-1 px-2 py-2">
-          <Button
-            type="button"
-            variant="ghost"
-            className={cn(
-              'fs-nav h-9 w-full justify-start font-normal',
-              desktopCollapsed && 'justify-center px-0',
-            )}
-            asChild
-          >
-            <Link
-              to={PATH_HOME}
-              onClick={() => isMobile && onMobileOpenChange(false)}
-              aria-label="All workspaces"
-            >
-              {!desktopCollapsed ? (
-                <span className="fs-nav flex items-center gap-2">
-                  <LayoutGrid className="size-4 shrink-0 opacity-70" />
-                  All workspaces
-                </span>
-              ) : (
-                <LayoutGrid className="size-4" aria-hidden />
-              )}
-            </Link>
-          </Button>
+          <SidebarLink
+            icon={LayoutGrid}
+            label="All workspaces"
+            to={PATH_HOME}
+            collapsed={desktopCollapsed}
+            onClick={() => isMobile && onMobileOpenChange(false)}
+            ariaLabel="All workspaces"
+          />
           {activeWorkspaceId ? (
-            <Button
-              type="button"
-              variant="ghost"
-              className={cn(
-                'fs-nav h-9 w-full justify-start font-normal',
-                desktopCollapsed && 'justify-center px-0',
-              )}
-              asChild
-            >
-              <Link
-                to={workspacePath(activeWorkspaceId, 'sources')}
-                onClick={() => isMobile && onMobileOpenChange(false)}
-                aria-label="Sources"
-              >
-                {!desktopCollapsed ? (
-                  <span className="fs-nav flex items-center gap-2">
-                    <FileStack className="size-4 shrink-0 opacity-70" />
-                    Sources
-                  </span>
-                ) : (
-                  <FileStack className="size-4" aria-hidden />
-                )}
-              </Link>
-            </Button>
+            <SidebarLink
+              icon={FileStack}
+              label="Sources"
+              to={workspacePath(activeWorkspaceId, 'sources')}
+              collapsed={desktopCollapsed}
+              onClick={() => isMobile && onMobileOpenChange(false)}
+              ariaLabel="Sources"
+            />
           ) : null}
         </div>
 
@@ -638,31 +637,15 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
             <ThemeToggle />
           </div>
           {currentUser && (
-            <Button
-              type="button"
+            <SidebarLink
+              icon={User}
+              label="Profile"
+              to="/profile"
+              collapsed={desktopCollapsed}
+              onClick={() => isMobile && onMobileOpenChange(false)}
+              ariaLabel="Profile"
               variant="outline"
-              className={cn(
-                'w-full border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent',
-                desktopCollapsed && 'px-0',
-              )}
-              asChild
-            >
-              <Link
-                to="/profile"
-                onClick={() => isMobile && onMobileOpenChange(false)}
-                title="Profile"
-                aria-label="Profile"
-              >
-                {!desktopCollapsed ? (
-                  <span className="fs-nav flex items-center justify-center gap-2">
-                    <User className="size-4 shrink-0" />
-                    Profile
-                  </span>
-                ) : (
-                  <User className="size-4" />
-                )}
-              </Link>
-            </Button>
+            />
           )}
 
           {desktopCollapsed ? (

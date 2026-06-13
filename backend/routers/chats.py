@@ -119,15 +119,19 @@ async def _assembled_system_prompt(
     """Workspace prompt + workspace instructions + semantic memory facts -> context files -> custom instructions -> RAG -> mode_memory."""
     workspace_id = chat["workspace_id"]
     workspace_prompt = ""
-    if workspace_id is not None:
-        ws = await conn.fetchrow(
-            "SELECT system_prompt, rag_mode FROM workspaces WHERE id = $1::uuid",
-            workspace_id,
-        )
-        if ws:
-            workspace_prompt = (ws["system_prompt"] or "").strip()
-
     parts: list[str] = []
+    if workspace_id is not None:
+        try:
+            ws = await conn.fetchrow(
+                "SELECT system_prompt, rag_mode FROM workspaces WHERE id = $1::uuid",
+                workspace_id,
+            )
+            if ws:
+                workspace_prompt = (ws["system_prompt"] or "").strip()
+        except Exception as exc:
+            logger.warning("_assembled_system_prompt: workspace prompt fetch failed: %s", exc)
+            parts.append("# [workspace_prompt unavailable]")
+
     workspace_instr_count = 0
     mem_entries_count = 0
     rag_context_chars = 0
@@ -136,57 +140,77 @@ async def _assembled_system_prompt(
         parts.append(workspace_prompt)
 
     if workspace_id:
-        workspace_instructions = await conn.fetch(
-            "SELECT content AS instruction FROM workspace_instructions WHERE workspace_id = $1::uuid ORDER BY created_at",
-            workspace_id,
-        )
-        if workspace_instructions:
-            workspace_instr_count = len(workspace_instructions)
-            instr_text = "\n".join([f"- {r['instruction']}" for r in workspace_instructions])
-            parts.append(f"### Workspace Instructions\n{instr_text}")
+        try:
+            workspace_instructions = await conn.fetch(
+                "SELECT content AS instruction FROM workspace_instructions WHERE workspace_id = $1::uuid ORDER BY created_at",
+                workspace_id,
+            )
+            if workspace_instructions:
+                workspace_instr_count = len(workspace_instructions)
+                instr_text = "\n".join([f"- {r['instruction']}" for r in workspace_instructions])
+                parts.append(f"### Workspace Instructions\n{instr_text}")
+        except Exception as exc:
+            logger.warning("_assembled_system_prompt: workspace instructions fetch failed: %s", exc)
+            parts.append("# [workspace_instructions unavailable]")
 
-        workspace_mem_rows = await conn.fetch(
-            "SELECT content FROM workspace_memory WHERE workspace_id = $1::uuid ORDER BY created_at ASC",
-            workspace_id,
-        )
-        if workspace_mem_rows:
-            mem_lines = "\n".join(f"- {r['content']}" for r in workspace_mem_rows)
-            parts.append(f"[Workspace Memory]\n{mem_lines}")
+        try:
+            workspace_mem_rows = await conn.fetch(
+                "SELECT content FROM workspace_memory WHERE workspace_id = $1::uuid ORDER BY created_at ASC",
+                workspace_id,
+            )
+            if workspace_mem_rows:
+                mem_lines = "\n".join(f"- {r['content']}" for r in workspace_mem_rows)
+                parts.append(f"[Workspace Memory]\n{mem_lines}")
+        except Exception as exc:
+            logger.warning("_assembled_system_prompt: workspace memory fetch failed: %s", exc)
+            parts.append("# [workspace_memory unavailable]")
 
     if workspace_id is not None and include_site_private and user_query_for_rag:
-        memory_facts = await retrieve_memory_facts(str(user_query_for_rag), conn)
-        if memory_facts:
-            mem_entries_count = len(memory_facts)
-            bullets = "\n".join([f"- {f}" for f in memory_facts])
-            parts.append(f"### Relevant Context\n{bullets}")
+        try:
+            memory_facts = await retrieve_memory_facts(str(user_query_for_rag), conn)
+            if memory_facts:
+                mem_entries_count = len(memory_facts)
+                bullets = "\n".join([f"- {f}" for f in memory_facts])
+                parts.append(f"### Relevant Context\n{bullets}")
+        except Exception as exc:
+            logger.warning("_assembled_system_prompt: memory facts retrieval failed: %s", exc)
+            parts.append("# [memory_facts unavailable]")
 
     if workspace_id is not None:
-        cf_rows = await conn.fetch(
-            """
-            SELECT filename, content FROM workspace_context_files
-            WHERE workspace_id = $1::uuid
-            ORDER BY sort_order ASC NULLS LAST, created_at ASC
-            """,
-            workspace_id,
-        )
-        for cf in cf_rows:
-            parts.append(f"[Context file: {cf['filename']}]\n{cf['content']}")
+        try:
+            cf_rows = await conn.fetch(
+                """
+                SELECT filename, content FROM workspace_context_files
+                WHERE workspace_id = $1::uuid
+                ORDER BY sort_order ASC NULLS LAST, created_at ASC
+                """,
+                workspace_id,
+            )
+            for cf in cf_rows:
+                parts.append(f"[Context file: {cf['filename']}]\n{cf['content']}")
+        except Exception as exc:
+            logger.warning("_assembled_system_prompt: context files fetch failed: %s", exc)
+            parts.append("# [context_files unavailable]")
 
     if include_site_private:
-        ci_rows = await conn.fetch(
-            """
-            SELECT id, content FROM custom_instructions
-            WHERE content IS NOT NULL
-            """,
-        )
-        _ci_parts: list[str] = []
-        for _ci in ci_rows:
-            _ci_plain = decrypt_column(_ci["content"] or "", str(_ci["id"])).strip()
-            if _ci_plain:
-                _ci_parts.append(_ci_plain)
-        custom_instr = "\n\n".join(_ci_parts)
-        if custom_instr:
-            parts.append(custom_instr)
+        try:
+            ci_rows = await conn.fetch(
+                """
+                SELECT id, content FROM custom_instructions
+                WHERE content IS NOT NULL
+                """,
+            )
+            _ci_parts: list[str] = []
+            for _ci in ci_rows:
+                _ci_plain = decrypt_column(_ci["content"] or "", str(_ci["id"])).strip()
+                if _ci_plain:
+                    _ci_parts.append(_ci_plain)
+            custom_instr = "\n\n".join(_ci_parts)
+            if custom_instr:
+                parts.append(custom_instr)
+        except Exception as exc:
+            logger.warning("_assembled_system_prompt: custom instructions fetch failed: %s", exc)
+            parts.append("# [custom_instructions unavailable]")
 
     rag_ok = (
         bool(user_query_for_rag and str(user_query_for_rag).strip())
@@ -713,14 +737,15 @@ async def put_source_selection(
                 raise HTTPException(status_code=400, detail=f"Unknown source_id {sid}")
         async with conn.transaction():
             await conn.execute("DELETE FROM chat_source_selections WHERE chat_id = $1::uuid", chat_id)
-            for sid in body.source_ids:
+            for idx, sid in enumerate(body.source_ids):
                 await conn.execute(
                     """
-                    INSERT INTO chat_source_selections (chat_id, source_id)
-                    VALUES ($1::uuid, $2::uuid)
+                    INSERT INTO chat_source_selections (chat_id, source_id, position)
+                    VALUES ($1::uuid, $2::uuid, $3)
                     """,
                     chat_id,
                     sid,
+                    idx,
                 )
     async with audit.targeting("chat", chat_id):
         pass
@@ -800,6 +825,45 @@ async def delete_chat(
     return {"ok": True}
 
 
+def write_export_file(content: str, target_dir: pathlib.Path, initial_filename: str) -> pathlib.Path:
+    """Write chat export content to disk and return the file path."""
+    file_path = target_dir / initial_filename
+    file_path.write_text(content, encoding="utf-8")
+    return file_path
+
+
+async def ai_rename_file(
+    file_path: pathlib.Path,
+    target_dir: pathlib.Path,
+    ts: str,
+    user_sample: str,
+    provider: Provider,
+    model: str,
+) -> tuple[pathlib.Path, bool]:
+    """Derive a descriptive filename via LLM, handle slug collision, rename.
+
+    Returns (final_path, ai_renamed).
+    """
+    from services.history import slugify
+
+    ai_title = await _openai_short_chat_title(provider, model, user_sample)
+    if not ai_title:
+        return file_path, False
+
+    slug = slugify(ai_title, max_len=60)
+    candidate = f"{slug}-{ts}.md"
+    candidate_path = target_dir / candidate
+    nonce = 1
+    while candidate_path.exists():
+        if nonce > 50:
+            raise HTTPException(status_code=500, detail="export collision loop")
+        candidate = f"{slug}-{ts}-{nonce:03d}.md"
+        candidate_path = target_dir / candidate
+        nonce += 1
+    file_path.rename(candidate_path)
+    return candidate_path, True
+
+
 @router.post("/{chat_id}/export")
 async def export_chat(
     chat_id: uuid.UUID,
@@ -864,8 +928,7 @@ async def export_chat(
     initial_filename = f"{ts}.md"
 
     target_dir = workspace_dir("chats", workspace_name)
-    file_path = target_dir / initial_filename
-    file_path.write_text(content, encoding="utf-8")
+    file_path = write_export_file(content, target_dir, initial_filename)
 
     # AI rename: derive a descriptive filename from the first user messages.
     # Requires the chat's workspace to have a provider configured; otherwise
@@ -886,26 +949,9 @@ async def export_chat(
             )
     if user_sample and provider_for_title is not None:
         try:
-            ai_title = await _openai_short_chat_title(
-                provider_for_title,
-                model_for_title,
-                user_sample,
+            file_path, ai_renamed = await ai_rename_file(
+                file_path, target_dir, ts, user_sample, provider_for_title, model_for_title,
             )
-            if ai_title:
-                slug = slugify(ai_title, max_len=60)
-                candidate = f"{slug}-{ts}.md"
-                # Collision check
-                candidate_path = target_dir / candidate
-                nonce = 1
-                while candidate_path.exists():
-                    if nonce > 50:
-                        raise HTTPException(status_code=500, detail="export collision loop")
-                    candidate = f"{slug}-{ts}-{nonce:03d}.md"
-                    candidate_path = target_dir / candidate
-                    nonce += 1
-                file_path.rename(candidate_path)
-                file_path = candidate_path
-                ai_renamed = True
         except Exception as exc:
             logger.warning(
                 "export_chat ai_rename failed chat_id=%s err=%s", str(chat_id), exc
@@ -1186,7 +1232,8 @@ async def append_message(
                         if bio:
                             lines.append(f"About: {bio}")
                         user_profile_block = "\n".join(lines)
-        except Exception:
+        except Exception as exc:
+            logger.warning("user profile fetch failed: %s", exc)
             user_profile_block = ""
 
     summary = chat["pruning_summary"]
@@ -1249,10 +1296,20 @@ async def append_message(
                 prompt=_approval_reason,
             )
             if await _durable_streaming_enabled():
+                _approval_assist_id = uuid.uuid4()
+                async with pool.acquire() as conn:
+                    await conn.execute(
+                        """
+                        INSERT INTO messages (id, chat_id, role, content, model, ai_generated, status)
+                        VALUES ($1::uuid, $2::uuid, 'assistant', '', $3, TRUE, 'approval_pending')
+                        """,
+                        _approval_assist_id, chat_id, effective_model,
+                    )
                 return JSONResponse(
                     status_code=202,
                     content={
                         "user_message_id": str(user_msg_id),
+                        "assistant_message_id": str(_approval_assist_id),
                         "status": "approval_pending",
                         "approval": {
                             "reason": _req.reason,
@@ -1266,10 +1323,10 @@ async def append_message(
 
     # --- Durable streaming path (Phase A) ---
     if await _durable_streaming_enabled():
-        # 409 if another streaming assistant exists
+        # 409 if another streaming or approval-pending assistant row exists
         async with pool.acquire() as conn:
             existing = await conn.fetchval(
-                "SELECT id FROM messages WHERE chat_id = $1::uuid AND role = 'assistant' AND status = 'streaming'",
+                "SELECT id FROM messages WHERE chat_id = $1::uuid AND role = 'assistant' AND status IN ('streaming', 'approval_pending')",
                 chat_id,
             )
         if existing:
@@ -1314,9 +1371,17 @@ async def append_message(
 
         import services.inference_job as ij
 
+        # _reg_cell is populated synchronously after registration — asyncio won't
+        # yield between create_task and append so _run_job always sees the cell filled.
+        _reg_cell: list = []
+
         async def _run_job():
-            reg = job_registry.get(chat_id)
+            reg = _reg_cell[0] if _reg_cell else None
             if reg is None:
+                logger.error(
+                    "inference job has no registration: chat_id=%s assist_id=%s",
+                    chat_id, assist_id,
+                )
                 return
             await ij.run_inference_job(
                 registration=reg,
@@ -1335,7 +1400,8 @@ async def append_message(
             )
 
         task = asyncio.create_task(_run_job())
-        job_registry.register(chat_id, assist_id, task)
+        reg = job_registry.register(chat_id, assist_id, task)
+        _reg_cell.append(reg)
 
         async with audit.targeting("chat", chat_id):
             pass
@@ -1366,7 +1432,7 @@ async def append_message(
         async with pool.acquire() as status_conn:
             embed_model = await status_conn.fetchval(
                 "SELECT value FROM global_settings WHERE key = 'embedding_model'"
-            ) or "bge-m3"
+            ) or "qwen3-embed"
             if not await model_is_loaded(embed_model):
                 async with stage(status_conn, "loading", model=embed_model) as frame:
                     yield _sse(json.dumps(frame))
@@ -1513,8 +1579,9 @@ async def append_message(
                                 json={"model": effective_model, "messages": [{"role": "user", "content": "."}], "max_tokens": 1, "stream": False},
                                 headers=build_headers(provider),
                             )
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.warning("model warm-up failed for %s: %s", effective_model, exc)
+                        yield _sse(json.dumps({"type": "warning", "message": f"Model warm-up failed for {effective_model}. Inference will still be attempted."}))
                 yield _sse(json.dumps({"type": "phase", "phase": "ready", "model": effective_model}))
 
         # Complexity heuristic: route complex queries through supervisor-worker
@@ -1535,7 +1602,7 @@ async def append_message(
                     }))
             except Exception as exc:
                 logger.error("supervisor_worker failed: %s", exc)
-                yield _sse(json.dumps({"error": f"Analysis failed: {exc}"}))
+                yield _sse(json.dumps({"error": "Analysis failed. Check server logs for details."}))
                 yield _sse("[DONE]")
                 return
         else:
@@ -1622,7 +1689,8 @@ async def append_message(
                         prompt_tokens_val = usage.get("prompt_tokens")
                         completion_tokens_val = usage.get("completion_tokens")
             except Exception as e:
-                yield _sse(json.dumps({"error": str(e)}))
+                logger.error("stream error: %s", e)
+                yield _sse(json.dumps({"error": "Inference failed. Check server logs for details."}))
                 had_error = True
 
             if had_error:
@@ -1718,7 +1786,8 @@ async def append_message(
             new_title: str | None = None
             try:
                 new_title = await _openai_short_chat_title(provider, effective_model, assistant_text)
-            except Exception:
+            except Exception as exc:
+                logger.warning("auto-title generation failed: %s", exc)
                 new_title = None
             if not new_title:
                 new_title = "New chat"
@@ -1730,8 +1799,8 @@ async def append_message(
                         new_title,
                     )
                 title_emit = new_title
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("auto-title DB write failed chat_id=%s: %s", chat_id, exc)
         if title_emit:
             yield _sse(json.dumps({"type": "title_update", "title": title_emit}))
 

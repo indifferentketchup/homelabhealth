@@ -14,6 +14,144 @@ live under the `snapshot/` namespace.
 
 ---
 
+## [Unreleased]
+
+---
+
+## [v1.2.17] — 2026-06-13
+
+### Tooling
+
+- **Dep pruning.** Removed dead and redundant frontend dependencies confirmed by
+  grep: `ai` (Vercel SDK, never imported), `next-themes` (never imported),
+  `@radix-ui/react-scroll-area`, `@radix-ui/react-tooltip` (both re-exported by
+  `radix-ui` umbrella; no direct imports), `@xyflow/react` (ai-elements orphan).
+  `huggingface-hub` removed from `backend/requirements.txt` (Python package was
+  never imported; downloads use `httpx` directly). `embla-carousel-react` kept
+  (active consumer in `components/ui/carousel.jsx`). Frontend build and backend
+  startup verified clean post-removal.
+
+### AI
+
+- **Bundled embedder/reranker switched to Qwen3 0.6B.** `bge-m3` →
+  `Qwen/Qwen3-Embedding-0.6B-GGUF` (Q8_0, still 1024-dim so the
+  `vector(1024)` schema contract holds; `pooling = last` per Qwen's
+  llama.cpp usage) and `bge-reranker-v2-m3` →
+  `ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF`. Router aliases renamed
+  `bge-m3`/`bge-reranker` → `qwen3-embed`/`qwen3-reranker` across
+  models.ini (both copies), `bundled_providers.py`, pipeline-status
+  estimate keys (old keys deleted via schema migration), model
+  inventory RAM table, and frontend display strings.
+  `apply_bundled_bindings` rewrites `embedding_model`/`reranker_model`
+  at boot, so existing deploys pick up the new aliases automatically —
+  but stored vectors are NOT comparable across embedders: run
+  `POST /api/sources/reingest-all` after updating.
+
+### Tooling
+
+- **llama.cpp pin bumped b9282 → b9603** (2026-06-12) across
+  `docker-compose.yml`, `.env.example`, `services/image_config.py`,
+  `hlh_orchestra/bootstrap.py`, `verify_dynamic_images.sh`, and
+  THREATMODEL.md. b9603 is the newest build with both `server-` and
+  `server-cuda-` GHCR images published (b9604–b9611 released but
+  images not yet on GHCR at pin time).
+
+### Fixes
+
+- **Approval gate now functional (A1).** The safeguard approval path had no DB
+  row on `202` return, letting a second `POST /messages` bypass the 409 guard.
+  Fixed by inserting an `approval_pending` sentinel row before returning,
+  widening the 409 guard to `status IN ('streaming', 'approval_pending')`,
+  adding `approval_pending` to the `messages_status_check` constraint
+  (idempotent `DROP CONSTRAINT IF EXISTS` + `ADD CONSTRAINT`), and adding a
+  frontend branch in `useDurableChat.sendMessage` that polls the sentinel row.
+- **Source-selection `position` column (A2).** `PUT /api/chats/{id}/sources`
+  was failing 100% of the time with a NOT NULL violation. Fixed by enumerating
+  `body.source_ids` and passing the ordinal as the `position` parameter.
+- **Provider bypass removed from compaction and vision (A3).** `compaction.py`
+  and `vision.py` hardcoded `http://hlh_chat:9610`, bypassing the provider
+  abstraction layer. Both now call `resolve_bundled_chat_provider()` added to
+  `services/provider_client.py`. Returns `None` gracefully on external tier or
+  unconfigured state.
+- **BM25 partitioned to non-priority sources (A4).** Priority (attached)
+  sources were being filtered through the workspace-wide BM25 prefilter,
+  silently dropping their chunks from retrieval. `services/rag.py` now
+  partitions `source_ids` into priority and non-priority sets; BM25 runs only
+  on `non_priority_ids`. The priority query is unconditional with no BM25 gate.
+- **Flush failure surfacing + startup sweep (A6).** Persistent DB flush
+  failures in `inference_job.py` were silently swallowed. Added a 3-strike
+  counter that re-raises on the third consecutive failure, escalating to
+  `_mark_failed`. The `except Exception: pass` around `await last_flush_task`
+  is now `except Exception: raise`. Lifespan startup sweep in `main.py`
+  marks any `status='streaming'` rows older than 10 minutes as `failed` on
+  process restart.
+- **model_puller cancel event inside lock (C4).** `_CANCEL_EVENTS` assignment
+  now happens inside `_PULL_LOCK` to prevent a race where cancel() is called
+  before the event is registered.
+- **Chat-switch resume no longer resumes the wrong chat (C7).** Added a
+  `useEffect` in `useStreamOrchestrator.js` that resets `resumedRef` and stops
+  any active stream when `activeChatId` changes.
+- **Double-submitted model pull guard (C9).** `pull_model` re-reads the DB row
+  inside `_PULL_LOCK` and returns early if `status == 'ready'`, preventing a
+  second concurrent pull from re-downloading a completed model.
+
+### Memory
+
+- **Auto-extraction pipeline wired.** `register_memory_hooks()` is called in
+  the lifespan on startup, wiring `post_tool_execution` callbacks so
+  `manage_memory` tool calls during inference are logged to the memory engine.
+  `run_background_extraction()` is now fired as a named background task in
+  `inference_job.py` step 10 after each completion, gated by the
+  `memory_auto_extract_enabled` key in `global_settings` (default `false`).
+  Enable at runtime: set the key to `'true'` via the DB shell.
+
+### Cleanup
+
+- **`process_pool.py` removed.** 701-line file from `fork-lift-wave-1` with
+  zero importers. Dead code. (`S4`)
+- **`ai-elements/` removed.** 47-file Wave 4 component suite with zero
+  consumers in the live frontend. (`S10`)
+- **`image_chunks` schema dropped.** Table and HNSW index removed; MedSigLIP
+  vision embeddings were removed in v1.2.11 and the schema was never cleaned
+  up. (`S8`)
+
+### AI
+- **`fork-lift-wave-1` landed on `main` after `v1.2.16`.** Wave 1-4 commits
+  added lifecycle hooks, structured model config, type-inject MCP wiring,
+  verify-gate, ai-elements surfaces, safeguard engine, 3-tier memory engine,
+  audit recovery, memory tools, BM25-prefiltered RAG, eval endpoints, cache
+  config, supervisor-worker orchestration, process pool, approval gate,
+  conductor scheduling, and token analytics.
+
+### Tooling
+- **`@nick-vi/type-inject-mcp`** moved to `devDependencies` so the MCP wiring
+  added in Wave 1 resolves correctly in local installs.
+
+### Docs
+- Synced README, architecture, context, roadmap, changelog, and active
+  `openspec` batches with the current post-`v1.2.16` branch state.
+
+---
+
+## [v1.2.16] — 2026-06-08
+
+### UX
+- **Button press feedback** now uses `scale(0.97)` instead of `translate-y-px`.
+- **Entry animations** added for messages, status bar, and RAG pill.
+- **Assistant bubbles** now use a `bg-muted/30` surface with `rounded-xl`.
+- **Sidebar sections** animate open/closed via `grid-template-rows`.
+- **Custom easing tokens** (`--ease-out`, `--ease-in-out`) added to `globals.css`.
+- **Z-index scale cleanup.** Plus menu moved from `9999` to `50`.
+- **Typography polish.** `--fs-nav` reduced from `20px` to `15px` for clearer hierarchy.
+- **Light theme background** shifted from `#F8F5F0` to `#F7F6F3`.
+- **SVG stethoscope icon** replaces emoji for cross-platform consistency.
+- **Medical disclaimer** now renders at full opacity.
+- **Compacted summary styling** now uses theme tokens instead of hardcoded blue.
+- **Empty chat state** now shows three clickable suggestion chips.
+- **Chat input placeholder** changed from `Message…` to `Ask about your health records…`.
+
+---
+
 ## [v1.2.15] — 2026-06-08
 
 ### UX

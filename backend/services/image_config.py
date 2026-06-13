@@ -15,7 +15,7 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-LLAMA_CPP_VERSION = "b9282"
+LLAMA_CPP_VERSION = "b9603"
 INFINITY_VERSION = "0.0.77"
 
 

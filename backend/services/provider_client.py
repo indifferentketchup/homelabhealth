@@ -175,6 +175,39 @@ async def resolve_reranker_provider() -> tuple[Provider, str] | None:
     return await _resolve_role_binding("reranker_provider_id", "reranker_model")
 
 
+async def resolve_bundled_chat_provider() -> tuple[Provider, str] | None:
+    """Look up the bundled chat provider + model alias for the active tier.
+
+    Used by internal services (compaction, vision) that need LLM access but
+    have no workspace context. Returns None on external tier, setup incomplete,
+    or provider row missing/disabled — callers should skip gracefully.
+    """
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        profile = await conn.fetchrow(
+            "SELECT tier, setup_complete FROM system_profile WHERE id = 1"
+        )
+        if not profile or not profile["setup_complete"] or profile["tier"] == "external":
+            return None
+        row = await conn.fetchrow(
+            """
+            SELECT p.id, p.name, p.base_url, p.api_key, p.enabled,
+                   bm.model_id AS chat_model
+              FROM providers p
+              JOIN bundled_models bm ON bm.role = 'chat' AND bm.tier = $1
+             WHERE p.is_bundled = TRUE AND p.role = 'chat' AND p.enabled = TRUE
+             LIMIT 1
+            """,
+            profile["tier"],
+        )
+    if row is None:
+        return None
+    model = (row["chat_model"] or "").strip()
+    if not model:
+        return None
+    return _row_to_provider(row), model
+
+
 def build_headers(provider: Provider, extra: dict | None = None) -> dict[str, str]:
     """OpenAI-compatible headers, plus Authorization if the provider has a key."""
     h: dict[str, str] = {"Content-Type": "application/json"}

@@ -29,8 +29,8 @@ MODEL_RAM_MIB: dict[str, int] = {
     "medgemma": 4800,
     "qwen-chat": 1900,
     "gemma-tasks": 450,
-    "bge-m3": 700,
-    "bge-reranker": 700,
+    "qwen3-embed": 750,
+    "qwen3-reranker": 750,
 }
 
 

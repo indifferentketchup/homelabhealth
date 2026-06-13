@@ -1,8 +1,9 @@
 """Built-in authentication service.
 
-Password hashing: PBKDF2-SHA256 with 600k iterations (OWASP 2023 recommendation).
+Password hashing: Argon2id via argon2-cffi (memory-hard, GPU-resistant).
+Legacy PBKDF2-SHA256 hashes are verified on login for backwards compatibility
+and re-hashed with Argon2id transparently (see verify_password).
 Session tokens: secrets.token_urlsafe(32), stored as SHA-256 hash in DB.
-No external dependencies — stdlib hashlib + secrets + os.
 """
 from __future__ import annotations
 
@@ -13,14 +14,19 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import asyncpg
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 
 from db import get_pool
 
-# PBKDF2 parameters
-_HASH_ALGO = "sha256"
-_ITERATIONS = 600_000
-_SALT_BYTES = 32
-_DK_LEN = 32
+# Argon2id hasher — defaults: time_cost=3, memory_cost=65536, parallelism=4
+_ph = PasswordHasher()
+
+# Legacy PBKDF2 parameters kept only for verifying existing hashes
+_PBKDF2_ALGO = "sha256"
+_PBKDF2_ITERATIONS = 600_000
+_PBKDF2_SALT_BYTES = 32
+_PBKDF2_DK_LEN = 32
 
 # Session parameters
 SESSION_TOKEN_BYTES = 32
@@ -28,27 +34,35 @@ SESSION_LIFETIME_HOURS = int(os.environ.get("HLH_SESSION_HOURS", "24"))
 
 
 def hash_password(password: str) -> str:
-    """Hash a password with PBKDF2-SHA256. Returns 'pbkdf2:salt_hex:hash_hex'."""
-    salt = os.urandom(_SALT_BYTES)
-    dk = hashlib.pbkdf2_hmac(_HASH_ALGO, password.encode("utf-8"), salt, _ITERATIONS, dklen=_DK_LEN)
-    return f"pbkdf2:{salt.hex()}:{dk.hex()}"
+    """Hash a password with Argon2id. Returns an argon2-cffi encoded hash string."""
+    return _ph.hash(password)
 
 
 def verify_password(password: str, stored_hash: str) -> bool:
-    """Verify a password against a stored hash."""
-    if not stored_hash or not stored_hash.startswith("pbkdf2:"):
+    """Verify a password against a stored hash.
+
+    Supports both Argon2id hashes (new) and legacy PBKDF2 hashes (migration path).
+    """
+    if not stored_hash:
         return False
-    parts = stored_hash.split(":")
-    if len(parts) != 3:
-        return False
-    _, salt_hex, expected_hex = parts
+    if stored_hash.startswith("pbkdf2:"):
+        parts = stored_hash.split(":")
+        if len(parts) != 3:
+            return False
+        _, salt_hex, expected_hex = parts
+        try:
+            salt = bytes.fromhex(salt_hex)
+            expected = bytes.fromhex(expected_hex)
+        except ValueError:
+            return False
+        dk = hashlib.pbkdf2_hmac(
+            _PBKDF2_ALGO, password.encode("utf-8"), salt, _PBKDF2_ITERATIONS, dklen=_PBKDF2_DK_LEN
+        )
+        return secrets.compare_digest(dk, expected)
     try:
-        salt = bytes.fromhex(salt_hex)
-        expected = bytes.fromhex(expected_hex)
-    except ValueError:
+        return _ph.verify(stored_hash, password)
+    except (VerifyMismatchError, VerificationError, InvalidHashError):
         return False
-    dk = hashlib.pbkdf2_hmac(_HASH_ALGO, password.encode("utf-8"), salt, _ITERATIONS, dklen=_DK_LEN)
-    return secrets.compare_digest(dk, expected)
 
 
 def _hash_token(token: str) -> str:

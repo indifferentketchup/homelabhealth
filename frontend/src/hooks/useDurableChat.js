@@ -127,6 +127,17 @@ export function useDurableChat() {
         return res
       }
 
+      if (res?.status === 'approval_pending' && res.assistant_message_id) {
+        setStreamingMessageId(res.assistant_message_id)
+        setStreamingStatus('approval_pending')
+        setBusy(true)
+        pollRef.current = setTimeout(
+          () => pollOnce(chatId, res.assistant_message_id),
+          POLL_FAST_MS,
+        )
+        return res
+      }
+
       setBusy(false)
       return res
     } catch (err) {

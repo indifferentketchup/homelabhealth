@@ -45,8 +45,8 @@ CONFIG_MOUNT = "/data/config"
 SECRETS_FILE = f"{CONFIG_MOUNT}/secrets.env"
 
 # CPU image by default; GPU image picked at bootstrap time if nvidia available
-CHAT_IMAGE_CPU = os.environ.get("HLH_CHAT_IMAGE_CPU", "ghcr.io/ggml-org/llama.cpp:server-b9282")
-CHAT_IMAGE_GPU = os.environ.get("HLH_CHAT_IMAGE_GPU", "ghcr.io/ggml-org/llama.cpp:server-cuda-b9282")
+CHAT_IMAGE_CPU = os.environ.get("HLH_CHAT_IMAGE_CPU", "ghcr.io/ggml-org/llama.cpp:server-b9603")
+CHAT_IMAGE_GPU = os.environ.get("HLH_CHAT_IMAGE_GPU", "ghcr.io/ggml-org/llama.cpp:server-cuda-b9603")
 
 DB_IMAGE = "pgvector/pgvector:pg16"
 SEARCH_IMAGE = "searxng/searxng:2026.5.22-c57f772ad"
