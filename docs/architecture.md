@@ -87,8 +87,9 @@ Key routers under `backend/routers/`:
 
 - `auth.py`, `profile.py`
 - `workspaces.py`, `workspace_memory.py`, `workspace_context_files.py`
-- `chats.py`, `sources.py`, `notes.py`, `history.py`
-- `demo.py`, `analytics.py`, `eval.py`
+- `chats.py`, `chats_crud.py`, `sources.py`, `notes.py`, `history.py`
+- `demo.py`, `analytics.py`, `eval.py` (mounted in `main.py`; exposes
+  `/api/eval/groundedness|helpfulness|retrieval-relevance`)
 - `models.py`, `inference.py`, `providers.py`
 - `settings.py`, `system.py`, `search.py`, `searxng.py`
 - `audit.py`, `custom_instructions.py`, `memory.py`
@@ -99,9 +100,31 @@ Key service clusters:
 - `services/process_pool.py`: process-pool orchestration added in Wave 4
 - `services/conductor.py`: multi-perspective wave scheduler
 - `services/approval_gate.py`: pause/resume human approval flow
-- `services/memory/`: 3-tier memory engine
+- `services/memory/`: 3-tier SQLite memory engine (agent-search index; see its
+  module docstring for the full memory-store ownership map)
 - `services/memory_tools.py`: LangMem-style memory extraction/search tools
+- `services/patient_profile.py`: structured longitudinal patient profile
+  (`workspace_patient_profile` JSONB table), injected at inference and
+  conflict-resolved on update; the inference-time authoritative store for
+  durable health facts
 - `services/safeguards_engine.py`: guideline-based safeguard engine
+- `services/prompt_assembly.py`: `_assembled_system_prompt` + streaming/title
+  helpers (promoted out of `routers/chats.py` to break a service->router cycle;
+  shared by the SSE and durable paths)
+- `services/provider_client.py`: provider resolution + `async_llm_call`, the
+  single non-streaming completion helper used by all background LLM callers
+- `services/summarization.py`: shared summary prompt + medical-fact pinning,
+  used by both `compaction.py` and `pruning.py`
+- `services/deep_research.py`: iterative SearXNG research loop (query -> search
+  -> summarize -> reflect -> synthesize with citations); de-identified on the
+  external tier
+- `services/eval_judge.py`: LLM-as-judge + the async-background groundedness
+  scorer fired after a response (never inline on bundled inference)
+- `services/stall_detector.py`, `services/context_handoff.py`: pure-function
+  helpers for orchestration loop-detection and wave-output compression
+
+New tables/columns this wave: `workspace_patient_profile` (JSONB); on `messages`:
+`groundedness_score`, `retry_count`, `max_retries`, `orchestration_cursor`.
 
 ## Frontend surfaces
 
@@ -128,7 +151,8 @@ settings, profile, and analytics views.
 6. seed bundled model registry and reset orphaned pulls
 7. apply bundled provider bindings for the active tier
 8. log startup banner
-9. start the stale-streaming sweeper task
+9. start the stale-streaming sweeper task (liveness-aware, with a
+   `retry_count`/`max_retries` budget before promoting a row to `failed`)
 
 ## Notes for contributors
 
