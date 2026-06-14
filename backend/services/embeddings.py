@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 
 import httpx
 
@@ -41,12 +42,14 @@ async def _post(
     model: str,
     inputs: list[str],
 ) -> list[list[float]]:
+    _t0 = time.monotonic()
     r = await client.post(
         f"{base_url}/v1/embeddings",
         json={"model": model, "input": inputs},
         headers=headers,
     )
     r.raise_for_status()
+    logger.debug("embed _post: n=%d %.0fms", len(inputs), (time.monotonic() - _t0) * 1000)
     data = r.json().get("data") or []
     if len(data) != len(inputs):
         raise EmbeddingError(f"backend returned {len(data)} vectors for {len(inputs)} inputs")

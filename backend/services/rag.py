@@ -247,6 +247,7 @@ async def _rerank_infinity(query: str, passages: list[dict]) -> list[dict] | Non
         provider, model = binding
 
         async with httpx.AsyncClient(timeout=RERANKER_TIMEOUT) as client:
+            _t0 = time.monotonic()
             r = await client.post(
                 f"{provider.base_url}/v1/rerank",
                 json={
@@ -258,6 +259,7 @@ async def _rerank_infinity(query: str, passages: list[dict]) -> list[dict] | Non
                 headers=build_headers(provider),
             )
             r.raise_for_status()
+            logger.debug("rerank _rerank_infinity: %.0fms", (time.monotonic() - _t0) * 1000)
             results = r.json().get("results") or []
 
         out: list[dict] = []
