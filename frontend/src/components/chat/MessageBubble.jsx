@@ -1,9 +1,9 @@
-import { Children, useEffect, useMemo, useState } from 'react'
+import { Children, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { AlertTriangle, BookmarkPlus, Check, Copy, GitFork, Loader2, Pencil, RefreshCw } from 'lucide-react'
+import { AlertTriangle, BookmarkPlus, Check, ChevronLeft, ChevronRight, Copy, GitFork, Loader2, Pencil, RefreshCw } from 'lucide-react'
 
 import { forkChat } from '@/api/chats.js'
 import { Button } from '@/components/ui/button'
@@ -14,6 +14,8 @@ import { useAppStore } from '@/store/index.js'
 import { useShallow } from 'zustand/react/shallow'
 
 import { Sources, SourcesContent, Source, SourcesTrigger } from '@/components/ui/sources'
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible'
+import { ButtonGroup } from '@/components/ui/button-group'
 import { AssistantGlyph } from './AssistantGlyph.jsx'
 
 function CodeBlockShell({ language, rawText, children }) {
@@ -128,6 +130,26 @@ function makeMdComponents() {
     blockquote: ({ children }) => (
       <blockquote className="mb-2 border-l-2 border-border pl-3 text-muted-foreground">{children}</blockquote>
     ),
+    table: ({ children }) => (
+      <div className="my-2 w-full overflow-x-auto rounded-md border border-border">
+        <table className="w-full border-collapse text-sm">{children}</table>
+      </div>
+    ),
+    thead: ({ children }) => (
+      <thead className="border-b border-border bg-muted/50">{children}</thead>
+    ),
+    tbody: ({ children }) => (
+      <tbody className="divide-y divide-border [&_tr:nth-child(even)]:bg-muted/20">{children}</tbody>
+    ),
+    tr: ({ children }) => <tr>{children}</tr>,
+    th: ({ children }) => (
+      <th className="px-3 py-1.5 text-left text-xs font-semibold text-muted-foreground">
+        {children}
+      </th>
+    ),
+    td: ({ children }) => (
+      <td className="px-3 py-1.5 text-xs text-foreground">{children}</td>
+    ),
   }
 }
 
@@ -203,34 +225,63 @@ function splitThinking(text, streaming = false) {
 }
 
 function ThinkingBlock({ text, mdComponents, inProgress = false }) {
-  const [userClosed, setUserClosed] = useState(false)
+  const [open, setOpen] = useState(false)
+  const [durationSec, setDurationSec] = useState(null)
+  const startedAtRef = useRef(null)
+  const autoCloseTimerRef = useRef(null)
+  const userOverrideRef = useRef(false) // true if user manually toggled after completion
+
+  function handleOpenChange(next) {
+    userOverrideRef.current = true
+    setOpen(next)
+  }
+
+  useEffect(() => {
+    if (inProgress) {
+      if (!startedAtRef.current) startedAtRef.current = Date.now()
+      userOverrideRef.current = false
+      setOpen(true)
+      if (autoCloseTimerRef.current) clearTimeout(autoCloseTimerRef.current)
+    } else if (startedAtRef.current) {
+      const elapsed = Math.round((Date.now() - startedAtRef.current) / 1000)
+      setDurationSec(elapsed)
+      autoCloseTimerRef.current = setTimeout(() => {
+        if (!userOverrideRef.current) setOpen(false)
+      }, 1000)
+    }
+    return () => {
+      if (autoCloseTimerRef.current) clearTimeout(autoCloseTimerRef.current)
+    }
+  }, [inProgress])
+
   if (!text) return null
-  const isOpen = inProgress ? !userClosed : false
+
+  const label = inProgress
+    ? 'Reasoning...'
+    : durationSec != null
+      ? (open ? 'Hide reasoning' : `Thought for ${durationSec} s`)
+      : (open ? 'Hide reasoning' : 'Show reasoning')
+
   return (
-    <details
+    <Collapsible
+      open={open}
+      onOpenChange={handleOpenChange}
       className="mb-3 rounded-md border border-border/50 bg-muted/30"
-      open={isOpen || undefined}
-      onToggle={(e) => {
-        if (inProgress && !e.currentTarget.open) setUserClosed(true)
-        if (!inProgress) setUserClosed(!e.currentTarget.open)
-      }}
     >
-      <summary className="cursor-pointer select-none px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">
-        {inProgress ? (
-          <span className="inline-flex items-center gap-1.5">
-            <span className="size-1.5 animate-pulse rounded-full bg-primary" />
-            Reasoning…
-          </span>
-        ) : (
-          <>{isOpen ? 'Hide' : 'Show'} reasoning</>
+      <CollapsibleTrigger className="flex w-full cursor-pointer select-none items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">
+        {inProgress && (
+          <span className="size-1.5 animate-pulse rounded-full bg-primary" aria-hidden />
         )}
-      </summary>
-      <div className="border-t border-border/30 px-3 py-2 text-xs leading-relaxed text-muted-foreground/80">
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-          {text}
-        </ReactMarkdown>
-      </div>
-    </details>
+        {label}
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="border-t border-border/30 px-3 py-2 text-xs leading-relaxed text-muted-foreground/80">
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+            {text}
+          </ReactMarkdown>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   )
 }
 
@@ -258,6 +309,23 @@ export function MessageBubble({
   const [editing, setEditing] = useState(false)
   const [editDraft, setEditDraft] = useState('')
   const [copied, setCopied] = useState(false)
+  const regenHistoryRef = useRef([]) // up to 2 prior content strings; per-mount only
+  const [regenIndex, setRegenIndex] = useState(null) // null = current live content
+  const [regenCount, setRegenCount] = useState(0) // reactive counter; increment on push
+
+  const displayContent = regenIndex !== null
+    ? (regenHistoryRef.current[regenIndex] ?? message.content)
+    : message.content
+
+  function handleRegenerateClick() {
+    if (message.content) {
+      regenHistoryRef.current = [message.content, ...regenHistoryRef.current].slice(0, 2)
+      setRegenCount((c) => c + 1) // trigger re-render so carousel guard sees new length
+    }
+    setRegenIndex(null)
+    onRegenerate?.(message) // always passes original message object
+  }
+
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const {
@@ -307,7 +375,7 @@ export function MessageBubble({
 
   async function copyText() {
     try {
-      await navigator.clipboard.writeText(message.content || '')
+      await navigator.clipboard.writeText(displayContent || '')
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } catch {
@@ -433,7 +501,7 @@ export function MessageBubble({
           ) : (
             <div className="prose-chat w-full max-w-full overflow-x-hidden break-words leading-relaxed">
               {(() => {
-                const { thinking, answer, thinkingInProgress } = splitThinking(message.content, streaming)
+                const { thinking, answer, thinkingInProgress } = splitThinking(displayContent, streaming)
                 return (
                   <>
                     <ThinkingBlock text={thinking} mdComponents={mdComponents} inProgress={thinkingInProgress} />
@@ -587,7 +655,7 @@ export function MessageBubble({
                         variant="ghost"
                         size="icon-xs"
                         className="size-11"
-                        onClick={() => onRegenerate?.(message)}
+                        onClick={handleRegenerateClick}
                         aria-label="Regenerate response"
                       >
                         <RefreshCw className="size-3.5" />
@@ -599,6 +667,45 @@ export function MessageBubble({
               </TooltipProvider>
             </div>
             {forkError ? <p className="text-xs text-destructive">{forkError}</p> : null}
+            {!isUser && !isPendingTyping && regenCount > 0 && (
+              <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                <ButtonGroup>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    className="size-8"
+                    disabled={regenIndex !== null && regenIndex >= regenHistoryRef.current.length - 1}
+                    onClick={() =>
+                      setRegenIndex((i) =>
+                        i === null ? 0 : Math.min(i + 1, regenHistoryRef.current.length - 1),
+                      )
+                    }
+                    aria-label="View previous response"
+                  >
+                    <ChevronLeft className="size-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    className="size-8"
+                    disabled={regenIndex === null}
+                    onClick={() =>
+                      setRegenIndex((i) => (i === 0 ? null : i !== null ? i - 1 : null))
+                    }
+                    aria-label="View next response"
+                  >
+                    <ChevronRight className="size-3.5" />
+                  </Button>
+                </ButtonGroup>
+                <span>
+                  {regenIndex === null
+                    ? 'Current'
+                    : `Previous ${regenIndex + 1} of ${regenHistoryRef.current.length}`}
+                </span>
+              </div>
+            )}
           </div>
         )}
       </div>

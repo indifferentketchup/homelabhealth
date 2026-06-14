@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import { Virtuoso } from 'react-virtuoso'
+import { Database } from 'lucide-react'
 
+import { Badge } from '@/components/ui/badge'
 import { CrisisCard, detectCrisis } from './CrisisCard.jsx'
 import { MessageBubble } from './MessageBubble.jsx'
 
@@ -179,8 +181,11 @@ export function MessageList({
               <div className="flex w-full min-w-0 gap-2 flex-row">
                 <div className="mt-0.5 size-8 shrink-0" aria-hidden />
                 <div className="min-w-0 max-w-[80%]">
-                  <div className="fs-chat rounded-md border border-border bg-card px-2 py-1.5 text-xs text-muted-foreground">
-                    RAG: {streamingRagContext.count} chunks
+                  <div className="py-1">
+                    <Badge variant="outline" className="gap-1.5 text-xs">
+                      <Database className="size-3" />
+                      {streamingRagContext.count} chunk{streamingRagContext.count !== 1 ? 's' : ''} retrieved
+                    </Badge>
                   </div>
                 </div>
               </div>

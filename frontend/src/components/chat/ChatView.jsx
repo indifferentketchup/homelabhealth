@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
+import { Download } from 'lucide-react'
+
+import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 import { getChat, listMessages } from '@/api/chats.js'
 import { createNote } from '@/api/notes.js'
@@ -20,6 +24,33 @@ import { StaleStreamBanner } from './StaleStreamBanner.jsx'
 import { StreamStatusBar } from './StreamStatusBar.jsx'
 
 const WORKSPACE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+const EXPORT_THINKING_RE = /<THINKING>[\s\S]*?<\/THINKING>\s*/g
+
+function downloadConversation(messages, chatTitle) {
+  const exportable = messages.filter(
+    (m) => (m.role === 'user' || m.role === 'assistant') &&
+           m.id !== '__optimistic_user__' &&
+           m.id !== '__stream__' &&
+           m.id !== '__pending__',
+  )
+  if (exportable.length === 0) return
+  const sections = exportable.map((m) => {
+    const raw = (m.content || '').replace(EXPORT_THINKING_RE, '').trim()
+    const label = m.role === 'user' ? '**You**' : '**Assistant**'
+    return `${label}\n\n${raw}`
+  })
+  const md = sections.join('\n\n---\n\n')
+  const blob = new Blob([md], { type: 'text/markdown' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${(chatTitle || 'conversation').replace(/[^a-z0-9-_ ]/gi, '_')}.md`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
 
 // Wire-contract spec error strings — must render verbatim with a navigable path to fix.
 // These bypass friendlyStreamError's paraphrase branches and fall through as-is; we
@@ -146,6 +177,7 @@ export function ChatView({
   })
 
   const messages = msgPack?.items ?? []
+  const chatTitle = chat?.title || null
 
   const { data: durableConfig } = useQuery({
     queryKey: ['settings', 'durable-streaming'],
@@ -272,6 +304,27 @@ export function ChatView({
       <div className="sr-only" aria-live="polite" aria-atomic="false">{ariaLiveText}</div>
       <WorkspaceTitle />
       <div className="mx-auto flex min-h-0 w-full flex-1 flex-col" style={{ maxWidth: chatMaxW, '--bc-chat-anchor-extra': `${anchorExtraPx}px` }}>
+        {!busy && !isLoading && messages.length > 0 && (
+          <div className="flex justify-end px-4 pb-1">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    className="size-8 text-muted-foreground"
+                    onClick={() => downloadConversation(messages, chatTitle)}
+                    aria-label="Download conversation"
+                  >
+                    <Download className="size-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Download conversation</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+        )}
         <DisclaimerBanner />
         <div className="bc-chat-messages-mobile min-h-0 flex-1">
           {isLoading && !busy ? (

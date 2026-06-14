@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 
 import { cn } from '@/lib/utils'
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible'
+import { Badge } from '@/components/ui/badge'
 
 const PHASE_CONFIG = {
   preparing:  { label: 'Preparing',            icon: '⏳' },
@@ -55,37 +57,44 @@ export function StreamStatusBar({ phase, startedAt, pipelineEvents = [], classNa
   const elapsed = now - startedAt
 
   return (
-      <div
-        className={cn(
-          'animate-message-in mb-2 flex flex-col gap-1 rounded-md border border-border bg-background px-3 py-2 text-sm text-muted-foreground shadow-sm',
-          className,
+    <div className={cn('animate-message-in mb-2 flex flex-col gap-1', className)}>
+      <div role="status" aria-live="polite" data-testid="stream-status-bar">
+        {completedStages.length > 0 && (
+          <Collapsible>
+            <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground/70 hover:text-muted-foreground">
+              <span className="text-[10px]" aria-hidden>&#9658;</span>
+              {completedStages.length} step{completedStages.length !== 1 ? 's' : ''} completed
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="mt-1 flex flex-wrap gap-1">
+                {completedStages.map((e, i) => (
+                  <Badge key={e.phase + '-' + i} variant="outline" className="gap-1 text-xs">
+                    <span aria-hidden>&#10003;</span>
+                    {phaseLabel(e.phase, e.model)}
+                  </Badge>
+                ))}
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
         )}
-        role="status"
-      aria-live="polite"
-      data-testid="stream-status-bar"
-    >
-      {completedStages.map((e, i) => (
-        <div key={i} className="flex items-center gap-2 text-xs text-muted-foreground/70">
-          <span>✅</span>
-          <span>{phaseLabel(e.phase, e.model)}</span>
-        </div>
-      ))}
-      <div className="flex items-center gap-2">
-        <span
-          className="inline-block size-2 shrink-0 animate-pulse rounded-full bg-primary"
-          aria-hidden
-        />
-        <span className="text-foreground">{phaseLabel(phase, currentModel)}…</span>
-        <span className="ml-auto flex items-center gap-2">
-          {estimateMs ? (
-            <span className="text-xs text-muted-foreground/60">{formatEstimate(estimateMs)}</span>
+        <div
+          className="flex flex-col gap-1 rounded-md border border-border bg-background px-3 py-2 text-sm text-muted-foreground shadow-sm"
+        >
+          <div className="flex items-center gap-2">
+            <span className="inline-block size-2 shrink-0 animate-pulse rounded-full bg-primary" aria-hidden />
+            <span className="text-foreground">{phaseLabel(phase, currentModel)}…</span>
+            <span className="ml-auto flex items-center gap-2">
+              {estimateMs ? (
+                <span className="text-xs text-muted-foreground/60">{formatEstimate(estimateMs)}</span>
+              ) : null}
+              <span className="font-mono text-xs tabular-nums">{formatElapsed(elapsed)}</span>
+            </span>
+          </div>
+          {phase === 'thinking' ? (
+            <span className="text-xs">(CPU inference can take 1-2 min)</span>
           ) : null}
-          <span className="font-mono text-xs tabular-nums">{formatElapsed(elapsed)}</span>
-        </span>
+        </div>
       </div>
-      {phase === 'thinking' ? (
-        <span className="text-xs">(CPU inference can take 1–2 min)</span>
-      ) : null}
     </div>
   )
 }
