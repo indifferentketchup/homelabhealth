@@ -25,16 +25,24 @@ Public surface:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any
 
-import httpx
-
-from services.provider_client import Provider, build_headers
+from services.context_handoff import extractive_summary, format_as_input
+from services.provider_client import Provider, async_llm_call
+from services.stall_detector import is_stalled, is_tool_doom_loop
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Stall detection constants (E3, lift-durable-orchestration, 2026-06-13)
+# ---------------------------------------------------------------------------
+
+_WAVE_STALL_THRESHOLD = 3
+_WAVE_STALL_SIMILARITY = 0.90
 
 # ---------------------------------------------------------------------------
 # Step — one atomic unit of work in a flow
@@ -89,15 +97,33 @@ class WaveScheduler:
         self,
         provider: Provider,
         default_model: str,
+        *,
+        conn: object | None = None,
+        message_id: object | None = None,
+        compress_context: bool = False,
     ) -> dict[str, str]:
         """Execute all steps in dependency order, returning ``{step_id: output}``.
 
-        Raises ``RuntimeError`` on dependency cycle or unsatisfiable deps.
+        Raises ``RuntimeError`` on dependency cycle, unsatisfiable deps, or
+        wave stall (E3, lift-durable-orchestration, 2026-06-13).
+
+        Optional kwargs:
+        - ``conn`` / ``message_id``: when provided, write an orchestration cursor
+          to the messages row after each wave completes. NOTE (V3): this is a
+          no-op in the current call chain -- ``run_analysis`` creates no durable
+          message row and does not pass conn/message_id. Cursor persistence for
+          the conductor is wired only when called from a path that has a message
+          ID. This is left explicit rather than silently dead.
+        - ``compress_context``: when True and accumulated results exceed 4000
+          chars, replace them with an extractive summary before the next wave
+          (E4, lift-durable-orchestration, 2026-06-13). Default False -- no
+          behavior change for existing callers.
         """
         results: dict[str, str] = {}
         done: set[str] = set()
         total = len(self._steps)
         wave_index = 0
+        wave_outputs_window: list[list[str]] = []
 
         while len(done) < total:
             ready = [
@@ -124,6 +150,7 @@ class WaveScheduler:
                 return_exceptions=True,
             )
 
+            string_outputs: list[str] = []
             for step, output in zip(ready, outputs):
                 if isinstance(output, BaseException):
                     logger.error(
@@ -136,9 +163,61 @@ class WaveScheduler:
                     )
                 else:
                     results[step.id] = output
+                    string_outputs.append(output)
                 done.add(step.id)
 
             logger.info("conductor wave %d completed", wave_index)
+
+            # Stall detection: check if wave outputs are not progressing (E3).
+            wave_outputs_window.append(string_outputs)
+            if len(wave_outputs_window) >= _WAVE_STALL_THRESHOLD:
+                flat = [" ".join(w) for w in wave_outputs_window[-_WAVE_STALL_THRESHOLD:]]
+                if is_stalled(flat, _WAVE_STALL_THRESHOLD, _WAVE_STALL_SIMILARITY):
+                    raise RuntimeError(
+                        f"conductor: wave stall detected at wave {wave_index} "
+                        f"(outputs are not progressing)"
+                    )
+
+            # Context compression: replace accumulated results with an extractive
+            # summary when they exceed the threshold (E4, opt-in).
+            if compress_context:
+                total_len = sum(len(v) for v in results.values())
+                if total_len > 4000:
+                    summary = extractive_summary(list(results.values()))
+                    results = {"_context_summary": summary}
+                    logger.debug(
+                        "conductor wave %d: context compressed (%d chars -> %d)",
+                        wave_index,
+                        total_len,
+                        len(summary),
+                    )
+
+            # Cursor write after wave barrier (E2). No-op unless conn and message_id
+            # are provided. See V3 note above -- currently unreachable from run_analysis.
+            if conn is not None and message_id is not None:
+                try:
+                    cursor_payload = {
+                        "type": "wave_scheduler",
+                        "sub_questions": None,
+                        "completed": {k: v for k, v in results.items()},
+                        "wave_index": wave_index,
+                    }
+                    await conn.execute(  # type: ignore[attr-defined]
+                        """
+                        UPDATE messages
+                        SET orchestration_cursor = $1::jsonb
+                        WHERE id = $2::uuid
+                        """,
+                        json.dumps(cursor_payload),
+                        message_id,
+                    )
+                    logger.debug(
+                        "conductor wave %d: wrote orchestration cursor (%d steps completed)",
+                        wave_index,
+                        len(done),
+                    )
+                except Exception as exc:
+                    logger.warning("conductor: cursor write failed (non-fatal): %s", exc)
 
         return results
 
@@ -149,66 +228,24 @@ class WaveScheduler:
         model: str,
     ) -> str:
         """Execute one step by calling the provider's chat completions."""
-        return await _llm_call(
-            provider=provider,
-            model=model,
-            system_prompt="You are a focused medical analyst. "
-            "Respond with your analysis only — no meta-commentary, no disclaimers about your role. "
-            "Be specific and cite evidence where applicable.",
-            user_prompt=step.prompt,
-            timeout_s=60.0,
+        return await async_llm_call(
+            provider,
+            model,
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a focused medical analyst. "
+                        "Respond with your analysis only — no meta-commentary, no disclaimers about your role. "
+                        "Be specific and cite evidence where applicable."
+                    ),
+                },
+                {"role": "user", "content": step.prompt},
+            ],
+            temperature=0.3,
             max_tokens=2048,
+            timeout_s=60.0,
         )
-
-
-# ---------------------------------------------------------------------------
-# LLM call helper (non-streaming, reused from supervisor_worker pattern)
-# ---------------------------------------------------------------------------
-
-
-async def _llm_call(
-    provider: Provider,
-    model: str,
-    system_prompt: str,
-    user_prompt: str,
-    *,
-    timeout_s: float = 60.0,
-    max_tokens: int = 2048,
-) -> str:
-    """Non-streaming call to the provider's ``/v1/chat/completions``.
-
-    Returns the content string, or raises on HTTP/network error.
-    """
-    payload: dict[str, Any] = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "stream": False,
-        "max_tokens": max_tokens,
-    }
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(timeout_s)) as client:
-            r = await client.post(
-                f"{provider.base_url}/v1/chat/completions",
-                json=payload,
-                headers=build_headers(provider),
-            )
-            r.raise_for_status()
-            data = r.json()
-            choices = data.get("choices") or []
-            if not choices:
-                raise RuntimeError("No choices in LLM response")
-            msg = choices[0].get("message") or {}
-            content = (msg.get("content") or "").strip()
-            if not content:
-                raise RuntimeError("Empty LLM response")
-            return content
-    except httpx.TimeoutException:
-        raise
-    except httpx.HTTPError as e:
-        raise RuntimeError(f"LLM call failed: {e}") from e
 
 
 # ---------------------------------------------------------------------------

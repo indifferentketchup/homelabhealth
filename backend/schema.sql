@@ -302,6 +302,22 @@ CREATE TABLE IF NOT EXISTS workspace_memory (
 
 CREATE INDEX IF NOT EXISTS workspace_memory_workspace_id_idx ON workspace_memory(workspace_id);
 
+-- ────────────────────────────────────────────────────────────────────────────
+-- Structured patient profile per workspace (added 2026-06-14).
+-- Single JSONB document; authoritative structured facts store.
+-- Does not replace workspace_memory or memory_entries; consolidation is future work.
+-- ────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS workspace_patient_profile (
+    workspace_id UUID PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+    profile JSONB NOT NULL DEFAULT '{}',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Backfill profile rows for workspaces created before this migration.
+INSERT INTO workspace_patient_profile (workspace_id, profile)
+SELECT id, '{}'::jsonb FROM workspaces
+ON CONFLICT (workspace_id) DO NOTHING;
+
 CREATE UNIQUE INDEX IF NOT EXISTS custom_instructions_singleton_idx ON custom_instructions ((1));
 
 -- ────────────────────────────────────────────────────────────────────────────
@@ -608,6 +624,14 @@ ALTER TABLE messages ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS finished_at TIMESTAMPTZ;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS error_message TEXT;
 
+-- E1: retry budget for orphaned streaming rows (lift-durable-orchestration, 2026-06-13).
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS retry_count INT NOT NULL DEFAULT 0;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS max_retries INT NOT NULL DEFAULT 3;
+
+-- E2: orchestration cursor for supervisor-worker and conductor resume
+-- (lift-durable-orchestration, 2026-06-13).
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS orchestration_cursor JSONB;
+
 ALTER TABLE messages ALTER COLUMN content DROP NOT NULL;
 
 CREATE INDEX IF NOT EXISTS messages_chat_status_streaming_idx
@@ -643,5 +667,20 @@ INSERT INTO global_settings (key, value) VALUES
     ('estimate_ms_chat_first_token',  '2000'),
     ('estimate_ms_unload',            '500'),
     ('enforce_ram_budget',            'true'),
-    ('memory_auto_extract_enabled',   'false')
+    ('memory_auto_extract_enabled',   'false'),
+    ('memory_conflict_resolution_enabled', 'false'),
+    ('memory_injection_token_budget', '1500')
+ON CONFLICT (key) DO NOTHING;
+
+INSERT INTO global_settings (key, value)
+VALUES ('deep_research_max_loops', '3')
+ON CONFLICT (key) DO NOTHING;
+
+-- Groundedness eval: async judge score per assistant message (lift-groundedness-eval, 2026-06-13).
+-- Null for messages predating this feature or when eval is disabled/sampled out.
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS groundedness_score FLOAT;
+
+INSERT INTO global_settings (key, value) VALUES
+    ('groundedness_eval_enabled',     'false'),
+    ('groundedness_eval_sample_rate', '1.0')
 ON CONFLICT (key) DO NOTHING;

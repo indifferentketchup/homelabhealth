@@ -11,7 +11,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from routers.chats import _normalize_messages_for_inference
+from services.prompt_assembly import _normalize_messages_for_inference
 
 
 def check(label: str, cond: bool) -> None:

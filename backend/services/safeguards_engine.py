@@ -560,52 +560,6 @@ For each guideline:
         return BatchResult(matches=matches)
 
 
-class DisambiguationBatch:
-    """Batch type: "Which applies more?"
-    When multiple guidelines overlap, pick the most specific one.
-    """
-    PROMPT_TEMPLATE: str = """\
-You are resolving ambiguity between overlapping guidelines.
-Select the single most applicable guideline for the user's query.
-
-User query: {user_query}
-
-Conflicting guidelines:
-{guidelines_text}
-
-Respond with:
-- source_guideline_id: the selected guideline
-- rationale: why it applies more than the others
-- enriched_action: what action to take
-- targets: list of deprioritized guideline IDs
-"""
-
-    def __init__(self, candidates: list[GuidelineMatch], context: MatchingContext) -> None:
-        self._candidates = candidates
-        self._context = context
-
-    @property
-    def size(self) -> int:
-        return len(self._candidates)
-
-    def process(self) -> BatchResult:
-        if not self._candidates:
-            return BatchResult(matches=[])
-        # Sort by criticality weight descending, then score descending
-        sorted_candidates = sorted(
-            self._candidates,
-            key=lambda m: (criticality_to_weight(m.guideline.criticality), m.score),
-            reverse=True,
-        )
-        # Pick the top candidate as the disambiguated winner
-        winner = sorted_candidates[0]
-        winner.metadata["batch_type"] = "disambiguation"
-        winner.metadata["disambiguation_targets"] = [
-            m.guideline.id for m in sorted_candidates[1:]
-        ]
-        return BatchResult(matches=[winner])
-
-
 class LowCriticalityBatch:
     """Batch type: "Any minor concerns?"
     Separate pass for low-criticality guidelines so they don't drown out
@@ -675,25 +629,81 @@ For each guideline:
 - rationale: brief reasoning
 """
 
-    def __init__(self, guideline_matches: list[GuidelineMatch]) -> None:
+    def __init__(
+        self,
+        guideline_matches: list[GuidelineMatch],
+        user_query: str = "",
+        assistant_response: str = "",
+        workspace_id: uuid.UUID | None = None,
+    ) -> None:
         self._guideline_matches = guideline_matches
+        self._user_query = user_query
+        self._assistant_response = assistant_response
+        self._workspace_id = workspace_id
 
     @property
     def size(self) -> int:
         return len(self._guideline_matches)
 
     def process(self) -> BatchResult:
-        # In this version, response analysis acknowledges all matched guidelines
+        """Synchronous stub -- returns was_followed=None (not evaluated).
+
+        The unconditional was_followed=True stub has been replaced. This method
+        exists for compatibility; use process_async() for a real LLM judge call.
+        """
         matches = []
         for m in self._guideline_matches:
             matches.append(GuidelineMatch(
                 guideline=m.guideline,
                 score=m.score,
-                rationale=f"Response analysis: guideline '{m.guideline.content.condition}' "
-                          f"was applied",
-                metadata={"batch_type": "response_analysis", "was_followed": True},
+                rationale="Response analysis: synchronous stub (not evaluated)",
+                metadata={"batch_type": "response_analysis", "was_followed": None},
             ))
         return BatchResult(matches=matches)
+
+    async def process_async(self) -> BatchResult:
+        """Real response analysis via LLM judge.
+
+        Returns was_followed=None when no provider is available or judge parse
+        fails -- never was_followed=True unconditionally (the old stub's flaw).
+        This class has zero call sites outside safeguards_engine.py; do NOT wire
+        it into any call path without replacing the TODO below.
+        """
+        from services.eval_judge import call_llm_as_judge, resolve_judge_provider
+        result = await resolve_judge_provider(workspace_id=self._workspace_id)
+        if result is None:
+            return BatchResult(matches=[
+                GuidelineMatch(
+                    guideline=m.guideline,
+                    score=m.score,
+                    rationale="Response analysis skipped: no judge provider available",
+                    metadata={"batch_type": "response_analysis", "was_followed": None},
+                )
+                for m in self._guideline_matches
+            ])
+        provider, model = result
+        guidelines_text = "\n".join(
+            f"- {m.guideline.content.condition}" for m in self._guideline_matches
+        )
+        prompt = self.PROMPT_TEMPLATE.format(
+            user_query=self._user_query[:500],
+            assistant_response=self._assistant_response[:400],
+            guidelines_text=guidelines_text,
+        )
+        eval_result = await call_llm_as_judge(provider, model, "", prompt)
+        # TODO: parse per-guideline was_followed from structured eval output.
+        return BatchResult(matches=[
+            GuidelineMatch(
+                guideline=m.guideline,
+                score=m.score,
+                rationale=(
+                    f"Response analysis (judge score={eval_result.get('score')}): "
+                    f"{eval_result.get('explanation', '')[:200]}"
+                ),
+                metadata={"batch_type": "response_analysis", "was_followed": None},
+            )
+            for m in self._guideline_matches
+        ])
 
 
 # ---------------------------------------------------------------------------

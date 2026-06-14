@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import asyncpg
 
 from db import close_pool, get_pool, init_pool  # noqa: E402
-from routers.chats import _assembled_system_prompt  # noqa: E402
+from services.prompt_assembly import _assembled_system_prompt  # noqa: E402
 from services.safeguards import SAFEGUARD_SYSTEM_PROMPT  # noqa: E402
 
 
@@ -71,7 +71,7 @@ async def run() -> int:
         ws_id = await _make_workspace(conn, "")
         try:
             chat = await _make_chat(conn, ws_id)
-            assembled, rag_meta = await _assembled_system_prompt(
+            assembled, rag_meta, _rag_block = await _assembled_system_prompt(
                 conn,
                 chat,
                 user_query_for_rag=None,
@@ -95,7 +95,7 @@ async def run() -> int:
         ws_id = await _make_workspace(conn, WS_PROMPT)
         try:
             chat = await _make_chat(conn, ws_id)
-            assembled, rag_meta = await _assembled_system_prompt(
+            assembled, rag_meta, _rag_block = await _assembled_system_prompt(
                 conn,
                 chat,
                 user_query_for_rag=None,

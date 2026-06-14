@@ -38,6 +38,8 @@ from routers.audit import router as audit_router
 from routers.auth import router as auth_router
 from routers.demo import router as demo_router
 from routers.analytics import router as analytics_router
+from routers.eval import router as eval_router
+from routers.chats_crud import router as chats_crud_router
 
 import logging
 logging.basicConfig(level=logging.INFO)
@@ -84,27 +86,73 @@ def _cors_origins() -> list[str]:
 
 
 async def _streaming_sweeper() -> None:
-    """Mark streaming messages older than 5 minutes as failed (orphan cleanup)."""
+    """Retry or fail streaming messages older than 5 minutes (orphan cleanup).
+
+    Liveness-aware logic (lift-durable-orchestration E1, 2026-06-13):
+    - Job still active in the registry (slow but alive) with retry budget left
+      -> increment retry_count, leave streaming so the client can keep resuming.
+    - Job active but retry budget exhausted -> fail and cancel.
+    - No active job (orphaned: the job died, the client is gone) -> fail at the
+      5-minute mark regardless of retry budget, matching pre-E1 behavior. The
+      empty-registry case after a process restart is handled by the lifespan
+      startup sweep, not here.
+    """
     from db import get_pool
     from services.chat_jobs import job_registry
     while True:
         await asyncio.sleep(60)
         try:
             pool = await get_pool()
+            to_increment: list = []          # alive + budget remaining
+            to_fail: list[tuple] = []        # no active job (orphaned)
+            to_exhaust: list[tuple] = []     # alive but budget exhausted
             async with pool.acquire() as conn:
-                swept = await conn.fetch(
+                candidates = await conn.fetch(
                     """
-                    UPDATE messages
-                    SET status = 'failed', finished_at = NOW(), error_message = 'inference timed out'
+                    SELECT id, chat_id, retry_count, max_retries
+                    FROM messages
                     WHERE status = 'streaming'
                       AND COALESCE(started_at, created_at) < NOW() - INTERVAL '5 minutes'
-                    RETURNING chat_id
                     """,
                 )
-            if swept:
-                logger.info("sweeper: marked %d stale streaming rows as failed", len(swept))
-                for row in swept:
-                    await job_registry.cancel(row["chat_id"], timeout=2.0)
+                for row in candidates:
+                    if job_registry.has_active(row["chat_id"]):
+                        if row["retry_count"] < row["max_retries"]:
+                            to_increment.append(row["id"])
+                        else:
+                            to_exhaust.append((row["id"], row["chat_id"]))
+                    else:
+                        to_fail.append((row["id"], row["chat_id"]))
+
+                if to_increment:
+                    await conn.execute(
+                        "UPDATE messages SET retry_count = retry_count + 1 "
+                        "WHERE id = ANY($1::uuid[]) AND status = 'streaming'",
+                        to_increment,
+                    )
+                if to_fail:
+                    await conn.execute(
+                        "UPDATE messages SET status = 'failed', finished_at = NOW(), "
+                        "error_message = 'inference orphaned (no active job)' "
+                        "WHERE id = ANY($1::uuid[]) AND status = 'streaming'",
+                        [r[0] for r in to_fail],
+                    )
+                if to_exhaust:
+                    await conn.execute(
+                        "UPDATE messages SET status = 'failed', finished_at = NOW(), "
+                        "error_message = 'inference timed out (retry budget exhausted)' "
+                        "WHERE id = ANY($1::uuid[]) AND status = 'streaming'",
+                        [r[0] for r in to_exhaust],
+                    )
+            # Cancel any lingering job for failed rows (no-op when not in registry).
+            for _id, chat_id in to_fail + to_exhaust:
+                await job_registry.cancel(chat_id, timeout=2.0)
+            if to_increment:
+                logger.info("sweeper: incremented retry_count on %d stale streaming rows (alive, budget remaining)", len(to_increment))
+            if to_fail:
+                logger.info("sweeper: failed %d orphaned streaming rows (no active job)", len(to_fail))
+            if to_exhaust:
+                logger.info("sweeper: failed %d streaming rows (retry budget exhausted)", len(to_exhaust))
         except Exception as exc:
             logger.warning("sweeper error: %s", exc)
 
@@ -124,22 +172,42 @@ async def lifespan(_app: FastAPI):
         pool = await get_pool()
         # Sweep stale streaming rows left behind by a prior process crash/OOM.
         # 10-minute threshold is conservative vs the running sweeper's 5 minutes.
+        # Two-branch logic (lift-durable-orchestration E1, 2026-06-13):
+        # Branch 1: retry_count >= max_retries -> fail. Branch 2: increment retry_count.
         async with pool.acquire() as sweep_conn:
+            # Branch 1: budget exhausted -> fail permanently
             swept = await sweep_conn.fetch(
                 """
                 UPDATE messages
                 SET status = 'failed',
                     finished_at = NOW(),
-                    error_message = 'process restart: inference interrupted'
+                    error_message = 'process restart: inference interrupted (retry budget exhausted)'
                 WHERE status = 'streaming'
                   AND COALESCE(started_at, created_at) < NOW() - INTERVAL '10 minutes'
+                  AND retry_count >= max_retries
+                RETURNING chat_id
+                """,
+            )
+            # Branch 2: budget remaining -> increment retry_count, leave as streaming
+            retried = await sweep_conn.fetch(
+                """
+                UPDATE messages
+                SET retry_count = retry_count + 1
+                WHERE status = 'streaming'
+                  AND COALESCE(started_at, created_at) < NOW() - INTERVAL '10 minutes'
+                  AND retry_count < max_retries
                 RETURNING chat_id
                 """,
             )
             if swept:
                 logger.info(
-                    "lifespan: cleared %d stale streaming rows from prior process run",
+                    "lifespan: failed %d stale streaming rows from prior process run (retry budget exhausted)",
                     len(swept),
+                )
+            if retried:
+                logger.info(
+                    "lifespan: incremented retry_count on %d stale streaming rows from prior process run (budget remaining)",
+                    len(retried),
                 )
         # v1.1.4→v1.1.5 chat-path flattening: best-effort, harmless if no legacy files.
         bundled_providers.migrate_legacy_chat_paths()
@@ -314,6 +382,7 @@ api.include_router(system.router, prefix="/system", tags=["system"])
 api.include_router(models.router, prefix="/models", tags=["models"])
 api.include_router(inference.router, prefix="/inference", tags=["inference"])
 api.include_router(chats.router, prefix="/chats", tags=["chats"])
+api.include_router(chats_crud_router, prefix="/chats", tags=["chats"])
 api.include_router(memory.router, prefix="/memory", tags=["memory"])
 api.include_router(workspaces.router, prefix="/workspaces", tags=["workspaces"])
 api.include_router(workspace_memory.router)
@@ -328,6 +397,7 @@ api.include_router(history_router, prefix="/history", tags=["history"])
 api.include_router(audit_router, prefix="/audit", tags=["audit"])
 api.include_router(analytics_router, prefix="/analytics", tags=["analytics"])
 api.include_router(demo_router, prefix="/demo", tags=["demo"])
+api.include_router(eval_router, prefix="/eval", tags=["eval"])
 
 
 app.include_router(api)

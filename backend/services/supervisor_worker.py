@@ -19,11 +19,17 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-import httpx
-
-from services.provider_client import Provider, build_headers
+from services.provider_client import Provider, async_llm_call
+from services.stall_detector import is_stalled
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Stall detection constants (E3, lift-durable-orchestration, 2026-06-13)
+# ---------------------------------------------------------------------------
+
+_STALL_THRESHOLD = 3
+_STALL_SIMILARITY = 0.85
 
 # ---------------------------------------------------------------------------
 # Complexity heuristic
@@ -92,49 +98,6 @@ Rules:
 5. Example: ["What are the standard treatments for condition X?", "What are the side effects of treatment Y?", "How do treatments X and Y compare in efficacy?"]"""
 
 
-async def _llm_call(
-    provider: Provider,
-    model: str,
-    system_prompt: str,
-    user_prompt: str,
-    *,
-    timeout_s: float = 30.0,
-    max_tokens: int = 1024,
-) -> str:
-    """Non-streaming call to the provider's /v1/chat/completions.
-
-    Returns the content string, or raises on HTTP/network error.
-    """
-    payload: dict[str, Any] = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "stream": False,
-        "max_tokens": max_tokens,
-    }
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(timeout_s)) as client:
-            r = await client.post(
-                f"{provider.base_url}/v1/chat/completions",
-                json=payload,
-                headers=build_headers(provider),
-            )
-            r.raise_for_status()
-            data = r.json()
-            choices = data.get("choices") or []
-            if not choices:
-                raise RuntimeError("No choices in LLM response")
-            msg = choices[0].get("message") or {}
-            content = (msg.get("content") or "").strip()
-            if not content:
-                raise RuntimeError("Empty LLM response")
-            return content
-    except httpx.TimeoutException:
-        raise
-    except httpx.HTTPError as e:
-        raise RuntimeError(f"LLM call failed: {e}") from e
 
 
 async def decompose_query(
@@ -147,17 +110,19 @@ async def decompose_query(
     Returns a list of sub-question strings. On failure, returns [query]
     as a passthrough so the caller can still get an answer.
     """
-    try:
-        raw = await _llm_call(
-            provider,
-            model,
-            _DECOMPOSE_SYSTEM_PROMPT,
-            f"Decompose this query into sub-questions:\n\n{query}",
-            timeout_s=30.0,
-            max_tokens=1024,
-        )
-    except Exception as exc:
-        logger.warning("decompose_query failed for %r: %s", query[:80], exc)
+    raw = await async_llm_call(
+        provider,
+        model,
+        [
+            {"role": "system", "content": _DECOMPOSE_SYSTEM_PROMPT},
+            {"role": "user", "content": f"Decompose this query into sub-questions:\n\n{query}"},
+        ],
+        temperature=0.3,
+        max_tokens=1024,
+        timeout_s=30.0,
+    )
+    if not raw:
+        logger.warning("decompose_query failed for %r: empty response", query[:80])
         return [query]
 
     # Parse JSON array from the response — handle markdown-wrapped or bare JSON.
@@ -246,30 +211,34 @@ async def _answer_sub_question(
             f"### Question\n{sub_question}"
         )
 
-    try:
-        content = await _llm_call(
-            provider,
-            model,
-            system_prompt,
-            user_prompt,
-            timeout_s=timeout_s,
-            max_tokens=2048,
-        )
-        return WorkerAnswer(sub_question=sub_question, answer=content)
-    except httpx.TimeoutException:
-        logger.warning("worker timed out for sub-question: %s", sub_question[:80])
+    # Accumulate responses for stall detection.
+    # With a single _llm_call this list never exceeds length 1, so the stall
+    # check is a no-op until the worker becomes multi-turn (intentional hook).
+    _recent_responses: list[str] = []
+
+    content = await async_llm_call(
+        provider,
+        model,
+        [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.3,
+        max_tokens=2048,
+        timeout_s=timeout_s,
+    )
+    if not content:
+        logger.warning("worker returned empty for sub-question: %s", sub_question[:80])
+        return WorkerAnswer(sub_question=sub_question, answer="", error="empty_response")
+    _recent_responses.append(content)
+    if is_stalled(_recent_responses[-_STALL_THRESHOLD:], _STALL_THRESHOLD, _STALL_SIMILARITY):
+        logger.warning("stall detected in sub-question worker, aborting: %s", sub_question[:80])
         return WorkerAnswer(
             sub_question=sub_question,
-            answer="[This sub-question timed out and was not answered.]",
-            timed_out=True,
+            answer="[Worker stalled: repeated low-information responses detected.]",
+            error="stall_detected",
         )
-    except Exception as exc:
-        logger.warning("worker failed for sub-question %r: %s", sub_question[:80], exc)
-        return WorkerAnswer(
-            sub_question=sub_question,
-            answer="",
-            error=str(exc),
-        )
+    return WorkerAnswer(sub_question=sub_question, answer=content)
 
 
 # ---------------------------------------------------------------------------
@@ -323,17 +292,19 @@ async def _synthesize(
         f"Below are parallel research findings. Merge them into one coherent response:\n\n{answers_block}"
     )
 
-    try:
-        raw = await _llm_call(
-            provider,
-            model,
-            _SYNTHESIS_SYSTEM_PROMPT,
-            user_prompt,
-            timeout_s=30.0,
-            max_tokens=4096,
-        )
-    except Exception as exc:
-        logger.warning("synthesize failed: %s", exc)
+    raw = await async_llm_call(
+        provider,
+        model,
+        [
+            {"role": "system", "content": _SYNTHESIS_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.3,
+        max_tokens=4096,
+        timeout_s=30.0,
+    )
+    if not raw:
+        logger.warning("synthesize failed: empty response")
         # Fallback: concatenate worker answers verbatim
         fallback = "\n\n".join(
             f"**{a.sub_question}**\n{a.answer}" for a in valid
@@ -383,6 +354,9 @@ async def run_supervisor_worker(
     provider: Provider,
     model: str,
     source_context: str = "",
+    *,
+    conn: object | None = None,
+    message_id: object | None = None,
 ) -> SynthesisResult:
     """Run the full supervisor-worker-synthesize pipeline.
 
@@ -394,7 +368,39 @@ async def run_supervisor_worker(
     Workers run via ``asyncio.gather`` with ``return_exceptions=True``.
     A 30-second timeout is applied per worker; timed-out workers produce
     a soft-fail notice rather than an exception.
+
+    Optional kwargs ``conn`` (asyncpg connection) and ``message_id`` (UUID)
+    enable cursor persistence (E2, lift-durable-orchestration, 2026-06-13).
+    When provided, the orchestration cursor is written to messages after the
+    gather completes, enabling resume-from-cursor on restart.
+
+    Resume logic: if the cursor's sub_questions do not match the new
+    decomposition (decompose_query is non-deterministic), the resume silently
+    falls through to a full re-gather. No assertion is raised.
     """
+    # --- Resume from cursor if available ---
+    completed_from_cursor: dict[str, str] = {}
+    if conn is not None and message_id is not None:
+        try:
+            existing = await conn.fetchval(
+                "SELECT orchestration_cursor FROM messages WHERE id = $1::uuid",
+                message_id,
+            )
+            # asyncpg returns JSONB as a native dict
+            if (
+                existing
+                and isinstance(existing, dict)
+                and existing.get("type") == "supervisor_worker"
+                and existing.get("completed")
+            ):
+                completed_from_cursor = existing["completed"]
+                logger.info(
+                    "run_supervisor_worker: found cursor with %d completed answers",
+                    len(completed_from_cursor),
+                )
+        except Exception as exc:
+            logger.warning("run_supervisor_worker: cursor read failed, proceeding fresh: %s", exc)
+
     # 1. Decompose
     sub_questions = await decompose_query(query, provider, model)
     if len(sub_questions) <= 1:
@@ -411,27 +417,89 @@ async def run_supervisor_worker(
             decomposed=sub_questions,
         )
 
-    # 2. Run workers in parallel
+    # 2. Run workers in parallel, skipping sub-questions already in cursor.
+    # If cursor sub_questions differ from new decomposition, completed_from_cursor
+    # key lookups will simply miss and those questions run again (silent fallthrough).
     worker_tasks = [
         _answer_sub_question(
             sq, provider, model, source_context,
             timeout_s=_WORKER_TIMEOUT_S,
         )
         for sq in sub_questions
+        if sq not in completed_from_cursor
     ]
-    answers: list[WorkerAnswer] = list(
-        await asyncio.gather(*worker_tasks, return_exceptions=True)
-    )
+    skipped_sqs = [sq for sq in sub_questions if sq in completed_from_cursor]
+    if skipped_sqs:
+        logger.info(
+            "run_supervisor_worker: skipping %d already-completed sub-questions from cursor",
+            len(skipped_sqs),
+        )
 
-    # Unwrap any unexpected exception that wasn't caught inside workers
-    for i, a in enumerate(answers):
-        if isinstance(a, BaseException):
-            logger.error("worker %d raised unexpected %s: %s", i, type(a).__name__, a)
-            answers[i] = WorkerAnswer(
-                sub_question=sub_questions[i] if i < len(sub_questions) else "unknown",
-                answer="",
-                error=f"Unexpected worker error: {a}",
+    fresh_answers: list[WorkerAnswer] = []
+    if worker_tasks:
+        raw: list[WorkerAnswer] = list(
+            await asyncio.gather(*worker_tasks, return_exceptions=True)
+        )
+        pending_sqs = [sq for sq in sub_questions if sq not in completed_from_cursor]
+        # Unwrap any unexpected exception that wasn't caught inside workers
+        for i, a in enumerate(raw):
+            if isinstance(a, BaseException):
+                logger.error("worker %d raised unexpected %s: %s", i, type(a).__name__, a)
+                raw[i] = WorkerAnswer(
+                    sub_question=pending_sqs[i] if i < len(pending_sqs) else "unknown",
+                    answer="",
+                    error=f"Unexpected worker error: {a}",
+                )
+        fresh_answers = raw  # type: ignore[assignment]
+
+    # Reconstruct answers in original sub_questions order
+    fresh_map = {a.sub_question: a for a in fresh_answers}
+    answers: list[WorkerAnswer] = []
+    for sq in sub_questions:
+        if sq in completed_from_cursor:
+            answers.append(WorkerAnswer(sub_question=sq, answer=completed_from_cursor[sq]))
+        elif sq in fresh_map:
+            answers.append(fresh_map[sq])
+        else:
+            # Fresh answer list is in order of pending_sqs; fall back to index
+            pass
+    # If reconstruction left gaps (shouldn't happen), append remaining fresh answers
+    if len(answers) < len(sub_questions):
+        covered = {a.sub_question for a in answers}
+        for a in fresh_answers:
+            if a.sub_question not in covered:
+                answers.append(a)
+
+    # Write orchestration cursor AFTER gather returns with the full answers list.
+    # (lift-durable-orchestration E2, V1 fix: cursor is written after asyncio.gather
+    # completes, not per-worker. Per-worker persistence would require asyncio.as_completed.)
+    if conn is not None and message_id is not None:
+        try:
+            cursor_payload = {
+                "type": "supervisor_worker",
+                "sub_questions": sub_questions,
+                "completed": {
+                    a.sub_question: a.answer
+                    for a in answers
+                    if a.answer and not a.timed_out
+                },
+                "wave_index": None,
+            }
+            await conn.execute(
+                """
+                UPDATE messages
+                SET orchestration_cursor = $1::jsonb
+                WHERE id = $2::uuid
+                """,
+                json.dumps(cursor_payload),
+                message_id,
             )
+            logger.debug(
+                "run_supervisor_worker: wrote orchestration cursor (%d completed)",
+                len(cursor_payload["completed"]),
+            )
+        except Exception as exc:
+            logger.warning("run_supervisor_worker: cursor write failed (non-fatal): %s", exc)
 
     # 3. Synthesize
     result = await _synthesize(query, answers, provider, model)

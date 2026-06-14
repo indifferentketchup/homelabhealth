@@ -17,10 +17,23 @@ import hashlib
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
 from uuid import UUID
 
 from services.chat_jobs import InferenceRegistration, job_registry
+from services.prompt_assembly import (
+    _assembled_system_prompt,
+    _stream_inference,
+    _openai_short_chat_title,
+    _first_auto_memory_sentence,
+)
+from services.searx import searx_search_sources
+from services.crypto import encrypt_column, decrypt_column
+from services.guard import scan_output
+from services.safeguards import current_version
+from services.reasoning_strip import ThinkingStreamFilter
+from services.deid import is_enabled as deid_enabled, redact_text
+from services.sysinfo import chat_ctx_for_tier
+from services.audit import AuditRecord, insert_audit_event
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +58,7 @@ async def run_inference_job(
     first_exchange_for_auto_title: bool,
     request_id: str | None = None,
     principal_username: str = "unknown",
+    attached_source_ids: list[str] | None = None,
 ) -> None:
     """Run a complete inference cycle in a background task.
 
@@ -64,23 +78,6 @@ async def run_inference_job(
             )
 
         # 2. Assemble system prompt (RAG, search, etc.)
-        #    Import inside function to avoid circular imports with routers/chats.py
-        from routers.chats import (
-            _assembled_system_prompt,
-            _stream_inference,
-            _openai_short_chat_title,
-            _first_auto_memory_sentence,
-        )
-        from services.searx import searx_search_sources
-        from services.crypto import encrypt_column, decrypt_column
-        from services.guard import scan_output
-        from services.safeguards import current_version
-        from services.reasoning_strip import ThinkingStreamFilter
-        from services.deid import is_enabled as deid_enabled, redact_text
-        from services.provider_client import build_headers
-        from services.sysinfo import chat_ctx_for_tier
-        from services.audit import AuditRecord, insert_audit_event
-
         # Web search (if enabled)
         extra_search = ""
         if bool(chat_record.get("web_search_enabled")):
@@ -100,11 +97,12 @@ async def run_inference_job(
         # Assemble system prompt via RAG pipeline
         assembled = ""
         rag_sse_meta = None
+        _rag_block_text = ""  # third return value; unused in durable path (eval deferred per design)
         try:
             async with pool.acquire() as rag_conn:
                 # _assembled_system_prompt expects an asyncpg.Record-like object
                 # but chat_record is a dict. Build a minimal record adapter.
-                assembled, rag_sse_meta = await _assembled_system_prompt(
+                assembled, rag_sse_meta, _rag_block_text = await _assembled_system_prompt(
                     rag_conn,
                     chat_record,
                     user_query_for_rag=user_message_text,
@@ -135,6 +133,46 @@ async def run_inference_job(
                 "## Web search results (use if relevant; the user enabled web search for this turn):\n"
                 + extra_search
             )
+
+        # Inject attached source documents (mirrors the SSE path in routers/chats.py).
+        if attached_source_ids:
+            import pathlib
+            import uuid as _uuid
+
+            attached_docs: list[str] = []
+            for sid in attached_source_ids:
+                try:
+                    async with pool.acquire() as _src_conn:
+                        srow = await _src_conn.fetchrow(
+                            "SELECT name, mime_type, file_url FROM sources WHERE id = $1::uuid",
+                            _uuid.UUID(sid),
+                        )
+                    if srow and srow["file_url"]:
+                        fp = pathlib.Path(srow["file_url"])
+                        if fp.exists():
+                            file_raw = fp.read_bytes()
+                            smime = (srow["mime_type"] or "text/plain").lower().split(";")[0].strip()
+                            txt = None
+                            if smime == "application/pdf":
+                                from services.vision import extract_pdf_via_vision
+                                txt = await extract_pdf_via_vision(file_raw)
+                            elif smime.startswith("image/"):
+                                from services.vision import extract_image_via_vision
+                                txt = await extract_image_via_vision(file_raw, smime)
+                            if not txt:
+                                from services.chunking import parse_source_bytes as _parse
+                                txt = _parse(file_raw, srow["mime_type"] or "text/plain")
+                            if deid_enabled():
+                                txt = redact_text(txt).text
+                            attached_docs.append(f"[DOCUMENT: {srow['name']}]\n{txt}")
+                except Exception as exc:
+                    logger.warning("inference_job: attached source %s read failed: %s", sid, exc)
+            if attached_docs:
+                system_blocks.append(
+                    "### Attached documents (the user explicitly sent these to chat — read them fully):\n\n"
+                    + "\n\n---\n\n".join(attached_docs)
+                )
+
         if system_blocks:
             api_messages.append({"role": "system", "content": "\n\n".join(system_blocks)})
 
@@ -482,15 +520,33 @@ async def run_inference_job(
                     "SELECT value FROM global_settings WHERE key = 'memory_auto_extract_enabled'"
                 )
             if _mem_setting == "true":
-                from services.memory_hooks import run_background_extraction
+                from services.memory_hooks import (
+                    schedule_extraction,
+                    _detect_correction,
+                    _detect_reinforcement,
+                )
+                _ws_id = str(chat_record.get("workspace_id") or "")
+                _signal = None
+                if _detect_correction(user_message_text):
+                    _signal = "correction"
+                elif _detect_reinforcement(user_message_text):
+                    _signal = "reinforcement"
+                # schedule_extraction is nearly instant (cancel+create a sleeping task).
+                # The sleeping inner task is held by _pending_extraction in memory_hooks.
+                # We still hold a strong ref here so GC cannot collect this wrapper task
+                # before it runs; the done-callback removes it once it completes.
                 _t = asyncio.create_task(
-                    run_background_extraction(
-                        user_message_text,
-                        assistant_text,
-                        provider,
-                        effective_model,
+                    schedule_extraction(
+                        workspace_id=_ws_id,
+                        user_message_text=user_message_text,
+                        assistant_text=assistant_text,
+                        provider=provider,
+                        model=effective_model,
+                        pool=pool,
+                        signal_type=_signal,
+                        provider_is_bundled=provider_is_bundled,
                     ),
-                    name=f"mem_extract_{assistant_id}",
+                    name=f"mem_schedule_{_ws_id or 'none'}",
                 )
                 _background_tasks.add(_t)
                 _t.add_done_callback(_background_tasks.discard)

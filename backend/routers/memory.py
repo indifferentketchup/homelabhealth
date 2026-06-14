@@ -9,15 +9,15 @@ import logging
 import uuid
 from typing import Any
 
-import httpx
 from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from deps import get_principal, require_admin
 from db import get_pool
+from services.crypto import decrypt_column
 from services.audit import AuditEventHandle, audit_event
 from services.memory.engine import get_engine
-from services.provider_client import build_headers, resolve_provider_for_workspace
+from services.provider_client import async_llm_call, resolve_provider_for_workspace
 from services.reasoning_strip import strip_thinking_text
 
 router = APIRouter()
@@ -142,7 +142,7 @@ async def extract_memory(
                 ORDER BY m.created_at DESC, m.id DESC
                 LIMIT 20
             )
-            SELECT role, content FROM recent
+            SELECT id, role, content FROM recent
             ORDER BY created_at ASC, id ASC
             """,
             chat_id,
@@ -155,7 +155,10 @@ async def extract_memory(
     lines: list[str] = []
     for r in msg_rows:
         role = r["role"]
-        content = (r["content"] or "").strip()
+        raw = r["content"] or ""
+        # Decrypt before building the prompt so extracted facts are real
+        # text when HLH_MASTER_KEY column encryption is active.
+        content = decrypt_column(raw, str(r["id"])).strip() if raw else ""
         if not content:
             continue
         lines.append(f"{role.upper()}: {content}")
@@ -170,31 +173,13 @@ async def extract_memory(
         f"Recent conversation:\n{messages_text}"
     )
 
-    payload: dict[str, Any] = {
-        "model": model,
-        "messages": [{"role": "user", "content": user_prompt}],
-        "stream": False,
-    }
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
-            resp = await client.post(
-                f"{provider.base_url}/v1/chat/completions",
-                json=payload,
-                headers=build_headers(provider),
-            )
-            if resp.status_code >= 400:
-                raise HTTPException(
-                    status_code=502,
-                    detail=f"Inference error {resp.status_code}: {resp.text[:500]}",
-                )
-            data = resp.json()
-    except httpx.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"Inference request failed: {e}") from e
-
-    choices = data.get("choices") or []
-    msg = choices[0].get("message") if choices else {}
-    msg = msg or {}
-    updated = strip_thinking_text((msg.get("content") or "").strip())
+    raw = await async_llm_call(
+        provider,
+        model,
+        [{"role": "user", "content": user_prompt}],
+        timeout_s=120.0,
+    )
+    updated = strip_thinking_text(raw) if raw else ""
     if not updated:
         raise HTTPException(status_code=502, detail="Model returned empty memory")
 

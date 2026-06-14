@@ -446,6 +446,83 @@ async def patch_workspace(
     return _row(prow)
 
 
+class PatientProfileBody(BaseModel):
+    profile: dict[str, Any]
+
+
+@router.get("/{workspace_id}/patient-profile")
+async def get_patient_profile(
+    workspace_id: uuid.UUID,
+    _: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
+):
+    """Return the structured patient profile for a workspace.
+
+    Returns 404 if the workspace does not exist.
+    """
+    from services.patient_profile import get_profile
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        exists = await conn.fetchval(
+            "SELECT 1 FROM workspaces WHERE id = $1::uuid", workspace_id
+        )
+        if not exists:
+            raise HTTPException(status_code=404, detail="Workspace not found")
+        row = await conn.fetchrow(
+            "SELECT profile, updated_at FROM workspace_patient_profile WHERE workspace_id = $1::uuid",
+            workspace_id,
+        )
+    async with audit.targeting("workspace", workspace_id):
+        pass
+
+    import json as _json
+
+    if row is None:
+        return {
+            "workspace_id": str(workspace_id),
+            "profile": {},
+            "updated_at": None,
+        }
+    raw = row["profile"]
+    profile_dict = _json.loads(raw) if isinstance(raw, str) else dict(raw)
+    return {
+        "workspace_id": str(workspace_id),
+        "profile": profile_dict,
+        "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
+    }
+
+
+@router.put("/{workspace_id}/patient-profile")
+async def put_patient_profile(
+    workspace_id: uuid.UUID,
+    body: PatientProfileBody,
+    _: dict[str, Any] = Depends(get_principal),
+    audit: AuditEventHandle = Depends(audit_event),
+):
+    """Upsert the structured patient profile for a workspace."""
+    from services.patient_profile import upsert_profile
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        exists = await conn.fetchval(
+            "SELECT 1 FROM workspaces WHERE id = $1::uuid", workspace_id
+        )
+        if not exists:
+            raise HTTPException(status_code=404, detail="Workspace not found")
+        await upsert_profile(conn, workspace_id, body.profile)
+        updated_row = await conn.fetchrow(
+            "SELECT updated_at FROM workspace_patient_profile WHERE workspace_id = $1::uuid",
+            workspace_id,
+        )
+    async with audit.targeting("workspace", workspace_id):
+        pass
+    return {
+        "workspace_id": str(workspace_id),
+        "updated_at": updated_row["updated_at"].isoformat() if updated_row and updated_row["updated_at"] else None,
+    }
+
+
 @router.delete("/{workspace_id}")
 async def delete_workspace(
     workspace_id: uuid.UUID,

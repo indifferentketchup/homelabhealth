@@ -9,15 +9,18 @@ upstream failure).
 from __future__ import annotations
 
 import logging
-from typing import Any
-
 import asyncpg
-import httpx
 from fastapi import HTTPException
 
 from db import get_pool
-from services.provider_client import build_headers, resolve_provider_for_workspace
+from services.crypto import decrypt_column
+from services.provider_client import resolve_provider_for_workspace
 from services.reasoning_strip import strip_thinking_text
+from services.summarization import (
+    build_preserved_facts_block,
+    extract_medical_facts,
+    summarize_transcript,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,40 +33,6 @@ async def _get_setting(conn: asyncpg.Connection, key: str, default: str) -> str:
     return row["value"] if row else default
 
 
-async def _openai_summarize(
-    base_url: str,
-    headers: dict[str, str],
-    model: str,
-    text: str,
-) -> str:
-    payload: dict[str, Any] = {
-        "model": model,
-        "stream": False,
-        "messages": [
-            {
-                "role": "user",
-                "content": (
-                    "Summarize the following conversation turns into a concise bullet summary "
-                    "that preserves facts, decisions, and open questions. "
-                    "Do not address the user; output summary only.\n\n"
-                    f"{text}"
-                ),
-            }
-        ],
-    }
-    async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
-        r = await client.post(
-            f"{base_url}/v1/chat/completions",
-            json=payload,
-            headers=headers,
-        )
-        r.raise_for_status()
-        data: dict[str, Any] = r.json()
-    choices = data.get("choices") or []
-    if not choices:
-        return ""
-    msg = choices[0].get("message") or {}
-    return strip_thinking_text((msg.get("content") or "").strip())
 
 
 async def summarize_and_compress(
@@ -94,7 +63,7 @@ async def summarize_and_compress(
             return
 
         count_row = await conn.fetchrow(
-            "SELECT COUNT(*)::int AS c FROM messages WHERE chat_id = $1::uuid",
+            "SELECT COUNT(*)::int AS c FROM messages WHERE chat_id = $1::uuid AND compacted_at IS NULL",
             chat_id,
         )
         actual = count_row["c"] if count_row else 0
@@ -103,7 +72,7 @@ async def summarize_and_compress(
             """
             SELECT id, role, content, created_at
             FROM messages
-            WHERE chat_id = $1::uuid
+            WHERE chat_id = $1::uuid AND compacted_at IS NULL
             ORDER BY created_at ASC, id ASC
             """,
             chat_id,
@@ -124,14 +93,16 @@ async def summarize_and_compress(
         to_prune = rows[:-10]
         keep_ids = [r["id"] for r in rows[-10:]]
 
+        # Decrypt message content before building the summarization input so
+        # the LLM sees real text when HLH_MASTER_KEY column encryption is active.
         transcript = "\n\n".join(
-            f"{r['role'].upper()}: {r['content']}" for r in to_prune
+            f"{r['role'].upper()}: {decrypt_column(r['content'], str(r['id']))}"
+            for r in to_prune
         )
         prev = chat["pruning_summary"] or ""
-        bundle = f"Previous summary:\n{prev}\n\nMessages to compress:\n{transcript}" if prev else transcript
 
         # Resolve provider via the chat's workspace. If unconfigured, skip
-        # silently — pruning is best-effort and shouldn't fail the user's send.
+        # silently -- pruning is best-effort and shouldn't fail the user's send.
         workspace_id = chat["workspace_id"]
         if workspace_id is None:
             return
@@ -140,16 +111,25 @@ async def summarize_and_compress(
         except HTTPException as e:
             logger.info("pruning skipped chat_id=%s: %s", chat_id, e.detail)
             return
-        try:
-            summary = await _openai_summarize(
-                provider.base_url, build_headers(provider), model, bundle
-            )
-        except Exception as e:
-            logger.warning("pruning summarize failed chat_id=%s: %s", chat_id, e)
-            return
+
+        raw_summary = await summarize_transcript(
+            provider,
+            model,
+            transcript,
+            existing_summary=prev or None,
+            temperature=0.3,
+            max_tokens=1024,
+            timeout_s=120.0,
+        )
+        summary = strip_thinking_text(raw_summary) if raw_summary else ""
 
         if not summary:
             return
+
+        # Reuse the already-decrypted transcript for fact extraction.
+        facts = extract_medical_facts(transcript)
+        if facts:
+            summary = summary + build_preserved_facts_block(facts)
 
         prune_ids = [r["id"] for r in to_prune]
         await conn.execute(

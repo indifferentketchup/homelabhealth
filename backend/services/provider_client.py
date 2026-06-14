@@ -16,13 +16,17 @@ Public surface:
 
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass
 
+import httpx
 from fastapi import HTTPException
 
 from db import get_pool
 from services.crypto import decrypt_secret
+
+logger = logging.getLogger(__name__)
 
 
 _CHAT_NOT_CONFIGURED = (
@@ -216,3 +220,56 @@ def build_headers(provider: Provider, extra: dict | None = None) -> dict[str, st
     if provider.api_key:
         h["Authorization"] = f"Bearer {provider.api_key}"
     return h
+
+
+async def async_llm_call(
+    provider: Provider,
+    model: str,
+    messages: list[dict],
+    *,
+    temperature: float = 0.3,
+    max_tokens: int = 1024,
+    timeout_s: float = 60.0,
+    response_format: dict | None = None,
+    extra_body: dict | None = None,
+) -> str:
+    """Non-streaming chat completion via OpenAI-compatible /v1/chat/completions.
+
+    Returns choices[0].message.content stripped, or '' on any failure (HTTP error,
+    parse error, empty choices -- all logged at WARNING).
+
+    Callers must apply de-identification to message content BEFORE calling this
+    helper when routing to an external (non-bundled) provider. This helper does
+    not perform de-identification.
+
+    For STREAMING use the existing _stream_inference path, not this.
+    """
+    payload: dict = {
+        "model": model,
+        "messages": messages,
+        "stream": False,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+    if response_format is not None:
+        payload["response_format"] = response_format
+    if extra_body:
+        payload.update(extra_body)
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(timeout_s)) as client:
+            resp = await client.post(
+                f"{provider.base_url}/v1/chat/completions",
+                json=payload,
+                headers=build_headers(provider),
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            choices = data.get("choices") or []
+            if not choices:
+                logger.warning("async_llm_call: no choices in response (model=%s)", model)
+                return ""
+            msg = (choices[0].get("message") or {})
+            return (msg.get("content") or "").strip()
+    except Exception as exc:
+        logger.warning("async_llm_call failed (model=%s): %s: %s", model, type(exc).__name__, exc)
+        return ""

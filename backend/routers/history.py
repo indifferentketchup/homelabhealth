@@ -27,6 +27,7 @@ from services.history import (
     slugify,
 )
 from services.provider_client import resolve_provider_for_workspace
+from services.prompt_assembly import _openai_short_chat_title
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -148,28 +149,22 @@ async def rename_history(
     ext = EXT_FOR_KIND[kind]
 
     if body.new.strip() == "__ai__":
-        # Import lazily to avoid circular with routers.chats when /history loads.
-        try:
-            from routers.chats import _openai_short_chat_title
-        except Exception:
-            _openai_short_chat_title = None
         proposed = None
-        if _openai_short_chat_title is not None:
-            try:
-                text = old_path.read_text(encoding="utf-8", errors="replace")
-                sample = text[:4000]
-                # Resolve via the workspace whose history file we're renaming.
-                # If the workspace has no provider configured, the resolver
-                # raises HTTPException(400) with the spec message; we surface
-                # it as 503 to match the existing "ai rename unavailable" UX.
-                provider, model = await resolve_provider_for_workspace(body.workspace_id)
-                proposed = await _openai_short_chat_title(
-                    provider, model, user_message_text=sample
-                )
-            except HTTPException:
-                raise
-            except Exception as e:
-                logger.warning("ai rename failed kind=%s file=%s err=%s", kind, body.old, e)
+        try:
+            text = old_path.read_text(encoding="utf-8", errors="replace")
+            sample = text[:4000]
+            # Resolve via the workspace whose history file we're renaming.
+            # If the workspace has no provider configured, the resolver
+            # raises HTTPException(400) with the spec message; we surface
+            # it as 503 to match the existing "ai rename unavailable" UX.
+            provider, model = await resolve_provider_for_workspace(body.workspace_id)
+            proposed = await _openai_short_chat_title(
+                provider, model, user_message_text=sample
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.warning("ai rename failed kind=%s file=%s err=%s", kind, body.old, e)
         if not proposed:
             raise HTTPException(status_code=503, detail="ai rename unavailable")
         slug = slugify(proposed, fallback="untitled", max_len=60)

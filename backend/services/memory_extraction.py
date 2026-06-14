@@ -39,6 +39,7 @@ async def extract_from_exchange(
     model: str,
     *,
     engine: MemoryEngine | None = None,
+    provider_is_bundled: bool = True,
 ) -> list[dict[str, Any]]:
     """Analyze one user+assistant exchange and extract structured facts.
 
@@ -63,55 +64,36 @@ async def extract_from_exchange(
     -------
     List of dicts with keys ``content``, ``category``, ``confidence``, ``memory_id``.
     """
-    import httpx
+    from services.deid import is_enabled as deid_enabled, redact_text
+    from services.provider_client import async_llm_call
 
     if not user_text or not user_text.strip():
         return []
 
+    # De-identify before sending to an external (non-bundled) provider.
+    # Bundled providers run on-box; no redaction needed.
+    if deid_enabled() and not provider_is_bundled:
+        user_text = redact_text(user_text).text
+        if assistant_text:
+            assistant_text = redact_text(assistant_text).text
+
     conversation = f"User: {user_text}\n\nAssistant: {assistant_text or ''}"
 
-    payload = {
-        "model": model,
-        "messages": [
+    raw = await async_llm_call(
+        provider,
+        model,
+        [
             {"role": "system", "content": _EXTRACTION_SYSTEM_PROMPT},
             {"role": "user", "content": conversation},
         ],
-        "stream": False,
-        "max_tokens": 1024,
-        "temperature": 0.1,
-    }
-
-    try:
-        from services.provider_client import build_headers
-
-        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
-            resp = await client.post(
-                f"{provider.base_url}/v1/chat/completions",
-                json=payload,
-                headers=build_headers(provider),
-            )
-            if resp.status_code >= 400:
-                logger.warning(
-                    "extract_from_exchange: LLM returned %d", resp.status_code
-                )
-                return []
-
-            data = resp.json()
-            choices = data.get("choices") or []
-            if not choices:
-                return []
-
-            msg = choices[0].get("message") or {}
-            raw = (msg.get("content") or "").strip()
-            facts = _parse_extraction_response(raw)
-
-    except Exception as exc:
-        logger.warning(
-            "extract_from_exchange: LLM call failed: %s: %s",
-            type(exc).__name__,
-            exc,
-        )
+        temperature=0.1,
+        max_tokens=1024,
+        timeout_s=30.0,
+    )
+    if not raw:
         return []
+
+    facts = _parse_extraction_response(raw)
 
     if not facts:
         return []
