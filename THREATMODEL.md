@@ -53,7 +53,7 @@ access to PHI endpoints. Session cookies are not yet `Secure`-flagged when HTTPS
 `hlh_chat` and `hlh_orchestra` run with `read_only: true`,
 `cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]`. `hlh_chat` has no host ports
 and is isolated on `hlh_inference` (`internal: true`).
-Image tags are pinned: `ghcr.io/ggml-org/llama.cpp:server-b9603` and
+Image tags are pinned: `ghcr.io/ggml-org/llama.cpp:server-b9628` and
 `searxng/searxng:2026.5.22-c57f772ad`. Hardening is verified by
 `backend/scripts/verify_a1_5_hardening.sh`. Shipped in v0.8.0.
 

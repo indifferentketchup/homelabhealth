@@ -130,12 +130,12 @@ services:
   #
   hlh_chat_cpu:
     <<: *hlh-chat-base
-    image: ${HLH_CHAT_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-b9603}
+    image: ${HLH_CHAT_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-b9628}
     profiles: [bundled]
 
   hlh_chat_gpu:
     <<: *hlh-chat-base
-    image: ${HLH_CHAT_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda-b9603}
+    image: ${HLH_CHAT_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda-b9628}
     profiles: [bundled-gpu]
     deploy:
       resources:

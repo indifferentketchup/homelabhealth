@@ -132,7 +132,7 @@ fi
 echo ""
 echo "=== 10. Compose defaults are CPU (safe fresh-clone) ==="
 CHAT_DEFAULT=$(cd "$COMPOSE_DIR" && COMPOSE_PROFILES=bundled docker compose config 2>/dev/null | grep -A100 'hlh_chat_cpu:' | grep '^\s*image:' | head -1 | awk '{print $2}')
-if echo "$CHAT_DEFAULT" | grep -q 'server-b9603' && ! echo "$CHAT_DEFAULT" | grep -q 'cuda'; then
+if echo "$CHAT_DEFAULT" | grep -q 'server-b9628' && ! echo "$CHAT_DEFAULT" | grep -q 'cuda'; then
   ok "hlh_chat_cpu default image is CPU: $CHAT_DEFAULT"
 else
   fail "hlh_chat_cpu default image: $CHAT_DEFAULT"

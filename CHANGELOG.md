@@ -18,6 +18,21 @@ live under the `snapshot/` namespace.
 
 ---
 
+## [v1.3.1] — 2026-06-15
+
+### Tooling
+
+- **llama.cpp pin bumped b9603 → b9628** (2026-06-15). GitHub release b9637 exists
+  but its GHCR `server-`/`server-cuda-` images are not published; b9628 is the
+  newest build with both variants on GHCR. Updated `docker-compose.yml`,
+  `.env.example`, `backend/services/image_config.py` (`LLAMA_CPP_VERSION`, which
+  drives the tier-save `.env` writer), `hlh_orchestra/bootstrap.py` (CPU/GPU
+  chat-image defaults), `backend/scripts/verify_dynamic_images.sh`, and
+  THREATMODEL.md. Requires `hlh_api` + `hlh_orchestra` image rebuilds (both bake
+  the pin) so fresh installs and the tier-save path pull b9628.
+
+---
+
 ## [v1.3.0] — 2026-06-14
 
 ### Docs
