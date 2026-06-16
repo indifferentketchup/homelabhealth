@@ -1,41 +1,50 @@
 # All-in-one convenience (same Docker network). For split deploy: docker-compose.core.yml + docker-compose.ui.yml
 name: homelabhealth
 
-x-hlh-chat-base: &hlh-chat-base
-  container_name: hlh_chat
+# hlh_swap: combined inference front-door. Entrypoint llama-swap (v226); its
+# config cmd: lines fork llama-server (chat/tasks/mmproj) and boofinity
+# (embed/rerank/VL) as CHILD PROCESSES inside this one container. No Docker
+# socket, no sibling-container lifecycle. read_only is kept; the only writable
+# exceptions are LD_LIBRARY_PATH=/app (llama.cpp child libs), HOME=/cache
+# (boofinity child caches), and the tmpfs scratch dirs. Replaces the former
+# standalone hlh_chat (llama.cpp) and hlh_infer (boofinity) services.
+x-hlh-swap-base: &hlh-swap-base
+  container_name: hlh_swap
   restart: unless-stopped
   env_file:
     - .env
   environment:
+    HF_HOME: /cache
+    HOME: /cache
+    HF_HUB_OFFLINE: "1"
     LD_LIBRARY_PATH: /app
   volumes:
-    - hlh_models:/models:ro
-    - ./hlh_chat/models.ini:/config/models.ini:ro
+    - hlh_models:/models:ro                          # GGUFs + models.ini for the llama-server child
+    - hlh_infer_cache:/cache                          # HF_HOME for the boofinity child
+    - ./hlh_swap/config.yaml:/config/config.yaml:ro   # llama-swap child config
   command:
-    - --models-preset
-    - /config/models.ini
-    - --host
-    - "0.0.0.0"
-    - --port
-    - "${HLH_CHAT_PORT:-9610}"
-    - --models-max
-    - "${HLH_MODELS_MAX:-2}"
+    - --config
+    - /config/config.yaml
+    - --listen
+    - "0.0.0.0:9620"
   user: "1000:1000"
   read_only: true
   tmpfs:
     - /tmp
-    - /tmp/llama-slots
+    - /run
   cap_drop:
     - ALL
   security_opt:
     - no-new-privileges:true
-  mem_limit: ${HLH_CHAT_MEM:-7g}
+  mem_limit: ${HLH_INFER_MEM:-4g}
   healthcheck:
-    test: ["CMD-SHELL", "curl -fsS http://localhost:${HLH_CHAT_PORT:-9610}/v1/models || exit 1"]
+    # Combined image is FROM the boofinity base, which ships python, so the probe
+    # uses urllib (no wget/curl dependency). Path is llama-swap's readiness route.
+    test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:9620/v1/models').status==200 else 1)\" || exit 1"]
     interval: 30s
     timeout: 5s
     retries: 3
-    start_period: 60s
+    start_period: 120s
   depends_on:
     - hlh_api
   networks:
@@ -107,6 +116,7 @@ services:
       - hlh_branding:/data/branding
       - hlh_history:/data/history
       - hlh_models:/models               # Phase 1: model_puller writes here
+      - hlh_infer_cache:/cache           # model_puller writes the boofinity HF snapshot here (read by hlh_swap)
       - ./.env:/data/.env                # write_tier_env updates image tags on tier change
     user: "1000:1000"
     read_only: true
@@ -120,23 +130,28 @@ services:
       - hlh_default
       - hlh_inference
 
-  # Phase 1: bundled chat inference (llama.cpp server). Reads model weights
-  # from the shared hlh_models volume; the model file is downloaded by the
-  # api (services/model_puller.py) before this service is useful — until
-  # then the healthcheck fails and the container restarts.
-  #
-  # Only reachable inside hlh_inference. The api proxies to it as a registered
-  # provider at http://hlh_chat:${HLH_CHAT_PORT}.
-  #
-  hlh_chat_cpu:
-    <<: *hlh-chat-base
-    image: ${HLH_CHAT_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-b9628}
+  # Bundled inference front-door (llama-swap). Reads model weights from the
+  # shared hlh_models volume (llama-server child) and the hlh_infer_cache volume
+  # (boofinity child HF cache). Only reachable inside hlh_inference. The api
+  # proxies to it as a registered provider at http://hlh_swap:9620 (the rebind
+  # from hlh_chat:9610 is folder C). The CPU variant runs the boofinity child on
+  # CPU (HLH_INFER_DEVICE default); the GPU variant overrides to cuda and owns
+  # the single GPU reservation.
+  hlh_swap_cpu:
+    <<: *hlh-swap-base
+    image: ${HLH_SWAP_IMAGE:-ghcr.io/indifferentketchup/hlh-swap:0.1.0-cpu}
     profiles: [bundled]
 
-  hlh_chat_gpu:
-    <<: *hlh-chat-base
-    image: ${HLH_CHAT_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda-b9628}
+  hlh_swap_gpu:
+    <<: *hlh-swap-base
+    image: ${HLH_SWAP_IMAGE:-ghcr.io/indifferentketchup/hlh-swap:0.1.0-cuda}
     profiles: [bundled-gpu]
+    environment:
+      HF_HOME: /cache
+      HOME: /cache
+      HF_HUB_OFFLINE: "1"
+      LD_LIBRARY_PATH: /app
+      HLH_INFER_DEVICE: cuda
     deploy:
       resources:
         reservations:
@@ -150,8 +165,8 @@ services:
   # bring this whole stack up from nothing. Build it with:
   #   docker build -t ghcr.io/indifferentketchup/hlh_orchestra:<tag> ./hlh_orchestra
   # (MedSigLIP / the hlh_vision_embed sidecar were removed in v1.2.11; MedGemma
-  # vision is now served on demand by the hlh_chat router — see [medgemma-vision]
-  # in hlh_chat/models.ini.)
+  # vision is now served on demand by the llama-server child of hlh_swap via the
+  # [medgemma] preset in hlh_chat/models.ini.)
 
   # Phase 2: bundled SearXNG for web search. Internal-only on hlh_default.
   # JSON format is enabled via searxng/settings.yml (default config has it off,
@@ -246,3 +261,4 @@ volumes:
   hlh_branding:
   hlh_history:
   hlh_models:
+  hlh_infer_cache:

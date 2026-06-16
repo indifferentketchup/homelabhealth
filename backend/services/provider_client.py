@@ -212,6 +212,51 @@ async def resolve_bundled_chat_provider() -> tuple[Provider, str] | None:
     return _row_to_provider(row), model
 
 
+async def resolve_bundled_vl_provider(role: str) -> tuple[Provider, str] | None:
+    """Resolve a bundled VL provider (role 'embed-vl' or 'rerank-vl').
+
+    Returns (Provider, serving-alias) or None when the row is absent — which is
+    every tier below gpu-24gb+ (the VL rows are seeded only there, folder D), or
+    external / setup-incomplete. The serving alias is the boofinity model name
+    (qwen3-vl-embed / qwen3-vl-rerank) that hlh_swap routes; it is fixed per role,
+    not stored in bundled_models (the snapshot model_id is repo@snapshot).
+
+    Callers (vision.py ingest, rag.py retrieval) treat None as "VL path closed".
+    """
+    from services.bundled_providers import (
+        BUNDLED_VL_EMBED_MODEL,
+        BUNDLED_VL_RERANK_MODEL,
+    )
+
+    alias_by_role = {
+        "embed-vl": BUNDLED_VL_EMBED_MODEL,
+        "rerank-vl": BUNDLED_VL_RERANK_MODEL,
+    }
+    alias = alias_by_role.get(role)
+    if alias is None:
+        return None
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        profile = await conn.fetchrow(
+            "SELECT tier, setup_complete FROM system_profile WHERE id = 1"
+        )
+        if not profile or not profile["setup_complete"] or profile["tier"] == "external":
+            return None
+        row = await conn.fetchrow(
+            """
+            SELECT id, name, base_url, api_key, enabled
+              FROM providers
+             WHERE is_bundled = TRUE AND role = $1 AND enabled = TRUE
+             LIMIT 1
+            """,
+            role,
+        )
+    if row is None:
+        return None
+    return _row_to_provider(row), alias
+
+
 def build_headers(provider: Provider, extra: dict | None = None) -> dict[str, str]:
     """OpenAI-compatible headers, plus Authorization if the provider has a key."""
     h: dict[str, str] = {"Content-Type": "application/json"}

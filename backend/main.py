@@ -168,7 +168,6 @@ async def lifespan(_app: FastAPI):
         await init_pool()
         await apply_schema()
         await ensure_super_admin()
-        # Phase 1: seed bundled_models from MODEL_REGISTRY. Idempotent — safe on every boot.
         pool = await get_pool()
         # Sweep stale streaming rows left behind by a prior process crash/OOM.
         # 10-minute threshold is conservative vs the running sweeper's 5 minutes.
@@ -209,6 +208,22 @@ async def lifespan(_app: FastAPI):
                     "lifespan: incremented retry_count on %d stale streaming rows from prior process run (budget remaining)",
                     len(retried),
                 )
+            stale_sources = await sweep_conn.fetch(
+                """
+                UPDATE sources
+                SET embedding_status = 'error',
+                    error_message = 'ingest interrupted: source left in processing across restart',
+                    updated_at = NOW()
+                WHERE embedding_status = 'processing'
+                  AND updated_at < NOW() - INTERVAL '5 minutes'
+                RETURNING id
+                """,
+            )
+            if stale_sources:
+                logger.info(
+                    "lifespan: swept %d stale 'processing' sources to 'error'",
+                    len(stale_sources),
+                )
         # v1.1.4→v1.1.5 chat-path flattening: best-effort, harmless if no legacy files.
         bundled_providers.migrate_legacy_chat_paths()
         async with pool.acquire() as conn:
@@ -218,6 +233,11 @@ async def lifespan(_app: FastAPI):
             if profile_row is not None:
                 await bundled_providers.apply_bundled_bindings(conn, profile_row["tier"] or "external")
             await log_startup_banner(conn, seeded=seeded, orphaned=orphaned)
+        # One-shot embed-cutover reingest: after bindings (front-door base_url)
+        # and seed_registry, fire reingest-all once when the boofinity embed
+        # backend is ready (idempotent; guarded by a global_settings sentinel).
+        from services.embed_cutover import run_embed_cutover
+        await run_embed_cutover(pool)
         from services.memory_hooks import register_memory_hooks
         register_memory_hooks()
     except Exception as exc:
@@ -352,7 +372,7 @@ app.add_middleware(
     allow_origins=_origins or ["http://localhost:9604"],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept"],
 )
 
 

@@ -15,11 +15,23 @@ from io import BytesIO
 
 import httpx
 
-from services.provider_client import build_headers, resolve_bundled_chat_provider
+from services.provider_client import (
+    build_headers,
+    resolve_bundled_chat_provider,
+    resolve_bundled_vl_provider,
+)
 
 logger = logging.getLogger(__name__)
 
 VISION_TIMEOUT = 300.0
+
+# Dual-space VL image embedding (folder D, gpu-24gb+ only). The column is
+# vector(1024); Qwen3-VL-Embedding-2B is matryoshka so we request a 1024-dim
+# vector and, if the server returns wider, take the first-1024 prefix. A native
+# return shorter than 1024 is a misconfigured model — we refuse to insert a short
+# vector (pgvector would reject it with an opaque dimension error) and log it.
+VL_EMBED_DIM = 1024
+VL_EMBED_TIMEOUT = 120.0
 # The chat model preset (models.ini) — MedGemma is multimodal, so the same
 # instance that serves chat also reads images once its mmproj is loaded. MUST be
 # sent as the request "model" or the llama-server router 400s the call. Using the
@@ -185,3 +197,71 @@ async def extract_pdf_via_vision(file_bytes: bytes) -> str | None:
             logger.warning("vision extraction returned no text for page %d", i + 1)
 
     return "\n".join(parts) if parts else None
+
+
+def _slice_vl_embedding(vec: list[float]) -> list[float] | None:
+    """Reduce a VL embedding to VL_EMBED_DIM via matryoshka prefix.
+
+    Returns the first VL_EMBED_DIM components, or None (with an error log naming
+    the observed length) when the native vector is shorter than VL_EMBED_DIM —
+    inserting a short vector would fail the vector(1024) column with an opaque
+    pgvector dimension error, so we refuse it instead.
+    """
+    n = len(vec)
+    if n < VL_EMBED_DIM:
+        logger.error(
+            "vl-embed: native vector length %d < required %d; refusing to insert "
+            "a short vector (role embed-vl)",
+            n, VL_EMBED_DIM,
+        )
+        return None
+    return vec[:VL_EMBED_DIM]
+
+
+async def embed_image_vl(image_bytes: bytes, mime_type: str = "image/png") -> list[float] | None:
+    """Embed one image into the VL space via boofinity /v1/mm_embeddings.
+
+    Resolves the bundled 'embed-vl' provider (gpu-24gb+ only). Returns a
+    VL_EMBED_DIM (1024) float list, or None when:
+      - the VL provider is absent (every tier below gpu-24gb+, or external) →
+        the caller treats this as "VL path closed" and writes no image vector;
+      - any request/parse error (soft-fail, like _call_vision);
+      - the native vector is shorter than 1024 (guard in _slice_vl_embedding).
+
+    Requests dimensions=VL_EMBED_DIM so a server that honors matryoshka reduction
+    returns 1024 directly; otherwise the client slices the first-1024 prefix.
+    """
+    binding = await resolve_bundled_vl_provider("embed-vl")
+    if binding is None:
+        return None
+    provider, alias = binding
+
+    b64 = base64.b64encode(image_bytes).decode("ascii")
+    data_url = f"data:{mime_type};base64,{b64}"
+    payload = {
+        "model": alias,
+        "input": [{"image": data_url}],
+        "dimensions": VL_EMBED_DIM,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=VL_EMBED_TIMEOUT) as client:
+            resp = await client.post(
+                f"{provider.base_url}/v1/mm_embeddings",
+                json=payload,
+                headers=build_headers(provider),
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            items = data.get("data") or []
+            if not items:
+                logger.warning("vl-embed: empty data in mm_embeddings response")
+                return None
+            vec = items[0].get("embedding")
+            if not isinstance(vec, list) or not vec:
+                logger.warning("vl-embed: malformed embedding in mm_embeddings response")
+                return None
+            return _slice_vl_embedding([float(x) for x in vec])
+    except Exception as exc:
+        logger.warning("vl-embed call failed: %s", exc)
+        return None

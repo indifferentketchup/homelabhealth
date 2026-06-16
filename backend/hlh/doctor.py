@@ -118,7 +118,6 @@ def _check_provider_key() -> dict[str, Any]:
 def _check_luks_status() -> dict[str, Any]:
     """Best-effort check that docker data root sits on LUKS (dm-crypt)."""
     try:
-        # Step 1: try to resolve docker data root
         try:
             result = subprocess.run(
                 ["docker", "info", "--format", "{{.DockerRootDir}}"],
@@ -133,7 +132,6 @@ def _check_luks_status() -> dict[str, Any]:
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
             root = "/var/lib/docker"
 
-        # Step 2: find the block device for this path
         try:
             df_result = subprocess.run(
                 ["df", "--output=source", root],
@@ -157,7 +155,6 @@ def _check_luks_status() -> dict[str, Any]:
                 "detail": "luks status unverifiable from container — confirm manually per docs/operator/advanced/luks-setup.md",
             }
 
-        # Step 3: check lsblk TYPE column for the source device
         try:
             lsblk_result = subprocess.run(
                 ["lsblk", "-no", "TYPE", source],
@@ -390,7 +387,7 @@ async def _check_vision_available() -> dict[str, Any]:
 
 
 async def _check_image_tier_match() -> dict[str, Any]:
-    """Check that HLH_CHAT_IMAGE matches the expected image for the current tier."""
+    """Check that HLH_SWAP_IMAGE matches the expected combined image for the tier."""
     try:
         from services.image_config import TIER_IMAGE_MAP
         pool = await get_pool()
@@ -402,16 +399,13 @@ async def _check_image_tier_match() -> dict[str, Any]:
         expected = TIER_IMAGE_MAP.get(tier)
         if not expected:
             return {"name": "image_tier_match", "status": WARN, "detail": f"unknown tier {tier}"}
-        actual_chat = os.environ.get("HLH_CHAT_IMAGE", "")
-        actual_infer = os.environ.get("HLH_INFER_IMAGE", "")
+        actual_swap = os.environ.get("HLH_SWAP_IMAGE", "")
         mismatches = []
-        if actual_chat and actual_chat != expected.chat_image:
-            mismatches.append(f"chat: {actual_chat} != {expected.chat_image}")
-        if actual_infer and actual_infer != expected.infer_image:
-            mismatches.append(f"infer: {actual_infer} != {expected.infer_image}")
+        if actual_swap and actual_swap != expected.swap_image:
+            mismatches.append(f"swap: {actual_swap} != {expected.swap_image}")
         if mismatches:
             return {"name": "image_tier_match", "status": WARN, "detail": f"stale .env — {'; '.join(mismatches)}"}
-        if not actual_chat and not actual_infer:
+        if not actual_swap:
             return {"name": "image_tier_match", "status": OK, "detail": f"using defaults (tier={tier})"}
         return {"name": "image_tier_match", "status": OK, "detail": f"images match tier={tier}"}
     except Exception as e:
@@ -437,6 +431,31 @@ def _check_models_writable() -> dict[str, Any]:
             "detail": (
                 f"{models_dir} not writable by uid-1000 ({type(e).__name__}) — model pulls will "
                 "fail; fix: docker run --rm -v hlh_models:/models alpine chown -R 1000:1000 /models"
+            ),
+        }
+
+
+def _check_infer_cache_writable() -> dict[str, Any]:
+    """The uid-1000 API must be able to write the boofinity HF snapshot.
+
+    Same failure class as hlh_models: a populated hlh_infer_cache volume can be
+    root-owned, which makes huggingface_hub snapshot writes under /cache/hub
+    EACCES. Bootstrap's ensure_infer_cache_ownership() fixes this idempotently.
+    """
+    cache_dir = pathlib.Path(os.environ.get("HLH_INFER_CACHE_DIR", "/cache"))
+    probe = cache_dir / ".doctor-write-probe"
+    try:
+        probe.write_text("ok")
+        probe.unlink()
+        return {"name": "infer_cache_writable", "status": OK, "detail": f"{cache_dir} writable"}
+    except OSError as e:
+        return {
+            "name": "infer_cache_writable",
+            "status": ERROR,
+            "detail": (
+                f"{cache_dir} not writable by uid-1000 ({type(e).__name__}) — boofinity "
+                "snapshot pulls will fail; fix: docker run --rm -v hlh_infer_cache:/cache "
+                "alpine chown -R 1000:1000 /cache"
             ),
         }
 
@@ -468,19 +487,101 @@ async def _check_model_pulls() -> dict[str, Any]:
     return {"name": "model_pulls", "status": OK, "detail": f"{ready} ready, {pending} pending"}
 
 
+async def _check_swap_group_policy() -> dict[str, Any]:
+    """Compare the tier's swap-group policy to the shipped static config.
+
+    v1 ships one static swap config with a single exclusive vram_constrained
+    group, identical across tiers (see design.md "Deferred (YAGNI)"). On a roomy
+    tier the resource policy says the children may coexist (swap_group_exclusive
+    is False), so the exclusive static config is more conservative than needed -
+    an intentional v1 gap, reported as WARN, not ERROR. On constrained tiers the
+    exclusive config matches the policy exactly (OK).
+    """
+    try:
+        from services.resource_policy import policy_for
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT tier FROM system_profile WHERE id = 1")
+        if not row or not row["tier"]:
+            return {"name": "swap_group_policy", "status": WARN, "detail": "tier not set"}
+        tier = row["tier"]
+        exclusive_expected = policy_for(tier).swap_group_exclusive
+        # The shipped static config is always the single exclusive group in v1.
+        if not exclusive_expected:
+            return {
+                "name": "swap_group_policy",
+                "status": WARN,
+                "detail": (
+                    f"tier {tier} could co-reside the chat + boofinity children, but the "
+                    "static swap config ships one exclusive group (intentional v1 default)"
+                ),
+            }
+        return {
+            "name": "swap_group_policy",
+            "status": OK,
+            "detail": f"exclusive swap group matches tier {tier} policy",
+        }
+    except Exception as e:
+        return {"name": "swap_group_policy", "status": WARN, "detail": f"{type(e).__name__}: {e}"}
+
+
+async def _check_embed_rebind_consistency() -> dict[str, Any]:
+    """Flag the un-rebound intermediate state between folders B and C.
+
+    Folder B removes [qwen3-embed] / [qwen3-reranker] from models.ini, so the
+    llama-server child no longer serves those aliases. The bundled embed/rerank
+    providers are only repointed from hlh_chat:9610 to hlh_swap:9620 in folder C.
+    If B deploys ahead of C, a bundled embed/rerank provider row still has
+    base_url http://hlh_chat:9610 while models.ini no longer serves it, so
+    embed/rerank silently 404. That is an ERROR with the remedy "deploy folder
+    C's provider rebind". OK once both providers are on hlh_swap:9620.
+    """
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT role, base_url FROM providers "
+                "WHERE is_bundled = TRUE AND role IN ('embed', 'rerank')"
+            )
+    except Exception as e:  # noqa: BLE001
+        return {"name": "embed_rebind_consistency", "status": ERROR, "detail": f"{type(e).__name__}: {e}"}
+
+    stale = [
+        r["role"] for r in rows
+        if "hlh_chat:9610" in (r["base_url"] or "")
+    ]
+    if stale:
+        return {
+            "name": "embed_rebind_consistency",
+            "status": ERROR,
+            "detail": (
+                f"bundled {', '.join(sorted(set(stale)))} provider(s) still point at "
+                "hlh_chat:9610 but models.ini no longer serves them — deploy folder C's "
+                "provider rebind to hlh_swap:9620"
+            ),
+        }
+    return {
+        "name": "embed_rebind_consistency",
+        "status": OK,
+        "detail": "bundled embed/rerank providers not on stale hlh_chat:9610",
+    }
+
+
 async def run_checks() -> list[dict[str, Any]]:
     """Run all health checks. Returns ordered list."""
     checks = [
         await _check_db_pool(),
         await _check_schema_applied(),
         await _check_setup_complete(),
-        await _check_sidecar("hlh_chat", "http://hlh_chat:9610/health"),
+        await _check_sidecar("hlh_swap", "http://hlh_swap:9620/v1/models"),
+        await _check_sidecar("boofinity_child", "http://hlh_swap:9620/v1/health"),
         await _check_sidecar("hlh_search", "http://hlh_search:8080/healthz"),
         await _check_vision_available(),
         await _check_safeguard_version(),
         _check_disk_free("disk_free_data", "/data"),
         _check_disk_free("disk_free_models", "/models"),
         _check_models_writable(),
+        _check_infer_cache_writable(),
         await _check_model_pulls(),
         _check_provider_key(),
         {**_check_luks_status(), "advanced": True},
@@ -491,6 +592,8 @@ async def run_checks() -> list[dict[str, Any]]:
         _check_deid_pipeline(),
         _check_column_encryption(),
         await _check_image_tier_match(),
+        await _check_swap_group_policy(),
+        await _check_embed_rebind_consistency(),
     ]
     return checks
 

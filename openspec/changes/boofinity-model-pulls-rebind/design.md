@@ -434,3 +434,49 @@ scripts; it is preserved verbatim. No change.
    torch/transformers write outside `HF_HOME` (e.g. `~/.cache`), a read-only
    rootfs raises `EACCES` at startup. Mitigation: `HOME=/cache` on `hlh_infer`
    (task C1.4a). If a sub-cache must not persist, a tmpfs covers it.
+
+---
+
+## Implementation notes
+
+Added 2026-06-16 during folder C implementation. These are observations where a
+cited source differed from the design assumption; no silent redesign was done.
+
+- **C1.4a (HOME=/cache) was already landed by folder B.** The design assigns the
+  `HOME=/cache` env addition to task C1.4a as a "one-line compose edit." On
+  inspection, folder B already set `HF_HOME=/cache` AND `HOME=/cache` (plus
+  `HF_HUB_OFFLINE=1`) on both the `hlh-swap-base` anchor and the `hlh_swap_gpu`
+  override in `docker-compose.yml` (lines 17-18, 149-150). C added no compose env
+  for this; the requirement is satisfied. Live no-EACCES boot confirmation is
+  deferred to deploy.
+
+- **C8.2 is a no-op against the current scripts.** Tasks C8.2 / design §C8 say to
+  change the expected provider `base_url` from `hlh_chat:9610` to `hlh_swap:9620`
+  in `verify_embedding_reranker_settings.sh` and `verify_embedding_reranker_ui.py`.
+  Neither script references `hlh_chat:9610` or asserts the bundled providers'
+  `base_url`: both stand up their own ad-hoc test providers (`step5-*`) with
+  caller-supplied URLs and exercise the `/api/settings/embedding|reranker`
+  endpoints, not the bundled rows. There was nothing to rewrite, so no edit was
+  made. The front-door `base_url` assertion the design intends now lives in
+  `verify_bundled_immutability.sh` (C8.3) and the new
+  `verify_boofinity_embed_rerank.sh` (C8.1), which DO probe the front-door
+  directly. Model aliases (`qwen3-embed` / `qwen3-reranker`) are unchanged, as
+  specified.
+
+- **Snapshot `kind` re-derivation.** Per design, `bundled_models` does not store
+  `kind`; `pull_model` re-derives it from `MODEL_REGISTRY` via the new
+  `_spec_kind(role, tier, model_id)` helper (matches on `model_id` so a stale row
+  whose registry spec changed falls back to `"file"`, never mis-dispatching).
+
+- **Empty-corpus banner clear.** `embed_cutover` clears `retrieval_rebuilding`
+  immediately when `reingest_all_sources_impl` queues zero sources, because the
+  ingest completion hook (which normally clears it) never fires with no source in
+  `processing`. Prevents a stuck `'true'` flag on a deployment with no documents.
+
+- **C3/C4/C7 confirmed unchanged.** `rag.py:_rerank_infinity` already sends
+  `documents: list[str]` with `return_documents: False` and parses
+  `index`/`relevance_score` under a broad soft-fallback; `embeddings._post`
+  already posts `/v1/embeddings` and guards `len(emb) == EMBEDDING_DIM` (1024);
+  `providers.py` still returns the verbatim
+  `"error: embedding dim mismatch: expected 1024, got {dim}"`. No edits, as the
+  planners locked.

@@ -37,7 +37,7 @@ NETWORK_INFERENCE = "hlh_inference"
 
 VOLUMES = [
     "hlh_db_data", "hlh_keys", "hlh_uploads", "hlh_branding",
-    "hlh_history", "hlh_models", "hlh_config",
+    "hlh_history", "hlh_models", "hlh_config", "hlh_infer_cache",
 ]
 
 CONFIG_VOLUME = "hlh_config"
@@ -56,10 +56,12 @@ SEARCH_IMAGE = "searxng/searxng:2026.5.22-c57f772ad"
 TEMPLATE_DIR = "/app/templates"
 MODELS_INI_TEMPLATE = f"{TEMPLATE_DIR}/models.ini"
 SEARXNG_YML_TEMPLATE = f"{TEMPLATE_DIR}/searxng_settings.yml"
+SWAP_CONFIG_TEMPLATE = f"{TEMPLATE_DIR}/swap_config.yaml"
 
 # Where templates land in the hlh_config volume
 MODELS_INI_PATH = f"{CONFIG_MOUNT}/models.ini"
 SEARXNG_YML_PATH = f"{CONFIG_MOUNT}/searxng_settings.yml"
+SWAP_CONFIG_PATH = f"{CONFIG_MOUNT}/swap_config.yaml"
 
 
 # ── Logging ──────────────────────────────────────────────────────────────────
@@ -187,17 +189,20 @@ def ensure_secrets(client: docker.DockerClient) -> dict[str, str]:
 
 
 def write_templates(client: docker.DockerClient) -> None:
-    """Copy models.ini and searxng_settings.yml from the orchestra image into hlh_config."""
+    """Copy models.ini, searxng_settings.yml, and swap_config.yaml into hlh_config."""
     with open(MODELS_INI_TEMPLATE, "r") as f:
         models_ini = f.read()
     with open(SEARXNG_YML_TEMPLATE, "r") as f:
         searxng_yml = f.read()
+    with open(SWAP_CONFIG_TEMPLATE, "r") as f:
+        swap_config = f.read()
 
     # Heredoc with sentinel that won't collide with file content
     cmd = (
         f"mkdir -p {CONFIG_MOUNT} && "
         f"cat > {MODELS_INI_PATH} <<'HLH_EOF_MODELS'\n{models_ini}\nHLH_EOF_MODELS\n"
         f"cat > {SEARXNG_YML_PATH} <<'HLH_EOF_SEARXNG'\n{searxng_yml}\nHLH_EOF_SEARXNG\n"
+        f"cat > {SWAP_CONFIG_PATH} <<'HLH_EOF_SWAP'\n{swap_config}\nHLH_EOF_SWAP\n"
     )
     client.containers.run(
         "alpine:3.20",
@@ -247,6 +252,27 @@ def ensure_models_ownership(client: docker.DockerClient) -> None:
         log("models volume ownership ensured (1000:1000)")
     except APIError as exc:
         log(f"WARN: could not chown hlh_models volume: {exc}")
+
+
+def ensure_infer_cache_ownership(client: docker.DockerClient) -> None:
+    """Make the hlh_infer_cache volume writable by the uid-1000 hlh_api.
+
+    Same failure class as hlh_models (see ensure_models_ownership): once the HF
+    hub cache volume is populated it can stay root-owned, and the read_only
+    uid-1000 hlh_api then EACCES on snapshot_download writes under /cache/hub.
+    A throwaway root container chowns it idempotently; recursive so a re-run
+    self-heals an already-broken volume.
+    """
+    try:
+        client.containers.run(
+            "alpine:3.20",
+            command=["chown", "-R", "1000:1000", "/cache"],
+            volumes={"hlh_infer_cache": {"bind": "/cache", "mode": "rw"}},
+            remove=True,
+        )
+        log("infer cache volume ownership ensured (1000:1000)")
+    except APIError as exc:
+        log(f"WARN: could not chown hlh_infer_cache volume: {exc}")
 
 
 # ── Image pulls ──────────────────────────────────────────────────────────────
@@ -554,8 +580,10 @@ def run() -> dict[str, str]:
     pull_image(client, SEARCH_IMAGE)
     pull_image(client, f"{REGISTRY}/hlh_ui:{VERSION}")
 
-    # /models must be writable by the uid-1000 containers (alpine is pulled above).
+    # /models and /cache must be writable by the uid-1000 containers (alpine is
+    # pulled above). hlh_infer_cache holds the boofinity HF snapshot the puller writes.
     ensure_models_ownership(client)
+    ensure_infer_cache_ownership(client)
 
     secrets_dict = ensure_secrets(client)
     write_templates(client)

@@ -18,6 +18,64 @@ live under the `snapshot/` namespace.
 
 Production-readiness audit remediation (2026-06-15).
 
+### AI
+
+- **Combined inference front-door `hlh_swap`** (openspec change
+  `boofinity-inference-frontdoor`, 2026-06-16). A single container whose
+  entrypoint is llama-swap (v226) becomes the only bundled inference endpoint
+  (`hlh_swap:9620`, internal `hlh_inference` network). Its config forks
+  `llama-server` (chat / tasks / mmproj: `medgemma`, `qwen-chat`, `gemma-tasks`)
+  and `boofinity` (embed / rerank / VL: `qwen3-embed`, `qwen3-reranker`,
+  `qwen3-vl-embed`, `qwen3-vl-rerank`) as child PROCESSES, arbitrated by a
+  swap-exclusive `vram_constrained` group so the two GPU-competing children are
+  never both VRAM-resident. No Docker socket, no sibling-container lifecycle.
+  Replaces the standalone `hlh_chat` and `hlh_infer` services. The boofinity
+  child's API path is set with the CLI flag `--url-prefix /v1` (no `INFINITY_*`
+  env var). `hlh_chat/models.ini` drops the embed / reranker presets (now served
+  by boofinity); chat/tasks/mmproj presets stay. The provider rebind from
+  `hlh_chat:9610` to `hlh_swap:9620` is folder C and must deploy together with
+  this change.
+- **boofinity model pulls + front-door rebind** (openspec change
+  `boofinity-model-pulls-rebind`, folder C, 2026-06-16). The bundled text embed +
+  rerank are now served by the boofinity child from HF safetensors repos, not
+  flat llama.cpp GGUFs. `model_puller` gains a `kind="snapshot"` ModelSpec
+  variant and a `huggingface_hub.snapshot_download` path that writes the standard
+  HF hub cache layout into the `hlh_infer_cache` volume (`/cache/hub`, read by
+  boofinity via `HF_HOME=/cache`); `_EMBED_SPEC` / `_RERANK_SPEC` flip to
+  `Qwen/Qwen3-Embedding-0.6B` / `Qwen/Qwen3-Reranker-0.6B` (seed_registry prunes
+  the retired GGUF rows). All three bundled providers (chat / embed / rerank)
+  rebind from `hlh_chat:9610` to the front-door `hlh_swap:9620`. The
+  GGUF->safetensors switch makes stored vectors non-comparable, so a one-shot
+  idempotent reingest fires on the first boot where the embed backend probes
+  ready (`services/embed_cutover.py`, guarded by a `global_settings` sentinel),
+  with a "retrieval is rebuilding after a model change" banner surfaced via
+  `/api/system/profile` and cleared by an ingest completion hook. `bootstrap.py`
+  gains `ensure_infer_cache_ownership()`; `hlh_api` mounts `hlh_infer_cache:/cache`;
+  doctor gains `_check_infer_cache_writable`. Deploy with or after folder B.
+- **Tier-aware resource policy** (`services/resource_policy.py`, new): pure data
+  encoding per-tier child coexistence and Gemma degradation under VRAM pressure
+  (`gpu-4gb` -> unavailable; `cpu-*` / `apple-mlx` / `gpu-8gb` / `gpu-16gb` ->
+  offload-CPU; `gpu-24gb+` -> resident, non-exclusive). `pipeline_status.py`
+  gains a `swapping` stage and an `infer_backend_state()` helper that maps the
+  front-door `/v1/models` status to loaded / swapping / unavailable.
+
+### Tooling
+
+- **`HLH_INFER_DTYPE` default is `float32`** (Pascal-safe), seeded by
+  `image_config.write_tier_env` on every tier. Known limitation: float32 doubles
+  VRAM versus bf16 on GPUs that support bf16, so Ampere+ operators should set
+  `HLH_INFER_DTYPE=bfloat16` in `.env`. `image_config.py` collapses the old
+  `HLH_CHAT_IMAGE` / `HLH_INFER_IMAGE` pair into the single combined
+  `HLH_SWAP_IMAGE`, adds tier-scaled `HLH_INFER_MEM`, and the `TierImages`
+  `chat_image` / `infer_image` fields collapse into `swap_image` + `infer_mem`.
+- **`doctor.py` swap checks**: `hlh_swap` reachability, a boofinity-child
+  `/v1/health` probe through the front-door, `HLH_SWAP_IMAGE` tier match, a
+  swap-group-policy comparison, and a rebind-consistency ERROR when a bundled
+  embed/rerank provider still points at `hlh_chat:9610` after `models.ini` drops
+  the matching section. `verify_a1_5_hardening.sh` rewritten for the single
+  `hlh_swap` service with a tier-scaled mem assertion and a no-docker-socket
+  check.
+
 ### Infrastructure
 
 - **Embedding/rerank image moved to the `boofinity` fork** (openspec change
@@ -43,6 +101,25 @@ Production-readiness audit remediation (2026-06-15).
   `docker-compose.yml` (MedGemma vision is the chat model + mmproj, not a service).
   The `write_tier_env` "preserve operator-added `vision`" branch is left intact and
   no-ops once the seed drops the token.
+- **Additive dual-space VL retrieval** (openspec change `dual-space-vl-retrieval`,
+  folder D, 2026-06-16). `gpu-24gb+` only; every lesser tier is unchanged.
+  A new `source_image_embeddings vector(1024)` table (separate from `source_chunks`;
+  text/VL spaces are not cosine-comparable, see ADR 0003) stores native image vectors
+  from `Qwen3-VL-Embedding-2B`. At ingest, `sources.py` runs a second VL pass after
+  the text path commits: `vision.py:embed_image_vl` POSTs to boofinity
+  `/v1/mm_embeddings` (`qwen3-vl-embed`, 1024 matryoshka prefix), inserting one row
+  per image or PDF page; failure-isolated so a VL failure never flips
+  `embedding_status` to error. At query time, `rag.py:_maybe_dual_space_rerank`
+  embeds the query into the VL space, ANN-searches `source_image_embeddings`, fuses
+  image + text candidates with RRF (k=60), then orders the union with the Qwen3-VL
+  reranker (`/v1/mm_rerank`); on VL-rerank failure falls back to RRF order; on any
+  gate failure falls back to the text-only path unchanged. Provider rows `embed-vl`
+  / `rerank-vl` seeded by `bundled_providers.ensure_bundled_providers` on `gpu-24gb+`
+  only; `model_puller.MODEL_REGISTRY` carries `Qwen3-VL-Embedding-2B` /
+  `Qwen3-VL-Reranker-2B` as `kind="snapshot"` specs gated to `gpu-24gb+`. FK
+  `ON DELETE CASCADE` keeps VL vectors reachable and deletable only via the source
+  row (same PHI scoping as `source_chunks`). `verify_dual_space_retrieval.sh` SKIPs
+  automatically on non-gpu-24gb+ hosts.
 
 ### Safeguards
 

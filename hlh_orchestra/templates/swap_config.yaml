@@ -1,0 +1,80 @@
+# hlh_swap front-door config for llama-swap (v226).
+#
+# llama-swap is the single inference endpoint (port 9620, internal
+# hlh_inference network) AND the process manager. Each model alias below carries
+# a cmd: that llama-swap forks as a CHILD PROCESS inside this one container; it
+# waits for the child /health, then proxies requests to the child's local
+# ${PORT}. There is NO Docker socket and NO sibling-container lifecycle here -
+# the backends are child PIDs of llama-swap.
+#
+#   medgemma / qwen-chat / gemma-tasks -> llama-server child (chat / tasks / mmproj)
+#   qwen3-embed / qwen3-reranker / qwen3-vl-embed / qwen3-vl-rerank -> boofinity child
+#
+# Per-variant device differences are supplied through env: the cpu image runs
+# with HLH_INFER_DEVICE=cpu (the default), the cuda image with cuda. The VL
+# model ids are carried in the boof_cmd macro; the cpu build does not pull VL
+# weights so those aliases stay idle until a gpu tier loads them.
+
+healthCheckTimeout: 120          # seconds to wait for a child /health before routing
+startPort: 5800                  # base port llama-swap assigns to child processes
+
+macros:
+  # ${PORT} is substituted by llama-swap per child, counting up from startPort.
+  llama_cmd: >-
+    llama-server --models-preset /models/models.ini
+    --host 127.0.0.1 --port ${PORT}
+  boof_cmd: >-
+    boofinity v2
+    --model-id Qwen/Qwen3-Embedding-0.6B
+    --model-id Qwen/Qwen3-Reranker-0.6B
+    --model-id Qwen/Qwen3-VL-Embedding-2B
+    --model-id Qwen/Qwen3-VL-Reranker-2B
+    --device ${HLH_INFER_DEVICE:-cpu}
+    --dtype ${HLH_INFER_DTYPE:-float32}
+    --url-prefix /v1
+    --host 127.0.0.1 --port ${PORT}
+
+models:
+  # --- llama-server child (chat / tasks / mmproj) ---
+  medgemma:
+    cmd: "${llama_cmd}"
+    ttl: 600
+    healthCheckTimeout: 120
+  qwen-chat:
+    cmd: "${llama_cmd}"
+    ttl: 600
+  gemma-tasks:
+    cmd: "${llama_cmd}"
+    ttl: 600
+
+  # --- boofinity child (embed / rerank / VL) ---
+  qwen3-embed:
+    cmd: "${boof_cmd}"
+    ttl: 300
+  qwen3-reranker:
+    cmd: "${boof_cmd}"
+    ttl: 300
+  qwen3-vl-embed:
+    cmd: "${boof_cmd}"
+    ttl: 300
+  qwen3-vl-rerank:
+    cmd: "${boof_cmd}"
+    ttl: 300
+
+groups:
+  # The llama-server child and the boofinity child share one swap-exclusive
+  # group: only one member runs at a time (swap: true), and running a member
+  # unloads every other group's members too (exclusive: true). On a tight GPU
+  # the llama.cpp child and the boofinity child are therefore never both
+  # resident - enforced in-process by the group, not by a compose race.
+  vram_constrained:
+    swap: true
+    exclusive: true
+    members:
+      - medgemma
+      - qwen-chat
+      - gemma-tasks
+      - qwen3-embed
+      - qwen3-reranker
+      - qwen3-vl-embed
+      - qwen3-vl-rerank

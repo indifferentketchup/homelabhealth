@@ -251,10 +251,30 @@ CREATE TABLE IF NOT EXISTS source_chunks (
 
 CREATE INDEX IF NOT EXISTS source_chunks_source_id_idx ON source_chunks(source_id);
 
+-- Dual-space VL image embeddings (folder D, 2026-06-16). Additive, gpu-24gb+
+-- only at runtime: native Qwen3-VL-Embedding-2B image vectors live in their OWN
+-- table (text vs image vectors are NOT cosine-comparable; see ADR 0003). Mirrors
+-- source_chunks' shape + cosine HNSW index so the asyncpg/pgvector conventions
+-- carry over verbatim. source_id FK ON DELETE CASCADE keeps PHI-adjacent vectors
+-- reachable + deletable only via their source, exactly like source_chunks.
+CREATE TABLE IF NOT EXISTS source_image_embeddings (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    source_id   UUID NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+    page_no     INT,
+    image_ref   TEXT,
+    embedding   vector(1024),
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS source_image_embeddings_source_id_idx
+    ON source_image_embeddings(source_id);
+
 -- HNSW indexes for cosine-distance ANN search (pgvector 0.5+).
 -- Without these, every retrieval does a sequential scan over source_chunks / memory_entries.
 CREATE INDEX IF NOT EXISTS source_chunks_embedding_hnsw
     ON source_chunks USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS source_image_embeddings_embedding_hnsw
+    ON source_image_embeddings USING hnsw (embedding vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS memory_entries_embedding_hnsw
     ON memory_entries USING hnsw (embedding vector_cosine_ops);
 
@@ -385,9 +405,12 @@ ALTER TABLE providers
     ADD COLUMN IF NOT EXISTS bundle_group TEXT;  -- 'homelab-health-ai' for bundled rows; NULL otherwise
 
 -- A3: update role CHECK to include 'vision_embed' (idempotent drop+re-add).
+-- folder D (2026-06-16) added 'embed-vl'/'rerank-vl' bundled VL provider rows
+-- (Qwen3-VL embed/rerank behind hlh_swap, gpu-24gb+ only); the CHECK must admit
+-- them or the bundled-provider upsert raises CheckViolationError on boot.
 ALTER TABLE providers DROP CONSTRAINT IF EXISTS providers_role_check;
 ALTER TABLE providers ADD CONSTRAINT providers_role_check
-    CHECK (role IN ('chat', 'embed', 'rerank', 'vision_embed'));
+    CHECK (role IN ('chat', 'embed', 'rerank', 'vision_embed', 'embed-vl', 'rerank-vl'));
 
 -- Backfill the existing bundled-chat row on first apply. Guarded so subsequent
 -- applies are no-ops. Order-safe: this runs in schema.sql before
@@ -470,7 +493,7 @@ ALTER TABLE system_profile ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ;
 -- ────────────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS bundled_models (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    role            TEXT NOT NULL CHECK (role IN ('chat', 'embed', 'rerank', 'tasks', 'vision', 'vision_base', 'medsiglip', 'stt', 'ocr')),
+    role            TEXT NOT NULL CHECK (role IN ('chat', 'embed', 'rerank', 'tasks', 'vision', 'vision_base', 'medsiglip', 'stt', 'ocr', 'embed-vl', 'rerank-vl')),
     tier            TEXT NOT NULL,
     model_id        TEXT NOT NULL,
     quant           TEXT,
@@ -498,9 +521,12 @@ CREATE TABLE IF NOT EXISTS bundled_models (
 -- v1.2.11 added 'vision_base' (the MedGemma-4b GGUF the on-demand
 -- [medgemma-vision] preset loads alongside the 4b mmproj for ingestion image
 -- reading — pulled tier-independently so it never displaces the 27b chat model).
+-- folder D (2026-06-16) added 'embed-vl'/'rerank-vl' (Qwen3-VL embed/rerank
+-- specs, gpu-24gb+ only); seed_registry inserts them so the CHECK must admit
+-- them on existing DBs too.
 ALTER TABLE bundled_models DROP CONSTRAINT IF EXISTS bundled_models_role_check;
 ALTER TABLE bundled_models ADD CONSTRAINT bundled_models_role_check
-    CHECK (role IN ('chat', 'embed', 'rerank', 'tasks', 'vision', 'vision_base', 'medsiglip', 'stt', 'ocr'));
+    CHECK (role IN ('chat', 'embed', 'rerank', 'tasks', 'vision', 'vision_base', 'medsiglip', 'stt', 'ocr', 'embed-vl', 'rerank-vl'));
 
 CREATE INDEX IF NOT EXISTS bundled_models_role_tier_idx ON bundled_models (role, tier);
 CREATE INDEX IF NOT EXISTS bundled_models_status_idx ON bundled_models (status);

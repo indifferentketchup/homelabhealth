@@ -30,6 +30,7 @@ def _estimate_key(stage: str, model: str | None = None) -> str:
         "searching": "estimate_ms_rag_search",
         "generating": "estimate_ms_chat_first_token",
         "unloading": "estimate_ms_unload",
+        "swapping": "estimate_ms_swap",
     }.get(stage, "")
 
 
@@ -89,7 +90,9 @@ async def stage(
         try:
             await _update_estimate(conn, key, actual_ms)
         except Exception:
-            logger.warning("pipeline_status: estimate update failed for %s", key)
+            logger.warning(
+                "pipeline_status: estimate update failed for %s", key, exc_info=True
+            )
 
 
 async def model_is_loaded(model: str) -> bool:
@@ -101,6 +104,48 @@ async def model_is_loaded(model: str) -> bool:
             for m in r.json().get("data", []):
                 if m.get("id") == model:
                     return m.get("status", {}).get("value") == "loaded"
-    except Exception:
-        pass
+    except (httpx.TransportError, httpx.HTTPStatusError) as exc:
+        # hlh_chat unreachable or erroring: treat as "not loaded" but log the
+        # reason so a down/hung router is diagnosable instead of silent.
+        logger.warning("model_is_loaded: probe to hlh_chat failed: %s", exc)
+    except Exception as exc:
+        logger.warning("model_is_loaded: unexpected probe error: %s", exc, exc_info=True)
     return False
+
+
+async def infer_backend_state(model: str, tier: str | None = None) -> dict[str, Any]:
+    """Map a model's hlh_swap front-door status to a backend-state payload.
+
+    GETs the front-door http://hlh_swap:9620/v1/models and resolves the alias to
+    one of:
+      - loaded:      the child process is up and the model is resident
+      - swapping:    listed but not yet loaded (llama-swap is starting the child)
+      - unavailable: not listed, or the front-door is unreachable
+
+    When a tier is given, the resource policy decorates the payload: whether the
+    model may be co-resident with other roles, and (for the chat roles) whether
+    Gemma offloads to CPU or goes unavailable under VRAM pressure. The frontend
+    renders the swapping phase from this.
+    """
+    from services.resource_policy import coresident, gemma_degradation
+
+    state = "unavailable"
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(2.0)) as client:
+            r = await client.get("http://hlh_swap:9620/v1/models")
+            r.raise_for_status()
+            for m in r.json().get("data", []):
+                if m.get("id") == model:
+                    loaded = m.get("status", {}).get("value") == "loaded"
+                    state = "loaded" if loaded else "swapping"
+                    break
+    except (httpx.TransportError, httpx.HTTPStatusError) as exc:
+        logger.warning("infer_backend_state: probe to hlh_swap failed: %s", exc)
+    except Exception as exc:
+        logger.warning("infer_backend_state: unexpected probe error: %s", exc, exc_info=True)
+
+    payload: dict[str, Any] = {"model": model, "state": state}
+    if tier:
+        payload["coresident"] = sorted(coresident(tier))
+        payload["gemma_under_pressure"] = gemma_degradation(tier)
+    return payload

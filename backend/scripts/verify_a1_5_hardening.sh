@@ -7,7 +7,7 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 ok() { echo "  ✓ $*"; }
 
 echo "=== 1. Container hardening ==="
-for svc in hlh_db hlh_api hlh_ui hlh_chat hlh_infer hlh_search; do
+for svc in hlh_db hlh_api hlh_ui hlh_swap hlh_search; do
   echo "[$svc]"
   ro=$(docker inspect "$svc" --format '{{.HostConfig.ReadonlyRootfs}}')
   [[ "$ro" == "true" ]] && ok "ReadonlyRootfs=true" || fail "$svc ReadonlyRootfs=$ro"
@@ -18,11 +18,9 @@ for svc in hlh_db hlh_api hlh_ui hlh_chat hlh_infer hlh_search; do
 done
 
 echo
-echo "=== 2. mem_limit per spec ==="
-chat_mem=$(docker inspect hlh_chat --format '{{.HostConfig.Memory}}')
-[[ "$chat_mem" -ge 1073741824 ]] && ok "hlh_chat Memory $chat_mem >= 1g" || fail "hlh_chat Memory=$chat_mem (expected positive)"
-infer_mem=$(docker inspect hlh_infer --format '{{.HostConfig.Memory}}')
-[[ "$infer_mem" == "4294967296" ]] && ok "hlh_infer Memory=4g" || fail "hlh_infer Memory=$infer_mem (expected 4294967296)"
+echo "=== 2. mem_limit tier-scaled (HLH_INFER_MEM) ==="
+swap_mem=$(docker inspect hlh_swap --format '{{.HostConfig.Memory}}')
+[[ "$swap_mem" -ge 1073741824 ]] && ok "hlh_swap Memory $swap_mem >= 1g (tier-scaled)" || fail "hlh_swap Memory=$swap_mem (expected positive, tier-scaled)"
 
 echo
 echo "=== 3. Network membership ==="
@@ -30,8 +28,7 @@ declare -A EXPECT=(
   [hlh_db]='[hlh_default]'
   [hlh_api]='[hlh_default hlh_inference]'
   [hlh_ui]='[hlh_default]'
-  [hlh_chat]='[hlh_inference]'
-  [hlh_infer]='[hlh_default hlh_inference]'
+  [hlh_swap]='[hlh_inference]'
   [hlh_search]='[hlh_default]'
 )
 for svc in "${!EXPECT[@]}"; do
@@ -50,11 +47,14 @@ internal=$(docker network inspect hlh_inference --format '{{.Internal}}')
 [[ "$internal" == "true" ]] && ok "hlh_inference Internal=true" || fail "hlh_inference Internal=$internal"
 
 echo
-echo "=== 5. No host ports on hlh_chat / hlh_infer ==="
-chat_ports=$(docker ps --filter name=hlh_chat --format '{{.Ports}}' | tr -d '[:space:]')
-[[ -z "$chat_ports" ]] && ok "hlh_chat has no host ports" || fail "hlh_chat Ports=$chat_ports"
-infer_ports=$(docker ps --filter name=hlh_infer --format '{{.Ports}}' | tr -d '[:space:]')
-[[ -z "$infer_ports" ]] && ok "hlh_infer has no host ports" || fail "hlh_infer Ports=$infer_ports"
+echo "=== 5. No host ports on hlh_swap ==="
+swap_ports=$(docker ps --filter name=hlh_swap --format '{{.Ports}}' | tr -d '[:space:]')
+[[ -z "$swap_ports" ]] && ok "hlh_swap has no host ports" || fail "hlh_swap Ports=$swap_ports"
+
+echo
+echo "=== 5b. No service mounts the Docker socket ==="
+sock_mounts=$(docker ps -q | xargs -r docker inspect --format '{{.Name}} {{json .Mounts}}' | grep '/var/run/docker.sock' || true)
+[[ -z "$sock_mounts" ]] && ok "no container mounts /var/run/docker.sock" || fail "docker.sock mounted by: $sock_mounts"
 
 echo
 echo "=== 6. Disk pre-flight rejects oversize pull ==="

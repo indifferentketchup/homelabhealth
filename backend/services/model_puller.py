@@ -32,8 +32,11 @@ import httpx
 logger = logging.getLogger(__name__)
 
 MODELS_BASE_DIR = Path(os.environ.get("HLH_MODELS_DIR", "/models"))
+# HuggingFace hub cache root the boofinity child reads (HF_HOME=/cache). Snapshot
+# specs land under INFER_CACHE_DIR/hub/models--<org>--<repo>/ — see _snapshot_pull.
+INFER_CACHE_DIR = Path(os.environ.get("HLH_INFER_CACHE_DIR", "/cache"))
 
-ALL_ROLES = ("chat", "embed", "rerank", "vision", "stt", "ocr")
+ALL_ROLES = ("chat", "tasks", "embed", "rerank", "embed-vl", "rerank-vl", "vision", "stt", "ocr")
 ALL_TIERS = ("cpu-min", "cpu-std", "gpu-4gb", "gpu-8gb", "gpu-16gb", "gpu-24gb+", "apple-mlx", "external")
 
 PULL_CHUNK_BYTES = 5 * 1024 * 1024
@@ -49,7 +52,8 @@ class ModelSpec:
     HuggingFace git ref (branch, tag, or commit SHA); defaults to 'main'.
     """
     repo: str
-    filename: str
+    filename: str = ""
+    kind: str = "file"            # "file" | "snapshot"
     quant: str | None = None
     expected_bytes: int | None = None
     sha256: str | None = None
@@ -60,6 +64,8 @@ class ModelSpec:
     @property
     def model_id(self) -> str:
         """Identifier embedded in the bundled_models UNIQUE constraint."""
+        if self.kind == "snapshot":
+            return f"{self.repo}@snapshot"
         return f"{self.repo}@{self.filename}"
 
 
@@ -99,28 +105,26 @@ _VISION_MMPROJ_27B = ModelSpec(
 )
 
 
-# Embedder (Qwen3-Embedding-0.6B, Apache) from Qwen's official GGUF repo +
-# reranker (Qwen3-Reranker-0.6B, Apache) from ggml-org's llama.cpp-ready
-# conversion; tasks model is gemma-3-270m (lightweight title gen).
-# Filenames match models.ini's [qwen3-embed] / [qwen3-reranker] / [gemma-tasks]
-# paths. Replaced bge-m3 / bge-reranker-v2-m3 on 2026-06-12 — Qwen3-Embedding
-# is also 1024-dim, so the schema's vector(1024) contract holds, but vectors
-# from the two models are NOT comparable: POST /api/sources/reingest-all after
-# switching an existing deployment.
+# Embedder (Qwen3-Embedding-0.6B, Apache) + reranker (Qwen3-Reranker-0.6B,
+# Apache) are now full HF safetensors repos served by the boofinity child, not
+# flat llama.cpp GGUFs (folder C, 2026-06-16). boofinity loads them from the HF
+# hub cache under HF_HOME=/cache, so these are kind="snapshot" specs pulled via
+# huggingface_hub.snapshot_download into the hlh_infer_cache volume rather than
+# streamed to a flat /models/<file>. tasks model is gemma-3-270m, still a GGUF on
+# the llama.cpp child. The GGUF->safetensors switch produces NON-comparable
+# vectors: POST /api/sources/reingest-all is auto-fired on cutover (embed_cutover).
 _EMBED_SPEC = ModelSpec(
-    repo="Qwen/Qwen3-Embedding-0.6B-GGUF",
-    filename="Qwen3-Embedding-0.6B-Q8_0.gguf",
-    quant="Q8_0",
+    repo="Qwen/Qwen3-Embedding-0.6B",
+    kind="snapshot",
     license="apache-2.0",
-    license_url="https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF",
+    license_url="https://huggingface.co/Qwen/Qwen3-Embedding-0.6B",
     revision="main",
 )
 _RERANK_SPEC = ModelSpec(
-    repo="ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF",
-    filename="qwen3-reranker-0.6b-q8_0.gguf",
-    quant="Q8_0",
+    repo="Qwen/Qwen3-Reranker-0.6B",
+    kind="snapshot",
     license="apache-2.0",
-    license_url="https://huggingface.co/ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF",
+    license_url="https://huggingface.co/Qwen/Qwen3-Reranker-0.6B",
     revision="main",
 )
 _TASKS_SPEC = ModelSpec(
@@ -131,6 +135,31 @@ _TASKS_SPEC = ModelSpec(
     license_url="https://huggingface.co/unsloth/gemma-3-270m-it-GGUF",
     revision="main",
 )
+# Dual-space VL embed/rerank (folder D, 2026-06-16). Native Qwen3-VL image
+# embedder + reranker, both ~2B torch models served by the boofinity child behind
+# hlh_swap (aliases qwen3-vl-embed / qwen3-vl-rerank). GPU-favoured, so gated to
+# gpu-24gb+ ONLY — every other tier is None and never pulls them. kind="snapshot"
+# (full HF directory: config + weights + tokenizer) pulled into the HF hub cache,
+# NOT a flat /models/<file> GGUF, so these are NOT in _FLAT_DEST_ROLES.
+_EMBED_VL_SPEC = ModelSpec(
+    repo="Qwen/Qwen3-VL-Embedding-2B",
+    kind="snapshot",
+    license="apache-2.0",
+    license_url="https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B",
+    revision="main",
+)
+_RERANK_VL_SPEC = ModelSpec(
+    repo="Qwen/Qwen3-VL-Reranker-2B",
+    kind="snapshot",
+    license="apache-2.0",
+    license_url="https://huggingface.co/Qwen/Qwen3-VL-Reranker-2B",
+    revision="main",
+)
+
+
+def _gpu24_only_role(spec: ModelSpec) -> dict[str, ModelSpec | None]:
+    """Tier map with the spec only on gpu-24gb+, every other tier None."""
+    return {tier: (spec if tier == "gpu-24gb+" else None) for tier in ALL_TIERS}
 
 # Phase 1 supplies chat specs only; all other roles get None placeholders so
 # the schema is exercised but no pulls happen. Subsequent phases extend each
@@ -201,6 +230,9 @@ MODEL_REGISTRY: dict[str, dict[str, ModelSpec | None]] = {
     "tasks":     _router_role(_TASKS_SPEC),   # gemma-3-270m — title generation
     "embed":     _router_role(_EMBED_SPEC),   # Qwen3-Embedding-0.6B — RAG embeddings
     "rerank":    _router_role(_RERANK_SPEC),  # Qwen3-Reranker-0.6B — RAG rerank
+    # Dual-space VL (folder D): gpu-24gb+ only, every other tier None.
+    "embed-vl":  _gpu24_only_role(_EMBED_VL_SPEC),    # Qwen3-VL-Embedding-2B — image embeddings
+    "rerank-vl": _gpu24_only_role(_RERANK_VL_SPEC),   # Qwen3-VL-Reranker-2B — dual-space rerank
     # Vision projector for the tier's chat model (so that model does vision too).
     # mmproj must match the chat model size: 4b tiers → 4b mmproj, 27b tiers →
     # 27b mmproj. cpu-min (Qwen, not multimodal) and apple-mlx/external get none.
@@ -236,10 +268,6 @@ def request_cancel(model_uuid: str) -> bool:
     ev.set()
     return True
 
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Registry seeding.
-# ──────────────────────────────────────────────────────────────────────────────
 
 
 async def seed_registry(conn) -> int:
@@ -324,10 +352,6 @@ async def reset_orphaned_pulls(conn) -> int:
         return 0
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Pull mechanics.
-# ──────────────────────────────────────────────────────────────────────────────
-
 
 def _hf_url(repo: str, filename: str, revision: str | None = None) -> str:
     rev = revision or "main"
@@ -366,7 +390,10 @@ async def _hf_headers(pool_or_conn) -> dict[str, str]:
 # alias the active tier uses (TIER_CHAT_MODELS in bundled_providers) actually
 # gets loaded by the router on demand. Vision/mmproj stays under
 # /models/vision/<tier>/ because link_active_mmproj symlinks the active one.
-_FLAT_DEST_ROLES = {"chat", "embed", "rerank", "tasks"}
+# embed/rerank were removed (folder C, 2026-06-16): they are now kind="snapshot"
+# safetensors repos written to the HF hub cache by huggingface_hub, not flat
+# /models/<file> GGUFs. Only chat + tasks remain flat llama.cpp GGUFs.
+_FLAT_DEST_ROLES = {"chat", "tasks"}
 
 
 def _dest_path(role: str, tier: str, filename: str) -> Path:
@@ -374,6 +401,34 @@ def _dest_path(role: str, tier: str, filename: str) -> Path:
     if role in _FLAT_DEST_ROLES:
         return MODELS_BASE_DIR / filename
     return MODELS_BASE_DIR / role / tier / filename
+
+
+def _spec_kind(role: str, tier: str, model_id: str) -> str:
+    """Re-derive a row's pull shape from MODEL_REGISTRY (the in-process source of
+    truth). bundled_models does not store `kind`, so the puller looks it up by
+    (role, tier, model_id). Returns 'file' when no matching spec is found."""
+    spec = MODEL_REGISTRY.get(role, {}).get(tier)
+    if spec is not None and spec.model_id == model_id:
+        return spec.kind
+    return "file"
+
+
+def _snapshot_pull(repo: str, revision: str | None, token: str | None) -> str:
+    """Download a full HF repo into the hub cache layout boofinity reads.
+
+    Synchronous (huggingface_hub.snapshot_download); call via asyncio.to_thread
+    so it doesn't block the loop while holding _PULL_LOCK. Lands the repo under
+    INFER_CACHE_DIR/hub/models--<org>--<repo>/snapshots/<rev>/.
+    """
+    from huggingface_hub import snapshot_download
+
+    return snapshot_download(
+        repo_id=repo,
+        revision=revision or "main",
+        cache_dir=str(INFER_CACHE_DIR / "hub"),
+        token=token,
+        local_files_only=False,
+    )
 
 
 class _Cancelled(Exception):
@@ -465,12 +520,41 @@ async def _mark_finished(pool_or_conn, model_uuid: str, *, status: str, error_me
         )
 
 
+async def _pull_snapshot(pool_or_conn, model_uuid: str, *, repo: str,
+                         revision: str | None, license_url: str | None) -> dict[str, Any]:
+    """Pull a kind='snapshot' row via huggingface_hub into the HF hub cache.
+
+    Caller holds _PULL_LOCK and has already marked the row 'pulling'. Disk
+    pre-flight and sha256 are skipped (snapshot total is unknown up front and
+    per-file hashes are HF's job); pulled_bytes stays 0, expected_bytes NULL.
+    Maps a gated/401-equivalent to the same license-acceptance message the file
+    path uses, though the Qwen3 repos are ungated Apache-2.0.
+    """
+    token = (await _hf_headers(pool_or_conn)).get("Authorization", "")
+    token = token.removeprefix("Bearer ").strip() or None
+    try:
+        await asyncio.to_thread(_snapshot_pull, repo, revision, token)
+        await _mark_finished(pool_or_conn, model_uuid, status="ready", error_message=None)
+        logger.info("model_puller: snapshot pulled %s", repo)
+        return dict(await _read_row(pool_or_conn, model_uuid))
+    except Exception as e:
+        from huggingface_hub.utils import GatedRepoError
+        if isinstance(e, GatedRepoError):
+            msg = f"License acceptance required. Visit {license_url} and click Agree, then retry."
+        else:
+            msg = f"{type(e).__name__}: {e}"[:500]
+        await _mark_finished(pool_or_conn, model_uuid, status="failed", error_message=msg)
+        logger.warning("model_puller: snapshot pull failed (%s)", e)
+        return dict(await _read_row(pool_or_conn, model_uuid))
+
+
 async def pull_model(pool_or_conn, model_uuid: str) -> dict[str, Any]:
     """Stream-download one bundled_models row.
 
     Holds the module-level _PULL_LOCK so only one pull runs at a time.
     Writes to <dest>.partial, fsyncs, then renames on success. sha256 is
-    verified if the spec set it. Returns the final row as a dict.
+    verified if the spec set it. Returns the final row as a dict. Snapshot-kind
+    rows (embed/rerank safetensors) dispatch to _pull_snapshot instead.
     """
     row = await _read_row(pool_or_conn, model_uuid)
     if row is None:
@@ -494,6 +578,12 @@ async def pull_model(pool_or_conn, model_uuid: str) -> dict[str, Any]:
                 logger.info("model_puller: model %s already ready, skipping re-pull", model_uuid)
                 return dict(current_row)
             await _mark_pulling(pool_or_conn, model_uuid)
+
+            if _spec_kind(role, tier, row["model_id"]) == "snapshot":
+                return await _pull_snapshot(
+                    pool_or_conn, model_uuid,
+                    repo=repo, revision=revision, license_url=license_url,
+                )
 
             dest = _dest_path(role, tier, filename)
             dest.parent.mkdir(parents=True, exist_ok=True)

@@ -33,16 +33,36 @@ ACTIVE_QWEN = MODELS_BASE / "active-qwen.gguf"
 
 BUNDLE_GROUP = "homelab-health-ai"
 
+# All three bundled providers resolve through the llama-swap front-door
+# (hlh_swap:9620), rebound from the old direct hlh_chat:9610 in folder C
+# (2026-06-16). The front-door routes the qwen3-embed / qwen3-reranker aliases to
+# the boofinity child and the chat aliases to the llama.cpp child.
 BUNDLED_CHAT_NAME = "HomeLab Health AI · Chat"
-BUNDLED_CHAT_BASE_URL = "http://hlh_chat:9610"
+BUNDLED_CHAT_BASE_URL = "http://hlh_swap:9620"
 
 BUNDLED_EMBED_NAME = "HomeLab Health AI · Embed"
-BUNDLED_EMBED_BASE_URL = "http://hlh_chat:9610"
+BUNDLED_EMBED_BASE_URL = "http://hlh_swap:9620"
 BUNDLED_EMBED_MODEL = "qwen3-embed"
 
 BUNDLED_RERANK_NAME = "HomeLab Health AI · Rerank"
-BUNDLED_RERANK_BASE_URL = "http://hlh_chat:9610"
+BUNDLED_RERANK_BASE_URL = "http://hlh_swap:9620"
 BUNDLED_RERANK_MODEL = "qwen3-reranker"
+
+# Dual-space VL embed/rerank (folder D, 2026-06-16). Native Qwen3-VL image
+# embedder + reranker served by the boofinity child behind hlh_swap. Seeded ONLY
+# on gpu-24gb+ (the only tier that pulls the VL models); absent on every lesser
+# tier so the VL ingest/retrieval gate stays closed and the path no-ops.
+BUNDLED_VL_EMBED_NAME = "HomeLab Health AI · VL Embed"
+BUNDLED_VL_EMBED_BASE_URL = "http://hlh_swap:9620"
+BUNDLED_VL_EMBED_MODEL = "qwen3-vl-embed"
+
+BUNDLED_VL_RERANK_NAME = "HomeLab Health AI · VL Rerank"
+BUNDLED_VL_RERANK_BASE_URL = "http://hlh_swap:9620"
+BUNDLED_VL_RERANK_MODEL = "qwen3-vl-rerank"
+
+# The tier on which the VL dual-space path activates. Single source of truth so
+# ensure_bundled_providers, apply_bundled_bindings, vision.py and rag.py agree.
+VL_TIER = "gpu-24gb+"
 
 
 # Per-tier chat model aliases — must match the [section] names in
@@ -100,7 +120,8 @@ async def ensure_bundled_providers(conn) -> dict[str, str] | None:
     """Idempotent upsert of bundled rows (chat + embed + rerank).
 
     No-op unless `system_profile.setup_complete = TRUE` AND tier ≠ 'external'.
-    Returns {'chat': uuid, 'embed': uuid, 'rerank': uuid} or None if no-op.
+    Returns {'chat': uuid, 'embed': uuid, 'rerank': uuid} (plus 'embed-vl' /
+    'rerank-vl' on gpu-24gb+) or None if no-op.
     """
     profile = await _read_system_profile(conn)
     if profile is None:
@@ -125,11 +146,24 @@ async def ensure_bundled_providers(conn) -> dict[str, str] | None:
         conn, name=BUNDLED_RERANK_NAME, base_url=BUNDLED_RERANK_BASE_URL, role="rerank"
     )
 
+    ids = {"chat": chat_id, "embed": embed_id, "rerank": rerank_id}
+
+    # Dual-space VL rows (folder D): seed ONLY on gpu-24gb+ (the only tier that
+    # pulls the VL models). On any lesser tier the rows are absent so vision.py /
+    # rag.py resolve None and the VL path no-ops.
+    if profile["tier"] == VL_TIER:
+        ids["embed-vl"] = await _upsert_bundled_row(
+            conn, name=BUNDLED_VL_EMBED_NAME, base_url=BUNDLED_VL_EMBED_BASE_URL, role="embed-vl"
+        )
+        ids["rerank-vl"] = await _upsert_bundled_row(
+            conn, name=BUNDLED_VL_RERANK_NAME, base_url=BUNDLED_VL_RERANK_BASE_URL, role="rerank-vl"
+        )
+
     logger.info(
-        "bundled_providers: ensured chat=%s embed=%s rerank=%s",
-        chat_id, embed_id, rerank_id,
+        "bundled_providers: ensured chat=%s embed=%s rerank=%s embed-vl=%s rerank-vl=%s",
+        chat_id, embed_id, rerank_id, ids.get("embed-vl"), ids.get("rerank-vl"),
     )
-    return {"chat": chat_id, "embed": embed_id, "rerank": rerank_id}
+    return ids
 
 
 async def apply_bundled_bindings(conn, tier: str) -> None:

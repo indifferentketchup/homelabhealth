@@ -1,4 +1,5 @@
 fastapi>=0.115.0
+pydantic>=2.9.0
 uvicorn[standard]>=0.32.0
 asyncpg>=0.30.0
 sqlparse>=0.5.0
@@ -10,6 +11,12 @@ pypdf>=5.0.0
 python-docx>=1.1.0
 langchain-text-splitters>=0.3.0
 flashrank>=0.2.0
+numpy>=1.26.0
+# Snapshot puller for boofinity safetensors repos (model_puller._snapshot_pull).
+# Floor matches boofinity's own huggingface_hub pin so the hub cache layout the
+# API writes is the layout the boofinity child reads. Capped below the next major
+# to avoid a snapshot_download signature drift.
+huggingface_hub>=0.27.0,<1.0
 argon2-cffi>=23.1.0
 cryptography>=41.0.0
 psutil>=5.9.0

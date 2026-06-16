@@ -568,3 +568,40 @@ no-op once the seeded value drops it.
   reads `HLH_SWAP_IMAGE` for the combined image.
 - The llama.cpp and boofinity workloads are unchanged in behavior; they just run
   as child processes of `hlh_swap` rather than as standalone containers.
+
+---
+
+## Implementation notes
+
+Date: 2026-06-16. Recorded during folder B implementation.
+
+- **Single env-driven config file (not two baked per-variant configs).** The
+  design's `## docker-compose.yml changes` floated two equivalent options for the
+  cpu/cuda device + VL split: a per-variant config baked into each image, or "a
+  single config with the `--device`/VL flags read from env keeps one file". The
+  shipped implementation takes the single-file path: `hlh_swap/config.yaml` is one
+  canonical file (mirrored byte-for-byte to `hlh_orchestra/templates/swap_config.yaml`)
+  whose `boof_cmd` macro uses `--device ${HLH_INFER_DEVICE:-cpu}` and carries all
+  four boofinity model ids (incl. the two VL ids). The compose `hlh_swap_gpu`
+  service sets `HLH_INFER_DEVICE: cuda`; `hlh_swap_cpu` takes the `:-cpu` default.
+  This keeps one mirrored config (CLAUDE.md sync rule stays trivial) and satisfies
+  every task acceptance: `--url-prefix` present, no `INFINITY_`, `Qwen3-VL-Reranker-2B`
+  present, single `vram_constrained` group. On CPU tiers the VL ids are declared
+  but their weights are not pulled (folder C owns the pull), so those aliases stay
+  idle until a GPU tier loads them - no behavior change for cpu tiers.
+
+- **ADR filename.** The authoritative topology ADR is committed as
+  `docs/adr/0002-llama-swap-front-door-and-resource-policy.md` (the task brief
+  referenced it as `0002-boofinity-inference-frontdoor`); content matches the
+  design. No code discrepancy.
+
+- **Deferred to deploy (cannot be verified in an editing session).** B2b.1 /
+  B2b.2 require pulling `ghcr.io/indifferentketchup/boofinity:0.1.0-*`,
+  `ghcr.io/ggml-org/llama.cpp:server[-cuda]-b9660`, and
+  `ghcr.io/mostlygeek/llama-swap:v226` and running `docker build` + `docker run`
+  to confirm the three binaries are on PATH and the COPY source paths
+  (`/app/llama-server`, `/app/*.so`, `/app/llama-swap`) match the published
+  layouts. The Dockerfile is written to the design's paths; the build and the
+  path confirmation are a required pre-merge step on a host with registry access.
+  The "Live deploy verification" and "Deploy-ordering" task sections likewise run
+  only against a real stack / GPU host.
