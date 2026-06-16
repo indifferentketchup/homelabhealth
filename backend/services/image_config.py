@@ -20,69 +20,146 @@ LLAMA_SWAP_VERSION = "v226"
 BOOFINITY_VERSION = "0.1.0"
 
 
+_SWAP_IMAGE_CPU    = f"ghcr.io/indifferentketchup/hlh-swap:{BOOFINITY_VERSION}-cpu"
+_SWAP_IMAGE_CUDA   = f"ghcr.io/indifferentketchup/hlh-swap:{BOOFINITY_VERSION}-cuda"
+# ROCm: llama-server uses ROCm/HIP GPU; boofinity uses PyTorch ROCm (--device cuda
+# works because ROCm mirrors the CUDA API surface). Requires /dev/kfd + /dev/dri.
+_SWAP_IMAGE_ROCM   = f"ghcr.io/indifferentketchup/hlh-swap:{BOOFINITY_VERSION}-rocm"
+# Vulkan: llama-server uses Vulkan GPU; boofinity uses the cpu base image (PyTorch
+# has no desktop Vulkan compute backend). llama-server child gets HLH_INFER_DEVICE=vulkan.
+_SWAP_IMAGE_VULKAN = f"ghcr.io/indifferentketchup/hlh-swap:{BOOFINITY_VERSION}-vulkan"
+
+# Pascal-safe boofinity dtype default. Ampere+ operators override to bfloat16 in
+# .env to halve VRAM. The compose `--dtype ${HLH_INFER_DTYPE:-float32}` default
+# makes the env optional; we still seed it so the default is documented.
+INFER_DTYPE_DEFAULT = "float32"
+
+
 @dataclass(frozen=True)
 class TierImages:
-    chat_image: str
-    infer_image: str
+    swap_image: str          # combined hlh_swap front-door image (cpu | cuda)
     compose_profiles: str
     models_max: int
+    infer_mem: str           # tier-scaled mem_limit for hlh_swap (HLH_INFER_MEM)
 
 
 TIER_IMAGE_MAP: dict[str, TierImages] = {
     "cpu-min": TierImages(
-        chat_image=f"ghcr.io/ggml-org/llama.cpp:server-{LLAMA_CPP_VERSION}",
-        infer_image=f"ghcr.io/indifferentketchup/boofinity:{BOOFINITY_VERSION}-cpu",
+        swap_image=_SWAP_IMAGE_CPU,
         compose_profiles="bundled",
         models_max=1,
+        infer_mem="2g",
     ),
     "cpu-std": TierImages(
-        chat_image=f"ghcr.io/ggml-org/llama.cpp:server-{LLAMA_CPP_VERSION}",
-        infer_image=f"ghcr.io/indifferentketchup/boofinity:{BOOFINITY_VERSION}-cpu",
+        swap_image=_SWAP_IMAGE_CPU,
         compose_profiles="bundled",
         models_max=2,
+        infer_mem="4g",
     ),
     "gpu-4gb": TierImages(
-        chat_image=f"ghcr.io/ggml-org/llama.cpp:server-cuda-{LLAMA_CPP_VERSION}",
-        infer_image=f"ghcr.io/indifferentketchup/boofinity:{BOOFINITY_VERSION}-cuda",
+        swap_image=_SWAP_IMAGE_CUDA,
         compose_profiles="bundled-gpu",
         models_max=2,
+        infer_mem="4g",
     ),
     "gpu-8gb": TierImages(
-        chat_image=f"ghcr.io/ggml-org/llama.cpp:server-cuda-{LLAMA_CPP_VERSION}",
-        infer_image=f"ghcr.io/indifferentketchup/boofinity:{BOOFINITY_VERSION}-cuda",
+        swap_image=_SWAP_IMAGE_CUDA,
         compose_profiles="bundled-gpu",
         models_max=3,
+        infer_mem="6g",
     ),
     "gpu-16gb": TierImages(
-        chat_image=f"ghcr.io/ggml-org/llama.cpp:server-cuda-{LLAMA_CPP_VERSION}",
-        infer_image=f"ghcr.io/indifferentketchup/boofinity:{BOOFINITY_VERSION}-cuda",
+        swap_image=_SWAP_IMAGE_CUDA,
         compose_profiles="bundled-gpu",
         models_max=3,
+        infer_mem="6g",
     ),
     "gpu-24gb+": TierImages(
-        chat_image=f"ghcr.io/ggml-org/llama.cpp:server-cuda-{LLAMA_CPP_VERSION}",
-        infer_image=f"ghcr.io/indifferentketchup/boofinity:{BOOFINITY_VERSION}-cuda",
+        swap_image=_SWAP_IMAGE_CUDA,
         compose_profiles="bundled-gpu",
         models_max=4,
+        infer_mem="8g",
+    ),
+    # AMD GPU tiers (ROCm). Compose profile bundled-amd starts hlh_swap_rocm which
+    # passes /dev/kfd + /dev/dri and sets HLH_INFER_DEVICE=cuda (ROCm mirrors
+    # the CUDA API surface so both llama-server and boofinity children work).
+    "amd-4gb": TierImages(
+        swap_image=_SWAP_IMAGE_ROCM,
+        compose_profiles="bundled-amd",
+        models_max=2,
+        infer_mem="4g",
+    ),
+    "amd-8gb": TierImages(
+        swap_image=_SWAP_IMAGE_ROCM,
+        compose_profiles="bundled-amd",
+        models_max=3,
+        infer_mem="6g",
+    ),
+    "amd-16gb": TierImages(
+        swap_image=_SWAP_IMAGE_ROCM,
+        compose_profiles="bundled-amd",
+        models_max=3,
+        infer_mem="6g",
+    ),
+    "amd-24gb+": TierImages(
+        swap_image=_SWAP_IMAGE_ROCM,
+        compose_profiles="bundled-amd",
+        models_max=4,
+        infer_mem="8g",
+    ),
+    # Vulkan GPU tiers (cross-platform: Intel Arc, AMD without ROCm stack, etc.).
+    # Compose profile bundled-vulkan starts hlh_swap_vulkan which passes /dev/dri
+    # and sets HLH_INFER_DEVICE=vulkan (for the llama-server child). The boofinity
+    # child runs on CPU (PyTorch has no desktop Vulkan compute backend) — embed and
+    # rerank are slower than on ROCm/CUDA but functional.
+    "vulkan-4gb": TierImages(
+        swap_image=_SWAP_IMAGE_VULKAN,
+        compose_profiles="bundled-vulkan",
+        models_max=2,
+        infer_mem="4g",
+    ),
+    "vulkan-8gb": TierImages(
+        swap_image=_SWAP_IMAGE_VULKAN,
+        compose_profiles="bundled-vulkan",
+        models_max=3,
+        infer_mem="6g",
+    ),
+    "vulkan-16gb": TierImages(
+        swap_image=_SWAP_IMAGE_VULKAN,
+        compose_profiles="bundled-vulkan",
+        models_max=3,
+        infer_mem="6g",
+    ),
+    "vulkan-24gb+": TierImages(
+        swap_image=_SWAP_IMAGE_VULKAN,
+        compose_profiles="bundled-vulkan",
+        models_max=4,
+        infer_mem="8g",
     ),
     "apple-mlx": TierImages(
-        chat_image=f"ghcr.io/ggml-org/llama.cpp:server-{LLAMA_CPP_VERSION}",
-        infer_image=f"ghcr.io/indifferentketchup/boofinity:{BOOFINITY_VERSION}-cpu",
+        swap_image=_SWAP_IMAGE_CPU,
         compose_profiles="bundled",
         models_max=2,
+        infer_mem="4g",
     ),
     "external": TierImages(
-        chat_image=f"ghcr.io/ggml-org/llama.cpp:server-{LLAMA_CPP_VERSION}",
-        infer_image=f"ghcr.io/indifferentketchup/boofinity:{BOOFINITY_VERSION}-cpu",
+        swap_image=_SWAP_IMAGE_CPU,
         compose_profiles="",
         models_max=2,
+        infer_mem="4g",
     ),
 }
 
 
 ENV_PATH = os.environ.get("HLH_ENV_PATH", "/data/.env")
 
-_MANAGED_KEYS = ("HLH_CHAT_IMAGE", "HLH_INFER_IMAGE", "COMPOSE_PROFILES", "HLH_MODELS_MAX")
+_MANAGED_KEYS = (
+    "HLH_SWAP_IMAGE",
+    "COMPOSE_PROFILES",
+    "HLH_MODELS_MAX",
+    "HLH_INFER_MEM",
+    "HLH_INFER_DTYPE",
+)
 
 
 def write_tier_env(tier: str) -> bool:
@@ -125,10 +202,11 @@ def write_tier_env(tier: str) -> bool:
         new_profiles.add("vision")
 
     managed = {
-        "HLH_CHAT_IMAGE": images.chat_image,
-        "HLH_INFER_IMAGE": images.infer_image,
+        "HLH_SWAP_IMAGE": images.swap_image,
         "COMPOSE_PROFILES": ",".join(sorted(new_profiles)) if new_profiles else "",
         "HLH_MODELS_MAX": str(images.models_max),
+        "HLH_INFER_MEM": images.infer_mem,
+        "HLH_INFER_DTYPE": INFER_DTYPE_DEFAULT,
     }
 
     found: set[str] = set()
@@ -160,7 +238,9 @@ def write_tier_env(tier: str) -> bool:
         return False
 
     logger.info(
-        "write_tier_env: tier=%s → HLH_CHAT_IMAGE=%s, HLH_INFER_IMAGE=%s, COMPOSE_PROFILES=%s",
-        tier, managed["HLH_CHAT_IMAGE"], managed["HLH_INFER_IMAGE"], managed["COMPOSE_PROFILES"],
+        "write_tier_env: tier=%s → HLH_SWAP_IMAGE=%s, COMPOSE_PROFILES=%s, "
+        "HLH_INFER_MEM=%s, HLH_INFER_DTYPE=%s",
+        tier, managed["HLH_SWAP_IMAGE"], managed["COMPOSE_PROFILES"],
+        managed["HLH_INFER_MEM"], managed["HLH_INFER_DTYPE"],
     )
     return True

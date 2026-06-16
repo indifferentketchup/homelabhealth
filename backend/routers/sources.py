@@ -132,7 +132,8 @@ def _resolve_upload_parse_mime(raw: bytes, declared: str | None, filename: str |
         parse_source_bytes(raw, m)
         return m
     except ValueError:
-        pass
+        # Declared MIME didn't parse; fall through to filename/content sniffing.
+        logger.debug("resolve_upload_parse_mime: declared mime %r rejected, sniffing", m)
     fn = (filename or "").lower()
     if fn.endswith((".md", ".markdown")):
         parse_source_bytes(raw, "text/markdown")
@@ -161,12 +162,12 @@ async def _vl_image_embed_pass(pool, source_id: uuid.UUID, raw: bytes, m: str) -
     ingest into 'error' (spec vl-ingestion).
     """
     try:
-        from services.bundled_providers import VL_TIER
+        from services.bundled_providers import VL_TIERS
         from services.vision import embed_image_vl, VL_EMBED_DIM
 
         async with pool.acquire() as conn:
             tier = await conn.fetchval("SELECT tier FROM system_profile WHERE id = 1")
-        if tier != VL_TIER:
+        if tier not in VL_TIERS:
             return
 
         # Build (page_no, image_ref, image_bytes, mime) work items. A standalone

@@ -37,7 +37,13 @@ MODELS_BASE_DIR = Path(os.environ.get("HLH_MODELS_DIR", "/models"))
 INFER_CACHE_DIR = Path(os.environ.get("HLH_INFER_CACHE_DIR", "/cache"))
 
 ALL_ROLES = ("chat", "tasks", "embed", "rerank", "embed-vl", "rerank-vl", "vision", "stt", "ocr")
-ALL_TIERS = ("cpu-min", "cpu-std", "gpu-4gb", "gpu-8gb", "gpu-16gb", "gpu-24gb+", "apple-mlx", "external")
+ALL_TIERS = (
+    "cpu-min", "cpu-std",
+    "gpu-4gb", "gpu-8gb", "gpu-16gb", "gpu-24gb+",      # NVIDIA CUDA
+    "amd-4gb", "amd-8gb", "amd-16gb", "amd-24gb+",      # AMD ROCm
+    "vulkan-4gb", "vulkan-8gb", "vulkan-16gb", "vulkan-24gb+",  # Vulkan (cross-platform)
+    "apple-mlx", "external",
+)
 
 PULL_CHUNK_BYTES = 5 * 1024 * 1024
 PULL_TIMEOUT = httpx.Timeout(connect=15.0, read=300.0, write=60.0, pool=10.0)
@@ -75,7 +81,12 @@ _GEMMA_LICENSE = "gemma"
 # serves every bundled router tier, landing at a flat /models/<file> path that
 # models.ini already references (see _FLAT_DEST_ROLES). External/BYO and
 # apple-mlx tiers don't use the bundled router, so they stay None.
-_ROUTER_TIERS = ("cpu-min", "cpu-std", "gpu-4gb", "gpu-8gb", "gpu-16gb", "gpu-24gb+")
+_ROUTER_TIERS = (
+    "cpu-min", "cpu-std",
+    "gpu-4gb", "gpu-8gb", "gpu-16gb", "gpu-24gb+",
+    "amd-4gb", "amd-8gb", "amd-16gb", "amd-24gb+",
+    "vulkan-4gb", "vulkan-8gb", "vulkan-16gb", "vulkan-24gb+",
+)
 
 
 def _router_role(spec: ModelSpec) -> dict[str, ModelSpec | None]:
@@ -158,8 +169,14 @@ _RERANK_VL_SPEC = ModelSpec(
 
 
 def _gpu24_only_role(spec: ModelSpec) -> dict[str, ModelSpec | None]:
-    """Tier map with the spec only on gpu-24gb+, every other tier None."""
-    return {tier: (spec if tier == "gpu-24gb+" else None) for tier in ALL_TIERS}
+    """Tier map with the spec on all 24gb+ GPU tiers (CUDA + ROCm + Vulkan), None elsewhere.
+
+    Vulkan 24gb+ is included: even though the boofinity child runs on CPU for
+    Vulkan hosts (no PyTorch desktop Vulkan backend), the weights still need to
+    be present in the HF cache for the embed/rerank aliases to start up.
+    """
+    _gpu24_tiers = {"gpu-24gb+", "amd-24gb+", "vulkan-24gb+"}
+    return {tier: (spec if tier in _gpu24_tiers else None) for tier in ALL_TIERS}
 
 # Phase 1 supplies chat specs only; all other roles get None placeholders so
 # the schema is exercised but no pulls happen. Subsequent phases extend each
@@ -224,6 +241,73 @@ MODEL_REGISTRY: dict[str, dict[str, ModelSpec | None]] = {
             license_url="https://huggingface.co/google/medgemma-27b-it",
             revision="main",
         ),
+        # AMD ROCm GPU tiers — same model bins as the equivalent CUDA tiers.
+        # ROCm runs the GGUF via llama-server's HIP backend; same quantisation.
+        "amd-4gb":   ModelSpec(
+            repo="unsloth/medgemma-1.5-4b-it-GGUF",
+            filename="medgemma-1.5-4b-it-Q4_K_M.gguf",
+            quant="Q4_K_M",
+            license=_GEMMA_LICENSE,
+            license_url="https://huggingface.co/google/medgemma-4b-it",
+            revision="main",
+        ),
+        "amd-8gb":   ModelSpec(
+            repo="unsloth/medgemma-1.5-4b-it-GGUF",
+            filename="medgemma-1.5-4b-it-Q8_0.gguf",
+            quant="Q8_0",
+            license=_GEMMA_LICENSE,
+            license_url="https://huggingface.co/google/medgemma-4b-it",
+            revision="main",
+        ),
+        "amd-16gb":  ModelSpec(
+            repo="unsloth/medgemma-1.5-4b-it-GGUF",
+            filename="medgemma-1.5-4b-it-Q8_0.gguf",
+            quant="Q8_0",
+            license=_GEMMA_LICENSE,
+            license_url="https://huggingface.co/google/medgemma-4b-it",
+            revision="main",
+        ),
+        "amd-24gb+": ModelSpec(
+            repo="unsloth/medgemma-27b-it-GGUF",
+            filename="medgemma-27b-it-Q4_K_M.gguf",
+            quant="Q4_K_M",
+            license=_GEMMA_LICENSE,
+            license_url="https://huggingface.co/google/medgemma-27b-it",
+            revision="main",
+        ),
+        # Vulkan GPU tiers — llama-server uses the Vulkan backend; same GGUFs.
+        "vulkan-4gb":   ModelSpec(
+            repo="unsloth/medgemma-1.5-4b-it-GGUF",
+            filename="medgemma-1.5-4b-it-Q4_K_M.gguf",
+            quant="Q4_K_M",
+            license=_GEMMA_LICENSE,
+            license_url="https://huggingface.co/google/medgemma-4b-it",
+            revision="main",
+        ),
+        "vulkan-8gb":   ModelSpec(
+            repo="unsloth/medgemma-1.5-4b-it-GGUF",
+            filename="medgemma-1.5-4b-it-Q8_0.gguf",
+            quant="Q8_0",
+            license=_GEMMA_LICENSE,
+            license_url="https://huggingface.co/google/medgemma-4b-it",
+            revision="main",
+        ),
+        "vulkan-16gb":  ModelSpec(
+            repo="unsloth/medgemma-1.5-4b-it-GGUF",
+            filename="medgemma-1.5-4b-it-Q8_0.gguf",
+            quant="Q8_0",
+            license=_GEMMA_LICENSE,
+            license_url="https://huggingface.co/google/medgemma-4b-it",
+            revision="main",
+        ),
+        "vulkan-24gb+": ModelSpec(
+            repo="unsloth/medgemma-27b-it-GGUF",
+            filename="medgemma-27b-it-Q4_K_M.gguf",
+            quant="Q4_K_M",
+            license=_GEMMA_LICENSE,
+            license_url="https://huggingface.co/google/medgemma-27b-it",
+            revision="main",
+        ),
         "apple-mlx": None,  # Phase 6
         "external": None,
     },
@@ -237,14 +321,22 @@ MODEL_REGISTRY: dict[str, dict[str, ModelSpec | None]] = {
     # mmproj must match the chat model size: 4b tiers → 4b mmproj, 27b tiers →
     # 27b mmproj. cpu-min (Qwen, not multimodal) and apple-mlx/external get none.
     "vision": {
-        "cpu-min":   None,
-        "cpu-std":   _VISION_MMPROJ_4B,
-        "gpu-4gb":   _VISION_MMPROJ_4B,
-        "gpu-8gb":   _VISION_MMPROJ_4B,
-        "gpu-16gb":  _VISION_MMPROJ_4B,
-        "gpu-24gb+": _VISION_MMPROJ_27B,
-        "apple-mlx": None,
-        "external":  None,
+        "cpu-min":      None,
+        "cpu-std":      _VISION_MMPROJ_4B,
+        "gpu-4gb":      _VISION_MMPROJ_4B,
+        "gpu-8gb":      _VISION_MMPROJ_4B,
+        "gpu-16gb":     _VISION_MMPROJ_4B,
+        "gpu-24gb+":    _VISION_MMPROJ_27B,
+        "amd-4gb":      _VISION_MMPROJ_4B,
+        "amd-8gb":      _VISION_MMPROJ_4B,
+        "amd-16gb":     _VISION_MMPROJ_4B,
+        "amd-24gb+":    _VISION_MMPROJ_27B,
+        "vulkan-4gb":   _VISION_MMPROJ_4B,
+        "vulkan-8gb":   _VISION_MMPROJ_4B,
+        "vulkan-16gb":  _VISION_MMPROJ_4B,
+        "vulkan-24gb+": _VISION_MMPROJ_27B,
+        "apple-mlx":    None,
+        "external":     None,
     },
     "stt":       {tier: None for tier in ALL_TIERS},  # Phase 4
     "ocr":       {tier: None for tier in ALL_TIERS},  # Phase 5
@@ -635,8 +727,8 @@ async def pull_model(pool_or_conn, model_uuid: str) -> dict[str, Any]:
                 if expected_sha256 and sha.hexdigest() != expected_sha256:
                     try:
                         partial.unlink()
-                    except OSError:
-                        pass
+                    except OSError as _unlink_exc:
+                        logger.debug("model_puller: could not remove partial on sha256 mismatch: %s", _unlink_exc)
                     await _mark_finished(
                         pool_or_conn, model_uuid,
                         status="failed",
@@ -659,16 +751,16 @@ async def pull_model(pool_or_conn, model_uuid: str) -> dict[str, Any]:
             except _Cancelled:
                 try:
                     partial.unlink()
-                except OSError:
-                    pass
+                except OSError as _unlink_exc:
+                    logger.debug("model_puller: could not remove partial on cancel: %s", _unlink_exc)
                 await _mark_finished(pool_or_conn, model_uuid, status="failed", error_message="cancelled")
                 return dict(await _read_row(pool_or_conn, model_uuid))
             except Exception as e:
                 try:
                     if partial.exists():
                         partial.unlink()
-                except OSError:
-                    pass
+                except OSError as _unlink_exc:
+                    logger.debug("model_puller: could not remove partial on error: %s", _unlink_exc)
                 await _mark_finished(
                     pool_or_conn, model_uuid,
                     status="failed",

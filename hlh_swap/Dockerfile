@@ -12,11 +12,29 @@
 #     --build-arg LLAMA_CPP_IMAGE=ghcr.io/ggml-org/llama.cpp:server-b9660 \
 #     -t ghcr.io/indifferentketchup/hlh-swap:0.1.0-cpu .
 #
-# CUDA variant:
+# CUDA variant (NVIDIA GPU):
 #   docker build -f hlh_swap/Dockerfile \
 #     --build-arg BOOFINITY_BASE=ghcr.io/indifferentketchup/boofinity:0.1.0-cuda \
 #     --build-arg LLAMA_CPP_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda-b9660 \
 #     -t ghcr.io/indifferentketchup/hlh-swap:0.1.0-cuda .
+#
+# ROCm variant (AMD GPU — HIP/ROCm runtime):
+#   docker build -f hlh_swap/Dockerfile \
+#     --build-arg BOOFINITY_BASE=ghcr.io/indifferentketchup/boofinity:0.1.0-rocm \
+#     --build-arg LLAMA_CPP_IMAGE=ghcr.io/ggml-org/llama.cpp:server-rocm-b9660 \
+#     -t ghcr.io/indifferentketchup/hlh-swap:0.1.0-rocm .
+#   Note: PyTorch ROCm exposes CUDA-compatible APIs, so HLH_INFER_DEVICE=cuda
+#   works for the boofinity child on ROCm hosts. Requires /dev/kfd + /dev/dri.
+#
+# Vulkan variant (cross-platform GPU — Intel Arc, AMD without ROCm stack, etc.):
+#   docker build -f hlh_swap/Dockerfile \
+#     --build-arg BOOFINITY_BASE=ghcr.io/indifferentketchup/boofinity:0.1.0-cpu \
+#     --build-arg LLAMA_CPP_IMAGE=ghcr.io/ggml-org/llama.cpp:server-vulkan-b9660 \
+#     -t ghcr.io/indifferentketchup/hlh-swap:0.1.0-vulkan .
+#   Note: llama-server uses the GPU via Vulkan; boofinity uses the CPU base image
+#   (PyTorch has no desktop Vulkan compute backend). Set HLH_INFER_DEVICE=vulkan
+#   for llama-server child; boofinity child ignores it and defaults to cpu.
+#   Requires /dev/dri + video/render groups.
 
 ARG BOOFINITY_BASE=ghcr.io/indifferentketchup/boofinity:0.1.0-cpu
 ARG LLAMA_CPP_IMAGE=ghcr.io/ggml-org/llama.cpp:server-b9660

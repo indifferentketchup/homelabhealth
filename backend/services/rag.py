@@ -160,8 +160,9 @@ MEMORY_TOP_K = 3
 TOP_K_RETRIEVE = 40
 TOP_AFTER_RERANK = 10
 
-# Dual-space VL retrieval (folder D, gpu-24gb+ only).
-VL_TIER = "gpu-24gb+"
+# Dual-space VL retrieval (folder D). VL_TIERS imported from bundled_providers
+# so the set of eligible tiers is a single source of truth across ingest + retrieval.
+from services.bundled_providers import VL_TIERS  # noqa: E402
 RRF_K = 60                  # Reciprocal Rank Fusion constant (Cormack et al. 2009)
 VL_RERANK_TIMEOUT = 15.0
 
@@ -467,8 +468,8 @@ async def _maybe_dual_space_rerank(
     """
     if not passages:
         return None
-    if (await _active_tier()) != VL_TIER:
-        return None  # Gate closed on every tier below gpu-24gb+.
+    if (await _active_tier()) not in VL_TIERS:
+        return None  # Gate closed on every tier below a VL-capable tier.
 
     image_cands = await _vl_query_image_ann(query)
     if image_cands is None:

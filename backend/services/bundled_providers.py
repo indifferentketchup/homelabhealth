@@ -60,9 +60,12 @@ BUNDLED_VL_RERANK_NAME = "HomeLab Health AI · VL Rerank"
 BUNDLED_VL_RERANK_BASE_URL = "http://hlh_swap:9620"
 BUNDLED_VL_RERANK_MODEL = "qwen3-vl-rerank"
 
-# The tier on which the VL dual-space path activates. Single source of truth so
-# ensure_bundled_providers, apply_bundled_bindings, vision.py and rag.py agree.
-VL_TIER = "gpu-24gb+"
+# Tiers on which the VL dual-space path activates. frozenset so membership
+# tests are O(1) and the set is the single source of truth for
+# ensure_bundled_providers, apply_bundled_bindings, vision.py, and rag.py.
+# vulkan-24gb+ is excluded: boofinity runs on CPU there (no PyTorch Vulkan
+# desktop backend), making VL inference impractically slow.
+VL_TIERS: frozenset[str] = frozenset({"gpu-24gb+", "amd-24gb+"})
 
 
 # Per-tier chat model aliases — must match the [section] names in
@@ -72,12 +75,20 @@ VL_TIER = "gpu-24gb+"
 # Phase 6 deferred. apply_bundled_bindings treats it like 'external' and
 # no-ops; operators on Apple Silicon pick a chat provider manually.
 TIER_CHAT_MODELS = {
-    "cpu-min": "qwen-chat",
-    "cpu-std": "medgemma",
-    "gpu-4gb": "medgemma",
-    "gpu-8gb": "medgemma",
-    "gpu-16gb": "medgemma",
-    "gpu-24gb+": "medgemma",
+    "cpu-min":      "qwen-chat",
+    "cpu-std":      "medgemma",
+    "gpu-4gb":      "medgemma",
+    "gpu-8gb":      "medgemma",
+    "gpu-16gb":     "medgemma",
+    "gpu-24gb+":    "medgemma",
+    "amd-4gb":      "medgemma",
+    "amd-8gb":      "medgemma",
+    "amd-16gb":     "medgemma",
+    "amd-24gb+":    "medgemma",
+    "vulkan-4gb":   "medgemma",
+    "vulkan-8gb":   "medgemma",
+    "vulkan-16gb":  "medgemma",
+    "vulkan-24gb+": "medgemma",
 }
 
 
@@ -151,7 +162,7 @@ async def ensure_bundled_providers(conn) -> dict[str, str] | None:
     # Dual-space VL rows (folder D): seed ONLY on gpu-24gb+ (the only tier that
     # pulls the VL models). On any lesser tier the rows are absent so vision.py /
     # rag.py resolve None and the VL path no-ops.
-    if profile["tier"] == VL_TIER:
+    if profile["tier"] in VL_TIERS:
         ids["embed-vl"] = await _upsert_bundled_row(
             conn, name=BUNDLED_VL_EMBED_NAME, base_url=BUNDLED_VL_EMBED_BASE_URL, role="embed-vl"
         )

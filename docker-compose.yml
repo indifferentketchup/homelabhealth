@@ -160,6 +160,50 @@ services:
               count: 1
               capabilities: [gpu]
 
+  # ROCm variant for AMD GPU hosts. /dev/kfd (HIP compute) + /dev/dri (display/render
+  # interface) are the two device nodes AMD ROCm needs. video + render group membership
+  # is required for non-root access to /dev/dri/renderD*. HLH_INFER_DEVICE=cuda works
+  # here because PyTorch ROCm mirrors the CUDA API surface (torch.cuda.* calls map
+  # to ROCm/HIP). The bundled-amd profile activates this service.
+  hlh_swap_rocm:
+    <<: *hlh-swap-base
+    image: ${HLH_SWAP_IMAGE:-ghcr.io/indifferentketchup/hlh-swap:0.1.0-rocm}
+    profiles: [bundled-amd]
+    environment:
+      HF_HOME: /cache
+      HOME: /cache
+      HF_HUB_OFFLINE: "1"
+      LD_LIBRARY_PATH: /app
+      HLH_INFER_DEVICE: cuda
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+      - render
+
+  # Vulkan variant for cross-platform GPU hosts (Intel Arc, AMD without ROCm stack,
+  # older NVIDIA via Vulkan, etc.). /dev/dri gives access to the GPU via the DRI
+  # interface; video + render groups allow non-root access to renderD*. llama-server
+  # uses the GPU via Vulkan (HLH_INFER_DEVICE=vulkan); boofinity uses the cpu base
+  # image since PyTorch has no desktop Vulkan compute backend — embed/rerank run on
+  # CPU. The bundled-vulkan profile activates this service.
+  hlh_swap_vulkan:
+    <<: *hlh-swap-base
+    image: ${HLH_SWAP_IMAGE:-ghcr.io/indifferentketchup/hlh-swap:0.1.0-vulkan}
+    profiles: [bundled-vulkan]
+    environment:
+      HF_HOME: /cache
+      HOME: /cache
+      HF_HUB_OFFLINE: "1"
+      LD_LIBRARY_PATH: /app
+      HLH_INFER_DEVICE: vulkan
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+      - render
+
   # The hlh_orchestra image is a one-shot bootstrap tool, NOT a compose service:
   # it's run via the install.sh `docker run -e HLH_BOOTSTRAP=1 …` one-liner to
   # bring this whole stack up from nothing. Build it with:
