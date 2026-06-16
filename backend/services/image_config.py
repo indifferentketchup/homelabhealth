@@ -15,8 +15,9 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-LLAMA_CPP_VERSION = "b9628"
-INFINITY_VERSION = "0.0.77"
+LLAMA_CPP_VERSION = "b9660"
+LLAMA_SWAP_VERSION = "v226"
+BOOFINITY_VERSION = "0.1.0"
 
 
 @dataclass(frozen=True)
@@ -30,49 +31,49 @@ class TierImages:
 TIER_IMAGE_MAP: dict[str, TierImages] = {
     "cpu-min": TierImages(
         chat_image=f"ghcr.io/ggml-org/llama.cpp:server-{LLAMA_CPP_VERSION}",
-        infer_image=f"michaelf34/infinity:{INFINITY_VERSION}-cpu",
+        infer_image=f"ghcr.io/indifferentketchup/boofinity:{BOOFINITY_VERSION}-cpu",
         compose_profiles="bundled",
         models_max=1,
     ),
     "cpu-std": TierImages(
         chat_image=f"ghcr.io/ggml-org/llama.cpp:server-{LLAMA_CPP_VERSION}",
-        infer_image=f"michaelf34/infinity:{INFINITY_VERSION}-cpu",
+        infer_image=f"ghcr.io/indifferentketchup/boofinity:{BOOFINITY_VERSION}-cpu",
         compose_profiles="bundled",
         models_max=2,
     ),
     "gpu-4gb": TierImages(
         chat_image=f"ghcr.io/ggml-org/llama.cpp:server-cuda-{LLAMA_CPP_VERSION}",
-        infer_image=f"michaelf34/infinity:{INFINITY_VERSION}",
+        infer_image=f"ghcr.io/indifferentketchup/boofinity:{BOOFINITY_VERSION}-cuda",
         compose_profiles="bundled-gpu",
         models_max=2,
     ),
     "gpu-8gb": TierImages(
         chat_image=f"ghcr.io/ggml-org/llama.cpp:server-cuda-{LLAMA_CPP_VERSION}",
-        infer_image=f"michaelf34/infinity:{INFINITY_VERSION}",
+        infer_image=f"ghcr.io/indifferentketchup/boofinity:{BOOFINITY_VERSION}-cuda",
         compose_profiles="bundled-gpu",
         models_max=3,
     ),
     "gpu-16gb": TierImages(
         chat_image=f"ghcr.io/ggml-org/llama.cpp:server-cuda-{LLAMA_CPP_VERSION}",
-        infer_image=f"michaelf34/infinity:{INFINITY_VERSION}",
+        infer_image=f"ghcr.io/indifferentketchup/boofinity:{BOOFINITY_VERSION}-cuda",
         compose_profiles="bundled-gpu",
         models_max=3,
     ),
     "gpu-24gb+": TierImages(
         chat_image=f"ghcr.io/ggml-org/llama.cpp:server-cuda-{LLAMA_CPP_VERSION}",
-        infer_image=f"michaelf34/infinity:{INFINITY_VERSION}",
-        compose_profiles="bundled-gpu,vision",
+        infer_image=f"ghcr.io/indifferentketchup/boofinity:{BOOFINITY_VERSION}-cuda",
+        compose_profiles="bundled-gpu",
         models_max=4,
     ),
     "apple-mlx": TierImages(
         chat_image=f"ghcr.io/ggml-org/llama.cpp:server-{LLAMA_CPP_VERSION}",
-        infer_image=f"michaelf34/infinity:{INFINITY_VERSION}-cpu",
+        infer_image=f"ghcr.io/indifferentketchup/boofinity:{BOOFINITY_VERSION}-cpu",
         compose_profiles="bundled",
         models_max=2,
     ),
     "external": TierImages(
         chat_image=f"ghcr.io/ggml-org/llama.cpp:server-{LLAMA_CPP_VERSION}",
-        infer_image=f"michaelf34/infinity:{INFINITY_VERSION}-cpu",
+        infer_image=f"ghcr.io/indifferentketchup/boofinity:{BOOFINITY_VERSION}-cpu",
         compose_profiles="",
         models_max=2,
     ),

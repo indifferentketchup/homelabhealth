@@ -16,6 +16,116 @@ live under the `snapshot/` namespace.
 
 ## [Unreleased]
 
+Production-readiness audit remediation (2026-06-15).
+
+### Infrastructure
+
+- **Embedding/rerank image moved to the `boofinity` fork** (openspec change
+  `boofinity-image-pipeline`, 2026-06-16). `services/image_config.py` now pins
+  `BOOFINITY_VERSION = "0.1.0"` and rewrites every `TIER_IMAGE_MAP` `infer_image`
+  from the upstream `michaelf34/infinity` image to
+  `ghcr.io/indifferentketchup/boofinity:0.1.0-{cpu,cuda}` (cpu/apple-mlx/external
+  tiers take `-cpu`; all `gpu-*` tiers take `-cuda`). `INFINITY_VERSION` is removed.
+  The boofinity fork carries the VL / `causal_lm` model classes and the
+  `/v1/mm_embeddings` and `/v1/mm_rerank` routes the bundled GPU stack will use.
+  The publish workflow and GHCR push live in the separate
+  `indifferentketchup/boofinity` repo and are an operator step.
+- **llama.cpp pin bumped `b9628` -> `b9660`** (continues `9b5655b`). The
+  `{LLAMA_CPP_VERSION}` interpolation in `image_config.py` flows the bump into both
+  `chat_image` tags; `.env.example` (`HLH_CHAT_IMAGE` / `HLH_INFER_IMAGE` comments)
+  and `hlh_orchestra/bootstrap.py` (`CHAT_IMAGE_CPU` / `CHAT_IMAGE_GPU` defaults,
+  `server-b9660` / `server-cuda-b9660`) updated to match. `pull_image` keeps its
+  always-pull behavior.
+- **`LLAMA_SWAP_VERSION = "v226"` added** to `image_config.py` as a module constant
+  for downstream folders to import; no service wiring is added in this change.
+- **Stale `vision` compose-profile token dropped** from `TIER_IMAGE_MAP['gpu-24gb+']`
+  (`bundled-gpu,vision` -> `bundled-gpu`). No `vision`-profile service exists in
+  `docker-compose.yml` (MedGemma vision is the chat model + mmproj, not a service).
+  The `write_tier_env` "preserve operator-added `vision`" branch is left intact and
+  no-ops once the seed drops the token.
+
+### Safeguards
+
+- **`services/safeguards_engine.py` trimmed 1129 → 257 lines** (openspec change
+  `trim-safeguards-engine`). The ported generic guideline framework (CRUD
+  `GuidelineStore`, `RelationshipStore`, five batch classes, `Matcher`, and the
+  iterative `Resolver` with its 100-step convergence loop) is replaced by a flat list
+  of the five fixed rules plus one `_resolve()` function. Behavior is held identical:
+  a new `scripts/verify_safeguards_engine_equiv.py` pins matched rules, the
+  full-prompt-vs-directive output, and approval-gating across eight probe queries
+  against a pre-change baseline. No change to `safeguards.py`, the prompt text, or
+  `SAFEGUARD_VERSION` (the rewrite is output-identical, so a version bump would falsely
+  signal a behavior change). Removed code paths confirmed dead first: four of five
+  batch classes never fired, the relationship graph and `GuidelineStore` CRUD had no
+  callers after seeding, and the ENTAILS edge was inert under the resolver ordering.
+  This supersedes the earlier `[Unreleased]` note about the response-analysis
+  `was_followed` limitation, whose `ResponseAnalysisBatch` no longer exists.
+
+- **Retrieval and web-search degradation now warn the user** (committee review
+  2026-06-15). `rag.retrieve_context` and `searx_search_sources` return an explicit
+  `degraded` flag distinguishing a hard failure (query-embed error, vector-query
+  exception, SearXNG outage) from a legitimate empty result. `chats.py` emits a
+  non-fatal `{"type": "warning"}` SSE event on degradation, and the frontend now
+  renders it: `useStream.js` gained an `onWarning` callback (previously absent, so
+  even the existing model-warm-up warning was silently dropped),
+  `useStreamOrchestrator.js` collects warnings, and `ChatView.jsx` shows an inline
+  notice. Previously an embedding/retrieval/search failure produced an ungrounded
+  answer with no signal to the user.
+- **`model_is_loaded` probe failures are now logged** (`services/pipeline_status.py`).
+  Transport/HTTP errors to `hlh_chat` are caught distinctly and logged instead of
+  silently swallowed, so a down or hung inference router is diagnosable rather than
+  surfacing only as a "model not loaded" warmup retry.
+- **`pipeline_status` estimate-update failures now log with `exc_info`** for
+  traceable diagnosis instead of a bare one-line warning.
+- **Source-ingest error-status write failures are now logged** (`routers/sources.py`
+  ingest failure handler): the inner `except Exception: pass` after the
+  `UPDATE sources SET embedding_status = 'error'` write now emits
+  `logger.error(...)` naming `source_id` and noting the row may be stuck in
+  `'processing'`. The outer ingest `logger.exception` still records the primary
+  failure; the new log surfaces stranded rows that would otherwise stay
+  `'processing'` forever (committee review 2026-06-15).
+- **Stored-file delete failures are now logged at warning** (`routers/sources.py`
+  `_try_delete_file`): the `except OSError: pass` that swallowed real
+  `unlink()` failures (permission denied, I/O error, busy) is replaced with
+  `logger.warning(...)` naming the path. `missing_ok=True` still suppresses
+  `FileNotFoundError`; a missing file stays silent. The function remains
+  non-raising so the 200-response delete path is unchanged (committee review
+  2026-06-15).
+- **Startup sweep recovers stale `'processing'` sources** (`main.py` `lifespan`):
+  mirrors the existing stale-`streaming` messages sweep. On every process
+  start, sources stuck in `embedding_status = 'processing'` with
+  `updated_at < NOW() - INTERVAL '5 minutes'` are flipped to `'error'` with
+  `error_message = 'ingest interrupted: source left in processing across restart'`,
+  so the user can re-ingest via the existing reingest path. Idempotent and
+  startup-only (sweep_conn is the existing `async with pool.acquire()` block
+  from the messages sweep, so no new connection) (committee review 2026-06-15).
+
+### Fixes
+
+- **Fixed an `UnboundLocalError` on the complex-query streaming path**
+  (`routers/chats.py`). `_hook_start` was bound only in the non-complex `else` branch,
+  but the `post_tool_execution` timing read after the block ran unconditionally; every
+  successful supervisor-worker (complex) stream raised `UnboundLocalError` after the
+  assistant text was already persisted, aborting the SSE stream server-side. Now bound
+  before the complexity split (openspec change `trim-safeguards-engine`).
+- **Removed a duplicate workspace pin control** (`WorkspaceDetailPage.jsx`). The
+  "Details" section carried a draft pin toggle saved via `updateWorkspace` while a
+  separate "Pin settings" section toggled the same field live via `pinWorkspace`; the
+  two desynced silently. The draft toggle (and its `pinnedFlag` state) is removed,
+  leaving the live "Pin settings" control as the single source of truth.
+
+### Tooling
+
+- **Pinned `pydantic` and `numpy` as direct dependencies** in
+  `backend/requirements.txt` (previously present only transitively via
+  fastapi / flashrank).
+- **Repo-wide `aislop fix --safe` sweep**: removed unused imports and
+  narrative/trivial comments across 67 backend + frontend files
+  (comment/import removals only; verified by full `py_compile`, frontend
+  `npm run build`, and an AST check that no removed import was still referenced).
+- **Removed the stale `hlh_vision_embed` container** (the MedSigLIP service
+  dropped in v1.2.11).
+
 ---
 
 ## [v1.3.1] — 2026-06-15

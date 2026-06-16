@@ -31,6 +31,9 @@ CLAUDE.md
 docs/*
 !docs/*.md
 !docs/CONTEXT.md
+!docs/adr/
+docs/adr/*
+!docs/adr/*.md
 !docs/superpowers/
 docs/superpowers/*
 !docs/superpowers/specs/

@@ -44,6 +44,24 @@ not just the latest tag.
 
 `hlh_ui` → `hlh_api` → PostgreSQL + bundled `hlh_chat` router for chat/embed/rerank/vision, plus bundled `hlh_search` for web search.
 
+> **In flight (boofinity inference split, see `docs/adr/0001`–`0003`):** embed/rerank/VL move off the `hlh_chat` llama.cpp router onto **boofinity**, with **llama-swap** as the front-door that swaps the two backends per a VRAM budget. The "one line" above describes the pre-split state until that change lands.
+
+---
+
+## Domain glossary — inference & retrieval
+
+Canonical terms for the boofinity split. Glossary only; the "how" lives in `openspec/changes/` and the "why" in `docs/adr/`.
+
+| Term | Meaning |
+|------|---------|
+| **boofinity** | First-party fork of `michaelfeil/infinity` (repo `indifferentketchup/boofinity`). The embed/rerank/VL inference server. Always call it *boofinity*, never *infinity*. Ships as `ghcr.io/indifferentketchup/boofinity:<ver>-{cpu,cuda}`. |
+| **`hlh_infer`** | The boofinity container (the long-scaffolded "ghost" service: pinned in `image_config.py`, checked by `doctor.py`, asserted by verify scripts, but never added to `docker-compose.yml` until this change). Serves text embed + text rerank on all bundled tiers; VL embed + VL rerank on GPU tiers only. |
+| **llama-swap front-door** | llama-swap (v226+) as the single inference entry point. Lazily starts/stops the **llama.cpp** process (chat/tasks/vision-mmproj) and the **boofinity** process (embed/rerank/VL) so they don't both pin VRAM. Replaces direct `hlh_chat:9610` router access. |
+| **resource policy** | HLH-side, tier-aware rules (a module beside `image_config.py`) deciding which models may coexist and, under VRAM pressure, whether **Gemma** *offloads to CPU* (slow) or goes *unavailable + warning*. llama-swap performs the mechanical swap; HLH owns the policy and surfaces state via `pipeline_status.py`. |
+| **text-embedding space** | The existing `source_chunks.embedding vector(1024)` index, produced by the text embedder (Qwen3-Embedding-0.6B). Unchanged by this work, on every tier. |
+| **image-embedding space** | New, separate `vector(1024)` space produced by **Qwen3-VL-Embedding-2B** at ingestion (gpu-24gb+ only). NOT cosine-comparable to the text-embedding space — a distinct model. Queries embed into both spaces; candidates fuse and are ordered by the **Qwen3-VL reranker**. |
+| **dual-space retrieval** | The additive retrieval topology: text path unchanged on all tiers; native image retrieval added on top, on GPU tiers only. Images on lesser tiers keep the MedGemma-read-to-text fallback (`services/vision.py`). |
+
 ---
 
 ## Verify (no pytest)
