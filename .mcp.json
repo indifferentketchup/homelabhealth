@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "type-inject": {
-      "command": "node",
-      "args": ["frontend/node_modules/@nick-vi/type-inject-mcp/dist/index.js"],
-      "cwd": "frontend"
-    }
-  }
-}

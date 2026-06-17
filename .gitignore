@@ -50,11 +50,10 @@ docs/operator/advanced/*
 # Syncthing
 .stfolder/
 
-# Claude Code
+# Claude Code / MCP
 .claude/
-
-# Codecontext (local tooling artifact)
-.codecontextignore
+.mcp.json
+openspec/
 
 # Local output / generated artifacts
 output/
