@@ -8,19 +8,19 @@
 #
 # CPU variant (default):
 #   docker build -f hlh_swap/Dockerfile \
-#     --build-arg BOOFINITY_BASE=ghcr.io/indifferentketchup/boofinity:0.1.0-cpu \
+#     --build-arg BOOFINITY_BASE=ghcr.io/indifferentketchup/boofinity:v0.2.0-cpu \
 #     --build-arg LLAMA_CPP_IMAGE=ghcr.io/ggml-org/llama.cpp:server-b9660 \
 #     -t ghcr.io/indifferentketchup/hlh-swap:0.1.0-cpu .
 #
 # CUDA variant (NVIDIA GPU):
 #   docker build -f hlh_swap/Dockerfile \
-#     --build-arg BOOFINITY_BASE=ghcr.io/indifferentketchup/boofinity:0.1.0-cuda \
+#     --build-arg BOOFINITY_BASE=ghcr.io/indifferentketchup/boofinity:v0.2.0-cuda \
 #     --build-arg LLAMA_CPP_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda-b9660 \
 #     -t ghcr.io/indifferentketchup/hlh-swap:0.1.0-cuda .
 #
 # ROCm variant (AMD GPU — HIP/ROCm runtime):
 #   docker build -f hlh_swap/Dockerfile \
-#     --build-arg BOOFINITY_BASE=ghcr.io/indifferentketchup/boofinity:0.1.0-rocm \
+#     --build-arg BOOFINITY_BASE=ghcr.io/indifferentketchup/boofinity:v0.2.0-rocm \
 #     --build-arg LLAMA_CPP_IMAGE=ghcr.io/ggml-org/llama.cpp:server-rocm-b9660 \
 #     -t ghcr.io/indifferentketchup/hlh-swap:0.1.0-rocm .
 #   Note: PyTorch ROCm exposes CUDA-compatible APIs, so HLH_INFER_DEVICE=cuda
@@ -28,15 +28,19 @@
 #
 # Vulkan variant (cross-platform GPU — Intel Arc, AMD without ROCm stack, etc.):
 #   docker build -f hlh_swap/Dockerfile \
-#     --build-arg BOOFINITY_BASE=ghcr.io/indifferentketchup/boofinity:0.1.0-cpu \
+#     --build-arg BOOFINITY_BASE=ghcr.io/indifferentketchup/boofinity:v0.2.0-cpu \
 #     --build-arg LLAMA_CPP_IMAGE=ghcr.io/ggml-org/llama.cpp:server-vulkan-b9660 \
 #     -t ghcr.io/indifferentketchup/hlh-swap:0.1.0-vulkan .
 #   Note: llama-server uses the GPU via Vulkan; boofinity uses the CPU base image
 #   (PyTorch has no desktop Vulkan compute backend). Set HLH_INFER_DEVICE=vulkan
 #   for llama-server child; boofinity child ignores it and defaults to cpu.
 #   Requires /dev/dri + video/render groups.
+#   (boofinity now ships a real v0.2.0-vulkan base that runs embed/rerank on the
+#   GPU via the experimental WebGPU/ONNX EP; not adopted here because it forces
+#   BOOFINITY_ENGINE=optimum and ONNX-exportable embed/rerank models. Revisit if
+#   the bundled Qwen3 embed/reranker are validated under the optimum path.)
 
-ARG BOOFINITY_BASE=ghcr.io/indifferentketchup/boofinity:0.1.0-cpu
+ARG BOOFINITY_BASE=ghcr.io/indifferentketchup/boofinity:v0.2.0-cpu
 ARG LLAMA_CPP_IMAGE=ghcr.io/ggml-org/llama.cpp:server-b9660
 ARG LLAMA_SWAP_IMAGE=ghcr.io/mostlygeek/llama-swap:v226
 
