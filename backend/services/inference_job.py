@@ -82,7 +82,7 @@ async def run_inference_job(
         extra_search = ""
         if bool(chat_record.get("web_search_enabled")):
             try:
-                _sources_list, extra_search = await searx_search_sources(
+                _sources_list, extra_search, _search_degraded = await searx_search_sources(
                     user_message_text,
                 )
             except Exception as exc:

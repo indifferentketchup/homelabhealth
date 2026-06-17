@@ -22,6 +22,7 @@ import { MessageList } from './MessageList.jsx'
 import { WorkspaceTitle } from './WorkspaceTitle.jsx'
 import { StaleStreamBanner } from './StaleStreamBanner.jsx'
 import { StreamStatusBar } from './StreamStatusBar.jsx'
+import { StreamWarnings } from './StreamWarnings.jsx'
 
 const WORKSPACE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -258,6 +259,7 @@ export function ChatView({
             {busy && orch.phase ? (
               <StreamStatusBar phase={orch.phase} startedAt={orch.startedAt} pipelineEvents={orch.pipelineEvents} />
             ) : null}
+            <StreamWarnings warnings={orch.streamWarnings} />
             {orch.stale && busy ? (
               <StaleStreamBanner onRetry={orch.retry} onDiscard={orch.dismiss} />
             ) : null}
@@ -356,6 +358,7 @@ export function ChatView({
           {busy && orch.phase ? (
             <StreamStatusBar phase={orch.phase} startedAt={orch.startedAt} pipelineEvents={orch.pipelineEvents} />
           ) : null}
+          <StreamWarnings warnings={orch.streamWarnings} />
           {orch.stale && busy ? (
             <StaleStreamBanner onRetry={orch.retry} onDiscard={orch.dismiss} />
           ) : null}

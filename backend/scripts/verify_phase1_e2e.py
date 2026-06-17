@@ -30,7 +30,6 @@ import sys
 import time
 import urllib.error
 import urllib.request
-import uuid
 from pathlib import Path
 
 UI = "http://localhost:9604"

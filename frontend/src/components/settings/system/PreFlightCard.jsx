@@ -1,6 +1,3 @@
-// ──────────────────────────────────────────────────────────────────────────────
-// PreFlightCard — fetches /api/system/doctor on mount + has a refresh button.
-// ──────────────────────────────────────────────────────────────────────────────
 
 import { useCallback, useEffect, useState } from 'react'
 import { getDoctor } from '@/api/system.js'

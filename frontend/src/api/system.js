@@ -3,7 +3,7 @@ import { apiFetch } from '@/api/index.js'
 /** GET /api/system/hardware — live sysinfo collection, no DB write. */
 export const getSystemHardware = () => apiFetch('/api/system/hardware')
 
-/** GET /api/system/profile — { id, tier, tier_source, sysinfo_json, detected_at, chosen_at, setup_complete, recommended_tier }. */
+/** GET /api/system/profile — { id, tier, tier_source, sysinfo_json, detected_at, chosen_at, setup_complete, recommended_tier, retrieval_rebuilding }. */
 export const getSystemProfile = () => apiFetch('/api/system/profile')
 
 /**

@@ -31,10 +31,6 @@ from services.memory_hooks import (  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
-# ──────────────────────────────────────────────────────────────────────
-# Tool: manage_memory
-# ──────────────────────────────────────────────────────────────────────
-
 _DEFAULT_MANAGE_INSTRUCTIONS = (
     "Proactively call this tool when you:\n"
     "1. Identify a new fact, preference, or important context about the user.\n"
@@ -142,10 +138,6 @@ MANAGE_MEMORY_TOOL_SPEC: dict[str, Any] = {
     },
 }
 
-# ──────────────────────────────────────────────────────────────────────
-# Tool: search_memory
-# ──────────────────────────────────────────────────────────────────────
-
 _DEFAULT_SEARCH_INSTRUCTIONS = (
     "Search your long-term memories for information relevant to the current context. "
     "Use specific queries to find facts, preferences, or past information."
@@ -232,10 +224,6 @@ SEARCH_MEMORY_TOOL_SPEC: dict[str, Any] = {
         "required": ["query"],
     },
 }
-
-# ──────────────────────────────────────────────────────────────────────
-# Tool registry (for agent tool binding)
-# ──────────────────────────────────────────────────────────────────────
 
 MEMORY_TOOLS: dict[str, dict[str, Any]] = {
     "manage_memory": MANAGE_MEMORY_TOOL_SPEC,

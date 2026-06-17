@@ -184,11 +184,6 @@ async def patch_model_server_config(
     return result
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Embedding + reranker role bindings (spec §5).
-# Both live as flat key/value rows in global_settings.
-# ──────────────────────────────────────────────────────────────────────────────
-
 _EMBEDDING_KEYS = ("embedding_provider_id", "embedding_model")
 _RERANKER_KEYS = ("reranker_provider_id", "reranker_model")
 
@@ -375,10 +370,6 @@ async def put_reranker_settings(
         pass
     return result
 
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Context-bar toggle (opt-in display setting).
-# ──────────────────────────────────────────────────────────────────────────────
 
 _CONTEXT_BAR_KEY = "show_context_bar"
 

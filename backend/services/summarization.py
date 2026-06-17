@@ -14,10 +14,6 @@ import re
 
 from services.provider_client import async_llm_call
 
-# ---------------------------------------------------------------------------
-# Summary system prompt
-# ---------------------------------------------------------------------------
-
 SUMMARY_SYSTEM_PROMPT = (
     "Summarize the following conversation for context continuity. "
     "Preserve in order of priority: (1) unresolved questions and open issues, "
@@ -29,10 +25,6 @@ SUMMARY_SYSTEM_PROMPT = (
     "A PRESERVED FACTS block will follow your summary -- "
     "treat those verbatim facts as authoritative ground truth."
 )
-
-# ---------------------------------------------------------------------------
-# Medical-fact extraction
-# ---------------------------------------------------------------------------
 
 # Each pattern is bounded to prevent catastrophic backtracking on large inputs.
 _FACT_PATTERNS = [
@@ -101,10 +93,6 @@ def build_preserved_facts_block(facts: list[str]) -> str:
         + "\n".join(f"- {f}" for f in facts)
     )
 
-
-# ---------------------------------------------------------------------------
-# LLM summarization
-# ---------------------------------------------------------------------------
 
 async def summarize_transcript(
     provider: object,

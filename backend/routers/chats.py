@@ -13,7 +13,7 @@ from typing import Any, AsyncIterator
 
 import asyncpg
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -271,7 +271,6 @@ async def append_message(
             },
         )
 
-    # --- Hook lifecycle: on_user_prompt ---
     hook_ctx = HookContext(
         chat_id=str(chat_id),
         message_id=str(user_msg_id),
@@ -282,7 +281,6 @@ async def append_message(
     set_hook_context(hook_ctx)
     await fire_on_user_prompt(user_message_text)
 
-    # --- Approval gate: check if safeguard engine requires human approval ---
     from services.approval_gate import (
         ApprovalAction as _ApprovalAction,
         get_gate,
@@ -327,7 +325,6 @@ async def append_message(
                 )
             # For non-durable (SSE): gen() handles the approval event inline
 
-    # --- Durable streaming path (Phase A) ---
     if await _durable_streaming_enabled():
         # 409 if another streaming or approval-pending assistant row exists
         async with pool.acquire() as conn:
@@ -420,7 +417,6 @@ async def append_message(
                 "status": "streaming",
             },
         )
-    # --- End durable streaming path ---
 
     async def gen() -> AsyncIterator[bytes]:
         from services.pipeline_status import stage, model_is_loaded
@@ -428,13 +424,19 @@ async def append_message(
         yield _sse(json.dumps({"type": "phase", "phase": "preparing"}))
         sources_list: list[dict[str, str]] = []
         extra_search = ""
+        search_degraded = False
         if bool(chat["web_search_enabled"]):
-            sources_list, extra_search = await searx_search_sources(
+            sources_list, extra_search, search_degraded = await searx_search_sources(
                 user_message_text,
             )
         if sources_list:
             yield _sse(json.dumps({"type": "phase", "phase": "search"}))
             yield _sse(json.dumps({"type": "search_sources", "sources": sources_list}))
+        elif search_degraded:
+            yield _sse(json.dumps({
+                "type": "warning",
+                "message": "Web search failed; answering without web results.",
+            }))
 
         async with pool.acquire() as status_conn:
             embed_model = await status_conn.fetchval(
@@ -452,7 +454,7 @@ async def append_message(
 
         yield _sse(json.dumps({"type": "phase", "phase": "rag"}))
         assembled = ""
-        rag_sse_meta: dict[str, int] | None = None
+        rag_sse_meta: dict[str, int | bool] | None = None
         rag_block_text = ""
         try:
             async with pool.acquire() as rag_conn:
@@ -478,6 +480,12 @@ async def append_message(
                     }
                 )
             )
+
+        if rag_sse_meta and rag_sse_meta.get("degraded"):
+            yield _sse(json.dumps({
+                "type": "warning",
+                "message": "Document retrieval failed; answering without your sources.",
+            }))
 
         api_messages: list[dict[str, str]] = []
         system_blocks: list[str] = []
@@ -591,6 +599,11 @@ async def append_message(
                         logger.warning("model warm-up failed for %s: %s", effective_model, exc)
                         yield _sse(json.dumps({"type": "warning", "message": f"Model warm-up failed for {effective_model}. Inference will still be attempted."}))
                 yield _sse(json.dumps({"type": "phase", "phase": "ready", "model": effective_model}))
+
+        # Bound here so the post_tool_execution timing read below is always defined,
+        # including on the complex-query path (which does not reach the else branch's
+        # reassignment). The else branch resets it just before the inference hook fires.
+        _hook_start = time.monotonic()
 
         # Complexity heuristic: route complex queries through supervisor-worker
         # decomposition for parallel sub-answer synthesis.

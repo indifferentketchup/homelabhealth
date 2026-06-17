@@ -81,10 +81,6 @@ _PROFILE_COLS = (
 )
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Endpoints.
-# ──────────────────────────────────────────────────────────────────────────────
-
 
 @router.get("/hardware")
 async def get_hardware(_: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
@@ -100,10 +96,17 @@ async def get_profile(_: dict[str, Any] = Depends(require_admin)) -> dict[str, A
         row = await conn.fetchrow(
             f"SELECT {_PROFILE_COLS} FROM system_profile WHERE id = 1"
         )
-    if row is None:
-        # Shouldn't happen (singleton row seeded by schema), but fail clearly.
-        raise HTTPException(status_code=503, detail="system_profile row missing")
-    return _profile_response(row)
+        if row is None:
+            # Shouldn't happen (singleton row seeded by schema), but fail clearly.
+            raise HTTPException(status_code=503, detail="system_profile row missing")
+        rebuilding = await conn.fetchval(
+            "SELECT value FROM global_settings WHERE key = 'retrieval_rebuilding'"
+        )
+    resp = _profile_response(row)
+    # Surfaced as the "retrieval is rebuilding after a model change" banner while
+    # the embed-cutover reingest drains (embed_cutover / sources completion hook).
+    resp["retrieval_rebuilding"] = (rebuilding == "true")
+    return resp
 
 
 @router.put("/profile")

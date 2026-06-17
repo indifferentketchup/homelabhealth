@@ -26,10 +26,6 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Trigger phrases for auto-memory extraction
-# ---------------------------------------------------------------------------
-
 _AUTO_MEMORY_TRIGGERS = (
     "remember that",
     "note that",
@@ -76,10 +72,6 @@ def _first_auto_memory_sentence(text: str) -> str | None:
     return snippet or None
 
 
-# ---------------------------------------------------------------------------
-# Title helpers
-# ---------------------------------------------------------------------------
-
 def _clean_auto_title(raw: str) -> str:
     t = (raw or "").strip()
     while len(t) >= 2 and t[0] in "\"'" and t[0] == t[-1]:
@@ -95,7 +87,7 @@ async def _openai_short_chat_title(
     Accepts `text` positionally (callers in chats.py/inference_job.py) or
     `user_message_text` as a keyword argument (callers in history.py).
     """
-    from services.provider_client import async_llm_call, Provider
+    from services.provider_client import async_llm_call
     from services.reasoning_strip import strip_thinking_text
 
     content = text if text is not None else user_message_text
@@ -118,10 +110,6 @@ async def _openai_short_chat_title(
     logger.info("auto-title: raw=%r cleaned=%r", raw[:80], cleaned)
     return cleaned or None
 
-
-# ---------------------------------------------------------------------------
-# Message normalization
-# ---------------------------------------------------------------------------
 
 def _normalize_messages_for_inference(messages: list[dict[str, str]]) -> list[dict[str, str]]:
     """Merge consecutive same-role turns for strict user/assistant templates (MedGemma jinja).
@@ -155,24 +143,16 @@ def _normalize_messages_for_inference(messages: list[dict[str, str]]) -> list[di
     return merged
 
 
-# ---------------------------------------------------------------------------
-# SSE helpers
-# ---------------------------------------------------------------------------
-
 def _sse(data: str) -> bytes:
     return f"data: {data}\n\n".encode("utf-8")
 
-
-# ---------------------------------------------------------------------------
-# Streaming inference
-# ---------------------------------------------------------------------------
 
 async def _stream_inference(
     provider: object,
     model: str,
     messages: list[dict[str, str]],
 ) -> AsyncIterator[bytes]:
-    from services.provider_client import build_headers, Provider
+    from services.provider_client import build_headers
     from services.reasoning_strip import ThinkingStreamFilter
 
     messages = _normalize_messages_for_inference(messages)
@@ -228,17 +208,13 @@ async def _stream_inference(
     yield _sse("[DONE]")
 
 
-# ---------------------------------------------------------------------------
-# System prompt assembly
-# ---------------------------------------------------------------------------
-
 async def _assembled_system_prompt(
     conn: asyncpg.Connection,
     chat: asyncpg.Record,
     *,
     user_query_for_rag: str | None = None,
     include_site_private: bool = True,
-) -> tuple[str, dict[str, int] | None, str]:
+) -> tuple[str, dict[str, int | bool] | None, str]:
     """Workspace prompt + workspace instructions + semantic memory facts -> context files -> custom instructions -> RAG -> mode_memory.
 
     Returns (assembled_system_prompt, sse_rag_meta, rag_block).
@@ -378,7 +354,7 @@ async def _assembled_system_prompt(
         and workspace_id is not None
         and chat.get("rag_enabled") is not False
     )
-    sse_rag_meta: dict[str, int] | None = None
+    sse_rag_meta: dict[str, int | bool] | None = None
     if rag_ok:
         cid = chat.get("id")
         if cid is not None:
@@ -401,7 +377,7 @@ async def _assembled_system_prompt(
                 if pid not in source_ids:
                     source_ids.append(pid)
             if source_ids:
-                rag_block, rag_n = await retrieve_context(
+                rag_block, rag_n, rag_degraded = await retrieve_context(
                     str(user_query_for_rag).strip(),
                     source_ids,
                     priority_source_ids=priority_ids,
@@ -409,7 +385,9 @@ async def _assembled_system_prompt(
                 if rag_block:
                     parts.append(rag_block)
                     rag_context_chars = len(rag_block)
-                    sse_rag_meta = {"count": rag_n, "chars": rag_context_chars}
+                    sse_rag_meta = {"count": rag_n, "chars": rag_context_chars, "degraded": rag_degraded}
+                elif rag_degraded:
+                    sse_rag_meta = {"count": 0, "chars": 0, "degraded": True}
 
     assembled = "\n\n".join(parts)
 

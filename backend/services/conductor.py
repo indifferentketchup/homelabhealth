@@ -31,22 +31,14 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from services.context_handoff import extractive_summary, format_as_input
+from services.context_handoff import extractive_summary
 from services.provider_client import Provider, async_llm_call
-from services.stall_detector import is_stalled, is_tool_doom_loop
+from services.stall_detector import is_stalled
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Stall detection constants (E3, lift-durable-orchestration, 2026-06-13)
-# ---------------------------------------------------------------------------
-
 _WAVE_STALL_THRESHOLD = 3
 _WAVE_STALL_SIMILARITY = 0.90
-
-# ---------------------------------------------------------------------------
-# Step — one atomic unit of work in a flow
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -70,10 +62,6 @@ class Step:
     model: str | None = None
     """Optional per-step model override. Falls back to the flow default."""
 
-
-# ---------------------------------------------------------------------------
-# WaveScheduler — parallel wave execution with barrier sync
-# ---------------------------------------------------------------------------
 
 
 class WaveScheduler:
@@ -248,10 +236,6 @@ class WaveScheduler:
         )
 
 
-# ---------------------------------------------------------------------------
-# AngleConfig — definition for one analysis perspective
-# ---------------------------------------------------------------------------
-
 
 @dataclass
 class AngleConfig:
@@ -273,10 +257,6 @@ class AngleConfig:
         """Build the user-prompt for this angle by substituting ``{query}``."""
         return self.user_prompt_template.format(query=query)
 
-
-# ---------------------------------------------------------------------------
-# SpineFactory — builds a flow from angles and renders the report
-# ---------------------------------------------------------------------------
 
 
 class SpineFactory:
@@ -553,10 +533,6 @@ class SpineFactory:
                 found.append(ref)
         return found
 
-
-# ---------------------------------------------------------------------------
-# Top-level convenience
-# ---------------------------------------------------------------------------
 
 
 async def run_analysis(

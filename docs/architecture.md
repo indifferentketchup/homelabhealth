@@ -107,7 +107,12 @@ Key service clusters:
   (`workspace_patient_profile` JSONB table), injected at inference and
   conflict-resolved on update; the inference-time authoritative store for
   durable health facts
-- `services/safeguards_engine.py`: guideline-based safeguard engine
+- `services/safeguards_engine.py`: fixed-rule safeguard engine — keyword-matches the
+  user query against five rules (diagnosis, emergency, self-harm, medication,
+  medication-combination) and resolves overlaps to the highest-priority match;
+  `safeguards.py` turns the result into contextual directives or the self-harm full
+  prompt. Trimmed 1129->257 lines from a generic guideline framework 2026-06-15
+  (openspec `trim-safeguards-engine`)
 - `services/prompt_assembly.py`: `_assembled_system_prompt` + streaming/title
   helpers (promoted out of `routers/chats.py` to break a service->router cycle;
   shared by the SSE and durable paths)

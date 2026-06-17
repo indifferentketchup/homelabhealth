@@ -20,8 +20,6 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-# ─── Hook Context (ambient per-request state) ──────────────────────────
-
 @dataclass
 class HookContext:
     """Ambient per-request context carried by contextvars (cf. AsyncLocalStorage)."""
@@ -53,8 +51,6 @@ def reset_hook_context(token: contextvars.Token[HookContext]) -> None:
     _hook_context.reset(token)
 
 
-# ─── Hook Result ───────────────────────────────────────────────────────
-
 @dataclass
 class HookResult:
     """Returned by pre_tool_execution hooks. When blocked=True the chain
@@ -63,8 +59,6 @@ class HookResult:
     blocked: bool = False
     reason: str | None = None
 
-
-# ─── Registry ──────────────────────────────────────────────────────────
 
 HookName = str
 """One of 'pre_tool_execution', 'post_tool_execution', 'on_stop', 'on_user_prompt'."""
@@ -106,8 +100,6 @@ def list_callbacks(name: HookName) -> list[Any]:
     """Return a snapshot of registered callbacks for the given hook point."""
     return list(_registry.get(name, []))
 
-
-# ─── Firing functions ──────────────────────────────────────────────────
 
 async def fire_pre_tool_execution(
     tool_name: str,

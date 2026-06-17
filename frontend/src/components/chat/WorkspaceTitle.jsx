@@ -6,14 +6,6 @@ import { getChat } from '@/api/chats.js'
 import { useAppStore } from '@/store/index.js'
 import { cn } from '@/lib/utils'
 
-/**
- * Read-only workspace name for the chat header. Replaces the old model
- * selector — the chat model is fixed by the hardware tier, so there is
- * nothing to pick. Renders nothing when no workspace is in context.
- *
- * variant="bar"    → bordered, desktop-only header strip (chat view)
- * variant="inline" → flex child for the mobile top bar (keeps the spacer)
- */
 export function WorkspaceTitle({ className, variant = 'bar' }) {
   const activeChatId = useAppStore((s) => s.activeChatId)
   const storeWorkspaceId = useAppStore((s) => s.activeWorkspaceId)

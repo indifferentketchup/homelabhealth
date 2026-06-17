@@ -20,7 +20,7 @@ async def search(
     body: SearchQuery,
     audit: AuditEventHandle = Depends(audit_event),
 ):
-    sources, _ = await searx_search_sources(body.q)
+    sources, _, _ = await searx_search_sources(body.q)
     async with audit.targeting("search", None):
         pass
     return {"sources": sources}

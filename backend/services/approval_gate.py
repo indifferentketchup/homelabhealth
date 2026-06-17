@@ -39,15 +39,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Defaults
-# ---------------------------------------------------------------------------
-
 APPROVAL_TIMEOUT_S: int = 60
-
-# ---------------------------------------------------------------------------
-# Data types
-# ---------------------------------------------------------------------------
 
 
 class ApprovalAction(str, Enum):
@@ -89,10 +81,6 @@ class ApprovalResponse:
     action: ApprovalAction
     edited_content: str | None = None
 
-
-# ---------------------------------------------------------------------------
-# Gate
-# ---------------------------------------------------------------------------
 
 
 class ApprovalGate:
@@ -256,10 +244,6 @@ class ApprovalGate:
         self._responses.pop(chat_id, None)
 
 
-# ---------------------------------------------------------------------------
-# Singleton
-# ---------------------------------------------------------------------------
-
 _gate: ApprovalGate | None = None
 
 
@@ -276,10 +260,6 @@ def reset_gate() -> None:
     global _gate
     _gate = None
 
-
-# ---------------------------------------------------------------------------
-# Helper: decide whether safeguard matches warrant approval
-# ---------------------------------------------------------------------------
 
 
 def should_request_approval(
@@ -306,10 +286,6 @@ def should_request_approval(
 
     return False, ""
 
-
-# ---------------------------------------------------------------------------
-# Pre-inference hook: check gate before inference starts
-# ---------------------------------------------------------------------------
 
 
 async def _pre_inference_hook(

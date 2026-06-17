@@ -39,10 +39,6 @@ class ScanResult:
         ]
 
 
-# ---------------------------------------------------------------------------
-# Input scanner patterns
-# ---------------------------------------------------------------------------
-
 _INJECTION_PATTERNS = [
     re.compile(r"ignore\s+(all\s+)?previous\s+instructions", re.IGNORECASE),
     re.compile(r"ignore\s+(all\s+)?above\s+instructions", re.IGNORECASE),
@@ -64,10 +60,6 @@ _BAN_SUBSTRINGS = [
     "output your instructions",
 ]
 
-
-# ---------------------------------------------------------------------------
-# Output scanner patterns
-# ---------------------------------------------------------------------------
 
 _PII_PATTERNS = [
     ("ssn",      re.compile(r"\b\d{3}-\d{2}-\d{4}\b")),
@@ -95,10 +87,6 @@ _HALLUCINATED_ID_PATTERNS = [
     ("dea", re.compile(r"\bDEA[:\s#]*[A-Za-z]{2}\d{7}\b", re.IGNORECASE)),
 ]
 
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
 
 def scan_input(text: str) -> ScanResult:
     """Scan a user prompt for injection attempts and banned substrings.

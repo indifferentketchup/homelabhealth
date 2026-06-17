@@ -160,12 +160,8 @@ def verify_chain(
     return True, None
 
 
-# --- FastAPI integration ---
-# (Imported lazily so audit.py stays import-light for the verify script.)
-
 import contextlib
 import os
-from contextvars import ContextVar
 from typing import AsyncIterator
 
 from fastapi import Request
@@ -257,10 +253,6 @@ async def audit_event(request: Request) -> AsyncIterator[AuditEventHandle]:
         import logging
         logging.getLogger("audit").error("audit insert failed: %s: %s", type(e).__name__, e)
 
-
-# ─── Hook registration ─────────────────────────────────────────────────
-# Register audit callbacks on hook lifecycle events so that tool execution
-# and stop events are captured in the audit log automatically.
 
 import json as _json
 

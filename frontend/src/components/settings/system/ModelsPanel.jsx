@@ -1,8 +1,3 @@
-// ──────────────────────────────────────────────────────────────────────────────
-// ModelsPanel — bundled model download/status table for the active tier.
-// Polls /api/models every 2s while any row is `pulling`; idle otherwise.
-// Phase 2.B: Synthetic embed + rerank rows from bundled providers.
-// ──────────────────────────────────────────────────────────────────────────────
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'

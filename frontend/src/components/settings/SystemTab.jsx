@@ -14,10 +14,6 @@ import { TierRadio } from './system/TierRadio.jsx'
 import { ModelsPanel } from './system/ModelsPanel.jsx'
 import { PreFlightCard } from './system/PreFlightCard.jsx'
 
-// ──────────────────────────────────────────────────────────────────────────────
-// SystemTab
-// ──────────────────────────────────────────────────────────────────────────────
-
 
 export default function SystemTab() {
   const queryClient = useQueryClient()
@@ -30,10 +26,6 @@ export default function SystemTab() {
   const [saveErr, setSaveErr] = useState(null)
   const [saveMsg, setSaveMsg] = useState(null)
 
-  // Keep the local component state and the queryClient cache (used by
-  // RequireSetup with the same queryKey) in lockstep. After save the gate
-  // must see setup_complete=true immediately, or it will redirect back to
-  // /settings the moment the user navigates away.
   function syncCache(updated) {
     queryClient.setQueryData(['system', 'profile'], updated)
   }
@@ -159,6 +151,15 @@ export default function SystemTab() {
           )}
         </p>
       </div>
+
+      {profile.retrieval_rebuilding ? (
+        <div
+          className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300"
+          data-testid="retrieval-rebuilding-banner"
+        >
+          Retrieval is rebuilding after a model change. Search results may be incomplete until it finishes.
+        </div>
+      ) : null}
 
       <HardwareCard
         sysinfo={profile.sysinfo_json}

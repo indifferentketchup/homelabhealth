@@ -61,6 +61,7 @@ export function useStream() {
         onRagContext,
         onPhase,
         onTitleUpdate,
+        onWarning,
         onDone,
         onError,
       } = opts
@@ -103,6 +104,10 @@ export function useStream() {
           }
           if (obj.type === 'title_update' && typeof obj.title === 'string') {
             onTitleUpdate?.(obj.title)
+            return { kind: 'ok' }
+          }
+          if (obj.type === 'warning' && typeof obj.message === 'string') {
+            onWarning?.(obj.message)
             return { kind: 'ok' }
           }
           if (obj.content) onToken?.(String(obj.content))

@@ -29,11 +29,6 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Groundedness background-eval task helpers
-# (moved from routers/chats.py 2026-06-14; behavior identical)
-# ---------------------------------------------------------------------------
-
 # Module-level set to hold live asyncio.Task references and prevent GC mid-flight.
 _BG_EVAL_TASKS: set[asyncio.Task] = set()  # type: ignore[type-arg]
 
@@ -140,10 +135,6 @@ async def maybe_fire_groundedness_eval(
     _BG_EVAL_TASKS.add(task)
     task.add_done_callback(_BG_EVAL_TASKS.discard)
 
-# ---------------------------------------------------------------------------
-# Prompt templates (verbatim from routers/eval.py)
-# ---------------------------------------------------------------------------
-
 GROUNDEDNESS_SYSTEM_PROMPT = """You are an expert evaluator assessing how well an LLM response is supported by the provided context. This is a medical domain — factual accuracy is critical.
 
 <Rubric>
@@ -195,10 +186,6 @@ Response to evaluate:
 
 Evaluate the groundedness of this response against the provided context."""
 
-
-# ---------------------------------------------------------------------------
-# Shared helpers (verbatim from routers/eval.py)
-# ---------------------------------------------------------------------------
 
 
 def _parse_eval_response(raw: str) -> dict[str, Any]:

@@ -231,7 +231,6 @@ async def run_deep_research(
         }
         return
 
-    # Determine whether provider is bundled (same gate used by chats.py).
     provider_is_bundled: bool = True
     try:
         pool = await get_pool()
@@ -264,7 +263,7 @@ async def run_deep_research(
         yield {"type": "dr_phase", "phase": "searching", "loop": loop_n}
         try:
             # current_query is already de-identified when provider is external.
-            sources_list, markdown_block = await searx_search_sources(current_query)
+            sources_list, markdown_block, _search_degraded = await searx_search_sources(current_query)
         except Exception as e:
             logger.warning("deep_research searx call failed loop=%d (%s)", loop_n, e)
             break

@@ -7,7 +7,7 @@ turns and triggers summarization when the token budget is exceeded.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable, Iterable, List, Optional
 
 from services.memory.schemas import RunningSummary

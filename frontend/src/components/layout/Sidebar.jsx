@@ -42,10 +42,6 @@ import { cn } from '@/lib/utils'
 import { useLongPress } from '@/hooks/useLongPress.js'
 import ThemeToggle from '@/components/layout/ThemeToggle'
 
-// ---------------------------------------------------------------------------
-// Subcomponents for long-press parity on touch devices
-// ---------------------------------------------------------------------------
-
 /**
  * SidebarLink -- reusable nav link that adapts to collapsed/expanded sidebar.
  * Handles the "All workspaces", "Sources", and "Profile" link patterns.
@@ -118,9 +114,6 @@ const ChatRow = memo(function ChatRow({ chat, activeChatId, onSelect, onContextM
   )
 })
 
-// ---------------------------------------------------------------------------
-// localStorage helpers for section open/closed
-// ---------------------------------------------------------------------------
 function readSectionOpen(key, defaultOpen) {
   try {
     const v = localStorage.getItem(key)

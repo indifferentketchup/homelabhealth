@@ -31,7 +31,6 @@ import shutil
 import subprocess
 import sys
 import time
-import uuid
 from pathlib import Path
 from urllib.parse import urlparse
 

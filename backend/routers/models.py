@@ -74,10 +74,6 @@ class PullForTierBody(BaseModel):
     tier: str = Field(..., min_length=1, max_length=64)
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Endpoints.
-# ──────────────────────────────────────────────────────────────────────────────
-
 
 @router.get("")
 async def list_models(_: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:

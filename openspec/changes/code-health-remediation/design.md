@@ -84,4 +84,6 @@ All changes are behavior-preserving refactors or bug fixes. No API contracts cha
 
 ## Implementation notes
 
+- 2026-06-15 live verification found that the mechanical cleanup had removed `Field` from `backend/routers/inference.py` while `DecomposeBody` and `AnalyzeBody` still used it at import time. The import was restored before rebuilding the API image.
+
 - Validation finding V1 (2026-06-12): Task 12's per-section error handling declared `parts` after the workspace-prompt try/except that referenced it in its handler, so a workspace prompt fetch failure would raise NameError instead of degrading gracefully. Fixed by moving the `parts: list[str] = []` declaration above the first section block in `_assembled_system_prompt`. Verified with py_compile plus an AST check that the first reference to `parts` is the assignment.

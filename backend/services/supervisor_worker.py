@@ -17,23 +17,14 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any
 
 from services.provider_client import Provider, async_llm_call
 from services.stall_detector import is_stalled
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Stall detection constants (E3, lift-durable-orchestration, 2026-06-13)
-# ---------------------------------------------------------------------------
-
 _STALL_THRESHOLD = 3
 _STALL_SIMILARITY = 0.85
-
-# ---------------------------------------------------------------------------
-# Complexity heuristic
-# ---------------------------------------------------------------------------
 
 _COMPLEXITY_KEYWORDS = frozenset({"compare", "contrast", "analyze", "why", "how", "explain", "evaluate", "difference", "relationship", "impact", "effect", "prognosis", "pathophysiology"})
 
@@ -63,10 +54,6 @@ def is_complex_query(text: str) -> bool:
     return False
 
 
-# ---------------------------------------------------------------------------
-# Data types
-# ---------------------------------------------------------------------------
-
 
 @dataclass
 class WorkerAnswer:
@@ -83,10 +70,6 @@ class SynthesisResult:
     worker_answers: list[WorkerAnswer] = field(default_factory=list)
     decomposed: list[str] = field(default_factory=list)
 
-
-# ---------------------------------------------------------------------------
-# Supervisor: decompose a complex query into sub-questions
-# ---------------------------------------------------------------------------
 
 _DECOMPOSE_SYSTEM_PROMPT = """You are a medical research supervisor. Your task is to decompose a complex health-related question into focused, answerable sub-questions.
 
@@ -176,10 +159,6 @@ def _extract_list_from_text(text: str) -> list[str]:
     return out
 
 
-# ---------------------------------------------------------------------------
-# Worker: answer a single sub-question
-# ---------------------------------------------------------------------------
-
 _WORKER_SYSTEM_PROMPT = """You are a medical research assistant. Answer the given question concisely and accurately based on available context.
 
 Guidelines:
@@ -240,10 +219,6 @@ async def _answer_sub_question(
         )
     return WorkerAnswer(sub_question=sub_question, answer=content)
 
-
-# ---------------------------------------------------------------------------
-# Synthesizer: merge worker answers and detect contradictions
-# ---------------------------------------------------------------------------
 
 _SYNTHESIS_SYSTEM_PROMPT = """You are a medical research synthesis expert. Merge the following parallel research answers into a coherent, comprehensive response to the original query.
 
@@ -342,10 +317,6 @@ async def _synthesize(
     )
 
 
-# ---------------------------------------------------------------------------
-# Top-level orchestrator
-# ---------------------------------------------------------------------------
-
 _WORKER_TIMEOUT_S = 30.0
 
 
@@ -378,7 +349,6 @@ async def run_supervisor_worker(
     decomposition (decompose_query is non-deterministic), the resume silently
     falls through to a full re-gather. No assertion is raised.
     """
-    # --- Resume from cursor if available ---
     completed_from_cursor: dict[str, str] = {}
     if conn is not None and message_id is not None:
         try:

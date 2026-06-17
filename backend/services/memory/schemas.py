@@ -68,10 +68,6 @@ class ConversationTurn:
     timestamp: Optional[str] = None
 
 
-# ---------------------------------------------------------------------------
-# Scopes
-# ---------------------------------------------------------------------------
-
 SCOPE_SHARED = "shared"
 SCOPE_USER = "user"
 SCOPE_WORKSPACE = "workspace"

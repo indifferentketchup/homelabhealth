@@ -20,8 +20,6 @@ router = APIRouter()
 
 BRANDING_WORKSPACE_ICONS = Path("/data/branding/daw_icons")
 
-# Common SELECT used by single-workspace fetch/return paths (create, get, patch, pin, upload-icon).
-# list_workspaces uses a wider variant that includes repo_* columns.
 DAWS_SELECT = """
     SELECT d.id, d.name, d.description, d.icon_url, d.color, d.shared, d.sort_order,
         d.pinned, d.system_prompt,
@@ -460,7 +458,6 @@ async def get_patient_profile(
 
     Returns 404 if the workspace does not exist.
     """
-    from services.patient_profile import get_profile
 
     pool = await get_pool()
     async with pool.acquire() as conn:

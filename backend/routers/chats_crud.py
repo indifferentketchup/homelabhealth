@@ -35,10 +35,6 @@ from services.prompt_assembly import _openai_short_chat_title
 router = APIRouter()
 
 
-# ---------------------------------------------------------------------------
-# Pydantic models shared across CRUD endpoints
-# ---------------------------------------------------------------------------
-
 class ChatCreate(BaseModel):
     title: str | None = None
     model: str | None = Field(default=None)
@@ -60,11 +56,6 @@ class WebSearchToggleBody(BaseModel):
 class SourceSelectionBody(BaseModel):
     source_ids: list[uuid.UUID] = Field(default_factory=list)
 
-
-# ---------------------------------------------------------------------------
-# Row serializers shared across CRUD endpoints
-# (kept in sync with chats.py -- changes must be mirrored there too)
-# ---------------------------------------------------------------------------
 
 def _chat_row(r: asyncpg.Record) -> dict[str, Any]:
     return {
@@ -109,10 +100,6 @@ def _message_row(r: asyncpg.Record) -> dict[str, Any]:
     return out
 
 
-# ---------------------------------------------------------------------------
-# Export helpers
-# ---------------------------------------------------------------------------
-
 def write_export_file(content: str, target_dir: pathlib.Path, initial_filename: str) -> pathlib.Path:
     """Write chat export content to disk and return the file path."""
     file_path = target_dir / initial_filename
@@ -153,10 +140,6 @@ async def ai_rename_file(
     file_path.rename(candidate_path)
     return candidate_path, True
 
-
-# ---------------------------------------------------------------------------
-# Routes
-# ---------------------------------------------------------------------------
 
 @router.post("/")
 async def create_chat(

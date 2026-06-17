@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
 
 import httpx
 
 from db import get_pool
+
+logger = logging.getLogger(__name__)
 
 
 async def _load_runtime_config() -> dict[str, Any] | None:
@@ -33,15 +36,17 @@ async def _load_runtime_config() -> dict[str, Any] | None:
 
 async def searx_search_sources(
     query: str,
-) -> tuple[list[dict[str, str]], str]:
+) -> tuple[list[dict[str, str]], str, bool]:
     """
-    Returns (sources_for_ui, markdown_block_for_model).
+    Returns (sources_for_ui, markdown_block_for_model, degraded).
     sources: {title, url}; block is injected into system prompt only (not persisted).
+    degraded is True only when the SearXNG request fails (HTTP >= 400 or an
+    exception), distinct from a successful search with no results.
     """
     base = os.environ.get("SEARXNG_URL", "").strip().rstrip("/")
     q = (query or "").strip()
     if not base or not q:
-        return [], ""
+        return [], "", False
 
     params: dict[str, str | int] = {"q": q, "format": "json"}
     cfg = await _load_runtime_config()
@@ -59,10 +64,12 @@ async def searx_search_sources(
         async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
             resp = await client.get(f"{base}/search", params=params)
         if resp.status_code >= 400:
-            return [], ""
+            logger.warning("searx: search returned HTTP %s", resp.status_code)
+            return [], "", True
         data: dict[str, Any] = resp.json()
-    except Exception:
-        return [], ""
+    except Exception as exc:
+        logger.warning("searx: search failed: %s", exc)
+        return [], "", True
 
     raw = data.get("results") or []
     sources: list[dict[str, str]] = []
@@ -87,4 +94,4 @@ async def searx_search_sources(
             lines.append(f"- {label}\n  URL: {url}")
 
     block = "\n\n".join(lines) if lines else ""
-    return sources, block
+    return sources, block, False

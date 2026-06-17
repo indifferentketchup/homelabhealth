@@ -83,8 +83,6 @@ def decrypt_secret(stored: str | None) -> str | None:
     return pt.decode("utf-8")
 
 
-# --- Column encryption (C6 / v0.17.0) ---
-
 COL_ENC_PREFIX = "cenc:v1:"  # distinct from provider's "enc:v1:"
 
 

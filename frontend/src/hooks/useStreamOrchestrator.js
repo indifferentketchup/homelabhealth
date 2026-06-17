@@ -130,6 +130,7 @@ export function useStreamOrchestrator({
   const [streamPhase, setStreamPhase] = useState(null)
   const [streamStartedAt, setStreamStartedAt] = useState(null)
   const [pipelineEvents, setPipelineEvents] = useState([])
+  const [streamWarnings, setStreamWarnings] = useState([])
   const [streamStale, setStreamStale] = useState(false)
 
   const { consumeStream, abort } = useStream()
@@ -220,14 +221,16 @@ export function useStreamOrchestrator({
     setStreamPhase('preparing')
     setStreamStartedAt(startedAt)
     setPipelineEvents([])
+    setStreamWarnings([])
     setStreamStale(false)
     touchStreamActivity(0)
   }
 
-  function clearStreamUi() {
+  function clearStreamUi({ keepWarnings = false } = {}) {
     setStreamPhase(null)
     setStreamStartedAt(null)
     setPipelineEvents([])
+    if (!keepWarnings) setStreamWarnings([])
     setStreamStale(false)
     lastStreamActivityRef.current = null
   }
@@ -298,8 +301,6 @@ export function useStreamOrchestrator({
     if (durable.sendError && !sendError) setSendError(friendlyStreamError(durable.sendError))
   }, [durableEnabled, durable.busy, durable.streamingContent, durable.stale, durable.sendError, durable.streamingStatus, streamPhase])
 
-  // --- Extracted send helpers (Task 15) ---
-
   function beginStream(content) {
     setPendingSend(true)
     beginStreamUi()
@@ -335,8 +336,6 @@ export function useStreamOrchestrator({
     setDraft(content)
   }
 
-  // --- Extracted runStream callback builders (Task 16) ---
-
   function makeOnToken() {
     return (t) => {
       setStreamPhase('generating')
@@ -362,6 +361,13 @@ export function useStreamOrchestrator({
       setStreamPhase('rag')
       touchStreamActivity(0)
       setStreamingRag(info)
+    }
+  }
+
+  function makeOnWarning() {
+    return (message) => {
+      if (!message) return
+      setStreamWarnings((prev) => [...prev, String(message)])
     }
   }
 
@@ -402,7 +408,7 @@ export function useStreamOrchestrator({
         setStreamingRag(null)
         setStreamText('')
         setSendError(null)
-        clearStreamUi()
+        clearStreamUi({ keepWarnings: true })
       })
       if (!nextData) {
         queryClient.invalidateQueries({ queryKey: ['messages', chatId] })
@@ -420,7 +426,7 @@ export function useStreamOrchestrator({
         setPendingSend(false)
         setStreamText('')
         setStreamingRag(null)
-        clearStreamUi()
+        clearStreamUi({ keepWarnings: true })
         if (err?.name !== 'AbortError') {
           const raw = err instanceof Error ? err.message : String(err)
           try {
@@ -460,6 +466,7 @@ export function useStreamOrchestrator({
       onRagContext: makeOnRagContext(),
       onPhase: makeOnPhase(),
       onTitleUpdate: makeOnTitleUpdate(chatId),
+      onWarning: makeOnWarning(),
       onDone: makeOnDone(chatId),
       onError: makeOnError(chatId),
     })
@@ -479,7 +486,6 @@ export function useStreamOrchestrator({
     setAttachedSources([])
     setSendError(null)
 
-    // --- Durable streaming path ---
     if (durableEnabled) {
       beginStream(content)
 
@@ -507,7 +513,6 @@ export function useStreamOrchestrator({
       return
     }
 
-    // --- SSE streaming path ---
     if (!activeChatId) {
       beginStream(content)
       try {
@@ -639,7 +644,6 @@ export function useStreamOrchestrator({
     : null
 
   return {
-    // --- unified streaming interface consumed by ChatView ---
     text: streamText,
     phase: streamPhase,
     busy,
@@ -655,14 +659,13 @@ export function useStreamOrchestrator({
     optimisticUser,
     serverHasPendingMessage: serverHasPendingUserBubble,
     displayMessages,
-    // --- additional render state ChatView needs ---
     startedAt: streamStartedAt,
     pipelineEvents,
+    streamWarnings,
     sourcesByMessageIndex,
     streamingRag,
     streamingTail,
     canRetry: Boolean(lastUserMessageRef.current),
-    // --- input composition (owned here so `send` stays self-contained) ---
     draft,
     setDraft,
     attachedSources,

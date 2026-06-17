@@ -17,7 +17,6 @@ import asyncpg
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 
-from db import get_pool
 
 # Argon2id hasher — defaults: time_cost=3, memory_cost=65536, parallelism=4
 _ph = PasswordHasher()

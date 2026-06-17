@@ -24,12 +24,6 @@ import psutil
 logger = logging.getLogger(__name__)
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Tier definitions — band thresholds in GB.
-# Per design §Tier definitions table; bands close gaps that table left open
-# (10–12 and 18–24 GB VRAM both round into the next higher tier band).
-# ──────────────────────────────────────────────────────────────────────────────
-
 ALL_TIERS: frozenset[str] = frozenset(
     {"cpu-min", "cpu-std", "gpu-4gb", "gpu-8gb", "gpu-16gb", "gpu-24gb+", "apple-mlx", "external"}
 )
@@ -63,10 +57,6 @@ _GPU_8_MIN_VRAM_GB = 6
 _GPU_16_MIN_VRAM_GB = 12
 _GPU_24_MIN_VRAM_GB = 24
 
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Helpers.
-# ──────────────────────────────────────────────────────────────────────────────
 
 def _run(cmd: list[str], timeout: float = 2.0) -> str | None:
     """Run a subprocess, return stdout (stripped) or None on any failure.
@@ -176,10 +166,6 @@ def _max_vram_gb(gpus: list[dict[str, Any]]) -> int:
         return 0
     return max(mems) // 1024
 
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Public API.
-# ──────────────────────────────────────────────────────────────────────────────
 
 def collect() -> dict[str, Any]:
     """Best-effort hardware inventory. Never raises."""

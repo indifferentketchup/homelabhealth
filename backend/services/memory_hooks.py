@@ -7,7 +7,6 @@ extraction entry point called from inference_job.py.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import re
 from datetime import datetime, timezone
@@ -26,10 +25,6 @@ _EXTRACTION_MIN_TEXT_LENGTH = 40
 # Module-level debounce dict: at most one pending extraction task per workspace.
 _pending_extraction: dict[str, asyncio.Task] = {}
 
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Signal detection (pure-Python regex, no external deps)
-# ──────────────────────────────────────────────────────────────────────────────
 
 
 def _detect_correction(text: str) -> bool:
@@ -54,10 +49,6 @@ def _detect_reinforcement(text: str) -> bool:
     t = text.lower()
     return any(re.search(p, t) for p in patterns)
 
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Hook callbacks
-# ──────────────────────────────────────────────────────────────────────────────
 
 
 async def _post_tool_memory_hook(
@@ -120,10 +111,6 @@ def register_memory_hooks() -> None:
     register("post_tool_execution", _post_tool_memory_hook)
     logger.info("memory_tools: registered PostToolUse memory hook")
 
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Background extraction + debounce
-# ──────────────────────────────────────────────────────────────────────────────
 
 
 async def run_background_extraction(
@@ -190,8 +177,6 @@ async def run_background_extraction(
             for f in facts
         ]
         try:
-            # Phase 1: read settings and current profile; release connection before
-            # the LLM call so we do not hold a pool connection across a 30s network op.
             conflict_enabled = None
             current_profile = None
             async with pool.acquire() as conn:
@@ -201,10 +186,6 @@ async def run_background_extraction(
                 )
                 if conflict_enabled == "true":
                     current_profile = await get_profile(conn, workspace_id)
-            # Phase 2: LLM conflict-resolution call (no DB connection held).
-            # Skip when the provider is external: resolve_conflicts sends raw
-            # patient facts (names, diagnoses, meds, doses) to the LLM.
-            # On a bundled/local provider it stays on-box and is safe to run.
             if conflict_enabled == "true" and current_profile is not None and provider_is_bundled:
                 to_add, to_remove = await resolve_conflicts(
                     current_profile, new_facts, provider, model
@@ -217,7 +198,6 @@ async def run_background_extraction(
                 to_add, to_remove = new_facts, []
             else:
                 to_add, to_remove = new_facts, []
-            # Phase 3: write results; re-acquire connection.
             async with pool.acquire() as conn:
                 await apply_fact_updates(conn, workspace_id, to_add, to_remove)
         except Exception as exc:

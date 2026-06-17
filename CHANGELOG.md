@@ -16,6 +16,8 @@ live under the `snapshot/` namespace.
 
 ## [Unreleased]
 
+## [v1.3.2] — 2026-06-17
+
 Production-readiness audit remediation (2026-06-15).
 
 ### AI

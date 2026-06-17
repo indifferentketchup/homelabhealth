@@ -53,7 +53,6 @@ async def require_admin(request: Request) -> dict[str, Any]:
 async def assert_workspace_usable(conn, principal, workspace_id):
     if workspace_id is None:
         return
-    import asyncpg
     row = await conn.fetchrow(
         "SELECT 1 FROM workspaces WHERE id = $1::uuid",
         workspace_id,

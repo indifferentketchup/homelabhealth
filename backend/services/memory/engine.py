@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Optional
 from services.memory.context_tier import ContextTier
 from services.memory.core_tier import CoreTier
 from services.memory.daily_tier import DailyTier
-from services.memory.schemas import ConversationTurn, MemoryChunk, SearchResult
+from services.memory.schemas import ConversationTurn, SearchResult
 
 logger = logging.getLogger(__name__)
 

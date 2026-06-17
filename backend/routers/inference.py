@@ -14,7 +14,7 @@ from typing import Any, AsyncIterator
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from deps import require_admin
 from db import get_pool

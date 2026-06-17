@@ -15,10 +15,6 @@ from services.memory.engine import get_engine, MemoryEngine
 
 logger = logging.getLogger(__name__)
 
-# ──────────────────────────────────────────────────────────────────────
-# Extraction prompt
-# ──────────────────────────────────────────────────────────────────────
-
 _EXTRACTION_SYSTEM_PROMPT = (
     "You are a memory extraction system. Analyze the conversation exchange below and "
     "extract any factual statements, preferences, medical information, or important "

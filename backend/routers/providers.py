@@ -23,10 +23,6 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Pydantic models
-# ──────────────────────────────────────────────────────────────────────────────
-
 
 class ProviderCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=128)
@@ -43,10 +39,6 @@ class ProviderPatch(BaseModel):
     enabled: bool | None = None
     sort_order: int | None = None
 
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Helpers
-# ──────────────────────────────────────────────────────────────────────────────
 
 
 def _redact_provider(r: Any) -> dict[str, Any]:
@@ -115,10 +107,6 @@ async def _count_references(conn: Any, provider_id: uuid.UUID) -> dict[str, Any]
         "reranker": bool(rrk_row and rrk_row["value"] == pid),
     }
 
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Endpoints
-# ──────────────────────────────────────────────────────────────────────────────
 
 
 @router.get("")

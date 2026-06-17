@@ -38,15 +38,11 @@ from services.hooks import register as _register_hook
 
 logger = logging.getLogger(__name__)
 
-# ─── Constants ───────────────────────────────────────────────────────────
-
 BUFFER_DIR_ENV = "HLH_AUDIT_BUFFER_DIR"
 DEFAULT_BUFFER_DIR = ".omo"
 BUFFER_FILENAME = "audit_buffer.jsonl"
 MAX_SUMMARY_LENGTH = 200
 MAX_TOOL_INPUT_LENGTH = 1000
-
-# ─── Buffer ──────────────────────────────────────────────────────────────
 
 
 @dataclass
@@ -196,8 +192,6 @@ async def flush_buffer() -> int:
     _truncate_buffer()
     return inserted
 
-
-# ─── Recovery Level Queries ──────────────────────────────────────────────
 
 
 async def _recover_l0(conn: asyncpg.Connection) -> dict[str, Any]:
@@ -409,8 +403,6 @@ async def _recover_l4(
     }
 
 
-# ─── Public API ──────────────────────────────────────────────────────────
-
 
 async def recover(
     level: int = 0,
@@ -470,8 +462,6 @@ async def recover(
         data = await _recover_l0(conn)
         return {"level": 0, **data}
 
-
-# ─── T2 Hook Callbacks ──────────────────────────────────────────────────
 
 
 def _summarize_tool_call(tool_name: str, tool_input: dict) -> str:
@@ -547,7 +537,5 @@ async def _recovery_on_stop(reason: str, ctx: Any) -> None:
         logger.exception("audit_recovery: flush on stop failed")
 
 
-# Register hook callbacks at module import time, matching the same pattern
-# used by services/audit.py for the existing audit hooks.
 _register_hook("post_tool_execution", _recovery_on_tool_execution)
 _register_hook("on_stop", _recovery_on_stop)

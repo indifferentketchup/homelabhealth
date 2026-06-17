@@ -127,8 +127,6 @@ export default function SettingsPage({ onClose }) {
   const settingsTabs = useMemo(() => TABS, [])
   const [tab, setTabState] = useState(() => {
     try {
-      // ?tab=<id> wins over the localStorage cache — used by RequireSetup to
-      // force the System tab on first-boot redirects (/settings?tab=system).
       if (typeof window !== 'undefined') {
         const fromUrl = new URLSearchParams(window.location.search).get('tab')
         if (fromUrl && settingsTabs.some((t) => t.id === fromUrl)) return fromUrl

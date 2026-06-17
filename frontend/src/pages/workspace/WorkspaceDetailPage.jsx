@@ -67,7 +67,6 @@ export default function WorkspaceDetailPage() {
   const [ragMode, setRagMode] = useState('auto')
   const [instrDraft, setInstrDraft] = useState('')
   const [memoryDraft, setMemoryDraft] = useState('')
-  const [pinnedFlag, setPinnedFlag] = useState(false)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [clearing, setClearing] = useState(false)
   const [pendingFileDelete, setPendingFileDelete] = useState(null)
@@ -93,7 +92,6 @@ export default function WorkspaceDetailPage() {
     setInferModel((workspace.model && String(workspace.model).trim()) || '')
     const rm = workspace.rag_mode
     setRagMode(rm === 'always' || rm === 'off' || rm === 'auto' ? rm : 'auto')
-    setPinnedFlag(Boolean(workspace.pinned))
   }, [workspace])
 
   useEffect(() => {
@@ -147,7 +145,6 @@ export default function WorkspaceDetailPage() {
         name: detailName.trim() || 'Untitled',
         description: detailDesc.trim() || null,
         color: detailColor || '#8FAE92', // DB stores hex; color picker always yields a valid hex once touched
-        pinned: pinnedFlag,
       }),
     onSuccess: () => invalidateWorkspace(),
   })
@@ -364,10 +361,6 @@ export default function WorkspaceDetailPage() {
                     />
                   </div>
                 </label>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm text-foreground">Pin to sidebar</span>
-                  <EmbeddableSwitch embeddable={pinnedFlag} disabled={false} onToggle={setPinnedFlag} />
-                </div>
                 <Button type="button" size="sm" onClick={() => saveDetails.mutate()} disabled={saveDetails.isPending}>
                   Save
                 </Button>

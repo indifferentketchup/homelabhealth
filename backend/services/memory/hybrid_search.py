@@ -18,7 +18,7 @@ from __future__ import annotations
 import math
 import re
 from datetime import datetime
-from typing import Callable, List, Optional, TYPE_CHECKING
+from typing import List, Optional, TYPE_CHECKING
 
 from services.memory.schemas import SearchResult
 

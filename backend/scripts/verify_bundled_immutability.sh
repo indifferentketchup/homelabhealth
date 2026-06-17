@@ -22,6 +22,9 @@ assert roles == ['chat', 'embed', 'rerank'], f'roles wrong: {roles}'
 for p in bundled:
     assert p['bundle_group'] == 'homelab-health-ai', f'wrong bundle_group: {p}'
     assert p['name'].startswith('HomeLab Health AI · '), f'wrong name: {p[\"name\"]}'
+    # Folder C (2026-06-16): all three bundled providers resolve through the
+    # llama-swap front-door, not the old direct hlh_chat:9610.
+    assert p['base_url'] == 'http://hlh_swap:9620', f'wrong base_url: {p[\"name\"]} -> {p[\"base_url\"]}'
 print('OK')
 "
 

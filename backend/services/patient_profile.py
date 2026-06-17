@@ -18,10 +18,6 @@ from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Canonical empty profile shape
-# ──────────────────────────────────────────────────────────────────────────────
-
 EMPTY_PROFILE: dict[str, Any] = {
     "version": "1.0",
     "name": None,
@@ -41,10 +37,6 @@ EMPTY_PROFILE: dict[str, Any] = {
     "facts": [],
 }
 
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Conflict-resolution prompt (not a numbered checklist per CLAUDE.md)
-# ──────────────────────────────────────────────────────────────────────────────
 
 _CONFLICT_RESOLUTION_PROMPT = """\
 You are a patient health record conflict resolver.
@@ -73,10 +65,6 @@ Return exactly this JSON schema and nothing else:
   ]
 }"""
 
-
-# ──────────────────────────────────────────────────────────────────────────────
-# CRUD functions
-# ──────────────────────────────────────────────────────────────────────────────
 
 
 async def get_profile(conn, workspace_id) -> dict[str, Any]:
@@ -213,10 +201,6 @@ async def resolve_conflicts(
         )
         return new_facts, []
 
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Injection formatter (C4)
-# ──────────────────────────────────────────────────────────────────────────────
 
 
 def format_profile_for_injection(profile: dict, token_budget: int = 1500) -> str:

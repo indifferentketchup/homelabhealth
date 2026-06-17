@@ -35,10 +35,6 @@ import logging
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Request / response models
-# ---------------------------------------------------------------------------
-
 
 class EvalWorkspaceMixin(BaseModel):
     """Every eval request must specify which workspace's provider to use."""
@@ -86,12 +82,6 @@ class EvalResponse(BaseModel):
     explanation: str = ""
     violations: list[str] = []
 
-
-# ---------------------------------------------------------------------------
-# Prompt templates (adapted from OpenEvals, medical-domain-tuned)
-# GROUNDEDNESS_SYSTEM_PROMPT and GROUNDEDNESS_USER_PROMPT are imported from
-# services.eval_judge so the background task in chats.py can use them.
-# ---------------------------------------------------------------------------
 
 HELPFULNESS_SYSTEM_PROMPT = """You are an expert evaluator assessing how helpful and relevant an LLM response is in addressing a user query. This is a medical domain — responses should be thorough, accurate, and directly address the user's health information needs.
 
@@ -188,10 +178,6 @@ Retrieved documents:
 {documents}
 
 Evaluate the relevance of these retrieved documents to the user query."""
-
-# ---------------------------------------------------------------------------
-# Endpoints
-# ---------------------------------------------------------------------------
 
 
 @router.post("/groundedness", response_model=EvalResponse)

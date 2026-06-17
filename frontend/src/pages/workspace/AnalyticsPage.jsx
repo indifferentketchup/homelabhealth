@@ -5,10 +5,6 @@ import { ChartColumnIncreasing } from 'lucide-react'
 import { getTokenAnalytics } from '@/api/analytics.js'
 import { cn } from '@/lib/utils'
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 function fmt(n) {
   if (n == null || Number.isNaN(n)) return '0'
   return Number(n).toLocaleString()
@@ -40,10 +36,6 @@ function shortDuration(startIso, endIso) {
   return rm ? `${hrs}h ${rm}m` : `${hrs}h`
 }
 
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
-
 function StatCard({ label, value, sub }) {
   return (
     <div className="rounded-lg border border-border bg-card p-4">
@@ -63,10 +55,6 @@ function InlineBar({ value, max, color = 'bg-primary' }) {
   )
 }
 
-// ---------------------------------------------------------------------------
-// Empty state
-// ---------------------------------------------------------------------------
-
 function EmptyState() {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 py-16 text-center">
@@ -78,10 +66,6 @@ function EmptyState() {
     </div>
   )
 }
-
-// ---------------------------------------------------------------------------
-// Tab panels
-// ---------------------------------------------------------------------------
 
 function SessionsTab({ sessions }) {
   const maxTokens = Math.max(1, ...sessions.map((s) => s.total_tokens || 0))
@@ -221,10 +205,6 @@ function ProviderCompareTab({ providers }) {
     </div>
   )
 }
-
-// ---------------------------------------------------------------------------
-// Main page
-// ---------------------------------------------------------------------------
 
 const TABS = [
   { id: 'sessions', label: 'Session Usage' },
