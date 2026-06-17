@@ -1,4 +1,4 @@
-"""Embedding helpers — provider-resolved per call (no env-var URL/MODEL).
+"""Embedding helpers  -  provider-resolved per call (no env-var URL/MODEL).
 
 The active embedding provider + model live in `global_settings`
 (`embedding_provider_id`, `embedding_model`). If either is absent, every
@@ -94,7 +94,7 @@ async def embed_batch(texts: list[str]) -> list[list[float]]:
     Embed a list of texts in one (or a few) HTTP round-trips.
 
     Chunks into EMBEDDING_BATCH_SIZE sub-batches. Raises EmbeddingError on any
-    failure — the caller is responsible for marking the ingest as failed rather
+    failure  -  the caller is responsible for marking the ingest as failed rather
     than inserting null-embedding rows.
     """
     if not texts:

@@ -110,7 +110,7 @@ TIER_IMAGE_MAP: dict[str, TierImages] = {
     # Vulkan GPU tiers (cross-platform: Intel Arc, AMD without ROCm stack, etc.).
     # Compose profile bundled-vulkan starts hlh_swap_vulkan which passes /dev/dri
     # and sets HLH_INFER_DEVICE=vulkan (for the llama-server child). The boofinity
-    # child runs on CPU (PyTorch has no desktop Vulkan compute backend) — embed and
+    # child runs on CPU (PyTorch has no desktop Vulkan compute backend)  -  embed and
     # rerank are slower than on ROCm/CUDA but functional.
     "vulkan-4gb": TierImages(
         swap_image=_SWAP_IMAGE_VULKAN,

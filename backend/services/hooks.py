@@ -1,4 +1,4 @@
-"""Lifecycle hook runner — PreToolUse, PostToolUse, Stop, UserPromptSubmit.
+"""Lifecycle hook runner  -  PreToolUse, PostToolUse, Stop, UserPromptSubmit.
 
 Mirrors boocode's hooks.ts pattern using Python's contextvars for ambient
 context (equivalent to AsyncLocalStorage) and a simple callback registry.
@@ -9,7 +9,7 @@ Hook signatures:
   - on_stop(reason, ctx)
   - on_user_prompt(prompt, ctx)
 
-Zero external dependencies — pure Python stdlib + contextvars.
+Zero external dependencies  -  pure Python stdlib + contextvars.
 """
 
 import contextvars
@@ -54,7 +54,7 @@ def reset_hook_context(token: contextvars.Token[HookContext]) -> None:
 @dataclass
 class HookResult:
     """Returned by pre_tool_execution hooks. When blocked=True the chain
-    stops immediately — no further pre-tool callbacks run and the tool
+    stops immediately  -  no further pre-tool callbacks run and the tool
     execution is skipped."""
     blocked: bool = False
     reason: str | None = None
@@ -63,7 +63,7 @@ class HookResult:
 HookName = str
 """One of 'pre_tool_execution', 'post_tool_execution', 'on_stop', 'on_user_prompt'."""
 
-# Callback type aliases (informational — runtime duck-typing):
+# Callback type aliases (informational  -  runtime duck-typing):
 #   PreToolCallback:    Callable[[str, dict, HookContext], Awaitable[HookResult | None]]
 #   PostToolCallback:   Callable[[str, dict, Any, HookContext, float], Awaitable[None]]
 #   StopCallback:       Callable[[str, HookContext], Awaitable[None]]

@@ -1,4 +1,4 @@
-"""Core data schemas — shared types across the memory tiers."""
+"""Core data schemas  -  shared types across the memory tiers."""
 
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ class RunningSummary:
 
 @dataclass
 class ExtractedMemory:
-    """Result of memory extraction — a fact with metadata."""
+    """Result of memory extraction  -  a fact with metadata."""
 
     id: str = ""
     content: str = ""

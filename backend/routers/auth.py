@@ -88,7 +88,7 @@ async def setup(body: SetupRequest):
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
-            # FOR UPDATE serializes concurrent setup requests — prevents TOCTOU race
+            # FOR UPDATE serializes concurrent setup requests  -  prevents TOCTOU race
             # where two simultaneous POSTs both pass the password_hash IS NULL check.
             row = await conn.fetchrow(
                 "SELECT id, password_hash FROM users LIMIT 1 FOR UPDATE"

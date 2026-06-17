@@ -1,4 +1,4 @@
-"""Phase 1 end-to-end chat test — replaces the v1.10.0 step-8 'OK' test using
+"""Phase 1 end-to-end chat test  -  replaces the v1.10.0 step-8 'OK' test using
 the bundled hlh_chat sidecar instead of external llama-swap.
 
 Sequence (per dispatch §1.H.3):
@@ -58,12 +58,12 @@ def passlog(label: str) -> None:
 
 def failbail(label: str, detail: str = "") -> None:
     _failures.append(label)
-    print(f"  {RED}FAIL{RESET}  {label}" + (f" — {detail}" if detail else ""))
+    print(f"  {RED}FAIL{RESET}  {label}" + (f"  -  {detail}" if detail else ""))
     raise SystemExit(1)
 
 
 def banner(s: str) -> None:
-    print(f"\n— {s} —")
+    print(f"\n -  {s}  - ")
 
 
 def api_get(path: str) -> dict | list:
@@ -182,7 +182,7 @@ def main() -> int:
                 print(f"  … pulling: {pulled / 1024 / 1024:.1f} / {total / 1024 / 1024:.1f} MB ({pct:.0f}%)")
                 last_log = time.time()
             if pulled == last_pulled and status == "pulling":
-                # No progress this iteration — keep waiting.
+                # No progress this iteration  -  keep waiting.
                 pass
             last_pulled = pulled
             time.sleep(3)
@@ -282,7 +282,7 @@ def main() -> int:
             failbail("chat stream produced no content tokens")
         passlog(f"REAL streamed reply from bundled chat ({len(reply)} chars): {reply[:120]!r}")
         if not had_done:
-            print("  (note: stream ended without [DONE] — possibly upstream early-close; chunks present so plumbing is correct)")
+            print("  (note: stream ended without [DONE]  -  possibly upstream early-close; chunks present so plumbing is correct)")
 
     finally:
         # Cleanup workspace (cascade-deletes its chats).

@@ -1,4 +1,4 @@
-"""Context tier — short-term conversation context with token-budget summarization.
+"""Context tier  -  short-term conversation context with token-budget summarization.
 
 In-memory only (no persistence needed). Tracks a running summary of conversation
 turns and triggers summarization when the token budget is exceeded.
@@ -157,7 +157,7 @@ class ContextTier:
         if summarizer_fn:
             summary_text = summarizer_fn(prompt)
         else:
-            # Dry run — estimate summary from first N chars
+            # Dry run  -  estimate summary from first N chars
             summary_text = formatted[:500] + "…" if len(formatted) > 500 else formatted
 
         # Update running summary

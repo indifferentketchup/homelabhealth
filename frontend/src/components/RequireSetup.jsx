@@ -8,11 +8,11 @@ import { getSystemProfile } from '@/api/system.js'
  *
  * Behavior:
  *   - While `GET /api/system/profile` is in flight, render the child via
- *     <Outlet /> (do NOT redirect during loading — accept a one-frame flicker
+ *     <Outlet /> (do NOT redirect during loading  -  accept a one-frame flicker
  *     on resolve rather than a spinner on every navigation).
  *   - When the query resolves with `setup_complete === false` AND the current
  *     path is not /settings, redirect to /settings?tab=system. Path exclusion
- *     is load-bearing — without it, the gate creates a redirect loop on the
+ *     is load-bearing  -  without it, the gate creates a redirect loop on the
  *     wizard page itself.
  *   - In every other case (setup_complete true, query failed, undefined),
  *     render the child route.

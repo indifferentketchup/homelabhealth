@@ -166,7 +166,7 @@ async def extract_memory(
 
     user_prompt = (
         "You are a memory extraction assistant. Given the conversation below and the existing memory, "
-        "update the memory to reflect new facts about the user. Keep it concise — use markdown headings "
+        "update the memory to reflect new facts about the user. Keep it concise  -  use markdown headings "
         "and bullet points. Do not repeat existing facts. Do not invent facts. "
         "Return only the updated memory text, nothing else.\n\n"
         f"Existing memory:\n{current_memory}\n\n"

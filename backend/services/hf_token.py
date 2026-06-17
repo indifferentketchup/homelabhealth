@@ -1,7 +1,7 @@
-"""HF token storage — singleton DB row, encrypted via services.crypto.
+"""HF token storage  -  singleton DB row, encrypted via services.crypto.
 
 Resolution order in callers (see model_puller._hf_headers):
-  1. get(conn) — this module's DB-backed value
+  1. get(conn)  -  this module's DB-backed value
   2. HF_TOKEN env var (legacy fallback)
   3. None (no Authorization header sent)
 

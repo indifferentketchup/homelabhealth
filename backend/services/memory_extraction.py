@@ -152,10 +152,10 @@ def _parse_extraction_response(raw: str) -> list[dict[str, Any]]:
             if end > start:
                 text = text[start:end].strip()
             else:
-                # No closing fence — take from bracket onward
+                # No closing fence  -  take from bracket onward
                 text = text[start:].strip()
         else:
-            # No bracket found despite fences — strip fences entirely
+            # No bracket found despite fences  -  strip fences entirely
             lines = text.splitlines()
             cleaned = []
             in_fence = False

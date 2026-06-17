@@ -6,8 +6,8 @@ that previously read OPENAI_API_KEY / INFERENCE_URL inline in every caller.
 Spec: docs/superpowers/specs/2026-05-21-providers-and-api-keys-design.md §4
 
 Public surface:
-    Provider                       — frozen dataclass; api_key is plaintext post-decrypt
-    resolve_provider(id)           — fetch+decrypt; 404/409 if missing/disabled
+    Provider                        -  frozen dataclass; api_key is plaintext post-decrypt
+    resolve_provider(id)            -  fetch+decrypt; 404/409 if missing/disabled
     resolve_provider_for_workspace(ws_id) -> (Provider, model)
     resolve_embedding_provider() -> (Provider, model)   raises EmbeddingError if unset
     resolve_reranker_provider() -> (Provider, model) | None   None = flashrank fallback
@@ -108,7 +108,7 @@ async def resolve_provider_for_workspace(
             ws["provider_id"],
         )
         if prov is None:
-            # Workspace row references a deleted provider — shouldn't happen
+            # Workspace row references a deleted provider  -  shouldn't happen
             # because of ON DELETE SET NULL, but defend against it.
             raise HTTPException(status_code=400, detail=_CHAT_NOT_CONFIGURED)
         if not bool(prov["enabled"]):
@@ -174,7 +174,7 @@ async def resolve_embedding_provider() -> tuple[Provider, str]:
 async def resolve_reranker_provider() -> tuple[Provider, str] | None:
     """Look up the global reranker provider + model.
 
-    Returns None if not configured — the caller should fall back to flashrank.
+    Returns None if not configured  -  the caller should fall back to flashrank.
     """
     return await _resolve_role_binding("reranker_provider_id", "reranker_model")
 
@@ -184,7 +184,7 @@ async def resolve_bundled_chat_provider() -> tuple[Provider, str] | None:
 
     Used by internal services (compaction, vision) that need LLM access but
     have no workspace context. Returns None on external tier, setup incomplete,
-    or provider row missing/disabled — callers should skip gracefully.
+    or provider row missing/disabled  -  callers should skip gracefully.
     """
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -215,7 +215,7 @@ async def resolve_bundled_chat_provider() -> tuple[Provider, str] | None:
 async def resolve_bundled_vl_provider(role: str) -> tuple[Provider, str] | None:
     """Resolve a bundled VL provider (role 'embed-vl' or 'rerank-vl').
 
-    Returns (Provider, serving-alias) or None when the row is absent — which is
+    Returns (Provider, serving-alias) or None when the row is absent  -  which is
     every tier below gpu-24gb+ (the VL rows are seeded only there, folder D), or
     external / setup-incomplete. The serving alias is the boofinity model name
     (qwen3-vl-embed / qwen3-vl-rerank) that hlh_swap routes; it is fixed per role,

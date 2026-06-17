@@ -1,7 +1,7 @@
 """Summarize-and-compress chat history when message count exceeds threshold.
 
 Inference is routed via the chat's workspace provider (resolved per call).
-No env-var URL / API_KEY / DEFAULT_MODEL fallbacks — if the workspace has no
+No env-var URL / API_KEY / DEFAULT_MODEL fallbacks  -  if the workspace has no
 provider configured, summarization silently no-ops (same as any other
 upstream failure).
 """

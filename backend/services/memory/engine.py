@@ -1,4 +1,4 @@
-"""MemoryEngine — unified public API for the 3-tier memory system.
+"""MemoryEngine  -  unified public API for the 3-tier memory system.
 
 Manages conversation summarization (ContextTier), daily Markdown records
 (DailyTier), and long-term SQLite + FTS5 + vector search (CoreTier).
@@ -30,7 +30,7 @@ _DEFAULT_DATA_DIR = os.environ.get("HLH_MEMORY_DIR", "data/memory")
 
 
 class MemoryEngine:
-    """Unified memory engine — create, search, flush, and consolidate memories.
+    """Unified memory engine  -  create, search, flush, and consolidate memories.
 
     Initializes all three tiers lazily on first use.
     """
@@ -43,7 +43,7 @@ class MemoryEngine:
         self.data_dir = data_dir
         self.context_budget = context_budget
 
-        # Lazy init — tiers created on first access
+        # Lazy init  -  tiers created on first access
         self._context_tier: Optional[ContextTier] = None
         self._daily_tier: Optional[DailyTier] = None
         self._core_tier: Optional[CoreTier] = None
@@ -218,14 +218,14 @@ class MemoryEngine:
         """
         stats = {"context_appended": 0, "daily_appended": 0, "facts_saved": 0}
 
-        # 1. Context tier — update summarization
+        # 1. Context tier  -  update summarization
         for msg in messages:
             needs_summary = self.context.append(msg)
             stats["context_appended"] += 1
             if needs_summary:
                 logger.info("MemoryEngine: context budget exceeded, summary needed")
 
-        # 2. Daily tier — write conversation to markdown
+        # 2. Daily tier  -  write conversation to markdown
         if messages:
             lines = []
             for msg in messages:
@@ -234,7 +234,7 @@ class MemoryEngine:
             self.daily.append(entry_text=daily_text, reason="flush", user_id=user_id)
             stats["daily_appended"] = 1
 
-        # 3. Core tier — extract and save key facts
+        # 3. Core tier  -  extract and save key facts
         # Use simple heuristic: save user messages with substantial content
         for msg in messages:
             if msg.role == "user" and len(msg.content.strip()) > 50:
@@ -272,7 +272,7 @@ class MemoryEngine:
         scope: str = "shared",
         user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Overnight consolidation — read recent daily entries and consolidate.
+        """Overnight consolidation  -  read recent daily entries and consolidate.
 
         This is a lightweight consolidation that:
             1. Reads recent days from DailyTier.

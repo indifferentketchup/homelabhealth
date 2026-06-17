@@ -25,7 +25,7 @@ _PARAGRAPH_SPLIT = re.compile(
     r"\n\n(?=[A-Z][a-z])"
 )
 
-# Checklist / reasoning indicators — paragraphs starting with these stay
+# Checklist / reasoning indicators  -  paragraphs starting with these stay
 # in the thinking block.
 _REASONING_LINE = re.compile(
     r"^(?:\*\s|[-•]\s|(?:\d+\.\s)|(?:\w+[\?:])\s|The plan\b|Okay[,.]|Let me\b|I (?:need|should|will|want|think)\b)",
@@ -62,7 +62,7 @@ def strip_thinking_text(text: str) -> str:
         if answer:
             return answer
 
-    # Could not split — return without thinking wrapper so the response
+    # Could not split  -  return without thinking wrapper so the response
     # is never hidden from the user.
     return without_prefix.strip()
 
@@ -108,7 +108,7 @@ class ThinkingStreamFilter:
                 return [out] if out else []
             return []
 
-        # thinking — stream content live, watch for answer start
+        # thinking  -  stream content live, watch for answer start
         # Check the full accumulated thinking for an answer transition.
         # We need to buffer a bit to detect paragraph boundaries.
         split = _find_answer_start(self._buf)
@@ -125,7 +125,7 @@ class ThinkingStreamFilter:
                 out.append(answer)
             return out
 
-        # No answer start yet — flush everything except the last paragraph
+        # No answer start yet  -  flush everything except the last paragraph
         # (which might be the start of the answer).
         last_para = self._buf.rfind("\n\n")
         if last_para > 0:

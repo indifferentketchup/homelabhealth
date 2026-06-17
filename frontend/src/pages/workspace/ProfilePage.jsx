@@ -212,7 +212,7 @@ export default function ProfilePage() {
               onChange={(e) => setBio(e.target.value)}
               rows={4}
               className="fs-input w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              placeholder="Optional — reminders, preferences, etc."
+              placeholder="Optional  -  reminders, preferences, etc."
               maxLength={2000}
             />
           </div>

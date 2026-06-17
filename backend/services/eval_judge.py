@@ -135,7 +135,7 @@ async def maybe_fire_groundedness_eval(
     _BG_EVAL_TASKS.add(task)
     task.add_done_callback(_BG_EVAL_TASKS.discard)
 
-GROUNDEDNESS_SYSTEM_PROMPT = """You are an expert evaluator assessing how well an LLM response is supported by the provided context. This is a medical domain — factual accuracy is critical.
+GROUNDEDNESS_SYSTEM_PROMPT = """You are an expert evaluator assessing how well an LLM response is supported by the provided context. This is a medical domain  -  factual accuracy is critical.
 
 <Rubric>
 A well-grounded output should:

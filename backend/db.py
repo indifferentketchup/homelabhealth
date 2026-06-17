@@ -19,7 +19,7 @@ async def init_pool() -> asyncpg.Pool:
     global _pool
     url = os.environ["DATABASE_URL"]
     # min_size keeps connections pre-warmed so concurrent polls + chat don't have
-    # to open new connections on demand — opening one during a model-load spike
+    # to open new connections on demand  -  opening one during a model-load spike
     # (system saturated) was timing out and surfacing as internal_error / the
     # model checker blanking. command_timeout stops a query hanging forever if
     # the DB is briefly slow under that load.

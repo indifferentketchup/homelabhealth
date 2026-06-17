@@ -83,7 +83,7 @@ def _gpu_probe_ok(client: docker.DockerClient) -> bool:
 
     Docker Desktop (common on WSL) exposes GPUs via device requests WITHOUT
     registering a runtime named "nvidia", so the Runtimes check misses it.
-    Reuse the api image (pulled regardless) as the probe — the NVIDIA toolkit
+    Reuse the api image (pulled regardless) as the probe  -  the NVIDIA toolkit
     injects nvidia-smi into any container granted a GPU. nvidia-smi -L exits
     non-zero (→ ContainerError) when no GPU is actually usable.
     """
@@ -109,7 +109,7 @@ def detect_gpu(client: docker.DockerClient) -> bool:
 
     Fast path: the daemon advertises an "nvidia" runtime (native docker +
     NVIDIA Container Toolkit). Fallback: actually run a probe container with a
-    GPU device request — covers Docker Desktop / WSL, which exposes GPUs
+    GPU device request  -  covers Docker Desktop / WSL, which exposes GPUs
     without a named runtime even when `nvidia-smi` works on the host.
     """
     try:
@@ -125,7 +125,7 @@ def detect_gpu(client: docker.DockerClient) -> bool:
 # ── Secrets ──────────────────────────────────────────────────────────────────
 
 def _gen_master_key() -> str:
-    """64 random bytes, base64-encoded — same format as services/key_manager.py."""
+    """64 random bytes, base64-encoded  -  same format as services/key_manager.py."""
     return base64.b64encode(secrets.token_bytes(64)).decode("ascii")
 
 
@@ -165,7 +165,7 @@ def ensure_secrets(client: docker.DockerClient) -> dict[str, str]:
             log("secrets: loaded existing")
             return parsed
 
-    # First run — generate
+    # First run  -  generate
     log("secrets: generating new HLH_MASTER_KEY and ORCHESTRA_TOKEN")
     secrets_dict = {
         "HLH_MASTER_KEY": _gen_master_key(),
@@ -236,7 +236,7 @@ def ensure_models_ownership(client: docker.DockerClient) -> None:
     Docker only chowns a *fresh empty* named volume to the first mounting
     user; once anything has populated it (a root helper, a prior run), the
     root stays root-owned and the read_only uid-1000 hlh_api can't create
-    flat /models/<file> downloads (embed/rerank/tasks/chat land there) —
+    flat /models/<file> downloads (embed/rerank/tasks/chat land there)  - 
     they fail with EACCES. A throwaway root container fixes ownership
     idempotently; recursive so re-running the installer self-heals an
     already-broken volume. chown is metadata-only, so it's fast even with
@@ -281,7 +281,7 @@ def pull_image(client: docker.DockerClient, image: str) -> None:
     """Always pull so floating tags (our :latest images) actually refresh.
 
     The old behaviour was skip-if-present, which meant `:latest` was pulled once
-    and then NEVER updated — so re-running the bootstrap (e.g. via hlhupdate)
+    and then NEVER updated  -  so re-running the bootstrap (e.g. via hlhupdate)
     recreated containers from a stale local image and silently shipped old code.
     We now always pull; pinned tags are a cheap no-op (cached layers), floating
     tags refresh. If the registry is unreachable but a local copy exists, fall
@@ -298,7 +298,7 @@ def pull_image(client: docker.DockerClient, image: str) -> None:
             log(f"  pull attempt {attempt + 1}/3 failed: {e}")
             time.sleep(2 ** attempt)
 
-    # Pull failed — use a local copy if we have one, otherwise give up.
+    # Pull failed  -  use a local copy if we have one, otherwise give up.
     try:
         client.images.get(image)
         log(f"  registry unreachable; using local {image} ({last_err})")
@@ -352,7 +352,7 @@ def wait_for_healthy(client: docker.DockerClient, name: str, timeout_s: int = 60
             if status == "healthy":
                 return
             if status is None and c.status == "running":
-                # No healthcheck defined — assume ok once running
+                # No healthcheck defined  -  assume ok once running
                 time.sleep(2)
                 return
             time.sleep(1)
@@ -605,7 +605,7 @@ def run() -> dict[str, str]:
 
     ensure_container(client, "hlh_ui", lambda: create_ui(client))
 
-    log(f"done — homelabhealth is running → http://localhost:{PORT_UI}")
+    log(f"done  -  homelabhealth is running → http://localhost:{PORT_UI}")
     return secrets_dict
 
 

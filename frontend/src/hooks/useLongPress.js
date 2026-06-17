@@ -9,7 +9,7 @@ const DEFAULT_MOVE_TOLERANCE_PX = 10
  * finger move > 10px or early release.
  *
  * The synthetic event is a plain object with `{ clientX, clientY, currentTarget,
- * preventDefault(), stopPropagation() }` — enough to reuse the same callback
+ * preventDefault(), stopPropagation() }`  -  enough to reuse the same callback
  * the desktop onContextMenu uses (which typically reads clientX/clientY to
  * position a popover).
  *

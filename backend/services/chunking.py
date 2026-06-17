@@ -194,7 +194,7 @@ def parse_image(file_bytes: bytes) -> str:
         img = Image.open(io.BytesIO(file_bytes))
         text = pytesseract.image_to_string(img)
         if not text or not text.strip():
-            raise ValueError("OCR produced no text — image may be blank or unreadable")
+            raise ValueError("OCR produced no text  -  image may be blank or unreadable")
         return text.strip()
     except ImportError as e:
         raise ValueError(f"OCR dependencies not available: {e}") from e

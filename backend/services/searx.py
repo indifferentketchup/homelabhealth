@@ -1,4 +1,4 @@
-"""SearXNG client — failures are silent (empty results)."""
+"""SearXNG client  -  failures are silent (empty results)."""
 
 from __future__ import annotations
 

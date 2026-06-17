@@ -1,4 +1,4 @@
-"""Background inference job — runs detached from the HTTP connection.
+"""Background inference job  -  runs detached from the HTTP connection.
 
 The router creates an asyncio.Task calling run_inference_job(). The job:
 1. Streams inference from the LLM provider
@@ -169,7 +169,7 @@ async def run_inference_job(
                     logger.warning("inference_job: attached source %s read failed: %s", sid, exc)
             if attached_docs:
                 system_blocks.append(
-                    "### Attached documents (the user explicitly sent these to chat — read them fully):\n\n"
+                    "### Attached documents (the user explicitly sent these to chat  -  read them fully):\n\n"
                     + "\n\n---\n\n".join(attached_docs)
                 )
 
@@ -377,19 +377,19 @@ async def run_inference_job(
         _approval = _get_approval_gate()
         if _approval.is_pending(str(chat_id)):
             logger.info(
-                "inference_job: approval gate pending chat_id=%s — waiting for user decision",
+                "inference_job: approval gate pending chat_id=%s  -  waiting for user decision",
                 str(chat_id),
             )
             _approval_result = await _approval.wait_for_result(str(chat_id))
             if _approval_result.action.value == "reject":
                 logger.info(
-                    "inference_job: approval rejected chat_id=%s — discarding output",
+                    "inference_job: approval rejected chat_id=%s  -  discarding output",
                     str(chat_id),
                 )
                 await _mark_cancelled(pool, assistant_id, content=assistant_text[:500])
                 return
             logger.info(
-                "inference_job: approval accepted chat_id=%s — finalizing output",
+                "inference_job: approval accepted chat_id=%s  -  finalizing output",
                 str(chat_id),
             )
 

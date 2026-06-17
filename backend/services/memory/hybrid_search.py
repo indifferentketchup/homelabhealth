@@ -1,4 +1,4 @@
-"""Hybrid search engine — vector cosine similarity + FTS5 keyword with weighted merge.
+"""Hybrid search engine  -  vector cosine similarity + FTS5 keyword with weighted merge.
 
 Weighted score formula::
 
@@ -182,7 +182,7 @@ class HybridSearchEngine:
         ]
 
     # ------------------------------------------------------------------ #
-    # Keyword search — three-tier fallback (FTS5 -> trigram -> LIKE)
+    # Keyword search  -  three-tier fallback (FTS5 -> trigram -> LIKE)
     # ------------------------------------------------------------------ #
 
     @staticmethod

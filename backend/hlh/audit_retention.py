@@ -24,20 +24,20 @@ from datetime import datetime, timedelta, timezone
 async def _run(dry_run: bool) -> int:
     raw = os.environ.get("HLH_AUDIT_LOG_RETENTION_DAYS", "").strip()
     if not raw:
-        print("HLH_AUDIT_LOG_RETENTION_DAYS unset — no audit rows pruned")
+        print("HLH_AUDIT_LOG_RETENTION_DAYS unset  -  no audit rows pruned")
         return 0
     try:
         days = int(raw)
     except ValueError:
         print(
             f"HLH_AUDIT_LOG_RETENTION_DAYS invalid value (got {raw!r},"
-            " want positive integer) — no audit rows pruned"
+            " want positive integer)  -  no audit rows pruned"
         )
         return 0
     if days <= 0:
         print(
             f"HLH_AUDIT_LOG_RETENTION_DAYS must be a positive integer"
-            f" (got {days}) — no audit rows pruned"
+            f" (got {days})  -  no audit rows pruned"
         )
         return 0
 
@@ -53,7 +53,7 @@ async def _run(dry_run: bool) -> int:
                 cutoff,
             )
             if count == 0:
-                print(f"No audit rows older than {cutoff.isoformat()} — nothing to prune")
+                print(f"No audit rows older than {cutoff.isoformat()}  -  nothing to prune")
                 return 0
             if dry_run:
                 print(
@@ -75,7 +75,7 @@ async def _run(dry_run: bool) -> int:
                     "SELECT prev_hash FROM audit_log ORDER BY id ASC LIMIT 1"
                 )
                 if new_oldest is None:
-                    # Pruned everything — reset anchor to genesis zeros.
+                    # Pruned everything  -  reset anchor to genesis zeros.
                     new_anchor = b"\x00" * 32
                 else:
                     new_anchor = bytes(new_oldest["prev_hash"])

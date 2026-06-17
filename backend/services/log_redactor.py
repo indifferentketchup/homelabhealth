@@ -2,17 +2,17 @@
 
 Wraps the root logger's handlers so that any log record passing through
 has its message scrubbed of common PHI patterns before reaching stdout.
-Patterns are conservative (regex-only, no NLP) — some PHI will slip
+Patterns are conservative (regex-only, no NLP)  -  some PHI will slip
 through. The goal is defense-in-depth, not perfection.
 
 Known gaps (v0.12.0):
-- Name scrubbing is intentionally omitted — regex-only name matching
+- Name scrubbing is intentionally omitted  -  regex-only name matching
   produces too many false positives against medical terminology and
   common English words.
 - The audit log's payload_hash is computed from the raw (pre-scrub) body
   in services/audit.py. Hashing the redacted body instead is deferred to
   a follow-up; for now the hash remains forensically accurate but the
-  chain of custody means the raw body is never logged — only hashed.
+  chain of custody means the raw body is never logged  -  only hashed.
 - Non-US date formats (ISO 8601, DD.MM.YYYY) are not covered.
 """
 import logging
@@ -61,7 +61,7 @@ def install_redactor() -> None:
     """Install the PHI redactor on all root-logger handlers (current + future).
 
     Python's logging.Filter on a Logger only fires for records the logger
-    itself emits — propagated records from child loggers bypass it. The
+    itself emits  -  propagated records from child loggers bypass it. The
     filter must be on the *handler* to intercept every record regardless
     of which logger produced it.
 
@@ -73,7 +73,7 @@ def install_redactor() -> None:
       any code that calls root.info() directly.
 
     Call once at app startup (lifespan or module-level in main.py).
-    Idempotent — re-calling is a no-op.
+    Idempotent  -  re-calling is a no-op.
     """
     root = logging.getLogger()
     # Sentinel: if any PHIRedactorFilter already on the root logger, bail.

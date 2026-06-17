@@ -21,7 +21,7 @@ export function clearWorkspaceLayoutLiveDraft() {
  * Reapply layout prefs (widths + font sizes) to the document root as CSS vars.
  * Reads the persisted layout from useLayoutStore (server-hydrated), then merges
  * any live drag-time draft on top. Without this call, globals.css fallback
- * values render — typography panel saves to the API but the DOM never picks
+ * values render  -  typography panel saves to the API but the DOM never picks
  * them up unless this runs after hydrate and on each settings change.
  */
 export function applyWorkspaceLayoutToDom() {

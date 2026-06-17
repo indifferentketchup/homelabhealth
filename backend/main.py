@@ -244,7 +244,7 @@ async def lifespan(_app: FastAPI):
         # Loud, unmissable failure summary so the root cause isn't buried in
         # the restart-loop noise that follows (uvicorn re-execs on exit).
         logger.critical("=" * 64)
-        logger.critical("STARTUP FAILED — the API cannot start.")
+        logger.critical("STARTUP FAILED  -  the API cannot start.")
         logger.critical("  cause: %s: %s", type(exc).__name__, exc)
         logger.critical("  full traceback below; fix this, then the container will recover.")
         logger.critical("=" * 64)
@@ -335,7 +335,7 @@ class _AuthMiddleware(BaseHTTPMiddleware):
         from services.auth import validate_session
         token = request.cookies.get("hlh_session")
         if not token:
-            # Check if setup is needed — if so, allow through (the frontend
+            # Check if setup is needed  -  if so, allow through (the frontend
             # will redirect to setup)
             from services.auth import needs_setup as _needs_setup
             pool = await get_pool()

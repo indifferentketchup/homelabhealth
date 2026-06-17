@@ -1,4 +1,4 @@
-"""Bundled-AI model puller — Phase 1.
+"""Bundled-AI model puller  -  Phase 1.
 
 Streams model weights from HuggingFace to a shared `/models` volume,
 tracks progress in `bundled_models`, handles gated-repo 401s with a clear
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 MODELS_BASE_DIR = Path(os.environ.get("HLH_MODELS_DIR", "/models"))
 # HuggingFace hub cache root the boofinity child reads (HF_HOME=/cache). Snapshot
-# specs land under INFER_CACHE_DIR/hub/models--<org>--<repo>/ — see _snapshot_pull.
+# specs land under INFER_CACHE_DIR/hub/models--<org>--<repo>/  -  see _snapshot_pull.
 INFER_CACHE_DIR = Path(os.environ.get("HLH_INFER_CACHE_DIR", "/cache"))
 
 ALL_ROLES = ("chat", "tasks", "embed", "rerank", "embed-vl", "rerank-vl", "vision", "stt", "ocr")
@@ -95,7 +95,7 @@ def _router_role(spec: ModelSpec) -> dict[str, ModelSpec | None]:
 
 # Vision projector (mmproj). MedGemma's chat model IS multimodal, so the SAME
 # instance serves chat + image-reading once its mmproj is loaded (models.ini's
-# [medgemma] preset loads it via the active-mmproj symlink) — no separate vision
+# [medgemma] preset loads it via the active-mmproj symlink)  -  no separate vision
 # model, no second VRAM load. The projector must MATCH the tier's chat model:
 # 4b mmproj for the 4b chat tiers, 27b mmproj for the 27b tiers.
 _VISION_MMPROJ_4B = ModelSpec(
@@ -149,7 +149,7 @@ _TASKS_SPEC = ModelSpec(
 # Dual-space VL embed/rerank (folder D, 2026-06-16). Native Qwen3-VL image
 # embedder + reranker, both ~2B torch models served by the boofinity child behind
 # hlh_swap (aliases qwen3-vl-embed / qwen3-vl-rerank). GPU-favoured, so gated to
-# gpu-24gb+ ONLY — every other tier is None and never pulls them. kind="snapshot"
+# gpu-24gb+ ONLY  -  every other tier is None and never pulls them. kind="snapshot"
 # (full HF directory: config + weights + tokenizer) pulled into the HF hub cache,
 # NOT a flat /models/<file> GGUF, so these are NOT in _FLAT_DEST_ROLES.
 _EMBED_VL_SPEC = ModelSpec(
@@ -223,7 +223,7 @@ MODEL_REGISTRY: dict[str, dict[str, ModelSpec | None]] = {
             license_url="https://huggingface.co/google/medgemma-4b-it",
             revision="main",
         ),
-        # gpu-16gb runs the 4b (Q8_0) — the 27b is reserved for gpu-24gb+ only,
+        # gpu-16gb runs the 4b (Q8_0)  -  the 27b is reserved for gpu-24gb+ only,
         # so a 16 GB card keeps the chat model + its mmproj comfortably resident.
         "gpu-16gb": ModelSpec(
             repo="unsloth/medgemma-1.5-4b-it-GGUF",
@@ -241,7 +241,7 @@ MODEL_REGISTRY: dict[str, dict[str, ModelSpec | None]] = {
             license_url="https://huggingface.co/google/medgemma-27b-it",
             revision="main",
         ),
-        # AMD ROCm GPU tiers — same model bins as the equivalent CUDA tiers.
+        # AMD ROCm GPU tiers  -  same model bins as the equivalent CUDA tiers.
         # ROCm runs the GGUF via llama-server's HIP backend; same quantisation.
         "amd-4gb":   ModelSpec(
             repo="unsloth/medgemma-1.5-4b-it-GGUF",
@@ -275,7 +275,7 @@ MODEL_REGISTRY: dict[str, dict[str, ModelSpec | None]] = {
             license_url="https://huggingface.co/google/medgemma-27b-it",
             revision="main",
         ),
-        # Vulkan GPU tiers — llama-server uses the Vulkan backend; same GGUFs.
+        # Vulkan GPU tiers  -  llama-server uses the Vulkan backend; same GGUFs.
         "vulkan-4gb":   ModelSpec(
             repo="unsloth/medgemma-1.5-4b-it-GGUF",
             filename="medgemma-1.5-4b-it-Q4_K_M.gguf",
@@ -311,12 +311,12 @@ MODEL_REGISTRY: dict[str, dict[str, ModelSpec | None]] = {
         "apple-mlx": None,  # Phase 6
         "external": None,
     },
-    "tasks":     _router_role(_TASKS_SPEC),   # gemma-3-270m — title generation
-    "embed":     _router_role(_EMBED_SPEC),   # Qwen3-Embedding-0.6B — RAG embeddings
-    "rerank":    _router_role(_RERANK_SPEC),  # Qwen3-Reranker-0.6B — RAG rerank
+    "tasks":     _router_role(_TASKS_SPEC),   # gemma-3-270m  -  title generation
+    "embed":     _router_role(_EMBED_SPEC),   # Qwen3-Embedding-0.6B  -  RAG embeddings
+    "rerank":    _router_role(_RERANK_SPEC),  # Qwen3-Reranker-0.6B  -  RAG rerank
     # Dual-space VL (folder D): gpu-24gb+ only, every other tier None.
-    "embed-vl":  _gpu24_only_role(_EMBED_VL_SPEC),    # Qwen3-VL-Embedding-2B — image embeddings
-    "rerank-vl": _gpu24_only_role(_RERANK_VL_SPEC),   # Qwen3-VL-Reranker-2B — dual-space rerank
+    "embed-vl":  _gpu24_only_role(_EMBED_VL_SPEC),    # Qwen3-VL-Embedding-2B  -  image embeddings
+    "rerank-vl": _gpu24_only_role(_RERANK_VL_SPEC),   # Qwen3-VL-Reranker-2B  -  dual-space rerank
     # Vision projector for the tier's chat model (so that model does vision too).
     # mmproj must match the chat model size: 4b tiers → 4b mmproj, 27b tiers →
     # 27b mmproj. cpu-min (Qwen, not multimodal) and apple-mlx/external get none.
@@ -364,7 +364,7 @@ def request_cancel(model_uuid: str) -> bool:
 
 async def seed_registry(conn) -> int:
     """Idempotently upsert MODEL_REGISTRY into bundled_models. Returns count of
-    rows touched. Specs that are None are skipped — those roles/tiers don't
+    rows touched. Specs that are None are skipped  -  those roles/tiers don't
     have artifacts yet."""
     count = 0
     for role, by_tier in MODEL_REGISTRY.items():
@@ -403,7 +403,7 @@ async def seed_registry(conn) -> int:
 
     # Prune rows the registry no longer defines (e.g. a role/tier whose model
     # changed). Without this, a retired spec lingers as a stale "ready"/"pending"
-    # row in Settings — e.g. the short-lived 4b `vision_base` role and the 4b
+    # row in Settings  -  e.g. the short-lived 4b `vision_base` role and the 4b
     # mmproj that was briefly mapped to the 27b tiers. Matches on
     # (role, tier, model_id); the on-disk file (if any) is left as harmless
     # orphan data.
@@ -429,7 +429,7 @@ async def reset_orphaned_pulls(conn) -> int:
     """Reset rows wedged in 'pulling' back to 'pending'. Returns rows touched.
 
     Pull tasks are process-local asyncio tasks tracked only via _PULL_LOCK; a
-    restart or crash orphans any in-flight 'pulling' row — the task is gone but
+    restart or crash orphans any in-flight 'pulling' row  -  the task is gone but
     the status sticks, and the UI then can't re-pull it (pull_one returns 409
     "already pulling", and cancel is a no-op with no live task). Run at boot so
     interrupted pulls become retryable instead of wedged forever.
@@ -454,7 +454,7 @@ async def _hf_headers(pool_or_conn) -> dict[str, str]:
     """Authorization header for gated repos.
 
     Resolution: DB-stored token (services/hf_token.py) > HF_TOKEN env var > none.
-    DB lookup failures fall through to env silently — pulling shouldn't break
+    DB lookup failures fall through to env silently  -  pulling shouldn't break
     just because the token table is briefly unavailable.
     """
     # 1. DB-stored
@@ -475,7 +475,7 @@ async def _hf_headers(pool_or_conn) -> dict[str, str]:
 
 
 # These roles serve a single tier-independent GGUF from a flat /models/<file>
-# path — exactly what models.ini references for [medgemma] / [qwen-chat] /
+# path  -  exactly what models.ini references for [medgemma] / [qwen-chat] /
 # [qwen3-embed] / [qwen3-reranker] / [gemma-tasks]. The puller writes here so the
 # router's static models.ini works for every tier without rewrites: each tier
 # downloads a different file, but always lands at /models/<file>, and only the
@@ -555,7 +555,7 @@ async def _get_conn(pool_or_conn):
     """Async-context-managed connection from either a pool or a bare conn."""
     if hasattr(pool_or_conn, "acquire"):
         return pool_or_conn.acquire()
-    # Single-connection passthrough — no-op context.
+    # Single-connection passthrough  -  no-op context.
     class _Passthrough:
         def __init__(self, c): self.c = c
         async def __aenter__(self): return self.c

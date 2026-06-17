@@ -1,16 +1,16 @@
 """L0-L4 graded context recovery for the hash-chained audit system.
 
-Recovery is READ-ONLY — it queries existing audit data and does not modify
+Recovery is READ-ONLY  -  it queries existing audit data and does not modify
 the hash chain. The JSONL buffer (``.omo/audit_buffer.jsonl``) provides fast
 in-flight capture of tool executions, flushed to the audit trail on stop via
 T2 hook callbacks.
 
 Recovery levels:
-  L0: Index summary (~200t) — session count, timestamps, last 5 events
-  L1: Session trail (~500t) — last N audit events, optionally by session
-  L2: Corrections (~1000t) — correction/action-filtered events only
-  L3: Full context (~3000t) — complete paginated session audit trail
-  L4: Cross-day (~5000t+) — aggregate stats across sessions
+  L0: Index summary (~200t)  -  session count, timestamps, last 5 events
+  L1: Session trail (~500t)  -  last N audit events, optionally by session
+  L2: Corrections (~1000t)  -  correction/action-filtered events only
+  L3: Full context (~3000t)  -  complete paginated session audit trail
+  L4: Cross-day (~5000t+)  -  aggregate stats across sessions
 
 Port patterns from:
   - /opt/forks/audit-harness/lib/audit_context.py  (core audit engine patterns)
@@ -195,7 +195,7 @@ async def flush_buffer() -> int:
 
 
 async def _recover_l0(conn: asyncpg.Connection) -> dict[str, Any]:
-    """L0: Index summary — total counts, time range, last 5 events."""
+    """L0: Index summary  -  total counts, time range, last 5 events."""
     total = await conn.fetchval("SELECT COUNT(*)::int FROM audit_log")
     sessions = await conn.fetchval(
         "SELECT COUNT(DISTINCT request_id)::int FROM audit_log",
@@ -246,7 +246,7 @@ async def _recover_l1(
     request_id: uuid.UUID | None = None,
     limit: int = 20,
 ) -> list[dict[str, Any]]:
-    """L1: Session trail — last N audit events, optionally filtered by request."""
+    """L1: Session trail  -  last N audit events, optionally filtered by request."""
     if request_id is not None:
         rows = await conn.fetch(
             """SELECT id, ts, request_id, actor, action,
@@ -286,7 +286,7 @@ async def _recover_l2(
     conn: asyncpg.Connection,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
-    """L2: Corrections — events whose action mentions 'correction' or 'edit'."""
+    """L2: Corrections  -  events whose action mentions 'correction' or 'edit'."""
     rows = await conn.fetch(
         """SELECT id, ts, request_id, actor, action,
                   target_type, target_id, status_code
@@ -317,7 +317,7 @@ async def _recover_l3(
     page: int = 0,
     page_size: int = 50,
 ) -> dict[str, Any]:
-    """L3: Full context — paginated complete audit trail."""
+    """L3: Full context  -  paginated complete audit trail."""
     offset = page * page_size
 
     if request_id is not None:
@@ -371,7 +371,7 @@ async def _recover_l3(
 async def _recover_l4(
     conn: asyncpg.Connection,
 ) -> dict[str, Any]:
-    """L4: Cross-day aggregates — event type distribution, daily counts, top actors."""
+    """L4: Cross-day aggregates  -  event type distribution, daily counts, top actors."""
     type_dist = await conn.fetch(
         """SELECT action, COUNT(*)::int AS cnt
            FROM audit_log
@@ -439,7 +439,7 @@ async def recover(
             try:
                 sid = uuid.UUID(session_id)
             except (ValueError, AttributeError):
-                pass  # invalid UUID — ignore filter and return unfiltered
+                pass  # invalid UUID  -  ignore filter and return unfiltered
 
         if level == 1:
             data = await _recover_l1(conn, sid, min(limit, 100))
@@ -521,7 +521,7 @@ async def _recovery_on_tool_execution(
 async def _recovery_on_stop(reason: str, ctx: Any) -> None:
     """On-stop hook callback: flush buffered events to the audit trail.
 
-    The flush is best-effort — failures are logged but do not propagate.
+    The flush is best-effort  -  failures are logged but do not propagate.
     """
     if not ctx or not ctx.chat_id:
         return

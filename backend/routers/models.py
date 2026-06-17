@@ -1,10 +1,10 @@
-"""Bundled-AI model artifact endpoints — Phase 1.
+"""Bundled-AI model artifact endpoints  -  Phase 1.
 
-GET    /api/models                  — list all bundled_models rows
-GET    /api/models/{id}             — single row
-POST   /api/models/{id}/pull        — background-task trigger (202)
-POST   /api/models/pull-for-tier    — body {tier}; queues every role with a spec (202)
-POST   /api/models/{id}/cancel      — flip cancel flag for an active pull
+GET    /api/models                   -  list all bundled_models rows
+GET    /api/models/{id}              -  single row
+POST   /api/models/{id}/pull         -  background-task trigger (202)
+POST   /api/models/pull-for-tier     -  body {tier}; queues every role with a spec (202)
+POST   /api/models/{id}/cancel       -  flip cancel flag for an active pull
 
 All admin-only via the existing `require_admin` dep. Background tasks are
 tracked in a module-level set so they don't get garbage-collected mid-pull.
@@ -119,7 +119,7 @@ async def pull_one(
     if row["status"] == "pulling":
         raise HTTPException(status_code=409, detail="model is already pulling")
     if row["status"] == "ready":
-        # Idempotent retry path — allow re-pull but tell the caller so they
+        # Idempotent retry path  -  allow re-pull but tell the caller so they
         # can confirm. Frontend re-uses the same button label "Pull".
         pass
 

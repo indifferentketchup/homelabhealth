@@ -4,22 +4,22 @@ Adapted from boocode's conductor (flow.ts, spine.ts, dispatch.ts).
 Enables parallel analysis from multiple angles with barrier synchronization.
 
 Architecture:
-    WaveScheduler — runs steps in waves; all steps in a wave run concurrently,
+    WaveScheduler  -  runs steps in waves; all steps in a wave run concurrently,
     the scheduler blocks until the wave completes before starting the next
     (barrier on deps).
 
-    SpineFactory — defines input angles (perspectives), builds a flow of steps
+    SpineFactory  -  defines input angles (perspectives), builds a flow of steps
     (fold → synthesizer → validator), and renders the structured report.
 
     Each step calls the workspace's provider independently via OpenAI-compatible
     chat completions (non-streaming).
 
 Public surface:
-    Step                          — dataclass: id, prompt, deps, model
-    WaveScheduler                 — wave-based step executor with barrier sync
-    AngleConfig                   — per-angle definition: id, label, system_prompt
-    SpineFactory                  — flow builder + renderer with default health angles
-    run_analysis                  — top-level convenience: build + schedule + render
+    Step                           -  dataclass: id, prompt, deps, model
+    WaveScheduler                  -  wave-based step executor with barrier sync
+    AngleConfig                    -  per-angle definition: id, label, system_prompt
+    SpineFactory                   -  flow builder + renderer with default health angles
+    run_analysis                   -  top-level convenience: build + schedule + render
 """
 
 from __future__ import annotations
@@ -69,7 +69,7 @@ class WaveScheduler:
 
     Each tick, every step whose dependencies are all satisfied runs concurrently
     (the fan-out). The scheduler blocks on each wave before the next (the
-    fan-in / barrier on deps). Sequencing and parallelism live HERE in code —
+    fan-in / barrier on deps). Sequencing and parallelism live HERE in code  - 
     never in a model's context.
 
     Usage::
@@ -224,7 +224,7 @@ class WaveScheduler:
                     "role": "system",
                     "content": (
                         "You are a focused medical analyst. "
-                        "Respond with your analysis only — no meta-commentary, no disclaimers about your role. "
+                        "Respond with your analysis only  -  no meta-commentary, no disclaimers about your role. "
                         "Be specific and cite evidence where applicable."
                     ),
                 },
@@ -309,7 +309,7 @@ class SpineFactory:
                 "(2) contraindications or interactions to watch for, "
                 "(3) any statements that could be misinterpreted or harmful, "
                 "(4) recommended precautions. "
-                "Be conservative — flag uncertainty rather than assuming safety."
+                "Be conservative  -  flag uncertainty rather than assuming safety."
             ),
         ),
         "data-integrity": AngleConfig(
@@ -377,7 +377,7 @@ class SpineFactory:
         if not angle_steps:
             raise ValueError("conductor: no valid angles provided")
 
-        # Fold step — merge angle outputs
+        # Fold step  -  merge angle outputs
         steps.append(
             Step(
                 id="fold",
@@ -385,13 +385,13 @@ class SpineFactory:
                     "Below are analyses from multiple perspectives on a health query. "
                     "Merge them into a coherent summary organized by topic.\n\n"
                     "For each topic area, synthesize what each angle contributed. "
-                    "Do NOT simply repeat each angle's output verbatim — integrate them."
+                    "Do NOT simply repeat each angle's output verbatim  -  integrate them."
                 ),
                 deps=list(angle_steps),
             )
         )
 
-        # Synthesis step — produce unified assessment
+        # Synthesis step  -  produce unified assessment
         steps.append(
             Step(
                 id="synthesis",
@@ -406,7 +406,7 @@ class SpineFactory:
             )
         )
 
-        # Validation step — adversarial gate
+        # Validation step  -  adversarial gate
         steps.append(
             Step(
                 id="validation",
@@ -511,7 +511,7 @@ class SpineFactory:
                 if re.search(r"^(VERDICT|CONFIDENCE)", stripped, re.IGNORECASE):
                     break
                 if stripped and not stripped.startswith("-") and not stripped.startswith("*"):
-                    # Could still be continuation — check length
+                    # Could still be continuation  -  check length
                     if len(stripped) > 10 and not stripped.startswith("None"):
                         results.append(stripped)
                 elif stripped.startswith("-") or stripped.startswith("*"):

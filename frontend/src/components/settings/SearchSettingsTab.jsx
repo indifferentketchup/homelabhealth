@@ -4,7 +4,7 @@ import { fetchSearxngConfig, patchSearxngConfig } from '@/api/searxngConfig.js'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
-/** [searx engine id, label] — ids must match SearXNG engine `name` (lowercase). */
+/** [searx engine id, label]  -  ids must match SearXNG engine `name` (lowercase). */
 const AVAILABLE_ENGINES = [
   ['brave', 'Brave'],
   ['mojeek', 'Mojeek'],

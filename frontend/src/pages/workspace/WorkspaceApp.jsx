@@ -52,7 +52,7 @@ export default function WorkspaceApp() {
   const setDefaultModel = useAppStore((s) => s.setDefaultModel)
   const hydrateUserProfile = useAppStore((s) => s.hydrateUserProfile)
 
-  // System profile — shared queryKey with RequireSetup + SystemTab.
+  // System profile  -  shared queryKey with RequireSetup + SystemTab.
   const { data: systemProfile } = useQuery({
     queryKey: ['system', 'profile'],
     queryFn: getSystemProfile,

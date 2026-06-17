@@ -1,18 +1,18 @@
 """Agent-facing memory management tools and background extraction.
 
 Provides:
-  - manage_memory()        — create/update/delete memories (tool-callable)
-  - search_memory()        — semantic search over stored memories (tool-callable)
-  - extract_from_exchange  — re-exported from memory_extraction (backward compat)
-  - register_memory_hooks  — re-exported from memory_hooks (backward compat)
-  - run_background_extraction — re-exported from memory_hooks (backward compat)
-  - MEMORY_TOOLS           — dict for agent tool registration
+  - manage_memory()         -  create/update/delete memories (tool-callable)
+  - search_memory()         -  semantic search over stored memories (tool-callable)
+  - extract_from_exchange   -  re-exported from memory_extraction (backward compat)
+  - register_memory_hooks   -  re-exported from memory_hooks (backward compat)
+  - run_background_extraction  -  re-exported from memory_hooks (backward compat)
+  - MEMORY_TOOLS            -  dict for agent tool registration
 
 Design follows LangMem's tool pattern (``create_manage_memory_tool`` /
 ``create_search_memory_tool``) but routes through the project's existing
 MemoryEngine (SQLite + FTS5 + vector) instead of LangGraph BaseStore.
 
-Zero external dependencies — uses httpx (already present) and stdlib only.
+Zero external dependencies  -  uses httpx (already present) and stdlib only.
 """
 
 from __future__ import annotations
@@ -73,7 +73,7 @@ async def manage_memory(
     engine = get_engine()
 
     if action == "delete":
-        # Metadata-less delete — core tier uses content-hash ID
+        # Metadata-less delete  -  core tier uses content-hash ID
         result = await engine.manage(content=content, action="delete", metadata=_meta)
         logger.info("memory_tools: deleted memory id=%s", result.get("id"))
         return result

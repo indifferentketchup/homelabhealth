@@ -53,7 +53,7 @@ function downloadConversation(messages, chatTitle) {
   URL.revokeObjectURL(url)
 }
 
-// Wire-contract spec error strings — must render verbatim with a navigable path to fix.
+// Wire-contract spec error strings  -  must render verbatim with a navigable path to fix.
 // These bypass friendlyStreamError's paraphrase branches and fall through as-is; we
 // handle them here to surface a settings link alongside the instructional text.
 function renderSendError(msg, resolvedWorkspaceId) {
@@ -348,7 +348,7 @@ export function ChatView({
         <div
           className="bc-chat-anchor shrink-0 px-4"
           style={{
-            // Desktop only — on mobile, .bc-chat-anchor positions via fixed +
+            // Desktop only  -  on mobile, .bc-chat-anchor positions via fixed +
             // bottom: max(safe-area, --bc-keyboard-pad). On desktop, this
             // padding-bottom keeps the input above the home indicator.
             paddingBottom:

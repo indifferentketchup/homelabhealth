@@ -7,8 +7,8 @@ Two readability wins motivated by real debugging pain:
    drops *successful* polls of those endpoints (errors always pass through),
    and quiets httpx's per-request INFO chatter (the vision/status poll).
 
-2. `log_startup_banner` emits one greppable block at boot — version, tier,
-   chat model, on-disk GGUFs, pull-state counts — so "is this healthy?" is a
+2. `log_startup_banner` emits one greppable block at boot  -  version, tier,
+   chat model, on-disk GGUFs, pull-state counts  -  so "is this healthy?" is a
    single glance instead of a log archaeology dig.
 """
 
@@ -89,7 +89,7 @@ async def log_startup_banner(conn, *, seeded: int, orphaned: int) -> None:
         )
         tier = (row["tier"] if row and row["tier"] else "unset")
         setup = bool(row and row["setup_complete"])
-        chat_alias = TIER_CHAT_MODELS.get(tier, "—")
+        chat_alias = TIER_CHAT_MODELS.get(tier, " - ")
 
         status_rows = await conn.fetch(
             "SELECT status, count(*) AS n FROM bundled_models GROUP BY status ORDER BY status"
@@ -109,7 +109,7 @@ async def log_startup_banner(conn, *, seeded: int, orphaned: int) -> None:
         except OSError:
             pass
 
-        gpus = "—"
+        gpus = " - "
         try:
             sysinfo = row["sysinfo_json"] if row else None
             if isinstance(sysinfo, dict):
@@ -131,5 +131,5 @@ async def log_startup_banner(conn, *, seeded: int, orphaned: int) -> None:
             bar,
         ):
             logger.info(line)
-    except Exception:  # noqa: BLE001 — a banner must never break startup
+    except Exception:  # noqa: BLE001  -  a banner must never break startup
         logger.warning("startup banner failed to render", exc_info=True)

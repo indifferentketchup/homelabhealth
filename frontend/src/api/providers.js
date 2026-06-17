@@ -1,6 +1,6 @@
 import { apiFetch } from '@/api/index.js'
 
-/** GET /api/providers — returns { items: Provider[] }. api_key is always "***" or null. */
+/** GET /api/providers  -  returns { items: Provider[] }. api_key is always "***" or null. */
 export function listProviders() {
   return apiFetch('/api/providers')
 }
@@ -18,7 +18,7 @@ export function createProvider(body) {
 }
 
 /**
- * PATCH /api/providers/:id — caller MUST omit `api_key` to preserve current value.
+ * PATCH /api/providers/:id  -  caller MUST omit `api_key` to preserve current value.
  * Send `api_key: null` to clear. Send `api_key: "<value>"` to replace.
  * (Empty string is rejected by the backend.)
  */
@@ -58,12 +58,12 @@ export async function deleteProvider(id, { force = false } = {}) {
   throw new Error(text || res.statusText || String(res.status))
 }
 
-/** POST /api/providers/:id/test — always returns HTTP 200; outcome lives in { ok, status, models? }. */
+/** POST /api/providers/:id/test  -  always returns HTTP 200; outcome lives in { ok, status, models? }. */
 export function testProvider(id) {
   return apiFetch(`/api/providers/${encodeURIComponent(id)}/test`, { method: 'POST' })
 }
 
-/** GET /api/providers/:id/models — proxies the upstream /v1/models response. */
+/** GET /api/providers/:id/models  -  proxies the upstream /v1/models response. */
 export function listProviderModels(id) {
   return apiFetch(`/api/providers/${encodeURIComponent(id)}/models`)
 }

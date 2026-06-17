@@ -31,7 +31,7 @@ from services.prompt_assembly import _openai_short_chat_title
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-MAX_FILE_BYTES = 2 * 1024 * 1024  # 2 MB — keep the payload sane
+MAX_FILE_BYTES = 2 * 1024 * 1024  # 2 MB  -  keep the payload sane
 EXT_FOR_KIND = {"chats": ".md"}
 
 

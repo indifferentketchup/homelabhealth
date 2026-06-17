@@ -4,9 +4,9 @@ When triggered, pauses inference and sends an approval request to the user
 via SSE. The user can accept, reject, or edit the pending action.
 
 Architecture:
-  ApprovalGate       — in-memory gate state, keyed by chat_id
-  ApprovalRequest    — one pending request per chat
-  ApprovalResponse   — the user's decision (accept / reject / edit)
+  ApprovalGate        -  in-memory gate state, keyed by chat_id
+  ApprovalRequest     -  one pending request per chat
+  ApprovalResponse    -  the user's decision (accept / reject / edit)
 
 Triggers:
   1. Safeguard engine flags HIGH or CRITICAL guideline matches.
@@ -24,7 +24,7 @@ Flow:
   auto-continues with action=accept (logged as a warning).
 
 Thread-safety:
-  Uses asyncio.Event per chat. Not thread-safe — intended for single-event-loop
+  Uses asyncio.Event per chat. Not thread-safe  -  intended for single-event-loop
   use (FastAPI + asyncio). No external dependencies (stdlib only).
 """
 
@@ -109,7 +109,7 @@ class ApprovalGate:
     ) -> ApprovalRequest:
         """Register a pending approval request for *chat_id*.
 
-        Returns the :class:`ApprovalRequest` — the caller should deliver it to
+        Returns the :class:`ApprovalRequest`  -  the caller should deliver it to
         the client (via SSE or the 202 response body) and then
         ``await wait_for_result()``.
 
@@ -157,8 +157,8 @@ class ApprovalGate:
 
         Blocks the caller until:
         * The user submits a response via ``submit_response()``, or
-        * The timeout elapses (default 60 s) — auto-continue with ACCEPT, or
-        * No request is pending — returns ACCEPT immediately.
+        * The timeout elapses (default 60 s)  -  auto-continue with ACCEPT, or
+        * No request is pending  -  returns ACCEPT immediately.
 
         Returns the :class:`ApprovalResponse`.
         """
@@ -173,7 +173,7 @@ class ApprovalGate:
             await asyncio.wait_for(event.wait(), timeout=effective_timeout)
         except asyncio.TimeoutError:
             logger.warning(
-                "approval_gate: timeout chat_id=%s timeout_s=%s — auto-continuing",
+                "approval_gate: timeout chat_id=%s timeout_s=%s  -  auto-continuing",
                 chat_id,
                 effective_timeout,
             )
@@ -256,7 +256,7 @@ def get_gate() -> ApprovalGate:
 
 
 def reset_gate() -> None:
-    """For testing — reset the singleton gate."""
+    """For testing  -  reset the singleton gate."""
     global _gate
     _gate = None
 

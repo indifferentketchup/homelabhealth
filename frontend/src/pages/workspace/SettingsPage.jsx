@@ -168,7 +168,7 @@ export default function SettingsPage({ onClose }) {
 
   useEffect(() => {
     // Subscribe to the store so that when WorkspaceApp's loadLayout completes,
-    // globalDraft gets the API-fresh values — without firing a redundant second
+    // globalDraft gets the API-fresh values  -  without firing a redundant second
     // GET /api/settings/layout request (double loadLayout dedup).
     const unsub = useLayoutStore.subscribe(() => {
       setGlobalDraft(layoutDraftToApiPayload({ ...useLayoutStore.getState() }))

@@ -1,4 +1,4 @@
-"""Core tier — SQLite-backed long-term memory store with FTS5 and vector search.
+"""Core tier  -  SQLite-backed long-term memory store with FTS5 and vector search.
 
 Uses WAL journal mode for concurrent reads, FTS5 virtual tables for full-text
 search, and BLOB storage for float32 embeddings. Thread-safe with RLock on writes.

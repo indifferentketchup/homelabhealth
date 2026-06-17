@@ -6,8 +6,8 @@ backend modules are all importable:
     docker exec hlh_api python /app/scripts/verify_model_puller.py
 
 Three checks:
-  1. MODEL_REGISTRY shape — every role/tier key maps to ModelSpec | None.
-  2. seed_registry() idempotency — second call doesn't add rows.
+  1. MODEL_REGISTRY shape  -  every role/tier key maps to ModelSpec | None.
+  2. seed_registry() idempotency  -  second call doesn't add rows.
   3. End-to-end streaming download of a tiny public HF file (no gated repo,
      no HF_TOKEN required). Verifies status=ready, file lands at the
      expected on-disk path with non-zero bytes.
@@ -58,13 +58,13 @@ def check(label: str, ok: bool, detail: str = "") -> None:
     else:
         msg = f"  {RED}FAIL{RESET}  {label}"
         if detail:
-            msg += f" — {detail}"
+            msg += f"  -  {detail}"
         print(msg)
         _failures.append(label)
 
 
 def section(title: str) -> None:
-    print(f"\n— {title} —")
+    print(f"\n -  {title}  - ")
 
 
 async def shape_check() -> None:
@@ -117,7 +117,7 @@ async def download_check(pool) -> None:
     # row pointing at it, run pull_model, and assert it lands at the
     # expected on-disk path with status=ready.
     role = "chat"
-    tier = "verify-test"  # NOT a real tier — won't collide with seeded rows
+    tier = "verify-test"  # NOT a real tier  -  won't collide with seeded rows
     test_id = str(uuid.uuid4())
     spec_repo = "hf-internal-testing/tiny-random-bert"
     spec_filename = "config.json"

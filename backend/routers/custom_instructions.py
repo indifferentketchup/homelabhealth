@@ -86,7 +86,7 @@ async def clear_instructions(
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        # Always write empty string (not encrypted) — passthrough for empty content.
+        # Always write empty string (not encrypted)  -  passthrough for empty content.
         row = await conn.fetchrow(
             """
             INSERT INTO custom_instructions (content, updated_at)

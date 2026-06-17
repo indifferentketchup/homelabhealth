@@ -21,7 +21,7 @@ export function GpuEnableCard() {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } catch {
-      setErr('Copy failed — select the command and copy it manually.')
+      setErr('Copy failed  -  select the command and copy it manually.')
     }
   }, [])
 
@@ -36,7 +36,7 @@ export function GpuEnableCard() {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         setScript(await r.text())
       } catch {
-        setErr('Could not load the script here — use "View on GitHub" to read it.')
+        setErr('Could not load the script here  -  use "View on GitHub" to read it.')
       } finally {
         setLoading(false)
       }

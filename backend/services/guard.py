@@ -9,7 +9,7 @@ before they are stored.
 
 Architecture note: the roadmap specified a separate `hlh_guard` Docker
 sidecar running llm-guard. This in-process regex scanner is the
-v0.14.0 pragmatic alternative — same functional coverage for a
+v0.14.0 pragmatic alternative  -  same functional coverage for a
 single-user LAN deployment without the container overhead. A future
 release can migrate to a sidecar if the threat model changes.
 """
@@ -123,7 +123,7 @@ def scan_output(text: str) -> ScanResult:
     """Scan an assistant response for PII, medical advice, crisis content,
     and hallucinated identifiers.
 
-    Crisis flags set passed=True (flag but don't block — the response may
+    Crisis flags set passed=True (flag but don't block  -  the response may
     contain helpful crisis resources). All other flag categories set
     passed=False.
     """

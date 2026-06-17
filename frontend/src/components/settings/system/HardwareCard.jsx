@@ -3,13 +3,13 @@ import { formatGpu } from './tierData.js'
 import { GpuEnableCard } from './GpuEnableCard.jsx'
 
 export function HardwareCard({ sysinfo, detectedAt, busy, onRedetect, redetectErr }) {
-  const cpu = sysinfo?.cpu_model ?? '—'
+  const cpu = sysinfo?.cpu_model ?? ' - '
   const cpuCores = sysinfo?.cpu_cores
   const ram = sysinfo?.ram_total_gb
   const disk = sysinfo?.disk_free_gb
   const gpus = Array.isArray(sysinfo?.gpus) ? sysinfo.gpus : []
-  const arch = sysinfo?.arch ?? '—'
-  const osName = sysinfo?.os ?? '—'
+  const arch = sysinfo?.arch ?? ' - '
+  const osName = sysinfo?.os ?? ' - '
 
   return (
     <div className="rounded-lg border border-border bg-card p-4">
@@ -30,7 +30,7 @@ export function HardwareCard({ sysinfo, detectedAt, busy, onRedetect, redetectEr
         </div>
         <div className="flex justify-between gap-2">
           <dt className="text-muted-foreground">CPU cores (physical)</dt>
-          <dd className="text-foreground">{cpuCores ?? '—'}</dd>
+          <dd className="text-foreground">{cpuCores ?? ' - '}</dd>
         </div>
         <div className="col-span-1 flex flex-col gap-1 sm:col-span-2">
           <dt className="text-muted-foreground">CPU model</dt>
@@ -38,17 +38,17 @@ export function HardwareCard({ sysinfo, detectedAt, busy, onRedetect, redetectEr
         </div>
         <div className="flex justify-between gap-2">
           <dt className="text-muted-foreground">RAM</dt>
-          <dd className="text-foreground">{ram != null ? `${ram} GB` : '—'}</dd>
+          <dd className="text-foreground">{ram != null ? `${ram} GB` : ' - '}</dd>
         </div>
         <div className="flex justify-between gap-2">
           <dt className="text-muted-foreground">Disk free (root)</dt>
-          <dd className="text-foreground">{disk != null ? `${disk} GB` : '—'}</dd>
+          <dd className="text-foreground">{disk != null ? `${disk} GB` : ' - '}</dd>
         </div>
         <div className="col-span-1 flex flex-col gap-1 sm:col-span-2">
           <dt className="text-muted-foreground">GPU(s)</dt>
           <dd className="text-foreground">
             {gpus.length === 0 ? (
-              '—'
+              ' - '
             ) : (
               <ul className="list-disc pl-5">
                 {gpus.map((g, i) => (

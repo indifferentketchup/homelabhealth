@@ -1,4 +1,4 @@
-"""Daily tier — Markdown-file-based daily memory records with lazy creation.
+"""Daily tier  -  Markdown-file-based daily memory records with lazy creation.
 
 Maintains human-readable daily logs at ``{data_dir}/YYYY-MM-DD.md``. Files are
 created on first write of the day and appended to thereafter. Supports

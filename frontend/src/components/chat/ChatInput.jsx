@@ -198,7 +198,7 @@ export function ChatInput({
     }
   }
 
-  // Sendable when there's content. Streaming is fine — submit will queue.
+  // Sendable when there's content. Streaming is fine  -  submit will queue.
   const canSend =
     (Boolean(value.trim()) || attachedFiles.length > 0) && !disabled
 
@@ -308,7 +308,7 @@ export function ChatInput({
                   color: 'var(--text)',
                   background: 'var(--bg-card)',
                 }}
-                title="Queued — tap to edit, X to delete"
+                title="Queued  -  tap to edit, X to delete"
               >
                 <button
                   type="button"

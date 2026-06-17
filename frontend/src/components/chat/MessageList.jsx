@@ -115,7 +115,7 @@ export function MessageList({
   // Tail row while streaming: a synthetic message that either holds the in-flight tokens or, when
   // no token has arrived yet, renders a typing-dots placeholder via MessageBubble's __pending__ id.
   // ChatView commits the real-messages write and the stream-state clear in one flushSync, so by
-  // the time `streamingAssistant` is a string, real messages are NOT yet in `messages` — no race.
+  // the time `streamingAssistant` is a string, real messages are NOT yet in `messages`  -  no race.
   const tail =
     streamingAssistant != null
       ? streamingAssistant === ''
@@ -146,7 +146,7 @@ export function MessageList({
       increaseViewportBy={{ top: 600, bottom: 600 }}
       computeItemKey={(_, m) => m.id ?? `idx-${_}`}
       itemContent={(i, m) => {
-        // Compacted group sentinel — render the collapsible group + summary.
+        // Compacted group sentinel  -  render the collapsible group + summary.
         if (m._compactedGroup) {
           return (
             <CompactedGroup

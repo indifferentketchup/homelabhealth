@@ -1,8 +1,8 @@
 """Audit log read endpoints.
 
-GET /api/audit/recent?limit=100&offset=0 — newest-first, no hash fields.
-GET /api/audit/refusals?limit=50&offset=0 — safeguard.* events only.
-GET /api/audit/recover?level=N&session_id=X — graded context recovery (L0-L4).
+GET /api/audit/recent?limit=100&offset=0  -  newest-first, no hash fields.
+GET /api/audit/refusals?limit=50&offset=0  -  safeguard.* events only.
+GET /api/audit/recover?level=N&session_id=X  -  graded context recovery (L0-L4).
 Wrapped with audit_event so that reading the audit log is itself auditable.
 """
 
@@ -115,11 +115,11 @@ async def get_audit_recovery(
     """Graded context recovery from the audit log.
 
     Levels:
-      0 — Index summary (session count, timestamps, last 5 events)
-      1 — Session trail (last N events, optionally by session_id)
-      2 — Corrections (correction/edit events only)
-      3 — Full context (paginated complete trail)
-      4 — Cross-day aggregates (event type distribution, daily counts, top actors)
+      0  -  Index summary (session count, timestamps, last 5 events)
+      1  -  Session trail (last N events, optionally by session_id)
+      2  -  Corrections (correction/edit events only)
+      3  -  Full context (paginated complete trail)
+      4  -  Cross-day aggregates (event type distribution, daily counts, top actors)
     """
     async with audit.targeting("audit", f"recover/level={level}"):
         return await recovery_query(

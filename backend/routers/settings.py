@@ -245,7 +245,7 @@ async def _write_role_binding(
 
 def _validate_pair(provider_id: uuid.UUID | None, model: str | None) -> None:
     """Enforce both-set-or-both-null. Empty/whitespace model counts as null
-    here only after the caller has trimmed it — the handler does that."""
+    here only after the caller has trimmed it  -  the handler does that."""
     if (provider_id is None) != (model is None):
         raise HTTPException(
             status_code=400,
@@ -325,7 +325,7 @@ async def put_embedding_settings(
     # Both set → probe before write so the DB state can't drift from a working config.
     dim = await _probe_embedding_dim(norm_pid, norm_model)
     if dim != EMBEDDING_DIM:
-        # Exact spec string — load-bearing for the frontend error rendering
+        # Exact spec string  -  load-bearing for the frontend error rendering
         # and for the §9 verification step.
         raise HTTPException(
             status_code=400,

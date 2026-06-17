@@ -186,7 +186,7 @@ export default function WorkspacesPage() {
                   <WorkspaceIcon workspace={d} />
                   <p className="w-full text-center font-medium text-foreground">{d.name}</p>
                   <p className="line-clamp-2 w-full text-center text-sm text-muted-foreground">
-                    {d.description || '—'}
+                    {d.description || ' - '}
                   </p>
                 </div>
                 <hr className="my-3 border-border/60" />

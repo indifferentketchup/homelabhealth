@@ -9,7 +9,7 @@ export function StaleStreamBanner({ onRetry, onDiscard }) {
       data-testid="stale-stream-banner"
     >
       <p className="text-sm text-muted-foreground">
-        Response is taking longer than expected — it may still be running, or the connection may have stalled.
+        Response is taking longer than expected  -  it may still be running, or the connection may have stalled.
       </p>
       <div className="flex shrink-0 gap-2">
         <Button type="button" size="sm" variant="outline" onClick={onRetry}>

@@ -1,4 +1,4 @@
-"""In-process inference job registry — one active job per chat.
+"""In-process inference job registry  -  one active job per chat.
 
 Mirrors BooCode turn.ts:385-444: each registration holds the asyncio.Task,
 a cancel Event, and a completed Future so callers can await graceful shutdown

@@ -1,7 +1,7 @@
 """Re-embed all rows in source_chunks and repo_chunks using the currently
 configured embedding backend.
 
-DOCUMENT-mode: uses embed_batch with raw text — no query-instruction prefix.
+DOCUMENT-mode: uses embed_batch with raw text  -  no query-instruction prefix.
 Safe to re-run; UPDATEs overwrite stale vectors.
 
 Requires EMBEDDING_MODEL env var to be set (inherited from the container
@@ -31,7 +31,7 @@ from services.embeddings import (
 logger = logging.getLogger("reembed_chunks")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-# (table, text_column). source_chunks first — lighter payloads surface errors fast.
+# (table, text_column). source_chunks first  -  lighter payloads surface errors fast.
 TABLES: list[tuple[str, str]] = [
     ("source_chunks", "text"),
     ("repo_chunks", "content"),

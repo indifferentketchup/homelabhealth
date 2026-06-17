@@ -108,7 +108,7 @@ async def decompose_query(
         logger.warning("decompose_query failed for %r: empty response", query[:80])
         return [query]
 
-    # Parse JSON array from the response — handle markdown-wrapped or bare JSON.
+    # Parse JSON array from the response  -  handle markdown-wrapped or bare JSON.
     cleaned = raw.strip()
     if cleaned.startswith("```"):
         # Strip markdown code fences
@@ -166,7 +166,7 @@ Guidelines:
 - If the question asks about treatments, tests, or diagnoses, include relevant details.
 - If you are unsure, state that rather than guessing.
 - Keep answers to 2-4 paragraphs unless more detail is needed.
-- Do NOT reference that this is a sub-question or part of a larger analysis — answer directly."""
+- Do NOT reference that this is a sub-question or part of a larger analysis  -  answer directly."""
 
 
 async def _answer_sub_question(
@@ -225,7 +225,7 @@ _SYNTHESIS_SYSTEM_PROMPT = """You are a medical research synthesis expert. Merge
 Guidelines:
 1. Combine information from all answers into a well-structured response.
 2. Resolve any contradictions by noting them explicitly and explaining the uncertainty.
-3. PRESERVE all specific details (numbers, names, treatments, dosages) from the source answers — do not hallucinate or invent data.
+3. PRESERVE all specific details (numbers, names, treatments, dosages) from the source answers  -  do not hallucinate or invent data.
 4. If two answers conflict on a factual point, flag the contradiction clearly with "CONTRADICTION:" followed by the conflicting claims.
 5. The final response should read as a unified answer, not as separate sections.
 6. Organize by topic, not by which worker produced each part.
@@ -374,7 +374,7 @@ async def run_supervisor_worker(
     # 1. Decompose
     sub_questions = await decompose_query(query, provider, model)
     if len(sub_questions) <= 1:
-        # No meaningful decomposition — run single worker
+        # No meaningful decomposition  -  run single worker
         worker = await _answer_sub_question(
             query, provider, model, source_context,
             timeout_s=_WORKER_TIMEOUT_S,

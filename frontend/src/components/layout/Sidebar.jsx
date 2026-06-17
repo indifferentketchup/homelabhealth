@@ -76,7 +76,7 @@ const SidebarLink = memo(function SidebarLink({ icon: Icon, label, to, collapsed
 })
 
 /**
- * Single recent-chat row — extracts useLongPress out of .map().
+ * Single recent-chat row  -  extracts useLongPress out of .map().
  *
  * Memoized so a title patch (or any sidebar re-render) only re-renders the rows
  * whose props actually changed. The recent-chats Query (single source of truth)
@@ -286,7 +286,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
 
   const brandTitle = APP_TITLE
 
-  // Stable identity (no `chats` dependency — the row passes its own chat object) so
+  // Stable identity (no `chats` dependency  -  the row passes its own chat object) so
   // memoized ChatRows aren't re-rendered on every sidebar update.
   const selectChat = useCallback(
     (chat) => {
@@ -622,7 +622,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
             </div>
           )}
           {desktopCollapsed && (
-            <a href="tel:988" title="Crisis Resources — 988 Lifeline" className="flex justify-center py-1 text-destructive hover:text-destructive/80">
+            <a href="tel:988" title="Crisis Resources  -  988 Lifeline" className="flex justify-center py-1 text-destructive hover:text-destructive/80">
               <Phone className="size-4" />
             </a>
           )}

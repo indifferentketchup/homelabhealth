@@ -1,8 +1,8 @@
 """Vision extraction via MedGemma multimodal (hlh_chat with --mmproj).
 
 Two-pass approach for medical images:
-  Pass 1 — TEXT: extract any visible text (labels, overlays, report text)
-  Pass 2 — IMAGE: interpret the medical image content (findings, anatomy)
+  Pass 1  -  TEXT: extract any visible text (labels, overlays, report text)
+  Pass 2  -  IMAGE: interpret the medical image content (findings, anatomy)
   Consolidate: merge both into a structured output
 
 For documents (PDFs rendered as pages), a single text-extraction pass
@@ -28,11 +28,11 @@ VISION_TIMEOUT = 300.0
 # Dual-space VL image embedding (folder D, gpu-24gb+ only). The column is
 # vector(1024); Qwen3-VL-Embedding-2B is matryoshka so we request a 1024-dim
 # vector and, if the server returns wider, take the first-1024 prefix. A native
-# return shorter than 1024 is a misconfigured model — we refuse to insert a short
+# return shorter than 1024 is a misconfigured model  -  we refuse to insert a short
 # vector (pgvector would reject it with an opaque dimension error) and log it.
 VL_EMBED_DIM = 1024
 VL_EMBED_TIMEOUT = 120.0
-# The chat model preset (models.ini) — MedGemma is multimodal, so the same
+# The chat model preset (models.ini)  -  MedGemma is multimodal, so the same
 # instance that serves chat also reads images once its mmproj is loaded. MUST be
 # sent as the request "model" or the llama-server router 400s the call. Using the
 # chat model (vs a separate vision preset) avoids a second model in VRAM.
@@ -52,7 +52,7 @@ TEXT_EXTRACTION_PROMPT = (
 IMAGE_INTERPRETATION_PROMPT = (
     "You are analyzing a medical image. Describe your findings as a "
     "radiologist or clinician would, using structured format:\n\n"
-    "MODALITY: <type of imaging — X-ray, ultrasound, CT, MRI, photo, etc.>\n"
+    "MODALITY: <type of imaging  -  X-ray, ultrasound, CT, MRI, photo, etc.>\n"
     "REGION: <body region or organ system>\n"
     "FINDINGS:\n"
     "- <finding 1>\n"
@@ -75,7 +75,7 @@ DOCUMENT_EXTRACTION_PROMPT = (
 
 
 def is_vision_available() -> bool:
-    """True when the active mmproj is present — the chat model loads it and can
+    """True when the active mmproj is present  -  the chat model loads it and can
     then read images. Gates every vision call so we don't ask the model to read
     an image when its projector isn't loaded."""
     from pathlib import Path
@@ -168,7 +168,7 @@ async def extract_image_via_vision(image_bytes: bytes, mime_type: str) -> str | 
 async def extract_pdf_via_vision(file_bytes: bytes) -> str | None:
     """Render each PDF page as PNG and extract text via vision model.
 
-    PDFs are treated as documents — single text-extraction pass per page.
+    PDFs are treated as documents  -  single text-extraction pass per page.
     """
     try:
         from pdf2image import convert_from_bytes
@@ -203,7 +203,7 @@ def _slice_vl_embedding(vec: list[float]) -> list[float] | None:
     """Reduce a VL embedding to VL_EMBED_DIM via matryoshka prefix.
 
     Returns the first VL_EMBED_DIM components, or None (with an error log naming
-    the observed length) when the native vector is shorter than VL_EMBED_DIM —
+    the observed length) when the native vector is shorter than VL_EMBED_DIM  - 
     inserting a short vector would fail the vector(1024) column with an opaque
     pgvector dimension error, so we refuse it instead.
     """

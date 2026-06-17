@@ -19,7 +19,7 @@ from services.embeddings import EmbeddingError, embed_query, format_vector
 logger = logging.getLogger(__name__)
 
 # --------------------------------------------------------------------------- #
-# Pure-Python BM25 (Okapi) — no external dependencies
+# Pure-Python BM25 (Okapi)  -  no external dependencies
 # --------------------------------------------------------------------------- #
 
 _WORD_RE = re.compile(r"\w+")
@@ -148,7 +148,7 @@ async def _bm25_prefilter(
 # RERANKER_TIMEOUT stays as runtime tuning.
 RERANKER_TIMEOUT = float(os.environ.get("RERANKER_TIMEOUT", "15"))
 
-# Env-var defaults — used only as a fallback if a DB setting is absent/unparseable.
+# Env-var defaults  -  used only as a fallback if a DB setting is absent/unparseable.
 _DEFAULTS: dict[str, float | int | bool] = {
     "rag_similarity_threshold": float(os.environ.get("RAG_SIMILARITY_THRESHOLD", "0.35")),
     "memory_similarity_threshold": float(os.environ.get("MEMORY_SIMILARITY_THRESHOLD", "0.45")),
@@ -174,7 +174,7 @@ _settings_cache_at: float = 0.0
 async def _load_rag_settings() -> dict[str, Any]:
     """
     Read RAG-tunable settings from global_settings with a short TTL cache.
-    Values in the DB are stored as strings — coerce to the default's type.
+    Values in the DB are stored as strings  -  coerce to the default's type.
     Falls back silently to defaults on any failure (e.g. missing key).
     """
     global _settings_cache, _settings_cache_at
@@ -237,7 +237,7 @@ async def _rerank_infinity(query: str, passages: list[dict]) -> list[dict] | Non
     reranker_model. If unset, returns None (caller uses flashrank).
 
     Soft-fails on ANY exception (DB unreachable, key-decrypt failure, malformed
-    config, network error, parser error) — a misconfigured reranker must not
+    config, network error, parser error)  -  a misconfigured reranker must not
     take down RAG-enabled chat turns. The outer try/except is intentionally
     broad and is the load-bearing safety net here.
     """
@@ -296,7 +296,7 @@ async def _vl_query_image_ann(query: str) -> list[dict[str, Any]] | None:
     Resolves the bundled 'embed-vl' provider (gpu-24gb+ only); returns None when
     the provider is absent (gate closed) so the caller skips the dual-space path
     entirely. Returns an empty list when the provider resolves but no image
-    vectors match. Soft-fails to an empty list on any request/DB error — a VL
+    vectors match. Soft-fails to an empty list on any request/DB error  -  a VL
     failure must never take down a RAG turn (mirrors _rerank_infinity).
 
     Each candidate is a dict: {source_id, page_no, image_ref, source_name}. The
@@ -375,7 +375,7 @@ def rrf_fuse(
     Each candidate's fused score is the sum over the lists it appears in of
     1/(k + rank) (rank is 0-based position), deduped by its list's key function
     (both return the shared source_id key so a source ranked in both lists sums).
-    NO raw cosine score is compared across the two lists — fusion is rank-only
+    NO raw cosine score is compared across the two lists  -  fusion is rank-only
     (ADR 0003: the two embedding spaces are not cosine-comparable). Returns
     {key: fused_score}.
     """
@@ -461,7 +461,7 @@ async def _maybe_dual_space_rerank(
 
     Returns the text passages re-ordered by RRF(text, image) + Qwen3-VL rerank,
     or None when the gate is closed (tier < gpu-24gb+ / VL providers absent) or
-    the branch soft-fails — the caller then uses the unchanged _rerank_infinity
+    the branch soft-fails  -  the caller then uses the unchanged _rerank_infinity
     path. Image candidates fuse by source_id, boosting text passages from the
     same source; only text passages carry injectable content so the returned
     list is the text passages in dual-space order.
@@ -561,7 +561,7 @@ async def retrieve_context(
     sim_threshold = float(settings["rag_similarity_threshold"])
     rerank_min = float(settings["rag_rerank_score_min"])
 
-    # BM25 keyword pre-filter — narrows the candidate pool before the expensive
+    # BM25 keyword pre-filter  -  narrows the candidate pool before the expensive
     # vector search. When enabled and non-empty, only chunks that pass BM25
     # scoring participate in the pgvector cosine distance query.
     # Priority (attached) sources are excluded from BM25 filtering so that
@@ -730,7 +730,7 @@ async def retrieve_context(
         "STRICT RULES for answering:\n"
         "1. Use ONLY the exact information from the source documents below. Do NOT add, infer, or fabricate any details.\n"
         "2. Quote values, names, locations, dates, and results EXACTLY as they appear in the source. Do not paraphrase numbers, lab names, addresses, or test results.\n"
-        "3. If a piece of information (lab name, location, provider, result value) is not explicitly stated in the sources, say \"not specified in the document\" — do NOT guess or fill in from general knowledge.\n"
+        "3. If a piece of information (lab name, location, provider, result value) is not explicitly stated in the sources, say \"not specified in the document\"  -  do NOT guess or fill in from general knowledge.\n"
         "4. Cite the [SOURCE: ...] label when referencing content.\n"
         "5. Never invent medical data, test results, reference ranges, or provider names.\n\n"
         + "\n\n".join(top_texts)

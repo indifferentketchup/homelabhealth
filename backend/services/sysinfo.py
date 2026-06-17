@@ -3,7 +3,7 @@
 Design: docs/hlh_phase0_design.md §Sysinfo collection + §Tier recommendation.
 
 All detection is best-effort. Subprocess calls have a 2s timeout, log on
-failure, and return null for that field. Detection failure must never raise —
+failure, and return null for that field. Detection failure must never raise  - 
 the operator falls back to the manual picker if detect can't reach the
 hardware. `recommend_tier()` is a pure function over the dict shape produced
 by `collect()`.
@@ -117,7 +117,7 @@ def _detect_gpus() -> list[dict[str, Any]]:
     """
     # nvidia-smi can succeed even when /proc/driver isn't readable from a
     # container (e.g. host nvidia-smi shimmed in), so we try nvidia-smi
-    # regardless of the pre-check — the pre-check just helps logging.
+    # regardless of the pre-check  -  the pre-check just helps logging.
     if not _nvidia_driver_present():
         logger.info("sysinfo: no /proc/driver/nvidia/version or /dev/nvidia*; trying nvidia-smi anyway")
     out = _run([
@@ -203,7 +203,7 @@ def recommend_tier(sysinfo: Any) -> str:
     """Pure-function tier recommendation per design §Tier recommendation.
 
     Picks the most capable tier the hardware can sustain. Floor is `cpu-min`.
-    `external` is never auto-recommended — it's only ever a manual choice.
+    `external` is never auto-recommended  -  it's only ever a manual choice.
 
     Bands (max VRAM across GPUs; falls through to CPU/Apple branches when no
     usable GPU):

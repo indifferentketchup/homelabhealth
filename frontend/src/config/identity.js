@@ -1,5 +1,5 @@
 /**
- * App identity. Static, baked into the build — no runtime override.
+ * App identity. Static, baked into the build  -  no runtime override.
  * Edit here to rename the app or change the hub copy/glyph.
  */
 export const APP_TITLE = 'HomeLab Health'

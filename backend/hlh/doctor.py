@@ -52,7 +52,7 @@ async def _check_setup_complete() -> dict[str, Any]:
             row = await conn.fetchrow("SELECT setup_complete FROM system_profile WHERE id = 1")
         if row and bool(row["setup_complete"]):
             return {"name": "setup_complete", "status": OK, "detail": "true"}
-        return {"name": "setup_complete", "status": WARN, "detail": "false — visit Settings → System to pick a tier"}
+        return {"name": "setup_complete", "status": WARN, "detail": "false  -  visit Settings → System to pick a tier"}
     except Exception as e:
         return {"name": "setup_complete", "status": ERROR, "detail": f"{type(e).__name__}: {e}"}
 
@@ -64,7 +64,7 @@ async def _check_sidecar(name: str, url: str, ok_msg: str = "reachable") -> dict
             r = await c.get(url)
         if r.status_code == 200:
             return {"name": f"{name}_reachable", "status": OK, "detail": ok_msg}
-        return {"name": f"{name}_reachable", "status": WARN, "detail": f"HTTP {r.status_code} — sidecar may still be booting"}
+        return {"name": f"{name}_reachable", "status": WARN, "detail": f"HTTP {r.status_code}  -  sidecar may still be booting"}
     except httpx.ConnectError:
         return {"name": f"{name}_reachable", "status": ERROR, "detail": f"connection refused to {url}"}
     except Exception as e:
@@ -89,19 +89,19 @@ def _check_disk_free(label: str, path: str, threshold_gb: int = 5) -> dict[str, 
             return {"name": label, "status": OK, "detail": f"{free_gb:.1f} GB free at {path}"}
         if free_gb >= threshold_gb:
             return {"name": label, "status": WARN, "detail": f"{free_gb:.1f} GB free at {path} (low headroom)"}
-        return {"name": label, "status": ERROR, "detail": f"{free_gb:.1f} GB free at {path} — below {threshold_gb} GB threshold"}
+        return {"name": label, "status": ERROR, "detail": f"{free_gb:.1f} GB free at {path}  -  below {threshold_gb} GB threshold"}
     except Exception as e:
         return {"name": label, "status": ERROR, "detail": f"{type(e).__name__}: {e}"}
 
 
 def _check_provider_key() -> dict[str, Any]:
-    """Reuse services.crypto._key() — single source of truth for validation."""
+    """Reuse services.crypto._key()  -  single source of truth for validation."""
     raw = (os.environ.get("PROVIDER_KEY_ENCRYPTION_KEY") or "").strip()
     if not raw:
         return {
             "name": "provider_key",
             "status": WARN,
-            "detail": "PROVIDER_KEY_ENCRYPTION_KEY not set — keys should auto-generate on launch; check /data/keys/.hlh_keys",
+            "detail": "PROVIDER_KEY_ENCRYPTION_KEY not set  -  keys should auto-generate on launch; check /data/keys/.hlh_keys",
         }
     try:
         from services.crypto import _key
@@ -143,7 +143,7 @@ def _check_luks_status() -> dict[str, Any]:
                 return {
                     "name": "luks_status",
                     "status": WARN,
-                    "detail": "luks status unverifiable from container — confirm manually per docs/operator/advanced/luks-setup.md",
+                    "detail": "luks status unverifiable from container  -  confirm manually per docs/operator/advanced/luks-setup.md",
                 }
             lines = df_result.stdout.strip().splitlines()
             # df output has a header line; source is second line
@@ -152,7 +152,7 @@ def _check_luks_status() -> dict[str, Any]:
             return {
                 "name": "luks_status",
                 "status": WARN,
-                "detail": "luks status unverifiable from container — confirm manually per docs/operator/advanced/luks-setup.md",
+                "detail": "luks status unverifiable from container  -  confirm manually per docs/operator/advanced/luks-setup.md",
             }
 
         try:
@@ -166,14 +166,14 @@ def _check_luks_status() -> dict[str, Any]:
                 return {
                     "name": "luks_status",
                     "status": WARN,
-                    "detail": "luks status unverifiable from container — confirm manually per docs/operator/advanced/luks-setup.md",
+                    "detail": "luks status unverifiable from container  -  confirm manually per docs/operator/advanced/luks-setup.md",
                 }
             type_lines = [line.strip() for line in lsblk_result.stdout.splitlines() if line.strip()]
             if not type_lines:
                 return {
                     "name": "luks_status",
                     "status": WARN,
-                    "detail": "luks status unverifiable from container — confirm manually per docs/operator/advanced/luks-setup.md",
+                    "detail": "luks status unverifiable from container  -  confirm manually per docs/operator/advanced/luks-setup.md",
                 }
             if "crypt" in type_lines:
                 return {
@@ -184,13 +184,13 @@ def _check_luks_status() -> dict[str, Any]:
             return {
                 "name": "luks_status",
                 "status": WARN,
-                "detail": "data volume is not on LUKS — see docs/operator/advanced/luks-setup.md",
+                "detail": "data volume is not on LUKS  -  see docs/operator/advanced/luks-setup.md",
             }
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
             return {
                 "name": "luks_status",
                 "status": WARN,
-                "detail": "luks status unverifiable from container — confirm manually per docs/operator/advanced/luks-setup.md",
+                "detail": "luks status unverifiable from container  -  confirm manually per docs/operator/advanced/luks-setup.md",
             }
     except Exception as e:
         return {"name": "luks_status", "status": WARN, "detail": f"{type(e).__name__}: {e}"}
@@ -218,13 +218,13 @@ def _check_backrest_repo() -> dict[str, Any]:
             return {
                 "name": "backrest_repo",
                 "status": WARN,
-                "detail": "backrest passphrase not configured — see docs/operator/advanced/restore-drill.md",
+                "detail": "backrest passphrase not configured  -  see docs/operator/advanced/restore-drill.md",
             }
         if passphrase.lower() in _PASSPHRASE_PLACEHOLDERS:
             return {
                 "name": "backrest_repo",
                 "status": WARN,
-                "detail": "passphrase matches placeholder — regenerate per docs/operator/advanced/key-custody.md",
+                "detail": "passphrase matches placeholder  -  regenerate per docs/operator/advanced/key-custody.md",
             }
         len_chars = len(passphrase)
         if len_chars < 16:
@@ -247,13 +247,13 @@ def _check_master_key() -> dict[str, Any]:
             return {
                 "name": "master_key",
                 "status": WARN,
-                "detail": "HLH_MASTER_KEY not set — keys should auto-generate on launch; check /data/keys/.hlh_keys",
+                "detail": "HLH_MASTER_KEY not set  -  keys should auto-generate on launch; check /data/keys/.hlh_keys",
             }
         if passphrase.lower() in _PASSPHRASE_PLACEHOLDERS:
             return {
                 "name": "master_key",
                 "status": WARN,
-                "detail": "HLH_MASTER_KEY matches placeholder — regenerate per docs/operator/advanced/key-custody.md",
+                "detail": "HLH_MASTER_KEY matches placeholder  -  regenerate per docs/operator/advanced/key-custody.md",
             }
         len_chars = len(passphrase)
         if len_chars < 32:
@@ -278,7 +278,7 @@ async def _check_audit_log_chain() -> dict[str, Any]:
     silently pass a corrupted chain; if performance becomes an issue at scale
     we can add a windowed mode later. For v0.11.0 read all.
 
-    Returns ERROR on break — chain integrity is a real invariant, not
+    Returns ERROR on break  -  chain integrity is a real invariant, not
     operator-prudence (no C1-style demotion to WARN here).
     """
     try:
@@ -404,7 +404,7 @@ async def _check_image_tier_match() -> dict[str, Any]:
         if actual_swap and actual_swap != expected.swap_image:
             mismatches.append(f"swap: {actual_swap} != {expected.swap_image}")
         if mismatches:
-            return {"name": "image_tier_match", "status": WARN, "detail": f"stale .env — {'; '.join(mismatches)}"}
+            return {"name": "image_tier_match", "status": WARN, "detail": f"stale .env  -  {'; '.join(mismatches)}"}
         if not actual_swap:
             return {"name": "image_tier_match", "status": OK, "detail": f"using defaults (tier={tier})"}
         return {"name": "image_tier_match", "status": OK, "detail": f"images match tier={tier}"}
@@ -429,7 +429,7 @@ def _check_models_writable() -> dict[str, Any]:
             "name": "models_volume_writable",
             "status": ERROR,
             "detail": (
-                f"{models_dir} not writable by uid-1000 ({type(e).__name__}) — model pulls will "
+                f"{models_dir} not writable by uid-1000 ({type(e).__name__})  -  model pulls will "
                 "fail; fix: docker run --rm -v hlh_models:/models alpine chown -R 1000:1000 /models"
             ),
         }
@@ -453,7 +453,7 @@ def _check_infer_cache_writable() -> dict[str, Any]:
             "name": "infer_cache_writable",
             "status": ERROR,
             "detail": (
-                f"{cache_dir} not writable by uid-1000 ({type(e).__name__}) — boofinity "
+                f"{cache_dir} not writable by uid-1000 ({type(e).__name__})  -  boofinity "
                 "snapshot pulls will fail; fix: docker run --rm -v hlh_infer_cache:/cache "
                 "alpine chown -R 1000:1000 /cache"
             ),
@@ -478,12 +478,12 @@ async def _check_model_pulls() -> dict[str, Any]:
     pending = len(by.get("pending", []))
     if failed:
         return {"name": "model_pulls", "status": ERROR,
-                "detail": f"failed: {', '.join(failed)} — retry in Settings → System → Models"}
+                "detail": f"failed: {', '.join(failed)}  -  retry in Settings → System → Models"}
     if pulling:
         return {"name": "model_pulls", "status": WARN, "detail": f"downloading: {', '.join(pulling)}"}
     if pending and ready == 0:
         return {"name": "model_pulls", "status": WARN,
-                "detail": f"{pending} model(s) not yet pulled — open Settings → System → Models"}
+                "detail": f"{pending} model(s) not yet pulled  -  open Settings → System → Models"}
     return {"name": "model_pulls", "status": OK, "detail": f"{ready} ready, {pending} pending"}
 
 
@@ -556,7 +556,7 @@ async def _check_embed_rebind_consistency() -> dict[str, Any]:
             "status": ERROR,
             "detail": (
                 f"bundled {', '.join(sorted(set(stale)))} provider(s) still point at "
-                "hlh_chat:9610 but models.ini no longer serves them — deploy folder C's "
+                "hlh_chat:9610 but models.ini no longer serves them  -  deploy folder C's "
                 "provider rebind to hlh_swap:9620"
             ),
         }

@@ -1,7 +1,7 @@
 """Auto-generate encryption keys on first launch.
 
 Keys persist to /data/.hlh_keys (a volume mount that survives container
-rebuilds). Env vars always take precedence — if an operator sets
+rebuilds). Env vars always take precedence  -  if an operator sets
 HLH_MASTER_KEY or PROVIDER_KEY_ENCRYPTION_KEY in their .env, the file
 values are ignored.
 
@@ -91,7 +91,7 @@ def ensure_keys() -> None:
             logger.info("key_manager: %s loaded from %s", key_name, KEYS_FILE)
             continue
 
-        # Neither env nor file — generate
+        # Neither env nor file  -  generate
         new_val = _generate_key(nbytes)
         os.environ[key_name] = new_val
         file_keys[key_name] = new_val

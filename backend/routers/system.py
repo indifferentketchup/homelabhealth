@@ -5,13 +5,13 @@ Design: docs/hlh_phase0_design.md §API endpoints.
 Endpoints (all admin-only via the existing `require_admin` dep, same shape
 as `routers/providers.py`):
 
-    GET  /api/system/hardware  — live sysinfo collection, no DB write.
-    GET  /api/system/profile   — current singleton row + computed
+    GET  /api/system/hardware   -  live sysinfo collection, no DB write.
+    GET  /api/system/profile    -  current singleton row + computed
                                  `recommended_tier`.
-    PUT  /api/system/profile   — body {tier, tier_source}; validates tier
+    PUT  /api/system/profile    -  body {tier, tier_source}; validates tier
                                  against ALL_TIERS; sets chosen_at = NOW(),
                                  setup_complete = TRUE.
-    POST /api/system/redetect  — re-run sysinfo, store under sysinfo_json,
+    POST /api/system/redetect   -  re-run sysinfo, store under sysinfo_json,
                                  update detected_at; never changes tier.
 """
 

@@ -142,7 +142,7 @@ export default function SystemTab() {
       <div>
         <h2 className="fs-heading font-semibold uppercase tracking-wide text-muted-foreground">System</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Hardware-aware tier picker for the bundled AI stack. Pick the tier that matches your hardware — you can change
+          Hardware-aware tier picker for the bundled AI stack. Pick the tier that matches your hardware  -  you can change
           it later.{' '}
           {profile.setup_complete ? null : (
             <span className="font-medium text-foreground" data-testid="system-first-boot-hint">
@@ -174,7 +174,7 @@ export default function SystemTab() {
         sysinfo={profile.sysinfo_json}
       />
 
-      {/* Step 3: GPU detected but <4 GB VRAM — falling back to CPU tier */}
+      {/* Step 3: GPU detected but <4 GB VRAM  -  falling back to CPU tier */}
       {(() => {
         const gpus = Array.isArray(profile.sysinfo_json?.gpus) ? profile.sysinfo_json.gpus : []
         const maxVramMb = Math.max(0, ...gpus.map(g => Number(g?.memory_total_mb) || 0))
@@ -185,7 +185,7 @@ export default function SystemTab() {
           <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-4">
             <p className="text-sm text-blue-700 dark:text-blue-400">
               A GPU was detected but has less than 4 GB VRAM, which isn&apos;t enough for GPU-accelerated
-              inference. HomeLab Health will run on CPU instead. The AI features still work — just slower.
+              inference. HomeLab Health will run on CPU instead. The AI features still work  -  just slower.
             </p>
           </div>
         ) : null
@@ -222,7 +222,7 @@ export default function SystemTab() {
       {selectedTier === 'gpu-4gb' ? (
         <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-4">
           <p className="text-sm text-blue-700 dark:text-blue-400">
-            Your GPU has limited VRAM. HomeLab Health will use partial GPU offloading — some model layers
+            Your GPU has limited VRAM. HomeLab Health will use partial GPU offloading  -  some model layers
             run on GPU (faster) while others run on CPU. This is normal and works automatically.
           </p>
         </div>
@@ -244,7 +244,7 @@ export default function SystemTab() {
         )
       })()}
 
-      {/* Phase 1: Models sub-section — show bundled artifacts for the
+      {/* Phase 1: Models sub-section  -  show bundled artifacts for the
           currently-selected tier (so the operator sees what would be pulled
           before they commit, and can drive pulls post-save). */}
       <ModelsPanel currentTier={selectedTier} />

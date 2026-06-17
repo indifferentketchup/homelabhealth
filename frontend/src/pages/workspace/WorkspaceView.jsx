@@ -176,7 +176,7 @@ export function WorkspaceLanding() {
               <div className="flex size-12 items-center justify-center rounded-full border border-border bg-muted text-muted-foreground">
                 <Layers className="size-6" aria-hidden />
               </div>
-              <p className="text-sm text-muted-foreground">No workspaces yet — create one to get started.</p>
+              <p className="text-sm text-muted-foreground">No workspaces yet  -  create one to get started.</p>
               {isAdmin && (
                 <div className="flex flex-col items-center gap-3 rounded-lg border border-border bg-card p-6">
                   <div className="flex size-10 items-center justify-center rounded-full bg-accent/10 text-accent">
@@ -413,7 +413,7 @@ export function WorkspaceChat() {
   const [filesPanelExpanded, setFilesPanelExpanded] = useState(true)
   const filesRailCollapsed = !filesPanelExpanded
   const [notesOpen, setNotesOpen] = useState(false)
-  // Model-load tracker is always visible — no toggle. (Previously hidden behind
+  // Model-load tracker is always visible  -  no toggle. (Previously hidden behind
   // a per-browser localStorage flag, which made it inconsistent across devices.)
   const [rightPanelWidth, setRightPanelWidth] = useState(320)
   const resizingRef = useRef(false)

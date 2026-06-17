@@ -57,9 +57,9 @@ class Guideline:
     """A single safeguard rule with condition, action, criticality, and relationships.
 
     Relationships reference other rules by id:
-      depends_on  — this rule is dropped unless every target also matched.
-      prioritizes — when this rule survives, its targets are removed.
-      entails     — targets that should accompany this rule (see _resolve).
+      depends_on   -  this rule is dropped unless every target also matched.
+      prioritizes  -  when this rule survives, its targets are removed.
+      entails      -  targets that should accompany this rule (see _resolve).
     """
     id: str
     content: GuidelineContent
@@ -252,6 +252,6 @@ def get_engine() -> SafeguardsEngine:
 
 
 def reset_engine() -> None:
-    """For testing — reset the singleton engine."""
+    """For testing  -  reset the singleton engine."""
     global _engine
     _engine = None

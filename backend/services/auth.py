@@ -18,7 +18,7 @@ from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 
 
-# Argon2id hasher — defaults: time_cost=3, memory_cost=65536, parallelism=4
+# Argon2id hasher  -  defaults: time_cost=3, memory_cost=65536, parallelism=4
 _ph = PasswordHasher()
 
 # Legacy PBKDF2 parameters kept only for verifying existing hashes

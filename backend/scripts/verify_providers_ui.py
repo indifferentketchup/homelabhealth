@@ -95,7 +95,7 @@ def cleanup_db() -> None:
 
 
 def banner(s: str) -> None:
-    print(f"\n— {s} —")
+    print(f"\n -  {s}  - ")
 
 
 def passlog(label: str) -> None:
@@ -103,7 +103,7 @@ def passlog(label: str) -> None:
 
 
 def failbail(label: str, detail: str = "") -> None:
-    print(f"  FAIL  {label}" + (f" — {detail}" if detail else ""))
+    print(f"  FAIL  {label}" + (f"  -  {detail}" if detail else ""))
     raise SystemExit(1)
 
 
@@ -155,13 +155,13 @@ def main() -> None:
         page.screenshot(path=str(EVID_DIR / "01-settings-loaded.png"))
 
         page.get_by_role("tab", name="Providers").click()
-        # Don't depend on empty state — other test data may exist. Just confirm
+        # Don't depend on empty state  -  other test data may exist. Just confirm
         # the tab content actually rendered (Add button is unique to this tab).
         page.wait_for_selector('button:has-text("Add provider")', timeout=5000)
         page.screenshot(path=str(EVID_DIR / "02-providers-tab-loaded.png"))
         passlog("Providers tab is reachable and rendered")
 
-        banner("Add a provider — capture POST payload + response")
+        banner("Add a provider  -  capture POST payload + response")
         page.get_by_role("button", name="Add provider").click()
         page.fill('input#provider-name', "step6-llamacpp")
         page.fill('input#provider-base-url', LLAMA_SWAP_URL)
@@ -206,7 +206,7 @@ def main() -> None:
             failbail('GET /api/providers/{id} did not contain api_key:"***"', get_body[:200])
         passlog('GET /api/providers/{id} -> 200 with api_key:"***", no plaintext leak')
 
-        banner("Edit flow — save without touching the API key field")
+        banner("Edit flow  -  save without touching the API key field")
         netlog_before = len(network_log)
 
         page.get_by_role("button", name="Edit").click()
@@ -232,7 +232,7 @@ def main() -> None:
             failbail("PATCH did not return 200", str(patch["status"]))
         patch_body = json.loads(patch["request_body"] or "{}")
         if "api_key" in patch_body:
-            failbail("PATCH body contains api_key — frontend should OMIT it when field is blank",
+            failbail("PATCH body contains api_key  -  frontend should OMIT it when field is blank",
                      json.dumps(patch_body))
         passlog("PATCH body omits api_key entirely (preserve behavior verified)")
         (EVID_DIR / "patch-edit-preserve-payload.json").write_text(patch["request_body"] or "")
@@ -250,7 +250,7 @@ def main() -> None:
         passlog(f"POST /test succeeds after blank-edit-save (ok:true, {len(test_body.get('models', []))} models)")
         (EVID_DIR / "post-test-after-preserve.json").write_text(json.dumps(test_body, indent=2))
 
-        banner("Force-delete flow — bind workspace via SQL, then delete via UI")
+        banner("Force-delete flow  -  bind workspace via SQL, then delete via UI")
         psql_set_workspace_binding("smoke-test", provider_id, "dummy-bound-model")
         bound = psql_tac(
             "SELECT provider_id::text || ' / ' || model FROM workspaces WHERE name = 'smoke-test';"

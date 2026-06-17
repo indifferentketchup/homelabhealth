@@ -16,17 +16,17 @@ function pct(numerator, denominator) {
 }
 
 function shortDate(iso) {
-  if (!iso) return '—'
+  if (!iso) return ' - '
   const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return '—'
+  if (Number.isNaN(d.getTime())) return ' - '
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function shortDuration(startIso, endIso) {
-  if (!startIso || !endIso) return '—'
+  if (!startIso || !endIso) return ' - '
   const s = new Date(startIso).getTime()
   const e = new Date(endIso).getTime()
-  if (Number.isNaN(s) || Number.isNaN(e)) return '—'
+  if (Number.isNaN(s) || Number.isNaN(e)) return ' - '
   const diff = Math.max(0, e - s)
   if (diff < 60000) return '<1m'
   const mins = Math.floor(diff / 60000)
@@ -95,7 +95,7 @@ function SessionsTab({ sessions }) {
               <td className="max-w-40 truncate py-3 pr-4 font-medium text-foreground" title={s.title || 'Untitled chat'}>
                 {s.title || 'Untitled chat'}
               </td>
-              <td className="py-3 pr-4 text-muted-foreground">{s.chat_model || '—'}</td>
+              <td className="py-3 pr-4 text-muted-foreground">{s.chat_model || ' - '}</td>
               <td className="py-3 pr-4 text-right tabular-nums text-muted-foreground">{fmt(s.message_count)}</td>
               <td className="py-3 pr-4 text-right tabular-nums font-medium text-foreground">{fmt(s.total_tokens)}</td>
               <td className="py-3 pr-4 text-right tabular-nums text-muted-foreground">{fmt(s.total_prompt_tokens)}</td>

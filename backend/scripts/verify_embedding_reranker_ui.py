@@ -101,7 +101,7 @@ def start_mock_server() -> HTTPServer:
 
 
 def banner(s: str) -> None:
-    print(f"\n— {s} —")
+    print(f"\n -  {s}  - ")
 
 
 def passlog(label: str) -> None:
@@ -109,7 +109,7 @@ def passlog(label: str) -> None:
 
 
 def failbail(label: str, detail: str = "") -> None:
-    print(f"  FAIL  {label}" + (f" — {detail}" if detail else ""))
+    print(f"  FAIL  {label}" + (f"  -  {detail}" if detail else ""))
     raise SystemExit(1)
 
 
@@ -138,14 +138,14 @@ def main() -> None:
             context = browser.new_context(viewport={"width": 1280, "height": 800})
             page = context.new_page()
 
-            banner("Embedding tab — initial load + render")
+            banner("Embedding tab  -  initial load + render")
             page.goto(f"{UI_URL}/settings", wait_until="networkidle")
             page.get_by_role("tab", name="Embedding").click()
             page.wait_for_selector('select#embedding-provider', timeout=5000)
             page.screenshot(path=str(EVID_DIR / "01-embedding-tab-loaded.png"))
             passlog("Embedding tab renders with provider + model dropdowns")
 
-            banner("Embedding — pick step7-emb / harrier → Save → success")
+            banner("Embedding  -  pick step7-emb / harrier → Save → success")
             page.select_option('select#embedding-provider', value=pid_emb)
             # Wait for the model dropdown to populate (placeholder text changes).
             page.wait_for_selector(f'select#embedding-model >> option[value="{HARRIER_MODEL}"]', state='attached', timeout=10000)
@@ -163,10 +163,10 @@ def main() -> None:
                 failbail(f"saved binding round-trip mismatch: {got}")
             passlog(f"GET /api/settings/embedding round-trips ({got['provider_id']} / {got['model']})")
 
-            banner("Embedding — switch to mock-768 → Save → INLINE dim-mismatch error")
+            banner("Embedding  -  switch to mock-768 → Save → INLINE dim-mismatch error")
             page.select_option('select#embedding-provider', value=pid_mock)
             # Mock accepts any model name and returns 768; let the model picker
-            # populate (or fail to populate — mock doesn't expose /v1/models),
+            # populate (or fail to populate  -  mock doesn't expose /v1/models),
             # so we just type into the select. Mock has no /v1/models endpoint,
             # so the picker will show "no models reported by provider". Set the
             # model value programmatically via the same path the Save uses.
@@ -210,7 +210,7 @@ def main() -> None:
                 failbail(f"rejected probe overwrote DB binding: {got2}")
             passlog("rejected probe did not overwrite the harrier binding in DB")
 
-            banner("Embedding — Clear (disable embeddings)")
+            banner("Embedding  -  Clear (disable embeddings)")
             # Reset selections back to harrier first so the Clear button is in
             # the right state.
             page.select_option('select#embedding-provider', value=pid_emb)
@@ -227,13 +227,13 @@ def main() -> None:
                 failbail(f"after clear, GET should be null/null: {got3}")
             passlog("Embedding Clear → GET returns null provider_id + null model")
 
-            banner("Reranker tab — initial load + render")
+            banner("Reranker tab  -  initial load + render")
             page.get_by_role("tab", name="Reranker").click()
             page.wait_for_selector('select#reranker-provider', timeout=5000)
             page.screenshot(path=str(EVID_DIR / "06-reranker-tab-loaded.png"))
             passlog("Reranker tab renders with provider + model dropdowns")
 
-            banner("Reranker — pick step7-rrk / qwen3-rerank → Save")
+            banner("Reranker  -  pick step7-rrk / qwen3-rerank → Save")
             page.select_option('select#reranker-provider', value=pid_rrk)
             page.wait_for_selector(f'select#reranker-model >> option[value="{QWEN_RERANK_MODEL}"]', state='attached', timeout=10000)
             page.select_option('select#reranker-model', value=QWEN_RERANK_MODEL)
@@ -249,7 +249,7 @@ def main() -> None:
                 failbail(f"reranker round-trip mismatch: {got4}")
             passlog(f"GET /api/settings/reranker round-trips ({got4['provider_id']} / {got4['model']})")
 
-            banner("Reranker — Use flashrank fallback")
+            banner("Reranker  -  Use flashrank fallback")
             page.get_by_role("button", name="Use flashrank fallback").click()
             page.get_by_role("button", name="Yes, use flashrank").click()
             page.wait_for_selector("text=Using flashrank fallback", timeout=10000)

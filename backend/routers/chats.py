@@ -147,7 +147,7 @@ async def append_message(
         provider, ws_model = await resolve_provider_for_workspace(chat["workspace_id"])
         # The workspace pins (provider_id, model) together via CHECK constraint,
         # so ws_model is always non-empty here. body.model and chat.model are
-        # ignored once we're past the resolver — workspace owns the truth.
+        # ignored once we're past the resolver  -  workspace owns the truth.
         effective_model = ws_model
 
         # Fetch is_bundled so the gen() closure knows whether data leaves the
@@ -374,7 +374,7 @@ async def append_message(
 
         import services.inference_job as ij
 
-        # _reg_cell is populated synchronously after registration — asyncio won't
+        # _reg_cell is populated synchronously after registration  -  asyncio won't
         # yield between create_task and append so _run_job always sees the cell filled.
         _reg_cell: list = []
 
@@ -530,7 +530,7 @@ async def append_message(
                     logger.warning("attached source %s read failed: %s", sid, exc)
             if attached_docs:
                 system_blocks.append(
-                    "### Attached documents (the user explicitly sent these to chat — read them fully):\n\n"
+                    "### Attached documents (the user explicitly sent these to chat  -  read them fully):\n\n"
                     + "\n\n---\n\n".join(attached_docs)
                 )
         if system_blocks:
@@ -549,7 +549,7 @@ async def append_message(
                 break
 
         # De-identify user messages before sending to external providers.
-        # Bundled providers (is_bundled=True) run on-box — no redaction needed.
+        # Bundled providers (is_bundled=True) run on-box  -  no redaction needed.
         # System and assistant messages are not redacted (safeguard preamble +
         # historical assistant responses; see C5 Task B rationale).
         if deid_enabled() and not provider_is_bundled:
@@ -722,7 +722,7 @@ async def append_message(
         if not assistant_text:
             yield _sse(json.dumps({
                 "error": (
-                    "The model returned no response — the connection may have dropped or "
+                    "The model returned no response  -  the connection may have dropped or "
                     "inference was interrupted. On CPU, wait 1–2 minutes before Retry, "
                     "or start a fresh chat if this keeps happening."
                 ),
@@ -794,7 +794,7 @@ async def append_message(
         )
 
         # Auto-compaction: summarize older messages when context usage is high.
-        # Best-effort — failures log and continue, never block the chat.
+        # Best-effort  -  failures log and continue, never block the chat.
         try:
             from services.compaction import maybe_compact
             await maybe_compact(chat_id, prompt_tokens_val, ctx_max)
@@ -981,7 +981,7 @@ async def discard_stale_message(
         if age_s < 60:
             raise HTTPException(
                 status_code=409,
-                detail=f"Message is only {int(age_s)}s old — must be at least 60s to discard.",
+                detail=f"Message is only {int(age_s)}s old  -  must be at least 60s to discard.",
             )
         await job_registry.cancel(chat_id, timeout=3.0)
         await conn.execute(

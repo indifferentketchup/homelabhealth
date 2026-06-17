@@ -390,7 +390,7 @@ async def patch_workspace(
         else:
             raw_rm = row["model"]
             new_model = None if raw_rm is None or str(raw_rm).strip() == "" else str(raw_rm).strip()
-        # provider_id: same exclude_unset semantics — absent = preserve.
+        # provider_id: same exclude_unset semantics  -  absent = preserve.
         if "provider_id" in data:
             new_provider_id = data["provider_id"]  # uuid.UUID | None
         else:

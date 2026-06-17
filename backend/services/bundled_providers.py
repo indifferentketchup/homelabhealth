@@ -1,4 +1,4 @@
-"""Auto-seed bundled providers — chat + embed + rerank.
+"""Auto-seed bundled providers  -  chat + embed + rerank.
 
 A "bundled" provider is one that the homelabhealth stack runs itself
 (via the docker-compose `bundled` profile). This module owns the
@@ -25,7 +25,7 @@ ACTIVE_MMPROJ = MODELS_BASE / "vision" / "active-mmproj.gguf"
 
 # Per-alias symlinks pointing at the chat GGUF the active tier downloaded.
 # models.ini's [medgemma] and [qwen-chat] sections point at these, so a single
-# static models.ini works across every tier — apply_bundled_bindings re-aims
+# static models.ini works across every tier  -  apply_bundled_bindings re-aims
 # the link when the operator picks a tier. Mirrors the link_active_mmproj
 # pattern; same best-effort error handling.
 ACTIVE_MEDGEMMA = MODELS_BASE / "active-medgemma.gguf"
@@ -68,10 +68,10 @@ BUNDLED_VL_RERANK_MODEL = "qwen3-vl-rerank"
 VL_TIERS: frozenset[str] = frozenset({"gpu-24gb+", "amd-24gb+"})
 
 
-# Per-tier chat model aliases — must match the [section] names in
+# Per-tier chat model aliases  -  must match the [section] names in
 # hlh_chat/models.ini. The router dispatches by this alias.
 #
-# Note: 'apple-mlx' is intentionally absent — Apple MLX bundled inference is
+# Note: 'apple-mlx' is intentionally absent  -  Apple MLX bundled inference is
 # Phase 6 deferred. apply_bundled_bindings treats it like 'external' and
 # no-ops; operators on Apple Silicon pick a chat provider manually.
 TIER_CHAT_MODELS = {
@@ -244,12 +244,12 @@ async def apply_bundled_bindings(conn, tier: str) -> None:
         )
         return
 
-    # Existing bundled-chat-bound workspaces — rewrite model to current tier.
+    # Existing bundled-chat-bound workspaces  -  rewrite model to current tier.
     await conn.execute(
         "UPDATE workspaces SET model = $1 WHERE provider_id = $2::uuid",
         chat_model, ids["chat"],
     )
-    # Unbound workspaces — bind to bundled chat with current tier model.
+    # Unbound workspaces  -  bind to bundled chat with current tier model.
     await conn.execute(
         "UPDATE workspaces SET provider_id = $1::uuid, model = $2 WHERE provider_id IS NULL",
         ids["chat"], chat_model,
@@ -300,7 +300,7 @@ def migrate_legacy_chat_paths() -> None:
     v1.1.4 and earlier downloaded chat models to a per-tier subdir; v1.1.5
     switched to flat paths so a single static models.ini serves every tier.
     If the flat target exists already, we drop the legacy copy. Best-effort;
-    a partial migration is harmless — the puller will re-fetch any missing
+    a partial migration is harmless  -  the puller will re-fetch any missing
     file on next pull.
     """
     legacy_root = MODELS_BASE / "chat"

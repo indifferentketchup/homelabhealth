@@ -48,7 +48,7 @@ async def load_demo(
 
     async with pool.acquire() as conn:
         async with conn.transaction():
-            # FOR UPDATE serializes concurrent load calls — prevents two requests
+            # FOR UPDATE serializes concurrent load calls  -  prevents two requests
             # from both passing the "no workspace" check and creating duplicates.
             existing = await conn.fetchrow(
                 """

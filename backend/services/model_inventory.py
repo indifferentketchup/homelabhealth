@@ -1,6 +1,6 @@
 """Unified inventory of loaded inference models from the llama-server router.
 
-Every bundled model (chat — which also reads images via its mmproj — plus tasks,
+Every bundled model (chat  -  which also reads images via its mmproj  -  plus tasks,
 embed, and rerank) is served by the router and reported via /v1/models.
 """
 

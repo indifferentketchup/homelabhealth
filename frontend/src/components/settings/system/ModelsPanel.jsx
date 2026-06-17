@@ -21,7 +21,7 @@ function progressFraction(row) {
 
 function formatBytes(n) {
   const v = Number(n)
-  if (!Number.isFinite(v) || v <= 0) return '—'
+  if (!Number.isFinite(v) || v <= 0) return ' - '
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
   let x = v
   let i = 0
@@ -44,7 +44,7 @@ function StatusBadge({ status }) {
   else if (status === 'error') cls = 'bg-rose-500/15 text-rose-700 dark:text-rose-300'
   return (
     <span className={cn('inline-block rounded px-1.5 py-0.5 font-mono text-[11px]', cls)}>
-      {status || '—'}
+      {status || ' - '}
     </span>
   )
 }
@@ -58,9 +58,9 @@ function StatusBadge({ status }) {
 function friendlyError(raw) {
   if (!raw) return null
   if (/ConnectError|Name or service not known|Connection refused/i.test(raw)) {
-    return 'Service is starting up — it can take a few minutes to load the model. Try the Test button shortly.'
+    return 'Service is starting up  -  it can take a few minutes to load the model. Try the Test button shortly.'
   }
-  if (/timeout|timed out/i.test(raw)) return 'Service is taking a while to respond — the model may still be loading.'
+  if (/timeout|timed out/i.test(raw)) return 'Service is taking a while to respond  -  the model may still be loading.'
   if (/HTTP 5\d\d/.test(raw)) return 'Service returned a server error. Check container logs for details.'
   return null
 }
@@ -138,7 +138,7 @@ export function ModelsPanel({ currentTier }) {
 
   // Roles that already have a real download row above (chat/embed/rerank/tasks/
   // vision). Since v1.1.4 gave embed/rerank actual download specs, their
-  // synthetic provider rows became duplicates — drop those.
+  // synthetic provider rows became duplicates  -  drop those.
   const downloadedRoles = useMemo(() => new Set(items.map((r) => r.role)), [items])
 
   const syntheticRows = useMemo(
@@ -172,7 +172,7 @@ export function ModelsPanel({ currentTier }) {
         try {
           await testProvider(row.id)
         } catch {
-          /* ignore — provider.last_verified_status is updated server-side */
+          /* ignore  -  provider.last_verified_status is updated server-side */
         }
         setSynthAttempts((cur) => ({ ...cur, [row.id]: (cur[row.id] || 0) + 1 }))
       }
@@ -243,7 +243,7 @@ export function ModelsPanel({ currentTier }) {
             if (parsed?.detail) pretty = String(parsed.detail)
           } catch { /* not JSON */ }
           setActionErr(`${row.role}: ${pretty}`)
-          // Continue to next row — one failure shouldn't block the rest.
+          // Continue to next row  -  one failure shouldn't block the rest.
         }
       }
       await refresh()
@@ -266,7 +266,7 @@ export function ModelsPanel({ currentTier }) {
     <div className="space-y-2" data-testid="system-models-panel">
       <div className="flex items-baseline justify-between gap-2">
         <h3 className="text-sm font-medium text-foreground">Models for this tier</h3>
-        <span className="text-xs text-muted-foreground">tier: <span className="font-mono">{currentTier || '—'}</span></span>
+        <span className="text-xs text-muted-foreground">tier: <span className="font-mono">{currentTier || ' - '}</span></span>
       </div>
       <p className="text-xs text-muted-foreground">
         Bundled-AI artifacts the operator downloads to the local cache. Polls every 2s while a pull
@@ -277,7 +277,7 @@ export function ModelsPanel({ currentTier }) {
         Embed and rerank weights are downloaded automatically by their
         sidecars on first boot. They appear as{' '}
         <span className="font-mono">loading</span> until the sidecar reports healthy, then{' '}
-        <span className="font-mono">ready</span>. No Pull button — the sidecar manages itself.
+        <span className="font-mono">ready</span>. No Pull button  -  the sidecar manages itself.
       </p>
 
       {actionErr ? <p className="text-sm text-destructive">{actionErr}</p> : null}
@@ -293,7 +293,7 @@ export function ModelsPanel({ currentTier }) {
               {pendingRows.length} model{pendingRows.length === 1 ? '' : 's'} ready to download
             </span>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Sequential downloads — watch the per-row progress bar below.
+              Sequential downloads  -  watch the per-row progress bar below.
             </p>
           </div>
           <Button
@@ -379,7 +379,7 @@ export function ModelsPanel({ currentTier }) {
                           </span>
                         </div>
                       ) : (
-                        <span className="text-muted-foreground">—</span>
+                        <span className="text-muted-foreground"> - </span>
                       )}
                     </td>
                     <td className="px-3 py-2 text-xs">
@@ -394,7 +394,7 @@ export function ModelsPanel({ currentTier }) {
                           {row.license}
                         </a>
                       ) : (
-                        '—'
+                        ' - '
                       )}
                     </td>
                     <td className="px-3 py-2 text-right">
@@ -465,7 +465,7 @@ export function ModelsPanel({ currentTier }) {
                           aria-label="loading"
                         />
                       ) : (
-                        <span className="text-muted-foreground">—</span>
+                        <span className="text-muted-foreground"> - </span>
                       )}
                     </td>
                     <td className="px-3 py-2 text-xs">
@@ -480,7 +480,7 @@ export function ModelsPanel({ currentTier }) {
                           {row.license}
                         </a>
                       ) : (
-                        '—'
+                        ' - '
                       )}
                     </td>
                     <td className="px-3 py-2 text-right">

@@ -13,7 +13,7 @@ Guard (see design.md §C5):
     embedder; a later switch to bundled should still trigger).
   * readiness gate: the embed `bundled_models` row is `status='ready'` AND a live
     `/v1/embeddings` probe through the front-door returns a 1024-vector. On any
-    failure, return WITHOUT setting the sentinel so the next boot retries — never
+    failure, return WITHOUT setting the sentinel so the next boot retries  -  never
     fire reingest against a cold/down backend.
 
 Run from main.py lifespan after apply_bundled_bindings + seed_registry, inside

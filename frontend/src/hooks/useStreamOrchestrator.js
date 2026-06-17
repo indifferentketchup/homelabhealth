@@ -39,7 +39,7 @@ function friendlyStreamError(msg) {
   if (/load failed|network error|failed to fetch|network connection was lost/i.test(s)) {
     return (
       'Connection lost while waiting for the model. Retrieval and CPU inference can take '
-      + '1–2 minutes — tap Retry and keep this tab open, or start a fresh chat.'
+      + '1–2 minutes  -  tap Retry and keep this tab open, or start a fresh chat.'
     )
   }
   if (s.includes('The model returned no response')) return s
@@ -64,7 +64,7 @@ function categoryToReason(category) {
  * Streaming orchestrator. Owns BOTH streaming protocols behind a single interface:
  * an SSE branch (push: `useStream` → `consumeStream`/`runStream`) and a durable
  * branch (pull: `useDurableChat` polling, mirrored into the same local state by the
- * durable-sync effect). The two internal branches are intentionally kept separate —
+ * durable-sync effect). The two internal branches are intentionally kept separate  - 
  * collapsing them is deferred. ChatView consumes the unified return value and renders.
  *
  * Inputs come from ChatView's context (queries + store selectors) so the hook stays
@@ -152,9 +152,9 @@ export function useStreamOrchestrator({
   const streamingChatRef = useRef(null)
   const lastStreamActivityRef = useRef(null)
   const inputRef = useRef(null)
-  /** Last outgoing user message content — used to power the Retry button on stream errors. */
+  /** Last outgoing user message content  -  used to power the Retry button on stream errors. */
   const lastUserMessageRef = useRef(null)
-  /** Chat ID resolved when the durable send path starts — used for cleanup even if user switches chats mid-stream. */
+  /** Chat ID resolved when the durable send path starts  -  used for cleanup even if user switches chats mid-stream. */
   const durableInitChatRef = useRef(null)
 
   const busy = pendingSend
@@ -246,7 +246,7 @@ export function useStreamOrchestrator({
   }, [busy, streamPhase])
 
   // Stale-stream watcher. Reads `lastStreamActivityRef` (a ref, updated on every token by
-  // touchStreamActivity), so `streamText` must NOT be a dependency — including it tore the
+  // touchStreamActivity), so `streamText` must NOT be a dependency  -  including it tore the
   // interval down and rebuilt it on every streamed token, resetting the 5s tick cadence.
   useEffect(() => {
     if (!busy) {
@@ -536,8 +536,8 @@ export function useStreamOrchestrator({
     }
   }
 
-  // Edit + regenerate both fork the current chat at a chosen message — fork creates a new chat
-  // truncated to messages *before* the target — then we re-stream the new user content into it.
+  // Edit + regenerate both fork the current chat at a chosen message  -  fork creates a new chat
+  // truncated to messages *before* the target  -  then we re-stream the new user content into it.
   async function forkAndStream(targetMessageId, newContent) {
     if (!activeChatId) return
     try {

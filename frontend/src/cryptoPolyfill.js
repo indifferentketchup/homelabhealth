@@ -1,4 +1,4 @@
-/** Chromium omits `crypto.randomUUID` on non-secure origins (e.g. http://100.x — not localhost). */
+/** Chromium omits `crypto.randomUUID` on non-secure origins (e.g. http://100.x  -  not localhost). */
 if (typeof globalThis.crypto !== 'undefined' && typeof globalThis.crypto.randomUUID !== 'function') {
   globalThis.crypto.randomUUID = function randomUUID() {
     const bytes = new Uint8Array(16)

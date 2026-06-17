@@ -1,5 +1,5 @@
 /**
- * Model configuration — baked at build time.
+ * Model configuration  -  baked at build time.
  * Maps homelabhealth's 7 hardware tiers to model capabilities.
  * Model IDs align with backend `bundled_providers.TIER_CHAT_MODELS`.
  *
@@ -26,7 +26,7 @@ export const CHAT_MODELS = [
     id: 'qwen-chat',
     name: 'Qwen3.5 0.8B',
     provider: 'bundled',
-    description: 'Compact MTP model for CPU-min systems — no vision',
+    description: 'Compact MTP model for CPU-min systems  -  no vision',
     tiers: ['cpu-min'],
     contextWindow: 8192,
     reasoningEffort: false,
@@ -56,7 +56,7 @@ export const CHAT_MODELS = [
     id: 'external',
     name: 'External',
     provider: 'external',
-    description: 'Bring your own OpenAI-compatible endpoint — capabilities vary',
+    description: 'Bring your own OpenAI-compatible endpoint  -  capabilities vary',
     tiers: ['external'],
     contextWindow: 65536,
     reasoningEffort: true,

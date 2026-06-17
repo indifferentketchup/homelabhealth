@@ -9,11 +9,11 @@
 export const TIERS = [
   {
     id: 'cpu-min',
-    label: 'CPU — minimal',
+    label: 'CPU  -  minimal',
     chat: 'Qwen3.5 0.8B Q8_0',
     embed: 'Qwen3-Embedding-0.6B (1024-dim)',
     rerank: 'Qwen3-Reranker-0.6B',
-    vision: '— (not available)',
+    vision: ' -  (not available)',
     footprint: '~1.5 GB RAM peak · ~0.9 GB disk · 8K context',
     diskGb: 1,
     detect: '<16 GB RAM, no GPU',
@@ -28,7 +28,7 @@ export const TIERS = [
   },
   {
     id: 'cpu-std',
-    label: 'CPU — standard',
+    label: 'CPU  -  standard',
     chat: 'MedGemma 1.5 4B Q4_K_M',
     embed: 'Qwen3-Embedding-0.6B (1024-dim)',
     rerank: 'Qwen3-Reranker-0.6B',
@@ -44,7 +44,7 @@ export const TIERS = [
   },
   {
     id: 'gpu-4gb',
-    label: 'GPU — 4 GB class',
+    label: 'GPU  -  4 GB class',
     chat: 'MedGemma 1.5 4B Q4_K_M',
     embed: 'Qwen3-Embedding-0.6B (1024-dim)',
     rerank: 'Qwen3-Reranker-0.6B',
@@ -62,7 +62,7 @@ export const TIERS = [
   },
   {
     id: 'gpu-8gb',
-    label: 'GPU — 8 GB class',
+    label: 'GPU  -  8 GB class',
     chat: 'MedGemma 1.5 4B Q8_0',
     embed: 'Qwen3-Embedding-0.6B (1024-dim)',
     rerank: 'Qwen3-Reranker-0.6B',
@@ -80,7 +80,7 @@ export const TIERS = [
   },
   {
     id: 'gpu-16gb',
-    label: 'GPU — 16 GB class',
+    label: 'GPU  -  16 GB class',
     chat: 'MedGemma 1.5 4B Q8_0',
     embed: 'Qwen3-Embedding-0.6B (1024-dim)',
     rerank: 'Qwen3-Reranker-0.6B',
@@ -98,7 +98,7 @@ export const TIERS = [
   },
   {
     id: 'gpu-24gb+',
-    label: 'GPU — 24 GB+',
+    label: 'GPU  -  24 GB+',
     chat: 'MedGemma 27B Q4_K_M',
     embed: 'Qwen3-Embedding-0.6B (1024-dim)',
     rerank: 'Qwen3-Reranker-0.6B',
@@ -116,7 +116,7 @@ export const TIERS = [
   },
   {
     id: 'apple-mlx',
-    label: 'Apple Silicon (MLX) — deferred to Phase 6',
+    label: 'Apple Silicon (MLX)  -  deferred to Phase 6',
     chat: 'MedGemma 4B MLX',
     embed: 'bge-large-en-v1.5 MLX',
     rerank: 'bge-reranker-v2-m3 MLX',
@@ -133,10 +133,10 @@ export const TIERS = [
   {
     id: 'external',
     label: 'External providers only',
-    chat: '—',
-    embed: '—',
-    rerank: '—',
-    vision: '—',
+    chat: ' - ',
+    embed: ' - ',
+    rerank: ' - ',
+    vision: ' - ',
     footprint: 'No local model footprint',
     diskGb: 0,
     detect: 'Operator chose external only',
@@ -158,7 +158,7 @@ export function formatGpu(g) {
 
 export function rationaleFor(sysinfo, recommended) {
   if (!sysinfo || typeof sysinfo !== 'object') {
-    return 'no hardware detected yet — click Re-detect'
+    return 'no hardware detected yet  -  click Re-detect'
   }
   const tier = TIERS.find((t) => t.id === recommended)
   return tier ? tier.rationale(sysinfo) : `${recommended} selected`

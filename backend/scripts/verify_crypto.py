@@ -42,12 +42,12 @@ def check(label: str, cond: bool, detail: str = "") -> None:
     if cond:
         print(f"  {PASS}  {label}")
     else:
-        print(f"  {FAIL}  {label}{(' — ' + detail) if detail else ''}")
+        print(f"  {FAIL}  {label}{('  -  ' + detail) if detail else ''}")
         _failures.append(label)
 
 
 def section(title: str) -> None:
-    print(f"\n— {title} —")
+    print(f"\n -  {title}  - ")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -102,7 +102,7 @@ check("encrypted row decrypts to original", decrypt_secret(enc_row) == "freshly-
 # ──────────────────────────────────────────────────────────────────────────────
 # 4. Hardening: prefix-but-not-base64 → passthrough (no raise).
 # ──────────────────────────────────────────────────────────────────────────────
-section("Hardened decrypt — prefix without valid base64")
+section("Hardened decrypt  -  prefix without valid base64")
 weird1 = "enc:v1:notbase64!!"
 check(
     "decrypt_secret('enc:v1:notbase64!!') returns input unchanged",
@@ -112,7 +112,7 @@ check(
 # ──────────────────────────────────────────────────────────────────────────────
 # 5. Hardening: prefix + base64 but too short → passthrough (no raise).
 # ──────────────────────────────────────────────────────────────────────────────
-section("Hardened decrypt — prefix with valid base64 but too short")
+section("Hardened decrypt  -  prefix with valid base64 but too short")
 weird2 = ENC_PREFIX + base64.b64encode(b"\x00" * 10).decode("ascii")
 check(
     "decrypt_secret(short blob) returns input unchanged",

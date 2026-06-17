@@ -1,4 +1,4 @@
-"""Ensure the single owner row exists. Single-user app — password column is dead weight."""
+"""Ensure the single owner row exists. Single-user app  -  password column is dead weight."""
 
 from __future__ import annotations
 

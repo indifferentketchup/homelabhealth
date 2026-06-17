@@ -63,7 +63,7 @@ def decrypt_secret(stored: str | None) -> str | None:
     try:
         blob = base64.b64decode(body, validate=True)
     except binascii.Error:
-        # Invalid base64 after prefix — treat as plaintext that happens to
+        # Invalid base64 after prefix  -  treat as plaintext that happens to
         # begin with the prefix. Do not raise.
         return stored
     if len(blob) < _NONCE_LEN + 1:
@@ -116,7 +116,7 @@ def encrypt_column(plaintext: str, record_id: str) -> str:
 
     Returns COL_ENC_PREFIX + base64(nonce + ciphertext).
     If HLH_MASTER_KEY is unset, returns plaintext unchanged (passthrough
-    for gradual rollout — same pattern as provider-key encryption).
+    for gradual rollout  -  same pattern as provider-key encryption).
     """
     master = _master_key()
     if master is None:
@@ -138,7 +138,7 @@ def decrypt_column(stored: str, record_id: str) -> str:
     master = _master_key()
     if master is None:
         raise RuntimeError(
-            "HLH_MASTER_KEY unset but encrypted column value found — "
+            "HLH_MASTER_KEY unset but encrypted column value found  -  "
             "set the key or restore from backup"
         )
     dek = _derive_dek(master, record_id)
@@ -155,5 +155,5 @@ def column_encryption_summary() -> dict[str, str | bool]:
     except RuntimeError as e:
         return {"enabled": False, "error": str(e)}
     if master is None:
-        return {"enabled": False, "status": "HLH_MASTER_KEY unset — columns stored in plaintext"}
+        return {"enabled": False, "status": "HLH_MASTER_KEY unset  -  columns stored in plaintext"}
     return {"enabled": True, "status": "HLH_MASTER_KEY configured, AES-256-GCM via HKDF DEK"}

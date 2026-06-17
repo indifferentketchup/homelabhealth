@@ -5,9 +5,9 @@ Each endpoint uses the workspace's configured provider for LLM-as-judge
 and returns structured scores with explanations and violations.
 
 Endpoints:
-  POST /api/eval/groundedness       — is the response supported by the context?
-  POST /api/eval/helpfulness         — does the response address the query?
-  POST /api/eval/retrieval-relevance — are the retrieved docs relevant to the query?
+  POST /api/eval/groundedness        -  is the response supported by the context?
+  POST /api/eval/helpfulness          -  does the response address the query?
+  POST /api/eval/retrieval-relevance  -  are the retrieved docs relevant to the query?
 """
 
 from __future__ import annotations
@@ -83,7 +83,7 @@ class EvalResponse(BaseModel):
     violations: list[str] = []
 
 
-HELPFULNESS_SYSTEM_PROMPT = """You are an expert evaluator assessing how helpful and relevant an LLM response is in addressing a user query. This is a medical domain — responses should be thorough, accurate, and directly address the user's health information needs.
+HELPFULNESS_SYSTEM_PROMPT = """You are an expert evaluator assessing how helpful and relevant an LLM response is in addressing a user query. This is a medical domain  -  responses should be thorough, accurate, and directly address the user's health information needs.
 
 <Rubric>
 A helpful and relevant output should:

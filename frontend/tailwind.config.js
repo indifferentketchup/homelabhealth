@@ -8,7 +8,7 @@ import tailwindcssAnimate from 'tailwindcss-animate'
  * `border-accent/30`, …) silently emitted NO CSS at all.
  *
  * `alpha()` returns a color function so that:
- *   • resting utilities stay byte-identical to before — `var(--x)` — preserving
+ *   • resting utilities stay byte-identical to before  -  `var(--x)`  -  preserving
  *     today's effective appearance exactly, and
  *   • opacity-modified utilities resolve to a real color via `color-mix`
  *     (a technique already used throughout the app's CSS/JSX).

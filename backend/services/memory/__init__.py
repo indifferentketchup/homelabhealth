@@ -1,4 +1,4 @@
-"""3-tier SQLite memory system (ContextTier, DailyTier, CoreTier) — agent-search index only.
+"""3-tier SQLite memory system (ContextTier, DailyTier, CoreTier)  -  agent-search index only.
 
 OWNERSHIP MAP (2026-06-14)
 ==========================

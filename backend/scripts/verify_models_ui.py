@@ -6,7 +6,7 @@ Asserts (per dispatch §1.G + design §Frontend changes):
   2. The Models panel shows rows for the currently-selected tier when
      the operator hasn't saved yet (selectedTier = recommended_tier).
   3. cpu-std radio label / details now read 'MedGemma 4B' (Phase 1 update).
-  4. The external tier radio is NOT visible by default — it's hidden inside
+  4. The external tier radio is NOT visible by default  -  it's hidden inside
      a <details> labeled 'Advanced: bring your own inference'.
   5. Expanding the Advanced toggle reveals the external radio.
   6. Clicking Pull on a model row triggers POST /api/models/:id/pull and
@@ -102,12 +102,12 @@ def passlog(label: str) -> None:
 
 def failbail(label: str, detail: str = "") -> None:
     _failures.append(label)
-    print(f"  \033[31mFAIL\033[0m  {label}" + (f" — {detail}" if detail else ""))
+    print(f"  \033[31mFAIL\033[0m  {label}" + (f"  -  {detail}" if detail else ""))
     raise SystemExit(1)
 
 
 def banner(s: str) -> None:
-    print(f"\n— {s} —")
+    print(f"\n -  {s}  - ")
 
 
 def main() -> int:
@@ -213,7 +213,7 @@ def main() -> int:
 
         # We have two chat rows now in the same tier (real MedGemma + synthetic).
         # Both render with the same role='chat', so the testid for the Pull
-        # button collides. Click the LAST one (synthetic — newer, lower in
+        # button collides. Click the LAST one (synthetic  -  newer, lower in
         # the alphabetical-ish ORDER BY model_id; safer: find the row with
         # 'ui-verify' in the content and click its Pull).
         synthetic_row = page.locator('tr:has-text("ui-verify")').first
@@ -224,7 +224,7 @@ def main() -> int:
         page.screenshot(path=str(EVID_DIR / "1G-04-after-pull-click.png"))
 
         # Wait briefly for status to flip. For a 700-byte file the pull
-        # completes very quickly — tolerate pulling OR ready.
+        # completes very quickly  -  tolerate pulling OR ready.
         time.sleep(3)
         page.reload(wait_until="networkidle")
         page.wait_for_selector('tr:has-text("ui-verify")', timeout=10000)

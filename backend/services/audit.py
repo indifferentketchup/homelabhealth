@@ -35,7 +35,7 @@ class AuditRecord:
     ts: Optional[datetime] = None  # defaults to NOW() in DB when None
 
     def __post_init__(self) -> None:
-        # Reject naive datetimes — TIMESTAMPTZ normalizes on store, so an
+        # Reject naive datetimes  -  TIMESTAMPTZ normalizes on store, so an
         # inserted-with-naive-ts row would re-read with a tz-aware datetime
         # whose isoformat() differs from what was hashed at insert time,
         # silently breaking the chain on later verify.
@@ -46,7 +46,7 @@ class AuditRecord:
 def _canonicalize(rec: AuditRecord, ts_iso: str) -> bytes:
     """Reproducible byte representation. Fields joined by \\x1F.
 
-    Rejects any text field containing a literal \\x1F byte — otherwise two
+    Rejects any text field containing a literal \\x1F byte  -  otherwise two
     distinct field tuples can produce the same canonical byte string
     (e.g. actor='a\\x1Fb', action='' collides with actor='a', action='b').
     """
@@ -97,7 +97,7 @@ async def insert_audit_event(conn: asyncpg.Connection, rec: AuditRecord) -> int:
             "SELECT last_hash FROM audit_log_chain_head WHERE id = 1 FOR UPDATE"
         )
         if head is None:
-            raise RuntimeError("audit_log_chain_head singleton row missing — schema not applied")
+            raise RuntimeError("audit_log_chain_head singleton row missing  -  schema not applied")
         prev_hash = head["last_hash"]
         ts = rec.ts or datetime.now(timezone.utc)
         ts_iso = ts.isoformat()
@@ -139,7 +139,7 @@ def verify_chain(
         # The genesis row has prev_hash == 32 zero bytes; non-genesis rows
         # have prev_hash == previous row's row_hash. After a prune, the first
         # remaining row's prev_hash is the row_hash of the deleted predecessor
-        # — supplied to this function as expected_first_prev.
+        #  -  supplied to this function as expected_first_prev.
         if bytes(row["prev_hash"]) != expected_prev:
             return False, row["id"]
         ts_iso = row["ts"].isoformat()
@@ -235,7 +235,7 @@ async def audit_event(request: Request) -> AsyncIterator[AuditEventHandle]:
     """
     handle = AuditEventHandle(request)
     # Capture the raw body for payload hashing. For multipart/form-data (file
-    # uploads), the stream is already consumed by FastAPI's file parser — fall
+    # uploads), the stream is already consumed by FastAPI's file parser  -  fall
     # back to an empty hash rather than crashing the request.
     try:
         body_bytes = await request.body()

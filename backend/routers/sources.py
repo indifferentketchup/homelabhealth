@@ -28,7 +28,7 @@ UPLOADS_DIR = pathlib.Path("/data/uploads")
 async def _clear_rebuilding_if_drained(pool) -> None:
     """Flip global_settings['retrieval_rebuilding'] to 'false' once the cutover
     reingest has drained (no source left in 'processing'). Guarded so it only
-    writes when the flag is currently 'true' — avoids a write on every normal
+    writes when the flag is currently 'true'  -  avoids a write on every normal
     ingest. Best-effort: a failure here must not fail the ingest itself.
     """
     try:
@@ -157,7 +157,7 @@ async def _vl_image_embed_pass(pool, source_id: uuid.UUID, raw: bytes, m: str) -
     source_image_embeddings using format_vector + ::vector.
 
     Failure-isolated: the entire pass is wrapped so a provider/embed/DB failure is
-    logged and swallowed — the text path already set embedding_status='complete'
+    logged and swallowed  -  the text path already set embedding_status='complete'
     and source_chunks is the source of truth. A VL failure must never turn a good
     ingest into 'error' (spec vl-ingestion).
     """
@@ -581,7 +581,7 @@ async def reingest_all_sources_impl(pool, audit: AuditEventHandle | None = None)
     """Re-parse and re-embed every source with a stored file. Plain callable.
 
     Takes the pool directly and does NOT use FastAPI Depends, so it can run
-    outside a request — e.g. from main.py lifespan via embed_cutover. The
+    outside a request  -  e.g. from main.py lifespan via embed_cutover. The
     @router.post endpoint delegates here with its request-scoped audit handle;
     the cutover calls with audit=None.
     """

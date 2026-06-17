@@ -2,7 +2,7 @@
 
   - `recommend_tier()` covers every tier row in design §Tier definitions,
     plus floor, multi-GPU, and malformed-input edge cases.
-  - `collect()` smoke test on the real host — confirms the dict shape, no
+  - `collect()` smoke test on the real host  -  confirms the dict shape, no
     crashes on subprocess failures, types are sensible.
 
 Run from project root. psutil must be importable (sysinfo.py hard-imports it):
@@ -46,13 +46,13 @@ def check(label: str, ok: bool, detail: str = "") -> None:
     else:
         msg = f"  {RED}FAIL{RESET}  {label}"
         if detail:
-            msg += f" — {detail}"
+            msg += f"  -  {detail}"
         print(msg)
         _failed.append(label)
 
 
 def section(title: str) -> None:
-    print(f"\n— {title} —")
+    print(f"\n -  {title}  - ")
 
 
 def _t(sysinfo: dict) -> str:
@@ -60,10 +60,10 @@ def _t(sysinfo: dict) -> str:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# recommend_tier — every tier row + floor + edge cases.
+# recommend_tier  -  every tier row + floor + edge cases.
 # ──────────────────────────────────────────────────────────────────────────────
 
-section("recommend_tier — floor and malformed inputs")
+section("recommend_tier  -  floor and malformed inputs")
 check("empty dict → cpu-min", _t({}) == "cpu-min")
 check("None → cpu-min (non-dict input)", recommend_tier(None) == "cpu-min")
 check("[] → cpu-min (non-dict input)", recommend_tier([]) == "cpu-min")
@@ -74,7 +74,7 @@ check("gpu memory_total_mb=str → skipped", _t({"ram_total_gb": 32, "gpus": [{"
 check("ram_total_gb=str → treated as 0", _t({"ram_total_gb": "lots"}) == "cpu-min")
 check("ram_total_gb=True (bool) → treated as 0", _t({"ram_total_gb": True}) == "cpu-min")
 
-section("recommend_tier — CPU-only tiers (rows: cpu-min, cpu-std)")
+section("recommend_tier  -  CPU-only tiers (rows: cpu-min, cpu-std)")
 check("8 GB RAM, no GPU → cpu-min", _t({"ram_total_gb": 8, "gpus": []}) == "cpu-min")
 check("15 GB RAM, no GPU → cpu-min (just under threshold)",
       _t({"ram_total_gb": 15, "gpus": []}) == "cpu-min")
@@ -82,7 +82,7 @@ check("16 GB RAM, no GPU → cpu-std (threshold)",
       _t({"ram_total_gb": 16, "gpus": []}) == "cpu-std")
 check("32 GB RAM, no GPU → cpu-std", _t({"ram_total_gb": 32, "gpus": []}) == "cpu-std")
 
-section("recommend_tier — GPU tiers (rows: gpu-8gb, gpu-16gb, gpu-24gb+)")
+section("recommend_tier  -  GPU tiers (rows: gpu-8gb, gpu-16gb, gpu-24gb+)")
 check("6 GB VRAM (low edge) → gpu-8gb",
       _t({"ram_total_gb": 32, "gpus": [{"memory_total_mb": 6144}]}) == "gpu-8gb")
 check("8 GB VRAM → gpu-8gb",
@@ -100,7 +100,7 @@ check("24 GB VRAM (threshold) → gpu-24gb+",
 check("48 GB VRAM → gpu-24gb+",
       _t({"ram_total_gb": 64, "gpus": [{"memory_total_mb": 49152}]}) == "gpu-24gb+")
 
-section("recommend_tier — multi-GPU (max VRAM wins)")
+section("recommend_tier  -  multi-GPU (max VRAM wins)")
 check("2x 16 GB → gpu-16gb",
       _t({"ram_total_gb": 64, "gpus": [
           {"memory_total_mb": 16384}, {"memory_total_mb": 16384}
@@ -110,13 +110,13 @@ check("8 + 24 mixed → gpu-24gb+ (larger card wins)",
           {"memory_total_mb": 8192}, {"memory_total_mb": 24576}
       ]}) == "gpu-24gb+")
 
-section("recommend_tier — small GPU below threshold falls back to CPU branch")
+section("recommend_tier  -  small GPU below threshold falls back to CPU branch")
 check("4 GB VRAM + 32 GB RAM → cpu-std (GPU too small)",
       _t({"ram_total_gb": 32, "gpus": [{"memory_total_mb": 4096}]}) == "cpu-std")
 check("2 GB VRAM + 8 GB RAM → cpu-min",
       _t({"ram_total_gb": 8, "gpus": [{"memory_total_mb": 2048}]}) == "cpu-min")
 
-section("recommend_tier — Apple Silicon (row: apple-mlx)")
+section("recommend_tier  -  Apple Silicon (row: apple-mlx)")
 check("apple_silicon + 16 GB → apple-mlx (threshold)",
       _t({"apple_silicon": True, "ram_total_gb": 16, "gpus": []}) == "apple-mlx")
 check("apple_silicon + 64 GB → apple-mlx",
@@ -131,7 +131,7 @@ check("apple_silicon + 24 GB VRAM eGPU → gpu-24gb+ (GPU branch wins)",
       _t({"apple_silicon": True, "ram_total_gb": 16,
           "gpus": [{"memory_total_mb": 24576}]}) == "gpu-24gb+")
 
-section("recommend_tier — never auto-recommends 'external'")
+section("recommend_tier  -  never auto-recommends 'external'")
 for sysinfo in [
     {}, {"ram_total_gb": 32}, {"ram_total_gb": 64, "gpus": [{"memory_total_mb": 49152}]},
     {"apple_silicon": True, "ram_total_gb": 32},
@@ -142,10 +142,10 @@ for sysinfo in [
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# collect() smoke on the real host — confirm shape + types, no crashes.
+# collect() smoke on the real host  -  confirm shape + types, no crashes.
 # ──────────────────────────────────────────────────────────────────────────────
 
-section("collect() — smoke on real host")
+section("collect()  -  smoke on real host")
 data = collect()
 
 EXPECTED_KEYS = {

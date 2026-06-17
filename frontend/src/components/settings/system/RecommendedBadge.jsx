@@ -10,11 +10,11 @@ export function RecommendedBadge({ recommended, sysinfo }) {
           className="inline-block rounded-full bg-primary/15 px-2.5 py-0.5 font-mono text-xs font-medium text-foreground"
           data-testid="system-recommended-tier"
         >
-          {recommended || '—'}
+          {recommended || ' - '}
         </span>
       </div>
       <p className="mt-2 text-xs text-muted-foreground">
-        {tierMeta ? tierMeta.label + ' — ' : ''}{rationaleFor(sysinfo, recommended)}
+        {tierMeta ? tierMeta.label + '  -  ' : ''}{rationaleFor(sysinfo, recommended)}
       </p>
     </div>
   )

@@ -23,7 +23,7 @@ UPLOAD_DIR = Path("/data/uploads/context_files")
 TEXT_EXT = {".txt", ".md"}
 PDF_EXT = {".pdf"}
 DOCX_EXT = {".docx"}
-BINARY_PLACEHOLDER = "[Binary file — content not extractable]"
+BINARY_PLACEHOLDER = "[Binary file  -  content not extractable]"
 
 
 def _preview(content: str, n: int = 200) -> str:

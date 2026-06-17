@@ -216,7 +216,7 @@ function splitThinking(text, streaming = false) {
   // Completed thinking block
   const closed = text.match(THINKING_CLOSED_RE)
   if (closed) return { thinking: closed[1].trim(), answer: text.slice(closed[0].length), thinkingInProgress: false }
-  // In-progress thinking (streaming — no closing tag yet)
+  // In-progress thinking (streaming  -  no closing tag yet)
   if (streaming) {
     const open = text.match(THINKING_OPEN_RE)
     if (open) return { thinking: open[1].trim(), answer: '', thinkingInProgress: true }

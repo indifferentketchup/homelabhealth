@@ -1,6 +1,6 @@
 """Phase 0 end-to-end UI verify: System tab + first-boot gate.
 
-Per dispatch §0.F.1 — drives the new wizard flow in a real (headless)
+Per dispatch §0.F.1  -  drives the new wizard flow in a real (headless)
 Chromium and asserts:
 
   1. With setup_complete=false, navigation to / redirects to /settings?tab=system.
@@ -14,10 +14,10 @@ Chromium and asserts:
      message visible) and flips the setup_complete badge.
   6. Reloading the page persists setup_complete=true AND the saved tier.
   7. After save, navigation to / and /workspaces does NOT redirect back to
-     /settings — the gate is satisfied.
+     /settings  -  the gate is satisfied.
 
 There is no "log in" step in this single-user codebase (auth is stubbed via
-deps.require_admin — see earlier verify scripts). The script behaves the
+deps.require_admin  -  see earlier verify scripts). The script behaves the
 same way the user would: open a URL.
 
 Cleanup: leaves the DB with setup_complete=FALSE at exit so a re-run starts
@@ -92,12 +92,12 @@ def failbail(label: str, detail: str = "") -> None:
     global fail_count
     fail_count += 1
     _failures.append(label)
-    print(f"  \033[31mFAIL\033[0m  {label}" + (f" — {detail}" if detail else ""))
+    print(f"  \033[31mFAIL\033[0m  {label}" + (f"  -  {detail}" if detail else ""))
     raise SystemExit(1)
 
 
 def banner(title: str) -> None:
-    print(f"\n— {title} —")
+    print(f"\n -  {title}  - ")
 
 
 def main() -> int:
@@ -234,11 +234,11 @@ def main() -> int:
         page.screenshot(path=str(EVID_DIR / "0F-05-after-save.png"))
 
         # ──────────────────────────────────────────────────────────────────
-        # 5. Reload — setup_complete + tier persist
+        # 5. Reload  -  setup_complete + tier persist
         # ──────────────────────────────────────────────────────────────────
         banner("Reload persistence")
         page.reload(wait_until="networkidle")
-        # Should NOT redirect this time — the gate sees setup_complete=true.
+        # Should NOT redirect this time  -  the gate sees setup_complete=true.
         cur = urlparse(page.url)
         if cur.path != "/settings":
             failbail(f"reload should keep us at /settings; got {page.url}")
@@ -255,7 +255,7 @@ def main() -> int:
         passlog("after reload: cpu-std radio still selected")
 
         # ──────────────────────────────────────────────────────────────────
-        # 6. No redirect after save — nav to / and /workspaces stay where requested
+        # 6. No redirect after save  -  nav to / and /workspaces stay where requested
         # ──────────────────────────────────────────────────────────────────
         banner("No redirect after save")
         page.goto(f"{UI}/", wait_until="networkidle")

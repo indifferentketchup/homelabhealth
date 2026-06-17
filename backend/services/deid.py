@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 @dataclass
 class DeidFinding:
     category: str       # "ssn", "phone", "email", "mrn", "date", "zip", "name_pattern"
-    original_len: int   # length of matched text (NOT the text itself — never log raw PHI)
+    original_len: int   # length of matched text (NOT the text itself  -  never log raw PHI)
     replacement: str    # what it was replaced with, e.g. "[SSN]"
     start: int          # position in original text
     end: int            # position in original text
@@ -50,7 +50,7 @@ _STANDARD = _PERMISSIVE + [
 _STRICT = _STANDARD + [
     ("dob", re.compile(r"(?i)(?:DOB|date\s*of\s*birth|birth\s*date|born)[:\s]*\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}\b"), "[DOB]"),
     ("zip", re.compile(r"\b\d{5}(?:-\d{4})?\b"), "[ZIP]"),
-    # Catches "Dr. Smith", "Mr. Johnson", "Ms. Alice Brown" — title + capitalized words.
+    # Catches "Dr. Smith", "Mr. Johnson", "Ms. Alice Brown"  -  title + capitalized words.
     # Known limitation: names without titles are not matched (regex cannot do NER).
     ("name_title", re.compile(r"\b(?:Mr|Mrs|Ms|Dr|Prof)\.?\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}\b"), "[NAME]"),
 ]

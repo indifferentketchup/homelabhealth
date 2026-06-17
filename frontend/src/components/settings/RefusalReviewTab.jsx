@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 const PAGE_SIZE = 50
 
 function formatDate(iso) {
-  if (!iso) return '—'
+  if (!iso) return ' - '
   try {
     const d = new Date(iso)
     return d.toLocaleString(undefined, {
@@ -101,10 +101,10 @@ export default function RefusalReviewTab() {
                       <TypeBadge action={row.action} />
                     </td>
                     <td className="px-3 py-2 font-mono text-xs text-foreground">
-                      {row.target_type || '—'}
+                      {row.target_type || ' - '}
                     </td>
                     <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
-                      {row.target_id || '—'}
+                      {row.target_id || ' - '}
                     </td>
                   </tr>
                 ))}
