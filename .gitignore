@@ -20,7 +20,7 @@ backups/
 *.dump
 pre-*-migration-*
 
-# Agent / IDE / Cursor (local only — not distributed)
+# Agent / IDE / Cursor (local only - not distributed)
 CLAUDE.md
 .cursor/
 .cursorignore
@@ -55,3 +55,8 @@ docs/operator/advanced/*
 
 # Codecontext (local tooling artifact)
 .codecontextignore
+
+# Local output / generated artifacts
+output/
+security-analysis.md
+skills-lock.json
