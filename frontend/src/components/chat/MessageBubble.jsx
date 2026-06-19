@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { PATH_HOME } from '@/routes/paths.js'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { copyText as copyToClipboard } from '@/lib/clipboard'
 import { useAppStore } from '@/store/index.js'
 import { useShallow } from 'zustand/react/shallow'
 
@@ -22,12 +23,9 @@ function CodeBlockShell({ language, rawText, children }) {
   const [copied, setCopied] = useState(false)
 
   async function copyCode() {
-    try {
-      await navigator.clipboard.writeText(rawText || '')
+    if (await copyToClipboard(rawText || '')) {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
-    } catch {
-      /* ignore */
     }
   }
 
@@ -374,12 +372,9 @@ export function MessageBubble({
   })
 
   async function copyText() {
-    try {
-      await navigator.clipboard.writeText(displayContent || '')
+    if (await copyToClipboard(displayContent || '')) {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
-    } catch {
-      /* ignore */
     }
   }
 

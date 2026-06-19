@@ -96,21 +96,15 @@ async def stage(
 
 
 async def model_is_loaded(model: str) -> bool:
-    """Probe llama-server router to check if a model is currently loaded."""
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(2.0)) as client:
-            r = await client.get("http://hlh_chat:9610/v1/models")
-            r.raise_for_status()
-            for m in r.json().get("data", []):
-                if m.get("id") == model:
-                    return m.get("status", {}).get("value") == "loaded"
-    except (httpx.TransportError, httpx.HTTPStatusError) as exc:
-        # hlh_chat unreachable or erroring: treat as "not loaded" but log the
-        # reason so a down/hung router is diagnosable instead of silent.
-        logger.warning("model_is_loaded: probe to hlh_chat failed: %s", exc)
-    except Exception as exc:
-        logger.warning("model_is_loaded: unexpected probe error: %s", exc, exc_info=True)
-    return False
+    """Check the hlh_swap front-door for whether a model is currently resident.
+
+    Delegates to infer_backend_state (which probes http://hlh_swap:9620) so the
+    front-door is the single source of truth. Anything other than a confirmed
+    "loaded" (swapping, unavailable, or an unreachable front-door) returns False,
+    so the caller falls through to its warmup path rather than skipping it.
+    """
+    state = await infer_backend_state(model)
+    return state.get("state") == "loaded"
 
 
 async def infer_backend_state(model: str, tier: str | None = None) -> dict[str, Any]:

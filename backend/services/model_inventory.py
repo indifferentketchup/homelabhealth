@@ -14,7 +14,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-ROUTER_URL = "http://hlh_chat:9610"
+ROUTER_URL = "http://hlh_swap:9620"
 
 TIER_RAM_BUDGET_MIB: dict[str, int] = {
     "cpu-min": 6000,

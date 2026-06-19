@@ -16,6 +16,64 @@ live under the `snapshot/` namespace.
 
 ## [Unreleased]
 
+Deployment-test readiness fixes (openspec change `deploy-test-readiness`, 2026-06-19).
+Verified offline (py_compile, frontend build, openspec validate); the installer (T6)
+and durable-approval (T7) items need a live `install.sh` / durable-streaming smoke test.
+
+### Fixed
+
+- **Analytics page 404** (CR1). `routers/analytics.py` declared its own
+  `/api/analytics` prefix while `main.py` also included it under `/analytics`,
+  producing the unreachable `/api/analytics/api/analytics/...`. Dropped the router's
+  self-prefix so it resolves at `/api/analytics/*`, matching the frontend client.
+- **Stale `hlh_chat:9610` model-state probes** (S1/S2). `model_is_loaded` and
+  `model_inventory.ROUTER_URL` still hit the removed `hlh_chat`; on the compose stack
+  this always failed closed, showing an empty model-state sidebar and a redundant
+  warmup per message. `model_is_loaded` now delegates to the `hlh_swap:9620`-aware
+  `infer_backend_state`, and the inventory probes the front-door.
+- **`workspaces.owner_id` foreign key never landed** (F4). `workspaces` is created
+  before `users`, so the `ADD COLUMN IF NOT EXISTS owner_id ... REFERENCES users(id)`
+  no-opped and the FK was never attached. Replaced with a guarded, idempotent
+  `ADD CONSTRAINT ... NOT VALID` that is safe on fresh and existing databases.
+- **Durable + safeguard-approval chat wedge** (B1). A durable approval turn inserted
+  an `approval_pending` row and returned without launching a job, so nothing consumed
+  the operator decision and the 409 guard wedged the chat. The turn now parks a
+  background waiter on the approval gate: accept launches the durable inference job,
+  reject or error cancels the row.
+- **Swallowed inference-path errors** (Q1/Q2/Q3). Added logging to three silent
+  `except` sites (flush-await, stream-decode, embed warmup); behavior unchanged.
+- **Embed/rerank snapshot pulls failed with EROFS on bootstrap installs.** The
+  `hlh_orchestra` `create_api` never mounted the `hlh_infer_cache` volume at `/cache`,
+  so the uid-1000 `read_only` API ran `snapshot_download` against the read-only
+  container root and failed with `OSError: [Errno 30] Read-only file system: '/cache'`.
+  Added the `hlh_infer_cache:/cache` mount, mirroring `docker-compose.yml`.
+- **Copy buttons failed over plain HTTP.** `navigator.clipboard` is only defined in
+  secure contexts (HTTPS / localhost), so the GPU-enable command and chat copy
+  buttons threw on LAN / Tailscale HTTP access. Added `lib/clipboard.js` with a
+  hidden-textarea `execCommand` fallback; used by `GpuEnableCard` and `MessageBubble`.
+- **Sidebar footer buttons overlapped at narrow widths.** The expanded AI / Analytics
+  / Settings buttons had no overflow clipping, so labels spilled over their neighbors.
+  Extracted `SettingsNavButton` with a truncating label inside a `min-w-0` container.
+
+### Changed
+
+- **Bootstrap installer creates `hlh_swap`, not `hlh_chat`** (installer parity). The
+  `hlh_orchestra` bootstrap still created the removed `hlh_chat` (llama.cpp, 9610)
+  while bundled providers target `hlh_swap:9620`, so a fresh `install.sh` left
+  inference unreachable. Added `create_swap` (mirrors the compose `hlh_swap_cpu`
+  service, consumes the already-staged `swap_config.yaml`); updated the `hlh` CLI and
+  `hlh-status.sh` to reference `hlh_swap`.
+
+### Security
+
+- **Login brute-force throttle** (SEC8). `/login` now returns `429` after 5 failed
+  attempts in 15 minutes, tracking every submitted username uniformly so there is no
+  user-enumeration oracle; cleared on success. Process-local (run a single worker).
+- **Secure-cookie posture surfaced** (SEC10). `HLH_SECURE_COOKIES` is documented in
+  `.env.example` and `doctor.py` warns when it is not `true` (recommend a TLS reverse
+  proxy). The default stays `false` so the plain-HTTP / Tailscale quickstart still
+  logs in.
+
 ## [v1.3.2] — 2026-06-17
 
 Production-readiness audit remediation (2026-06-15).

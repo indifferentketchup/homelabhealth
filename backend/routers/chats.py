@@ -309,6 +309,86 @@ async def append_message(
                         """,
                         _approval_assist_id, chat_id, effective_model,
                     )
+
+                # Durable approval: park a background waiter on the gate. The
+                # pre-action safeguard decision happens BEFORE any generation
+                # (run_inference_job's own gate at inference_job.py:378 is a separate
+                # post-completion output-guard check, and is_pending is already false by
+                # then since this waiter consumed the request). On accept we launch the
+                # durable inference job for this row; on reject or error we cancel the row
+                # so it cannot wedge the chat via the streaming/approval_pending 409 guard.
+                import services.inference_job as ij
+
+                async def _approval_waiter() -> None:
+                    rejected = False
+                    try:
+                        _result = await _gate.wait_for_result(str(chat_id))
+                        rejected = _result.action == _ApprovalAction.REJECT
+                    except Exception:
+                        logger.warning(
+                            "approval waiter: wait_for_result failed for chat_id=%s",
+                            chat_id, exc_info=True,
+                        )
+                        rejected = True
+                    if rejected:
+                        async with pool.acquire() as _cconn:
+                            await _cconn.execute(
+                                "UPDATE messages SET status = 'cancelled', finished_at = NOW() WHERE id = $1::uuid",
+                                _approval_assist_id,
+                            )
+                        return
+                    async with pool.acquire() as _jconn:
+                        _job_rows = await _jconn.fetch(
+                            """
+                            SELECT id, role, content, status
+                            FROM messages
+                            WHERE chat_id = $1::uuid AND compacted_at IS NULL
+                              AND status NOT IN ('streaming', 'approval_pending')
+                            ORDER BY created_at ASC, id ASC
+                            """,
+                            chat_id,
+                        )
+                    _chat_dict = {
+                        "id": chat["id"],
+                        "title": chat["title"],
+                        "model": chat["model"],
+                        "pruning_summary": chat["pruning_summary"],
+                        "web_search_enabled": chat["web_search_enabled"],
+                        "workspace_id": chat["workspace_id"],
+                        "message_count": chat["message_count"],
+                        "rag_enabled": chat["rag_enabled"],
+                    }
+                    _reg_cell: list = []
+
+                    async def _run_approved_job() -> None:
+                        _reg = _reg_cell[0] if _reg_cell else None
+                        if _reg is None:
+                            logger.error(
+                                "approval job has no registration: chat_id=%s assist_id=%s",
+                                chat_id, _approval_assist_id,
+                            )
+                            return
+                        await ij.run_inference_job(
+                            registration=_reg,
+                            chat_id=chat_id,
+                            assistant_id=_approval_assist_id,
+                            provider=provider,
+                            effective_model=effective_model,
+                            chat_record=_chat_dict,
+                            msg_rows=[dict(r) for r in _job_rows],
+                            user_message_text=user_message_text,
+                            user_profile_block=user_profile_block,
+                            provider_is_bundled=provider_is_bundled,
+                            first_exchange_for_auto_title=first_exchange_for_auto_title,
+                            request_id=getattr(getattr(request, 'state', None), 'request_id', None),
+                            principal_username=principal.get("username", "unknown"),
+                            attached_source_ids=body.attached_source_ids,
+                        )
+
+                    _task = asyncio.create_task(_run_approved_job())
+                    _reg_cell.append(job_registry.register(chat_id, _approval_assist_id, _task))
+
+                asyncio.create_task(_approval_waiter())
                 return JSONResponse(
                     status_code=202,
                     content={
@@ -448,8 +528,10 @@ async def append_message(
                     from services.embeddings import embed_text as _warm_embed
                     try:
                         await _warm_embed("warmup")
-                    except Exception:
-                        pass
+                    except Exception as warmup_exc:
+                        logger.warning(
+                            "chat: embed warmup failed for %s: %s", embed_model, warmup_exc
+                        )
                 yield _sse(json.dumps({"type": "phase", "phase": "ready", "model": embed_model}))
 
         yield _sse(json.dumps({"type": "phase", "phase": "rag"}))

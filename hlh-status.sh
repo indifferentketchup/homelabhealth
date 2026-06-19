@@ -10,7 +10,7 @@
 #
 set -uo pipefail
 
-CONTAINERS=(hlh_db hlh_api hlh_chat hlh_ui hlh_search hlh_orchestra)
+CONTAINERS=(hlh_db hlh_api hlh_swap hlh_ui hlh_search hlh_orchestra)
 ERR_RE='error|exception|traceback|critical|failed|denied|startup failed'
 
 command -v docker >/dev/null 2>&1 || { echo "error: docker not found" >&2; exit 1; }

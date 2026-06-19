@@ -30,8 +30,21 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- FK back-references now that users exist
-ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS owner_id UUID REFERENCES users(id) ON DELETE CASCADE;
+-- FK back-references now that users exist.
+-- owner_id is declared in CREATE TABLE workspaces above (which precedes users), so the
+-- column already exists; ADD COLUMN IF NOT EXISTS no-ops and never attaches the FK.
+-- Add the constraint explicitly, guarded so re-apply is idempotent, and NOT VALID so
+-- apply_schema never fails on a database that already holds an orphan owner_id.
+ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS owner_id UUID;
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'workspaces_owner_id_fkey'
+    ) THEN
+        ALTER TABLE workspaces
+            ADD CONSTRAINT workspaces_owner_id_fkey
+            FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE NOT VALID;
+    END IF;
+END $$;
 
 UPDATE users SET display_name = username WHERE display_name IS NULL OR btrim(display_name) = '';
 UPDATE users SET bio = COALESCE(bio, '') WHERE bio IS NULL;

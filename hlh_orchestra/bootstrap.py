@@ -26,11 +26,8 @@ VERSION = os.environ.get("HLH_VERSION", "latest")
 PORT_API = os.environ.get("HLH_PORT_API", "9600")
 PORT_UI = os.environ.get("HLH_PORT_UI", "9604")
 PORT_SEARCH = os.environ.get("HLH_PORT_SEARCH", "9612")
-PORT_CHAT = os.environ.get("HLH_CHAT_PORT", "9610")
-CHAT_MEM = os.environ.get("HLH_CHAT_MEM", "7g")
-# Explicit override via env; otherwise create_chat picks a gpu-aware default so
-# a RAG turn (embed + rerank + chat) doesn't evict the large chat model.
-MODELS_MAX = os.environ.get("HLH_MODELS_MAX")
+# Inference front-door memory budget (mirrors docker-compose.yml HLH_INFER_MEM).
+INFER_MEM = os.environ.get("HLH_INFER_MEM", "4g")
 
 NETWORK_DEFAULT = "hlh_default"
 NETWORK_INFERENCE = "hlh_inference"
@@ -44,9 +41,11 @@ CONFIG_VOLUME = "hlh_config"
 CONFIG_MOUNT = "/data/config"
 SECRETS_FILE = f"{CONFIG_MOUNT}/secrets.env"
 
-# CPU image by default; GPU image picked at bootstrap time if nvidia available
-CHAT_IMAGE_CPU = os.environ.get("HLH_CHAT_IMAGE_CPU", "ghcr.io/ggml-org/llama.cpp:server-b9660")
-CHAT_IMAGE_GPU = os.environ.get("HLH_CHAT_IMAGE_GPU", "ghcr.io/ggml-org/llama.cpp:server-cuda-b9660")
+# Inference front-door image (llama-swap + boofinity). A single HLH_SWAP_IMAGE
+# override mirrors docker-compose.yml; otherwise CPU/CUDA defaults are picked by
+# GPU detection at bootstrap time.
+SWAP_IMAGE_CPU = os.environ.get("HLH_SWAP_IMAGE", "ghcr.io/indifferentketchup/hlh-swap:0.1.0-cpu")
+SWAP_IMAGE_GPU = os.environ.get("HLH_SWAP_IMAGE", "ghcr.io/indifferentketchup/hlh-swap:0.1.0-cuda")
 
 DB_IMAGE = "pgvector/pgvector:pg16"
 SEARCH_IMAGE = "searxng/searxng:2026.5.22-c57f772ad"
@@ -416,6 +415,11 @@ def create_api(
             "hlh_branding": {"bind": "/data/branding", "mode": "rw"},
             "hlh_history": {"bind": "/data/history", "mode": "rw"},
             "hlh_models": {"bind": "/models", "mode": "rw"},
+            # model_puller writes the boofinity HF snapshot (embed/rerank
+            # safetensors) here; hlh_swap reads it as HF_HOME=/cache. Without this
+            # mount /cache is the read_only container root and snapshot_download
+            # fails with EROFS. Mirrors docker-compose.yml hlh_api.
+            "hlh_infer_cache": {"bind": "/cache", "mode": "rw"},
         },
         network=NETWORK_DEFAULT,
         user="1000:1000",
@@ -425,41 +429,58 @@ def create_api(
     )
 
 
-def create_chat(client: docker.DockerClient, image: str, gpu: bool) -> Any:
+def create_swap(client: docker.DockerClient, image: str, gpu: bool) -> Any:
+    """Inference front-door (llama-swap + boofinity children), port 9620.
+
+    Mirrors the docker-compose.yml hlh_swap_cpu/gpu service. The Docker SDK cannot
+    express compose's `env_file:` or single-file bind mount, so: the explicit env
+    block below stands in for env_file (HLH_INFER_DEVICE is set for gpu; the rest of
+    HLH_INFER_* default in config.yaml macros), and the llama-swap config is consumed
+    from the hlh_config volume at /config/swap_config.yaml (write_templates already
+    stages it from the orchestra swap_config.yaml template), rather than a host bind of
+    the single file.
+    """
     extra: dict[str, Any] = {}
+    environment = {
+        "HF_HOME": "/cache",
+        "HOME": "/cache",
+        "HF_HUB_OFFLINE": "1",
+        "LD_LIBRARY_PATH": "/app",
+    }
     if gpu:
+        environment["HLH_INFER_DEVICE"] = "cuda"
         extra["device_requests"] = [
             docker.types.DeviceRequest(count=1, capabilities=[["gpu"]])
         ]
-    # Keep enough models resident that a RAG turn (embed + rerank + chat) doesn't
-    # evict the large chat model and force a multi-GB reload on the next message.
-    # GPU tiers have VRAM headroom for the full bundled set; CPU stays conservative.
-    models_max = MODELS_MAX or ("4" if gpu else "2")
     return client.containers.create(
         image=image,
-        name="hlh_chat",
+        name="hlh_swap",
         restart_policy={"Name": "unless-stopped"},
-        environment={"LD_LIBRARY_PATH": "/app"},
+        environment=environment,
         volumes={
             "hlh_models": {"bind": "/models", "mode": "ro"},
+            "hlh_infer_cache": {"bind": "/cache", "mode": "rw"},
             CONFIG_VOLUME: {"bind": "/config", "mode": "ro"},
         },
         command=[
-            "--models-preset", "/config/models.ini",
-            "--host", "0.0.0.0",
-            "--port", PORT_CHAT,
-            "--models-max", models_max,
+            "--config", "/config/swap_config.yaml",
+            "--listen", "0.0.0.0:9620",
         ],
         network=NETWORK_INFERENCE,
         user="1000:1000",
-        tmpfs={"/tmp": ""},
-        mem_limit=CHAT_MEM,
+        tmpfs={"/tmp": "", "/run": ""},
+        mem_limit=INFER_MEM,
         healthcheck={
-            "test": ["CMD-SHELL", f"curl -fsS http://localhost:{PORT_CHAT}/v1/models || exit 1"],
+            "test": [
+                "CMD-SHELL",
+                "python -c \"import urllib.request,sys; "
+                "sys.exit(0 if urllib.request.urlopen('http://localhost:9620/v1/models').status==200 else 1)\" "
+                "|| exit 1",
+            ],
             "interval": 30_000_000_000,
             "timeout": 5_000_000_000,
             "retries": 3,
-            "start_period": 60_000_000_000,
+            "start_period": 120_000_000_000,
         },
         **COMMON_HARDENING,
         **extra,
@@ -563,7 +584,7 @@ def run() -> dict[str, str]:
     log("first run detected" if first_run else "existing stack detected, restart path")
 
     gpu = detect_gpu(client)
-    chat_image = CHAT_IMAGE_GPU if gpu else CHAT_IMAGE_CPU
+    swap_image = SWAP_IMAGE_GPU if gpu else SWAP_IMAGE_CPU
     log(f"GPU: {'detected' if gpu else 'none, using CPU images'}")
 
     ensure_network(client, NETWORK_DEFAULT, internal=False)
@@ -576,7 +597,7 @@ def run() -> dict[str, str]:
     pull_image(client, "alpine:3.20")  # used by secrets/template helpers
     pull_image(client, DB_IMAGE)
     pull_image(client, f"{REGISTRY}/hlh_api:{VERSION}")
-    pull_image(client, chat_image)
+    pull_image(client, swap_image)
     pull_image(client, SEARCH_IMAGE)
     pull_image(client, f"{REGISTRY}/hlh_ui:{VERSION}")
 
@@ -600,7 +621,7 @@ def run() -> dict[str, str]:
     attach_to_network(client, "hlh_api", NETWORK_INFERENCE)
     wait_for_healthy(client, "hlh_api", timeout_s=60)
 
-    ensure_container(client, "hlh_chat", lambda: create_chat(client, chat_image, gpu))
+    ensure_container(client, "hlh_swap", lambda: create_swap(client, swap_image, gpu))
     ensure_container(client, "hlh_search", lambda: create_search(client))
 
     ensure_container(client, "hlh_ui", lambda: create_ui(client))

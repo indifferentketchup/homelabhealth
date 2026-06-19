@@ -76,6 +76,37 @@ const SidebarLink = memo(function SidebarLink({ icon: Icon, label, to, collapsed
 })
 
 /**
+ * SettingsNavButton -- the AI / Analytics / Settings footer buttons.
+ *
+ * Collapsed shows an icon only; expanded shows icon + truncating label so the
+ * three flex-1 buttons never overflow and overlap at narrow sidebar widths.
+ */
+const SettingsNavButton = memo(function SettingsNavButton({ icon: Icon, label, to, title, collapsed, onClick }) {
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      className={cn(
+        'border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent',
+        collapsed ? 'w-full px-0' : 'min-w-0 flex-1',
+      )}
+      asChild
+    >
+      <Link to={to} onClick={onClick} title={title} aria-label={label}>
+        {collapsed ? (
+          <Icon className="size-4" />
+        ) : (
+          <span className="fs-nav flex min-w-0 items-center justify-center gap-2">
+            <Icon className="size-4 shrink-0" />
+            <span className="truncate">{label}</span>
+          </span>
+        )}
+      </Link>
+    </Button>
+  )
+})
+
+/**
  * Single recent-chat row  -  extracts useLongPress out of .map().
  *
  * Memoized so a title patch (or any sidebar re-render) only re-renders the rows
@@ -641,82 +672,26 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }) {
             />
           )}
 
-          {desktopCollapsed ? (
-            <>
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full border-sidebar-border bg-card px-0 text-foreground hover:bg-sidebar-accent"
-                asChild
-              >
-                <Link to="/ai" onClick={() => isMobile && onMobileOpenChange(false)} title="AI settings">
-                  <Brain className="size-4" />
-                </Link>
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full border-sidebar-border bg-card px-0 text-foreground hover:bg-sidebar-accent"
-                asChild
-              >
-                <Link to="/analytics" onClick={() => isMobile && onMobileOpenChange(false)} title="Usage Analytics" aria-label="Analytics">
-                  <ChartColumnIncreasing className="size-4" />
-                </Link>
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full border-sidebar-border bg-card px-0 text-foreground hover:bg-sidebar-accent"
-                asChild
-              >
-                <Link to="/settings" onClick={() => isMobile && onMobileOpenChange(false)} title="Settings" aria-label="Settings">
-                  <Settings className="size-4" />
-                </Link>
-              </Button>
-            </>
-          ) : (
-            <div className="flex gap-1">
-              <Button
-                type="button"
-                variant="outline"
-                className="min-w-0 flex-1 border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent"
-                asChild
-              >
-                <Link to="/ai" onClick={() => isMobile && onMobileOpenChange(false)} title="AI settings">
-                  <span className="fs-nav flex items-center justify-center gap-2">
-                    <Brain className="size-4 shrink-0" />
-                    AI
-                  </span>
-                </Link>
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="min-w-0 flex-1 border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent"
-                asChild
-              >
-                <Link to="/analytics" onClick={() => isMobile && onMobileOpenChange(false)} title="Usage Analytics" aria-label="Analytics">
-                  <span className="fs-nav flex items-center justify-center gap-2">
-                    <ChartColumnIncreasing className="size-4 shrink-0" />
-                    Analytics
-                  </span>
-                </Link>
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="min-w-0 flex-1 border-sidebar-border bg-card text-foreground hover:bg-sidebar-accent"
-                asChild
-              >
-                <Link to="/settings" onClick={() => isMobile && onMobileOpenChange(false)} title="Settings" aria-label="Settings">
-                  <span className="fs-nav flex items-center justify-center gap-2">
-                    <Settings className="size-4 shrink-0" />
-                    Settings
-                  </span>
-                </Link>
-              </Button>
-            </div>
-          )}
+          {(() => {
+            const closeOnMobile = () => isMobile && onMobileOpenChange(false)
+            const items = [
+              { icon: Brain, label: 'AI', to: '/ai', title: 'AI settings' },
+              { icon: ChartColumnIncreasing, label: 'Analytics', to: '/analytics', title: 'Usage Analytics' },
+              { icon: Settings, label: 'Settings', to: '/settings', title: 'Settings' },
+            ]
+            const buttons = items.map((item) => (
+              <SettingsNavButton
+                key={item.to}
+                icon={item.icon}
+                label={item.label}
+                to={item.to}
+                title={item.title}
+                collapsed={desktopCollapsed}
+                onClick={closeOnMobile}
+              />
+            ))
+            return desktopCollapsed ? <>{buttons}</> : <div className="flex gap-1">{buttons}</div>
+          })()}
         </div>
       </aside>
 

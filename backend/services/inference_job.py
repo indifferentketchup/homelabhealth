@@ -223,8 +223,11 @@ async def run_inference_job(
             if prev_task is not None:
                 try:
                     await prev_task
-                except Exception:
-                    pass
+                except Exception as prior_flush_exc:
+                    logger.debug(
+                        "inference_job: prior flush task raised (already handled): %s",
+                        prior_flush_exc,
+                    )
             try:
                 encrypted = encrypt_column(content_snapshot, str(assistant_id))
                 async with pool.acquire() as flush_conn:
@@ -283,7 +286,8 @@ async def run_inference_job(
 
                     try:
                         line = chunk.decode("utf-8")
-                    except Exception:
+                    except Exception as decode_exc:
+                        logger.debug("inference_job: chunk decode failed: %s", decode_exc)
                         continue
 
                     if not line.startswith("data: "):

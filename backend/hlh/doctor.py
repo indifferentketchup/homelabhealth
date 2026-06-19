@@ -567,6 +567,18 @@ async def _check_embed_rebind_consistency() -> dict[str, Any]:
     }
 
 
+def _check_secure_cookies() -> dict[str, Any]:
+    val = os.environ.get("HLH_SECURE_COOKIES", "false").strip().lower()
+    if val == "true":
+        return {"name": "secure_cookies", "status": OK, "detail": "session cookies marked Secure"}
+    return {
+        "name": "secure_cookies",
+        "status": WARN,
+        "detail": "HLH_SECURE_COOKIES is not true  -  session cookies are not marked Secure; "
+                  "set HLH_SECURE_COOKIES=true behind a TLS reverse proxy for production",
+    }
+
+
 async def run_checks() -> list[dict[str, Any]]:
     """Run all health checks. Returns ordered list."""
     checks = [
@@ -591,6 +603,7 @@ async def run_checks() -> list[dict[str, Any]]:
         _check_guard_scanners(),
         _check_deid_pipeline(),
         _check_column_encryption(),
+        _check_secure_cookies(),
         await _check_image_tier_match(),
         await _check_swap_group_policy(),
         await _check_embed_rebind_consistency(),

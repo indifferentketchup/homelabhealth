@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { copyText } from '@/lib/clipboard'
 
 const GPU_ENABLE_RAW = 'https://raw.githubusercontent.com/indifferentketchup/homelabhealth/main/enable-gpu.sh'
 const GPU_ENABLE_BLOB = 'https://github.com/indifferentketchup/homelabhealth/blob/main/enable-gpu.sh'
@@ -16,11 +17,11 @@ export function GpuEnableCard() {
   const [err, setErr] = useState(null)
 
   const copyCmd = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(GPU_ENABLE_CMD)
+    if (await copyText(GPU_ENABLE_CMD)) {
+      setErr(null)
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
-    } catch {
+    } else {
       setErr('Copy failed  -  select the command and copy it manually.')
     }
   }, [])

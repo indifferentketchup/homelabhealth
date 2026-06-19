@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends
 from db import get_pool
 from deps import get_principal
 
-router = APIRouter(prefix="/api/analytics", tags=["analytics"])
+router = APIRouter(tags=["analytics"])
 
 
 def _serialize_row(r) -> dict[str, Any]:
