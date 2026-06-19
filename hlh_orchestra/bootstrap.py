@@ -324,10 +324,34 @@ def container_exists(client: docker.DockerClient, name: str) -> bool:
         return False
 
 
-def ensure_container(client: docker.DockerClient, name: str, create_fn) -> Any:
-    """Get existing container by name, or create via create_fn. Start if not running."""
+def _container_image_drifted(client: docker.DockerClient, c: Any, image: str) -> bool:
+    """True when the existing container was built from a different image than the
+    freshly-pulled target. pull_image runs before ensure_container, so a mismatch
+    means an update landed new code (and any compose-parity changes baked into the
+    bootstrap, e.g. a new volume mount) that the running container predates."""
+    try:
+        return c.image.id != client.images.get(image).id
+    except (ImageNotFound, APIError) as exc:
+        log(f"WARN: could not compare {c.name} image to {image}, not recreating: {exc}")
+        return False
+
+
+def ensure_container(
+    client: docker.DockerClient, name: str, create_fn, image: str | None = None
+) -> Any:
+    """Get existing container by name, or create via create_fn. Start if not running.
+
+    When `image` is given and the existing container's image has drifted from the
+    freshly-pulled target, the container is removed and recreated so config changes
+    (mounts, env, command) baked into create_fn actually take effect on update."""
     try:
         c = client.containers.get(name)
+        if image is not None and _container_image_drifted(client, c, image):
+            log(f"recreating {name}: image drifted from {image}")
+            c.remove(force=True)
+            c = create_fn()
+            c.start()
+            return c
         if c.status != "running":
             log(f"starting existing {name}")
             c.start()
@@ -610,21 +634,22 @@ def run() -> dict[str, str]:
     write_templates(client)
 
     # Start in dependency order
-    ensure_container(client, "hlh_db", lambda: create_db(client))
+    ensure_container(client, "hlh_db", lambda: create_db(client), image=DB_IMAGE)
     wait_for_healthy(client, "hlh_db", timeout_s=90)
 
     api = ensure_container(
         client, "hlh_api",
         lambda: create_api(client, secrets_dict["HLH_MASTER_KEY"], secrets_dict["ORCHESTRA_TOKEN"], gpu=gpu),
+        image=f"{REGISTRY}/hlh_api:{VERSION}",
     )
     # hlh_api needs to be on both networks
     attach_to_network(client, "hlh_api", NETWORK_INFERENCE)
     wait_for_healthy(client, "hlh_api", timeout_s=60)
 
-    ensure_container(client, "hlh_swap", lambda: create_swap(client, swap_image, gpu))
-    ensure_container(client, "hlh_search", lambda: create_search(client))
+    ensure_container(client, "hlh_swap", lambda: create_swap(client, swap_image, gpu), image=swap_image)
+    ensure_container(client, "hlh_search", lambda: create_search(client), image=SEARCH_IMAGE)
 
-    ensure_container(client, "hlh_ui", lambda: create_ui(client))
+    ensure_container(client, "hlh_ui", lambda: create_ui(client), image=f"{REGISTRY}/hlh_ui:{VERSION}")
 
     log(f"done  -  homelabhealth is running → http://localhost:{PORT_UI}")
     return secrets_dict
